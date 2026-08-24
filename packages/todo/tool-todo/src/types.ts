@@ -15,9 +15,10 @@ export type { TodoItem } from '@deepseek-ai/dsh-session/types'
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionMap {
     /**
-     * The agent's current whole todo list (the latest `todo/write` snapshot),
+     * The agent's current whole todo tree (the latest `todo/write` snapshot),
      * or `null` before the first write. Whole-value rule: every `todo/write`
-     * carries the complete replacement list, so the fold is last-wins.
+     * carries the complete replacement tree (up to three levels), so the fold
+     * is last-wins.
      */
     todos: TodoItem[] | null
   }

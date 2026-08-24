@@ -98,6 +98,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   jobs: 'jobs.md',
   sessionTelemetry: 'session-telemetry.md',
   tokenMeter: 'token-meter.md',
+  toolMatcher: 'tools.md',
   toolResultPruner: 'compaction.md',
   tools: 'tools.md',
   typert: 'typert.md',

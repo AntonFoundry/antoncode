@@ -119,6 +119,7 @@ function registrationFacts(profiles: ReadonlyMap<string, ResolvedPiAiProviderPro
  */
 function directoryEntries(
   profiles: ReadonlyMap<string, ResolvedPiAiProviderProfile>,
+  reservedProviders: ReadonlySet<string>,
 ): LlmConfigurableProvider[] {
   const catalog = new Set(catalogProviderIds())
   const entries = new Map<string, LlmConfigurableProvider>()
@@ -140,14 +141,20 @@ function directoryEntries(
   // every request. Catalog *membership* is unaffected, so `declare` above still
   // answers what pi-ai ships.
   for (const provider of catalog) {
-    if (catalogProviderTakesApiKey(provider)) declare(provider, provider)
+    if (!reservedProviders.has(provider) && catalogProviderTakesApiKey(provider)) declare(provider, provider)
   }
-  for (const [provider, profile] of profiles) declare(provider, profile.displayName)
+  for (const [provider, profile] of profiles) {
+    if (!reservedProviders.has(provider)) declare(provider, profile.displayName)
+  }
   return [...entries.values()]
 }
 
 /** Register one generic pi-ai adapter for all configured provider routes. */
 export function apply(ctx: Context, config: Config): void {
+  // Native protocol adapters may reserve the familiar route names they own.
+  // Keep this static composition fact outside the live settings section: a
+  // user cannot accidentally make one route belong to two adapter families.
+  const reservedProviders = new Set(config.reservedProviders ?? [])
   let current: () => Config = () => config
   let lastRaw: Config | undefined
   let memoized: ReadonlyMap<string, ResolvedPiAiProviderProfile> | undefined
@@ -168,6 +175,17 @@ export function apply(ctx: Context, config: Config): void {
     const next = resolveProfiles(raw.providers)
     lastRaw = raw
     memoized = next
+    return next
+  }
+  const activeProfiles = (): ReadonlyMap<string, ResolvedPiAiProviderProfile> => {
+    const next = profiles()
+    for (const provider of next.keys()) {
+      if (reservedProviders.has(provider)) {
+        throw new Error(
+          `llm-pi-ai: provider route "${provider}" is reserved by a native adapter; configure its native settings section instead`,
+        )
+      }
+    }
     return next
   }
   profiles()
@@ -215,7 +233,7 @@ export function apply(ctx: Context, config: Config): void {
   let directory: DirectoryRegistrationHandle | undefined
   let directoryFacts: unknown
   const ensureDirectory = (): void => {
-    const entries = directoryEntries(profiles())
+    const entries = directoryEntries(activeProfiles(), reservedProviders)
     if (deepEqualJson(entries, directoryFacts)) return
     // Atomic replace, never dispose-then-register: a route another adapter
     // family already declares (a profile keyed `deepseek-official`) would
@@ -257,7 +275,8 @@ export function apply(ctx: Context, config: Config): void {
   let registration: AdapterRegistrationHandle | undefined
   let registeredFacts: unknown
   const ensureRegistrationFacts = (): void => {
-    const facts = registrationFacts(profiles())
+    const active = activeProfiles()
+    const facts = registrationFacts(active)
     if (deepEqualJson(facts, registeredFacts)) return
     // The registry captures the route set and each route's retry policy at
     // registration, so a change to either must re-register. The swap is
@@ -265,7 +284,7 @@ export function apply(ctx: Context, config: Config): void {
     // conflicting route leaves the previous routes serving requests, and
     // `registeredFacts` only advances once the registry actually holds the
     // new set — so returning to a working configuration always re-applies.
-    const routes = [...profiles().keys()]
+    const routes = [...active.keys()]
     if (registration === undefined) {
       // Dormant bare mount: nothing is registered until a section supplies
       // profiles, and an empty section keeps it that way.

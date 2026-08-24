@@ -32,6 +32,19 @@
   white-space: nowrap;
 }
 
+/* The native bar shows the c0ntext identity once; the plugin body owns the
+   Context map title and all map-specific controls. */
+.contextTitle {
+  background: linear-gradient(90deg, #22d3ee, #a78bfa, #fbbf24);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  line-height: 20px;
+}
+
 .close {
   display: grid;
   flex: none;
@@ -54,6 +67,24 @@
   min-height: 0;
   padding: 12px 16px;
   overflow-y: auto;
+}
+
+/* Context is a separate persistent surface above the transient tool inspector.
+   The lower inspector still owns the remaining height and keeps its own scroll. */
+.contextArea {
+  flex: none;
+  min-height: 0;
+  max-height: 54%;
+  overflow: auto;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+/* Without a selected tool, context is the entire right panel rather than a
+   scrolling card above an otherwise empty tool inspector. */
+.contextOnly {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
 .empty {

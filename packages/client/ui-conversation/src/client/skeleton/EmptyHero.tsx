@@ -117,12 +117,14 @@ export function HeroShell({ t, children }: HeroShellProps) {
     <div className={css.root}>
       <div className={css.stack}>
         <div className={css.headline}>
-          {/* figma 34:10412: fish 34×25 leading the headline, gap 10. */}
+          {/* The Anton mark leads the hero as a large tile above the title. */}
           <span className={css.fishHitbox}>
-            <FishLogo size={34} className={css.fish} />
+            <FishLogo size={96} className={css.fish} />
           </span>
-          <span className={css.headlineText}>{t('hero.headline')}</span>
-          <span className={css.previewBadge}>{t('hero.preview')}</span>
+          <span className={css.titleRow}>
+            <span className={css.headlineText}>{t('hero.headline')}</span>
+            <span className={css.previewBadge}>{t('hero.preview')}</span>
+          </span>
         </div>
         <div className={css.body}>
           {/* The resident composer (ConversationRoot's root-owned scrollport;

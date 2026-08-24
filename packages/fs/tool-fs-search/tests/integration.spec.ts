@@ -150,6 +150,9 @@ describe('search tools over the real subprocess service + the packaged rg', () =
       const result = await call('grep', { pattern: '(unclosed' })
       expect(result.isError).toBe(true)
       expect(result.error).toMatchObject({ info: { code: 'SEARCH_INVALID_PATTERN' } })
+      expect(text(result)).toContain('invalid regular expression')
+      expect(text(result)).toContain('escape literal regex characters')
+      expect(text(result)).not.toContain('regex parse error')
     })
 
     it('classifies a missing target as SEARCH_FAILED', async () => {

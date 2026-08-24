@@ -1,0 +1,16 @@
+{
+  "name": "@deepseek-ai/anton-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local Anton bridge for DeepSeek Harness and c0ntext",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "start": "bun run src/index.ts",
+    "build": "bun build --compile --outfile dist/anton-bridge src/index.ts",
+    "build:macos": "bun ../../scripts/build-anton-macos.ts"
+  },
+  "engines": {
+    "bun": ">=1.3.0"
+  }
+}

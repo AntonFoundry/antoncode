@@ -39,8 +39,8 @@ describe('todo snapshot invariants', () => {
 
   it.each([
     ['not-an-array', /must be an array/],
-    [[null], /entries must be objects/],
-    [[42], /entries must be objects/],
+    [[null], /nodes must be objects/],
+    [[42], /nodes must be objects/],
     [[{ content: 42, status: 'pending' }], /content must be non-empty/],
     [[{ content: '', status: 'pending' }], /content must be non-empty/],
     [[{ content: ' padded ', status: 'pending' }], /already trimmed/],

@@ -38,6 +38,7 @@ describe('agent/request-error', () => {
     })
     ctx.on('agent/request-error', async () => {
       recoveries += 1
+      return undefined
     })
 
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))

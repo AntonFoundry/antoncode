@@ -55,10 +55,10 @@ const bashResult = (seq: number, callId: string, over?: Partial<ToolResultNode>)
   ...over,
 })
 
-/** Test-owned AppFrame role: declares and renders the resident conversation area. */
+/** Test-owned AppFrame role: declares and renders the conversation area and the details panel. */
 type AppRootProps = PropsRenderSlots<'conversation' | 'details'>
 function AppRoot({ renderSlot }: AppRootProps) {
-  return <>{renderSlot('conversation', {})}</>
+  return <>{renderSlot('conversation', {})}{renderSlot('details', {})}</>
 }
 
 const LAYOUT_CHILDREN = {
@@ -103,21 +103,20 @@ describe('todo_write assembly (product registrations, no outlet twins)', () => {
     expect(row).not.toBeNull()
     expect(row!.textContent).toContain('1/3 已完成 · 实现 fixture 样本')
 
-    // The plan strip sits in the input dock, fed by the projection
-    // (default-collapsed: the header summary shows; rows appear on expand).
-    const panel = view.container.querySelector('[data-testid="todo-panel"]')
-    expect(panel).not.toBeNull()
-    expect(panel!.textContent).toContain('1 已完成\u2002·\u20021 进行中\u2002·\u20021 待处理')
-    fireEvent.click(panel!.querySelector('button')!)
-    expect([...panel!.querySelectorAll('li')].map(li => li.getAttribute('data-status')))
+    // The execution tree sits in the details panel's context seat, fed by the
+    // projection (expanded: header summary plus one row per node).
+    const tree = view.container.querySelector('[data-testid="todo-tree"]')
+    expect(tree).not.toBeNull()
+    expect(tree!.textContent).toContain('1 已完成\u2002·\u20021 进行中\u2002·\u20021 待处理')
+    expect([...tree!.querySelectorAll('li')].map(li => li.getAttribute('data-status')))
       .toEqual(['completed', 'in_progress', 'pending'])
 
-    // Next turn retires the standing plan (host pushes null): the strip
-    // clears while the historical row stays in the flow.
+    // Next turn retires the standing plan (host pushes null): the tree falls
+    // back to its quiet empty state while the historical row stays in the flow.
     await runtime.flush()
     runtime.sessions.behavior(SID).projections.set('todos', null)
     await waitFor(() => {
-      expect(view.container.querySelector('[data-testid="todo-panel"]')).toBeNull()
+      expect(view.container.querySelector('[data-testid="todo-tree-empty"]')).not.toBeNull()
     })
     expect(view.container.querySelector('[data-tool="todo_write"]')).not.toBeNull()
     await runtime.dispose()

@@ -58,6 +58,7 @@ import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
 import * as ToolSessionQuery from '@deepseek-ai/dsh-tool-session-query'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
+import * as ToolAntonLifecycle from '@deepseek-ai/dsh-tool-anton-lifecycle'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
 import * as ToolWeb from '@deepseek-ai/dsh-tool-web'
 import VmWorkflowEngine from '@deepseek-ai/dsh-workflow-worker-thread'
@@ -517,6 +518,18 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-anton-lifecycle',
+    dir: 'tool-anton-lifecycle',
+    source: 'packages/lifecycle/tool-anton-lifecycle/src/index.ts',
+    requires: ['ctx.tools', 'a reachable Anton Bridge control endpoint'],
+    writes: ['tool/call', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(ToolAntonLifecycle)
+    },
+    note:
+      'The four lifecycle tools are thin round-trips to the out-of-process bridge supervisor; stop and restart terminate the calling process mid-call, so their results only render on refusal. The endpoint resolves from ANTON_BRIDGE_ENDPOINT or the configured default and fails loud at load when it is not HTTP(S).',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-workflow',

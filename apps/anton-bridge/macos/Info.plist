@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDisplayName</key><string>Anton</string>
+  <key>CFBundleExecutable</key><string>Anton</string>
+  <key>CFBundleIconFile</key><string>Anton</string>
+  <key>CFBundleIdentifier</key><string>dev.antoncode.anton</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundleName</key><string>Anton</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSMinimumSystemVersion</key><string>13.0</string>
+  <key>LSUIElement</key><true/>
+  <!--
+    Anton talks only to loopback services: its bridge at 127.0.0.1:3742 and
+    the bridge's local c0ntext worker. ATS otherwise rejects these HTTP
+    status requests even though a browser can open the same URL, leaving
+    the menu falsely stuck in the stopped state.
+  -->
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsLocalNetworking</key><true/>
+  </dict>
+</dict>
+</plist>

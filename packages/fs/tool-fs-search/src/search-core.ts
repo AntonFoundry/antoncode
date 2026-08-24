@@ -122,8 +122,21 @@ function stderrExcerpt(stderrText: string, truncated: boolean): string {
  */
 function classifyRunFailure(toolName: string, exitCode: number, stderrText: string, stderrTruncated: boolean): SearchError {
   const stderr = stderrExcerpt(stderrText, stderrTruncated)
-  if (/regex parse error|error parsing glob/i.test(stderr)) {
-    return new SearchError(`${toolName} pattern rejected by ripgrep: ${stderr}`, 'SEARCH_INVALID_PATTERN')
+  if (/regex parse error/i.test(stderr)) {
+    // `rg`'s full parser dump contains its internal command prefix, a caret,
+    // and multiple indented lines. It is useful to a terminal user but makes a
+    // tool-result card noisy and does not tell an agent how to recover. Keep
+    // the stable typed failure, but present an immediately actionable remedy.
+    return new SearchError(
+      `${toolName} received an invalid regular expression. Check balanced (), [], and {}; escape literal regex characters (for example, use \\( to find an opening parenthesis), then retry.`,
+      'SEARCH_INVALID_PATTERN',
+    )
+  }
+  if (/error parsing glob/i.test(stderr)) {
+    return new SearchError(
+      `${toolName} received an invalid glob pattern. Check its brackets and braces, then retry with one valid positive glob.`,
+      'SEARCH_INVALID_PATTERN',
+    )
   }
   return new SearchError(`${toolName} search failed (exit ${exitCode})${stderr.length > 0 ? `: ${stderr}` : ''}`, 'SEARCH_FAILED')
 }

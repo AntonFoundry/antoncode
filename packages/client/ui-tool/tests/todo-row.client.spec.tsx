@@ -79,7 +79,7 @@ describe('TodoRow', () => {
 
   it('summarizes counts and the active item from the call args', () => {
     render(<TodoRow {...rowProps(resultNode(ARGS))} />)
-    expect(screen.getByText('更新任务清单')).toBeTruthy()
+    expect(screen.getByText('更新任务树')).toBeTruthy()
     expect(screen.getByText('1/3 已完成 · 写组件')).toBeTruthy()
   })
 

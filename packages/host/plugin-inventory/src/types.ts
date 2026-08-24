@@ -20,6 +20,8 @@ export interface PluginInventoryEntry {
   /** Effective Loader enablement, including disabled ancestor groups. */
   readonly enabled: boolean
   readonly fiberPhase: PluginFiberPhase
+  /** Whether the plugin is protected core infrastructure that cannot be toggled. */
+  readonly isProtected?: boolean
 }
 
 /** Point-in-time inventory returned by the plugin inventory Remote. */

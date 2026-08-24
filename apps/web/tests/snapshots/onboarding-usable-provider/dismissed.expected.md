@@ -47,7 +47,6 @@
     - option "moonshotai"
     - option "moonshotai-cn"
     - option "nvidia"
-    - option "openai"
     - option "opencode"
     - option "opencode-go"
     - option "openrouter"
@@ -62,6 +61,9 @@
     - option "xiaomi-token-plan-sgp"
     - option "zai"
     - option "zai-coding-cn"
+    - option "OpenAI"
+    - option "OpenAI Compatible"
+    - option "OpenAI Codex"
   - text: API 密钥
   - textbox "API 密钥":
     - /placeholder: 输入 API 密钥，或留空使用环境认证

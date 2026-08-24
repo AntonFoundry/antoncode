@@ -30,8 +30,8 @@ import type { EnterBehaviorRowInjected } from './settings/EnterBehaviorRow.tsx'
 import { ChatView } from './chat/ChatView.tsx'
 import { StatsLine } from './chat/StatsLine.tsx'
 import { ApprovalPanel } from './skeleton/ApprovalPanel.tsx'
-import { todoDockEntry } from './skeleton/TodoPanel.tsx'
 import { queueDockEntry } from './queue/QueueDock.tsx'
+import { todoTreeEntry } from './skeleton/TodoTree.tsx'
 import { ConversationRoot } from './skeleton/ConversationRoot.tsx'
 import { ConversationSession, ConversationSessionHeader } from './skeleton/ConversationSession.tsx'
 import { DetailsPanel } from './skeleton/DetailsPanel.tsx'
@@ -434,8 +434,10 @@ export function apply(ctx: Context): void {
   // this service remains only where conversation actions are required.
   ctx.plugin(ConversationController, { input: inputHub, blocks: composerBlocks })
 
-  // The plan strip rides the input dock above the queue rows (same posture).
-  ctx.plugin(todoDockEntry)
+  // Task state renders as c0ntext's single execution tree: the todo tree
+  // rides the details panel's context seat rather than a second, flat list
+  // above the composer.
+  ctx.plugin(todoTreeEntry)
 
   // The read-only queue dock entry rides the same
   // registration path into the input dock declared above.
@@ -446,6 +448,7 @@ export function apply(ctx: Context): void {
     locale: NS,
     children: {
       'conversation.details.tool': { kind: 'single', scope: 'session' },
+      'conversation.details.context': { kind: 'list', scope: 'session' },
     },
     store: chatStore,
     inject: (): DetailsInjected => ({

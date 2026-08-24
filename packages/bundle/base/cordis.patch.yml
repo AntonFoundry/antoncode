@@ -94,6 +94,10 @@
     # document.
     - id: llm-pi-ai
       name: '@deepseek-ai/dsh-llm-pi-ai'
+      config:
+        # `openai` is owned by the native adapter below. pi-ai remains the
+        # flexible route family for Kimi and other configured providers.
+        reservedProviders: [openai]
 
     - id: session-persistence-jsonl
       name: '@deepseek-ai/dsh-session-persistence-jsonl'
@@ -386,6 +390,13 @@
       config:
         maxOutputChars: 16000
 
+    # Model-facing Anton lifecycle tools over the bridge control API. The bridge
+    # (out-of-process supervisor) stays the authority; these only expose
+    # status/start/stop/restart to the model. Defaults register all four; a
+    # deployment may disable any with its `*ToolEnabled: false` flag.
+    - id: tool-anton-lifecycle
+      name: '@deepseek-ai/dsh-tool-anton-lifecycle'
+
     # Consecutive-repeat reminders on the tool chain.
     - id: repeat-tool-reminder
       name: '@deepseek-ai/dsh-repeat-tool-reminder'
@@ -423,6 +434,8 @@
     # keeps the schema default (native).
     - id: tools
       name: '@deepseek-ai/dsh-tools'
+      config:
+        mode: paged
 
     # The deployment persona is a deployment choice; plan-mode and tool plugins own
     # their own prompt sections.
@@ -449,3 +462,51 @@
     # choice.
     - id: llm-deepseek
       name: '@deepseek-ai/dsh-llm-deepseek'
+
+    # The OpenAI / OpenAI-compatible adapter, mounted dormant like its pi-ai
+    # twin: the same chat-completions protocol serves the official API (default
+    # base URL) and any local OpenAI installation (LM Studio, vLLM, llama.cpp,
+    # Ollama's /v1 bridge) via the `openai-compatible` route. Zero routes (and
+    # no extra models in the picker) until a `llm-openai:` settings section
+    # supplies per-route profiles under `providers:` — then those routes
+    # register live, keys resolving per request through their apiKeyEnv
+    # references (the derived `<ROUTE>_API_KEY` when a profile names none), and
+    # drop again when the section empties. The web Models page's add/remove
+    # flow is exactly what supplies and removes those profiles.
+    - id: llm-openai
+      name: '@deepseek-ai/dsh-llm-openai'
+
+    # The models.dev free-tier adapter family: discovery reads the shared
+    # models.dev catalog (https://models.dev/api.json — the same source
+    # OpenCode itself bundles) and lists each route's zero-cost,
+    # non-deprecated chat models; streaming rides each provider's own
+    # OpenAI-compatible gateway through the inherited llm-openai transport.
+    # Two routes ship live under `providers:`: `opencode-free` (OpenCode Zen;
+    # anonymous access with the gateway's literal `public` key, exactly as
+    # opencode itself falls back) and `openrouter-free` (OpenRouter; its free
+    # `:free` models still require OPENROUTER_API_KEY, so requests fail
+    # MISSING_CREDENTIAL until a key is stored). A failed catalog refresh
+    # keeps serving the last good snapshot; an empty dict unregisters every
+    # route. A `llm-models-dev:` settings section overrides endpoints, key
+    # references, or the route set without a restart.
+    - id: llm-models-dev
+      name: '@deepseek-ai/dsh-llm-models-dev'
+
+    # The OpenAI Codex adapter, also mounted dormant: ChatGPT/Codex
+    # SUBSCRIPTION auth (OAuth session from ~/.codex/auth.json, silently
+    # refreshed) — no API key, no key input. Speaks the Codex backend Responses
+    # protocol. The `codex` route registers only while a `llm-codex:` settings
+    # section supplies its profile under `providers:` (a possibly empty object
+    # — the auth needs no fields), which is what the Models page's add/remove
+    # flow writes.
+    - id: llm-codex
+      name: '@deepseek-ai/dsh-llm-codex'
+
+    # The Google Antigravity adapter, mounted dormant like Codex: Google
+    # OAuth login (shared antigravity-accounts.json account store, silently
+    # refreshed) — no API key, no key input. Speaks the Antigravity gateway's
+    # Gemini-style generateContent protocol (Claude/Gemini models). The
+    # `antigravity` route registers only while a `llm-antigravity:` settings
+    # section supplies its profile under `providers:`.
+    - id: llm-antigravity
+      name: '@deepseek-ai/dsh-llm-antigravity'

@@ -107,6 +107,7 @@ export interface ToolRowProps {
 function leadingFor(state: ToolRowState, icon: ReactNode): ReactNode {
   switch (state) {
     case 'error': return <StateDot state="error" />
+    case 'notice':
     case 'stopped': return <StateDot state="warning" />
     default: return icon
   }
@@ -119,6 +120,7 @@ function leadingFor(state: ToolRowState, icon: ReactNode): ReactNode {
 function stateStatus(state: ToolRowState, t: TranslateNS<'conversation'>): string | null {
   switch (state) {
     case 'running': return t('row.running')
+    case 'notice': return 'Read required before editing'
     case 'error': return t('row.failed')
     case 'stopped': return t('row.stopped')
     default: return null
@@ -164,7 +166,7 @@ export function ToolRow({
   const status = stateStatus(state, t)
   // An error row's collapsed summary IS the failure: the first error line in
   // the error color outranks both the args summary and a terminal description.
-  const failureLine = state === 'error' ? errorSummary ?? null : null
+  const failureLine = (state === 'error' || state === 'notice') ? errorSummary ?? null : null
   const summaryText = failureLine ?? summary
   // The failure line replaces the summary wholesale, so a suffix derived from
   // the call args has nothing left to sit beside.
@@ -281,7 +283,11 @@ export function ToolRow({
                             {outputText !== null && (
                               <div className={css.ioSection}>
                                 <span className={css.ioLabel}>OUT</span>
-                                <span className={css.ioText} data-error={state === 'error' || undefined}>
+                                <span
+                                  className={css.ioText}
+                                  data-error={state === 'error' || undefined}
+                                  data-notice={state === 'notice' || undefined}
+                                >
                                   {outputText}
                                 </span>
                               </div>

@@ -171,6 +171,12 @@ export interface ResolvedPiAiProviderProfile
 /** Plugin configuration: the provider routes this instance owns. */
 export interface Config {
   /**
+   * Provider route names owned by a native adapter in the same Harness
+   * composition. The pi-ai directory and adapter leave these routes alone so
+   * two adapters cannot both publish the same selectable provider.
+   */
+  reservedProviders?: string[]
+  /**
    * pi-ai provider routes, keyed by provider. An empty (or omitted) dict is
    * the dormant settings-driven posture: the adapter mounts with no routes
    * and registers them the moment a settings section supplies profiles.
@@ -253,6 +259,7 @@ const profile = z.object({
 
 /** Runtime schema for {@link Config}. */
 export const Config: z<Config> = z.object({
+  reservedProviders: z.array(z.string()).default([]),
   providers: z.dict(profile).default({}),
 })
 

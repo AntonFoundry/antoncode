@@ -31,7 +31,7 @@ async function harness(): Promise<{
 }
 
 describe('PluginInventoryGateway', () => {
-  it('publishes one direct list method under the pluginInventory namespace', async () => {
+  it('publishes direct list and toggle methods under the pluginInventory namespace', async () => {
     const { inventory } = await harness()
     expect(inventory.typertRemote).toMatchObject({
       serviceKey: 'pluginInventory',
@@ -39,6 +39,7 @@ describe('PluginInventoryGateway', () => {
     })
     expect(remoteMethods(inventory)).toEqual([
       { method: 'list', invocation: { kind: 'direct' } },
+      { method: 'toggle', invocation: { kind: 'direct' } },
     ])
   })
 
@@ -60,18 +61,21 @@ describe('PluginInventoryGateway', () => {
         moduleName: 'cordis:active',
         enabled: true,
         fiberPhase: 'active',
+        isProtected: false,
       },
       {
         entryId: pendingId,
         moduleName: 'cordis:pending',
         enabled: true,
         fiberPhase: 'pending',
+        isProtected: false,
       },
       {
         entryId: disabledId,
         moduleName: 'cordis:not-installed',
         enabled: false,
         fiberPhase: null,
+        isProtected: false,
       },
     ]))
 
@@ -81,9 +85,27 @@ describe('PluginInventoryGateway', () => {
       moduleName: 'cordis:active',
       enabled: false,
       fiberPhase: null,
+      isProtected: false,
     })
 
     await ctx.loader.remove(pendingId)
     expect(inventory.list().entries.some(entry => entry.entryId === pendingId)).toBe(false)
+  })
+
+  it('toggles a plugin entry state via remote toggle and guards protected plugins', async () => {
+    const { ctx, inventory } = await harness()
+    const activeId = await ctx.loader.create({ name: 'cordis:active' })
+    expect(inventory.list().entries.find(e => e.entryId === activeId)?.enabled).toBe(true)
+
+    await inventory.toggle(activeId as never, false)
+    expect(inventory.list().entries.find(e => e.entryId === activeId)?.enabled).toBe(false)
+
+    await inventory.toggle(activeId as never, true)
+    expect(inventory.list().entries.find(e => e.entryId === activeId)?.enabled).toBe(true)
+
+    // Protected plugin should throw
+    ctx.loader.builtins.include = () => {}
+    const includeId = await ctx.loader.create({ name: 'cordis:include' })
+    await expect(inventory.toggle(includeId as never, false)).rejects.toThrow('Cannot toggle core infrastructure plugin')
   })
 })

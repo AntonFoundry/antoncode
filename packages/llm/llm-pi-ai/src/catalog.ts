@@ -102,6 +102,7 @@ const THINKING_FORMAT_GATE: Record<PiAiThinkingFormat, true> = {
   'deepseek': true,
   'openrouter': true,
   'together': true,
+  'baseten': true,
   'zai': true,
   'qwen': true,
   'string-thinking': true,

@@ -9,9 +9,9 @@ import { DONE, parseSse } from '../src/sse.ts'
  */
 
 /** Build an SSE byte stream from string fragments (fragments = network reads). */
-function bytes(...fragments: string[]): ReadableStream<Uint8Array<ArrayBuffer>> {
+function bytes(...fragments: string[]): ReadableStream<BufferSource> {
   const encoder = new TextEncoder()
-  return new ReadableStream({
+  return new ReadableStream<BufferSource>({
     start(controller) {
       for (const fragment of fragments) controller.enqueue(encoder.encode(fragment))
       controller.close()

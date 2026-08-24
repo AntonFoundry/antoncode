@@ -9,12 +9,13 @@
  */
 
 /**
- * One list item as the row sees it: unvalidated model JSON parsed from a call's
+ * One tree node as the row sees it: unvalidated model JSON parsed from a call's
  * args, so any field may be missing or mistyped.
  */
 export interface PlanItemLike {
   content?: unknown
   status?: unknown
+  children?: unknown
 }
 
 /**
@@ -33,6 +34,14 @@ export interface PlanSummary {
   activeExtra: number
 }
 
+/** Every node of an args tree in depth-first order; malformed `children` contribute nothing (a rejected call keeps such args verbatim). */
+function flatNodes(todos: readonly PlanItemLike[]): readonly PlanItemLike[] {
+  return todos.flatMap(node => {
+    const children = Array.isArray(node.children) ? flatNodes(node.children as PlanItemLike[]) : []
+    return [node, ...children]
+  })
+}
+
 /**
  * Derive the counts and the active summary from a whole-list snapshot. It names
  * the first `in_progress` item and counts the remaining active ones, so a
@@ -48,12 +57,13 @@ export interface PlanSummary {
  * @returns the done/total counts and the two summary halves.
  */
 export function planSummary(todos: readonly PlanItemLike[]): PlanSummary {
-  const active = todos.filter(t => t.status === 'in_progress')
+  const nodes = flatNodes(todos)
+  const active = nodes.filter(t => t.status === 'in_progress')
   const first = active[0]?.content
   const named = typeof first === 'string' && first.trim() !== ''
   return {
-    done: todos.filter(t => t.status === 'completed').length,
-    total: todos.length,
+    done: nodes.filter(t => t.status === 'completed').length,
+    total: nodes.length,
     activeContent: named ? first : null,
     activeExtra: named ? active.length - 1 : 0,
   }

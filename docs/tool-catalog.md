@@ -37,6 +37,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-subagent-report` | `report` | `ctx.subagents`, `ctx.systemPrompt`, `a live continuable in-process child Agent` | `tool/call`, `tool/result`, `a user-role message in the direct parent session` | - | Registered per continuable in-process child rather than globally, so this schema is visible only inside such a child and survives its global `toolFilter`. The same contribution installs the child-scoped `tool:report` prompt section, which this catalog does not render. The parent-facing `send_message` tool is installed independently. |
 | `@deepseek-ai/dsh-tool-jobs` | `job_kill`, `job_list`, `job_output` | `ctx.tools`, `ctx.jobs`, `ctx.systemPrompt` | `tool/call`, `tool/result`, `user/message via agent.inject() for background completion notices` | - | The kind-agnostic background-job controller: background bash commands, PTY sends, and subagents are read, listed, and killed through the same three tools. Loading the plugin attaches the controller that arms producers' `ctx.jobs.start()`. |
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`, `owning Agent session` | `tool/call`, `todo/write`, `tool/result` | - | todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task. |
+| `@deepseek-ai/dsh-tool-anton-lifecycle` | `anton_restart`, `anton_start`, `anton_status`, `anton_stop` | `ctx.tools`, `a reachable Anton Bridge control endpoint` | `tool/call`, `tool/result` | - | The four lifecycle tools are thin round-trips to the out-of-process bridge supervisor; stop and restart terminate the calling process mid-call, so their results only render on refusal. The endpoint resolves from ANTON_BRIDGE_ENDPOINT or the configured default and fails loud at load when it is not HTTP(S). |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
 
@@ -1685,7 +1686,18 @@ The kind-agnostic background-job controller: background bash commands, PTY sends
 
 ### `todo_write`
 
-Record and update a structured task list for the current work. Send the ENTIRE list every call — it REPLACES the previous list (there are no partial updates, no per-item edits). Use it to plan multi-step work and show progress: add one todo per concrete step before you start. Mark every todo being actively worked on `in_progress` — several at once when work genuinely runs in parallel (e.g. concurrent subagents or background commands), one for sequential work; while work remains, at least one task should be `in_progress`. Mark a todo `completed` the moment it is done (do not batch completions), and allow no `in_progress` item only once all work is complete. Skip the list for trivial single-step tasks. Statuses: `pending` (not started), `in_progress` (being worked on now), `completed` (finished).
+Create and manage a structured task tree for the current work. Send the ENTIRE tree every call — it REPLACES the previous tree (there are no partial updates, no per-node edits). Use it to plan multi-step work and show progress.
+Workflow: plan first, then encode the plan as a todo tree, then execute it one node at a time:
+1. Plan: analyze the request and form a step-by-step plan before taking any action.
+2. Write the tree: convert the plan into this tool's `todos` argument. Nest child tasks under a
+   parent when they are its concrete phases or subtasks — up to three levels (task, child,
+   grandchild); never deeper, and keep simple work flat rather than nesting for its own sake.
+3. Execute sequentially: keep exactly one branch of work `in_progress`, finish it, mark it
+   `completed`, and move to the next. Update statuses in real time — mark a node completed the
+   moment it is done, never batch completions.
+Delegation: every agent session owns its own tree. As the orchestrator, keep the top-level nodes here; when you delegate one node to a subagent, that node stays on your tree until its subtree reports back, and the subagent tracks its own finer-grained subtree in its own session rather than rewriting yours.
+Node fields: `status` is pending (not started) | in_progress (being worked on now) | completed (done) | cancelled (no longer needed); `priority` optionally ranks nodes (high | medium | low). Mark a parent completed only after all of its children are completed or cancelled. Skip the tree entirely for trivial single-step tasks.
+Parallelism: mark every node being actively worked `in_progress` — several at once when work genuinely runs concurrently (e.g. parallel subagents or background commands); while work remains, at least one task should be `in_progress`.
 
 ```json
 {
@@ -1693,7 +1705,7 @@ Record and update a structured task list for the current work. Send the ENTIRE l
   "properties": {
     "todos": {
       "type": "array",
-      "description": "The COMPLETE task list, replacing any previous list.",
+      "description": "The COMPLETE task tree, replacing any previous tree. Up to three levels: a top-level task nests children, which may themselves nest grandchildren.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -1704,12 +1716,96 @@ Record and update a structured task list for the current work. Send the ENTIRE l
           },
           "status": {
             "type": "string",
-            "description": "pending (not started) | in_progress (now) | completed (done).",
+            "description": "pending (not started) | in_progress (now) | completed (done) | cancelled (dropped).",
             "enum": [
               "pending",
               "in_progress",
-              "completed"
+              "completed",
+              "cancelled"
             ]
+          },
+          "priority": {
+            "type": "string",
+            "description": "Optional scheduling weight: high | medium | low.",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "children": {
+            "type": "array",
+            "description": "Subtasks of this node (level two). Each child may itself carry grandchildren (level three); nothing nests below that.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "content": {
+                  "type": "string",
+                  "description": "What the task is — a short imperative line."
+                },
+                "status": {
+                  "type": "string",
+                  "description": "pending (not started) | in_progress (now) | completed (done) | cancelled (dropped).",
+                  "enum": [
+                    "pending",
+                    "in_progress",
+                    "completed",
+                    "cancelled"
+                  ]
+                },
+                "priority": {
+                  "type": "string",
+                  "description": "Optional scheduling weight: high | medium | low.",
+                  "enum": [
+                    "high",
+                    "medium",
+                    "low"
+                  ]
+                },
+                "children": {
+                  "type": "array",
+                  "description": "Grandchildren of this node (level three — the deepest). Leaf shapes: no further nesting.",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "content": {
+                        "type": "string",
+                        "description": "What the task is — a short imperative line."
+                      },
+                      "status": {
+                        "type": "string",
+                        "description": "pending (not started) | in_progress (now) | completed (done) | cancelled (dropped).",
+                        "enum": [
+                          "pending",
+                          "in_progress",
+                          "completed",
+                          "cancelled"
+                        ]
+                      },
+                      "priority": {
+                        "type": "string",
+                        "description": "Optional scheduling weight: high | medium | low.",
+                        "enum": [
+                          "high",
+                          "medium",
+                          "low"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "content",
+                      "status"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "content",
+                "status"
+              ]
+            }
           }
         },
         "required": [
@@ -1728,6 +1824,64 @@ Record and update a structured task list for the current work. Send the ENTIRE l
 Source: [`packages/todo/tool-todo/src/index.ts`](../packages/todo/tool-todo/src/index.ts)
 
 todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task.
+
+<a id="deepseek-aidsh-tool-anton-lifecycle"></a>
+
+## `@deepseek-ai/dsh-tool-anton-lifecycle`
+
+### `anton_restart`
+
+Restart the agent runtime service so freshly deployed code takes effect. Call this ONLY after a build/deploy step completed (e.g. a plugin or bundle was rebuilt), never mid-task: it terminates this very process, so the CURRENT turn ends immediately and the user starts a new conversation on the restarted app. Do not call it speculatively or more than once per deployment.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/lifecycle/tool-anton-lifecycle/src/index.ts`](../packages/lifecycle/tool-anton-lifecycle/src/index.ts)
+
+### `anton_start`
+
+Start the agent runtime service if it is stopped, reporting what it did. When everything already runs, it reports that nothing needed starting — safe to call speculatively while diagnosing.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/lifecycle/tool-anton-lifecycle/src/index.ts`](../packages/lifecycle/tool-anton-lifecycle/src/index.ts)
+
+### `anton_status`
+
+Report the health of the Anton application services: the supervisor bridge, the agent runtime process (with PID and port), and the c0ntext memory engine. Use this to diagnose whether a service is down before attempting anton_start or anton_restart.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/lifecycle/tool-anton-lifecycle/src/index.ts`](../packages/lifecycle/tool-anton-lifecycle/src/index.ts)
+
+### `anton_stop`
+
+Shut down the agent runtime service. WARNING: you ARE that process — calling this ends your current turn and conversation immediately, and the user brings the app back from its control surface. Call it ONLY when the user explicitly asks to stop or quit the application, never mid-task.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/lifecycle/tool-anton-lifecycle/src/index.ts`](../packages/lifecycle/tool-anton-lifecycle/src/index.ts)
+
+The four lifecycle tools are thin round-trips to the out-of-process bridge supervisor; stop and restart terminate the calling process mid-call, so their results only render on refusal. The endpoint resolves from ANTON_BRIDGE_ENDPOINT or the configured default and fails loud at load when it is not HTTP(S).
 
 <a id="deepseek-aidsh-tool-workflow"></a>
 

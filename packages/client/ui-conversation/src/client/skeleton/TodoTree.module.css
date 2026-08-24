@@ -4,36 +4,10 @@
    36px collapsed row, 12px side padding, 14px tertiary leading glyph. */
 
 .root {
-  box-sizing: border-box;
-  flex: none;
-  overflow: hidden;
-  margin: 0 auto;
-  width: calc(
-    100% -
-    var(--dsh-composer-side-clearance) -
-    var(--dsh-composer-side-clearance) -
-    var(--dsh-composer-dock-inset) -
-    var(--dsh-composer-dock-inset) -
-    var(--dsh-composer-dock-inset) -
-    var(--dsh-composer-dock-inset)
-  );
-  max-width: calc(
-    var(--dsh-composer-card-max-width) -
-    var(--dsh-composer-dock-inset) -
-    var(--dsh-composer-dock-inset) -
-    var(--dsh-composer-dock-inset) -
-    var(--dsh-composer-dock-inset)
-  );
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 12px;
-  background: var(--dsw-specific-tip);
-  /* Elevated surface: `--dsw-specific-tip` is the same dark rung as the menu
-     surface, and `.list` scrolls inside this card, so the thumb takes the l2
-     elevation tokens. Declared here because the elevation belongs to the
-     surface, and the custom properties inherit down to `.list` (see ui-theme
-     styles/scrollbar.css for the rebinding contract). */
-  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
-  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
 }
 
 .body {
@@ -52,7 +26,6 @@
   border: none;
   background: transparent;
   text-align: left;
-  cursor: pointer;
 }
 
 .lead {
@@ -82,13 +55,6 @@
   white-space: nowrap;
 }
 
-.chevron {
-  display: grid;
-  flex: none;
-  place-items: center;
-  color: var(--dsw-alias-label-tertiary);
-}
-
 .list {
   display: flex;
   flex-direction: column;
@@ -96,8 +62,17 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  max-height: 180px;
-  overflow-y: auto;
+}
+
+/* Nested tree levels indent under their parent; the glyph column (16px) plus
+   its gap (10px) sets one level's step. */
+.nest {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0 0 0 26px;
+  list-style: none;
 }
 
 .item {
@@ -143,4 +118,31 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Nested tree levels indent under their parent; the glyph column (16px) plus
+   its gap (10px) sets one level's step. */
+.branch {
+  padding-left: 26px;
+}
+
+/* Cancelled nodes stay visible but read as retired: caption-grey, struck. */
+.glyphCancelled {
+  color: var(--dsw-alias-label-caption);
+}
+
+.item[data-status='cancelled'] .content {
+  color: var(--dsw-alias-label-caption);
+  text-decoration: line-through;
+}
+
+.branch {
+  margin-top: 2px;
+}
+
+/* Quiet empty state between plans: the seat stays meaningful, not blank. */
+.empty {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-caption);
 }

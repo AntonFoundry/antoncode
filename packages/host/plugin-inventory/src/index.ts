@@ -39,6 +39,18 @@ const FIBER_PHASE = {
   [FIBER_STATE.UNLOADING]: 'unloading',
 } as const satisfies Record<FiberState, PluginFiberPhase>
 
+const PROTECTED_PLUGINS = new Set([
+  'cordis:include',
+  'cordis:group',
+  '@deepseek-ai/cordis-plugin-server',
+  '@deepseek-ai/dsh-client-connection',
+])
+
+/** Check whether a plugin is part of the core application runtime infrastructure. */
+export function isProtectedPlugin(moduleName: string): boolean {
+  return PROTECTED_PLUGINS.has(moduleName)
+}
+
 /** Remote-only service exposing the Loader's current non-group entry state. */
 export class PluginInventoryGateway extends TypertRemoteService {
   static inject = ['loader']
@@ -57,15 +69,26 @@ export class PluginInventoryGateway extends TypertRemoteService {
   list(): PluginInventorySnapshot {
     const entries: PluginInventoryEntry[] = []
     for (const entry of this.ctx.loader.entries()) {
-      if (entry.options.group) continue
+      if (entry.options.group || entry.options.name === 'cordis:include' || entry.options.name === 'cordis:group') continue
       entries.push({
         entryId: pluginEntryId(entry.id),
         moduleName: entry.options.name,
         enabled: !entry.disabled,
         fiberPhase: entry.fiber === undefined ? null : FIBER_PHASE[entry.fiber.state],
+        isProtected: isProtectedPlugin(entry.options.name),
       })
     }
     return { entries }
+  }
+
+  @Remote('toggle')
+  async toggle(entryId: PluginEntryId, enabled: boolean): Promise<void> {
+    const entry = this.ctx.loader.resolve(entryId)
+    if (isProtectedPlugin(entry.options.name)) {
+      throw new Error(`Cannot toggle core infrastructure plugin "${entry.options.name}"`)
+    }
+    // Update entry in-memory directly to avoid Loader tree.write() mutations on base bundle files
+    await entry.update({ disabled: !enabled })
   }
 }
 

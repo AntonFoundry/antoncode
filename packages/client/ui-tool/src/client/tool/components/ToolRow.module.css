@@ -130,6 +130,11 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
+/* A held edit needs one read before retrying. It is guidance, not a red failure. */
+.root[data-state='notice'] .summary {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
 /* Expanded body + Inspect pill wrapper (sibling of .row: clicks never toggle). */
 .bodyWrap {
   display: flex;
@@ -249,6 +254,10 @@
 /* A failed call's OUT text shares the collapsed summary's error color. */
 .ioText[data-error] {
   color: var(--dsw-alias-state-error-primary);
+}
+
+.ioText[data-notice] {
+  color: var(--dsw-alias-state-warn-primary);
 }
 
 /* The block-shaped expanded bodies: the code variant's run_code program

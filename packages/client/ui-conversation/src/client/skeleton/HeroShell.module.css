@@ -23,32 +23,30 @@
   overflow: visible;
 }
 
-/* figma 34:10411: fish + title, gap 10, centered; 26/32 wt500. The preview
-   badge is a product addition outside that source: a mono superscript pill
-   riding the title's top-right. */
+/* The Anton mark leads as a large tile above the title; the preview badge is
+   a mono superscript pill riding the title's top-right. */
 .headline {
-  display: grid;
-  grid-template-columns: 34px auto auto;
-  column-gap: 10px;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  gap: 16px;
   font-size: 26px;
   line-height: 32px;
   font-weight: 500;
   color: var(--dsw-alias-label-primary);
 }
 
+.titleRow {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
 .headlineText {
-  grid-row: 1;
-  grid-column: 2;
 }
 
 .previewBadge {
-  grid-row: 1;
-  grid-column: 3;
-  align-self: start;
   margin-top: 2px;
-  margin-left: -3px;
   padding: 1px 7px 0;
   border: 1px solid var(--dsw-alias-interactive-bg-hover);
   border-radius: 24px;
@@ -63,17 +61,16 @@
 
 /* Keep hover detection on a stationary box while the mark moves within it. */
 .fishHitbox {
-  grid-row: 1;
-  grid-column: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 
-/* Keep the hero mark in the same primary ink as its headline. */
+/* The hero tile glows faintly in the mark's own cyan. */
 .fish {
   color: var(--dsw-alias-label-primary);
   transform-origin: 50% 60%;
+  filter: drop-shadow(0 6px 24px rgb(94 234 212 / 22%));
 }
 
 @keyframes hero-fish-swim {

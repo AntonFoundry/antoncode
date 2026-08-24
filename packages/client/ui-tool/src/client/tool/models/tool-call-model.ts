@@ -17,7 +17,20 @@ export type { ToolCallBlock } from '@deepseek-ai/dsh-client-runtime/client'
 export type ToolRowVariant = 'search' | 'read' | 'bash' | 'write' | 'edit' | 'code' | 'others'
 
 /** Row state semantic; colors self-supplied via StateDot (design gives none). */
-export type ToolRowState = 'running' | 'ok' | 'error' | 'stopped'
+export type ToolRowState = 'running' | 'ok' | 'notice' | 'error' | 'stopped'
+
+/** A held filesystem edit needs a read in this live session before retrying. */
+export const READ_BEFORE_EDIT_NOTICE = 'Oops — I need to read this file before editing it. Retry after a Read.'
+
+/** True when a settled result is the recoverable filesystem observation guard. */
+export function isReadBeforeEditNotice(node: Pick<ToolResultNode, 'isError' | 'error'>): boolean {
+  return node.isError && node.error?.code === 'FS_NOT_OBSERVED'
+}
+
+/** UI-facing result text; the underlying result remains a real tool error. */
+export function displayResultText(node: ToolResultNode): string {
+  return isReadBeforeEditNotice(node) ? READ_BEFORE_EDIT_NOTICE : resultText(node)
+}
 
 /** Figma row titles per variant (design literals, not translatable copy). */
 export const VARIANT_TITLES: Record<ToolRowVariant, string> = {
@@ -92,7 +105,7 @@ export interface ToolRowModel {
   body: string | null
   /** Flattened result text ({@link resultText}); null while running or when the result carries no text. */
   output: string | null
-  /** First line of the result text on an error row; null for every other state. */
+  /** First line of terminal guidance/error text; null for every other state. */
   errorSummary: string | null
   state: ToolRowState
 }
@@ -214,6 +227,7 @@ export function toolRowModel(toolName: string, block: ToolCallBlock, cwd?: strin
   const argsRaw = (done ? block.call?.argsRaw : block.argsRaw) ?? ''
   const state: ToolRowState = !done ? 'running'
     : block.error?.code === 'interrupted' ? 'stopped'
+      : isReadBeforeEditNotice(block) ? 'notice'
       : block.isError ? 'error' : 'ok'
   const base = argsRaw === '' ? block.callId : relativizeToCwd(deriveSummary(variant, argsRaw), cwd)
   const toolTitle = TOOL_TITLES[toolName]
@@ -225,8 +239,8 @@ export function toolRowModel(toolName: string, block: ToolCallBlock, cwd?: strin
   // The empty string is "no text" for both derived result fields: a settled
   // call with blank content has nothing to expand, and a blank first line
   // would erase the collapsed error row's summary slot.
-  const output = done ? (resultText(block) || null) : null
-  const errorSummary = state === 'error' && output !== null ? firstLine(output) : null
+  const output = done ? (displayResultText(block) || null) : null
+  const errorSummary = (state === 'error' || state === 'notice') && output !== null ? firstLine(output) : null
   return {
     variant,
     title: toolTitle ?? VARIANT_TITLES[variant],

@@ -135,6 +135,9 @@
     "release:verify-packed-install": "tsx scripts/release/verify-packed-install.ts",
     "release:publish": "tsx scripts/release/publish.ts",
     "dsh": "node --import tsx/esm apps/cli/src/bin.ts",
+    "anton:dev": "bun run apps/anton-bridge/src/index.ts",
+    "anton:build": "bun build --compile --outfile dist/anton-bridge apps/anton-bridge/src/index.ts",
+    "anton:build:macos": "bun scripts/build-anton-macos.ts",
     "demo:code-mode": "node scripts/demo-code-mode.mjs",
     "demo:cordis": "node scripts/demo-cordis.mjs",
     "demo:acp": "node --import tsx packages/examples/acp-demo/src/bin.ts --config examples/acp-agent/cordis.yml",
@@ -177,6 +180,7 @@
     "tsdown": "^0.22.2",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
+    "unrun": "^0.3.1",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.8"
   }

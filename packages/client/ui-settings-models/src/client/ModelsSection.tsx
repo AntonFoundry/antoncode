@@ -310,6 +310,18 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
           const credentialMissing = !credentialConfigured
             && row.apiKeyEnv !== undefined
             && row.credential?.configured === false
+          const subscriptionConfigured = row.entry.authConfigured === true
+          const subscriptionMissing = row.entry.authConfigured === false
+          const isAntigravity = row.entry.settingsNs === 'llm-antigravity'
+          const statusConfigured = credentialConfigured || subscriptionConfigured
+          const statusMissing = credentialMissing || subscriptionMissing
+          const statusLabel = subscriptionConfigured
+            ? (isAntigravity ? t('antigravitySubscriptionConfigured') : t('subscriptionConfigured'))
+            : subscriptionMissing
+              ? (isAntigravity ? t('antigravitySubscriptionMissing') : t('subscriptionMissing'))
+              : credentialConfigured
+                ? t('credentialConfigured')
+                : t('credentialMissing')
           return (
             <li key={row.entry.provider} className={styles['rowCard']}>
               <div className={styles['rowHead']}>
@@ -321,22 +333,22 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
                   {row.entry.declared === true
                     ? <span className={styles['rowTag']}>{t('customTag')}</span>
                     : null}
-                  {credentialConfigured
+                  {statusConfigured
                     ? (
                       <span
                         className={`${styles['credentialDot']} ${styles['credentialDotConfigured']}`}
                         role="img"
-                        aria-label={t('credentialConfigured')}
-                        title={t('credentialConfigured')}
+                        aria-label={statusLabel}
+                        title={statusLabel}
                       />
                     )
-                    : credentialMissing
+                    : statusMissing
                       ? (
                         <span
                           className={`${styles['credentialDot']} ${styles['credentialDotMissing']}`}
                           role="img"
-                          aria-label={t('credentialMissing')}
-                          title={t('credentialMissing')}
+                          aria-label={statusLabel}
+                          title={statusLabel}
                         />
                       )
                       : null}

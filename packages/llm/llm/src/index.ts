@@ -388,7 +388,14 @@ export class LlmRuntime extends Service {
         ?? resolveRetryPolicy(undefined, `llm: provider "${provider}" retryPolicy`)
       registrations.push({
         adapter,
-        provider: { id: info.id, name: info.name },
+        // Keep adapter-owned readiness (for example a Codex OAuth session)
+        // alongside stable identity/name. Configuration surfaces consume it
+        // to render subscription status without pretending it is an API key.
+        provider: {
+          id: info.id,
+          name: info.name,
+          ...info.authConfigured === undefined ? {} : { authConfigured: info.authConfigured },
+        },
         retryPolicy,
       })
     }

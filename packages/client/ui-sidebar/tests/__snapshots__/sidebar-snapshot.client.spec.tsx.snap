@@ -17,13 +17,13 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
         class="iconButton toggle"
         type="button"
       >
-        <svg
+        <img
+          alt=""
           aria-hidden="true"
           class="railFish"
-          data-content="965fe321"
-          fill="none"
-          height="17.6580310880829"
-          viewBox="0 0 23.16 17.04"
+          height="24"
+          src="/anton-mark.png"
+          style="display: block; border-radius: 6.720000000000001px;"
           width="24"
         />
         <svg
@@ -56,6 +56,14 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
     >
       <div
         data-slot="sidebar.workspaces"
+        style="display: contents;"
+      />
+    </div>
+    <div
+      class="memoryArea"
+    >
+      <div
+        data-slot="sidebar.memory"
         style="display: contents;"
       />
     </div>
@@ -100,14 +108,23 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
         class="brand wide"
         type="button"
       >
-        <svg
+        <span
           aria-hidden="true"
-          data-content="951274b9"
-          fill="none"
-          height="24"
-          viewBox="0 0 182 24"
-          width="182"
-        />
+          style="display: inline-flex; align-items: center; gap: 10.08px;"
+        >
+          <img
+            alt=""
+            height="48"
+            src="/anton-mark.png"
+            style="display: block; border-radius: 12.48px;"
+            width="48"
+          />
+          <span
+            style="color: currentcolor; font-size: 17.28px; font-weight: 700; letter-spacing: -0.02em; line-height: 1;"
+          >
+            Anton
+          </span>
+        </span>
       </button>
       <button
         aria-label="Collapse sidebar"
@@ -153,6 +170,21 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
       />
     </div>
     <div
+      aria-label="Resize the memory panel"
+      aria-orientation="horizontal"
+      class="memoryResizer"
+      role="separator"
+      title="Drag to resize the execution tree"
+    />
+    <div
+      class="memoryArea"
+    >
+      <div
+        data-slot="sidebar.memory"
+        style="display: contents;"
+      />
+    </div>
+    <div
       class="footArea"
     >
       <div
@@ -193,14 +225,23 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
         class="brand wide"
         type="button"
       >
-        <svg
+        <span
           aria-hidden="true"
-          data-content="951274b9"
-          fill="none"
-          height="24"
-          viewBox="0 0 182 24"
-          width="182"
-        />
+          style="display: inline-flex; align-items: center; gap: 10.08px;"
+        >
+          <img
+            alt=""
+            height="48"
+            src="/anton-mark.png"
+            style="display: block; border-radius: 12.48px;"
+            width="48"
+          />
+          <span
+            style="color: currentcolor; font-size: 17.28px; font-weight: 700; letter-spacing: -0.02em; line-height: 1;"
+          >
+            Anton
+          </span>
+        </span>
       </button>
       <button
         aria-label="收起侧边栏"
@@ -242,6 +283,21 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
     >
       <div
         data-slot="sidebar.workspaces"
+        style="display: contents;"
+      />
+    </div>
+    <div
+      aria-label="Resize the memory panel"
+      aria-orientation="horizontal"
+      class="memoryResizer"
+      role="separator"
+      title="Drag to resize the execution tree"
+    />
+    <div
+      class="memoryArea"
+    >
+      <div
+        data-slot="sidebar.memory"
         style="display: contents;"
       />
     </div>

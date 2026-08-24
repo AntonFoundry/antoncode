@@ -559,7 +559,10 @@ describe('exit semantics and failure classification', () => {
     subprocess.handler = () => runResult('', { exitCode: 2, stderr: { text: 'rg: regex parse error:\n    (\nerror: unclosed group' } })
     const result = await call(ctx, 'grep', { pattern: '(' })
     expect(result.error).toMatchObject({ info: { code: 'SEARCH_INVALID_PATTERN' } })
-    expect(text(result)).toContain('regex parse error')
+    expect(text(result)).toContain(
+      'grep received an invalid regular expression. Check balanced (), [], and {}; escape literal regex characters',
+    )
+    expect(text(result)).not.toContain('ripgrep')
   })
 
   it('a glob parse error classifies as SEARCH_INVALID_PATTERN', async () => {

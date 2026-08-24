@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-工具注册表与执行流水线。工具插件注册各自的 schema 和执行器；agent loop（智能体循环）依次让每次调用经过 `tools/pre-execute`（可扩展的允许／拒绝门禁）→ 已注册的单调守卫 → `tools/execute`（供超时／重试／指标插件使用的环绕分发包装层）→ `tools/post-execute`（检查／替换结果、附加上下文）→ 由工具定义持有的 `finalizeContent` 边界 → 仅观测的 `tools/result` 通知。注册表还决定以何种方式向模型呈现工具：`mode` 配置可以选择原生 Function Calling（函数调用）、[Code Mode](#code-mode)，或同时选择两者；单个 agent 可用 `presentAs` 为自己遮蔽该默认值。
+工具注册表与执行流水线。工具插件注册各自的 schema 和执行器；agent loop（智能体循环）依次让每次调用经过 `tools/pre-execute`（可扩展的允许／拒绝门禁）→ 已注册的单调守卫 → `tools/execute`（供超时／重试／指标插件使用的环绕分发包装层）→ `tools/post-execute`（检查／替换结果、附加上下文）→ 由工具定义持有的 `finalizeContent` 边界 → 仅观测的 `tools/result` 通知。注册表还决定以何种方式向模型呈现工具：`mode` 配置可以选择原生 Function Calling（函数调用）、[Code Mode](#code-mode)、[Paged Mode（分页模式）](#paged-mode)，或同时选择两者；单个 agent 可用 `presentAs` 为自己遮蔽该默认值。
 
 ## 服务：`ToolRuntime`（ctx 键：`tools`）
 
@@ -10,15 +10,16 @@
 
 ```yaml
 tools:
-  mode: native   # native (default) | code | both
+  mode: native   # native (default) | code | both | paged
+  pinned: []     # tool names always wired with full schemas under paged (ignored by native/code/both)
 ```
 
-`native` 以函数定义的形式贡献可见工具。`code` 会提供保留的 `run_code` 传输、生成的 `tools:sdk` 段，以及声明「只有 `run_code` 可被直接调用」的 `tools:code-only` 规则。执行器随后强制执行该规则：模型直接调用其他任何工具时，会在策略运行前将该调用解析为 `UNKNOWN_TOOL`；`both` 同时提供两种形式，且不声明该规则，因为其中的原生调用确实可以执行。没有单独声明呈现模式的 agent 默认采用此配置；agent preset 可通过 [`dsh-agent-tool-presentation`](../agent-tool-presentation/README.md) 自行选择呈现模式。不能注册、遮蔽、限制或移除该保留传输，且无论配置何种模式，该名称都是保留的，因为任何 agent 都可能选择 code 模式。非原生模式要求所加载 `ctx.codeRuntime` 的 `language` 有已注册的 SDK 渲染器——TypeScript 经 [`dsh-code-runtime-worker-thread`](../../code-runtime/code-runtime-worker-thread/README.md) 交付；Python 渲染器内置，驱动任何报告 `language: 'python'` 的运行时（第一方 `dsh-code-runtime-python` 后端另行交付）。没有渲染器的运行时语言会导致提示词组装明确失败；如果 `systemPrompt.toolOrder` 条目指向当前模式未贡献的工具，系统会拒绝组装提示词。`system-prompt/assemble` 监听器可以替换注册表贡献；它返回的组装结果具有权威性，因此该监听器负责保留可用的 Code Mode 协议。
+`native` 以函数定义的形式贡献可见工具。`code` 会提供保留的 `run_code` 传输、生成的 `tools:sdk` 段，以及声明「只有 `run_code` 可被直接调用」的 `tools:code-only` 规则。执行器随后强制执行该规则：模型直接调用其他任何工具时，会在策略运行前将该调用解析为 `UNKNOWN_TOOL`；`both` 同时提供两种形式，且不声明该规则，因为其中的原生调用确实可以执行。`paged` 只提供保留的 `tool_search` 传输、以「名称加一句话摘要」列出全部能力的 `tools:catalog` 段，以及声明「只有 `tool_search` 和已授权工具可被直接调用」的 `tools:paged-only` 规则——该规则经由与 `code` 塌缩相同的执行器门禁强制执行；`tool_search` 执行会把匹配到的工具授权进调用方 scope，被授权的工具从下一轮起携带完整 schema 加入 wire 集合。没有单独声明呈现模式的 agent 默认采用此配置；agent preset 可通过 [`dsh-agent-tool-presentation`](../agent-tool-presentation/README.md) 自行选择呈现模式。在 `paged` 下，`pinned` 配置点名从第一轮起就携带完整 schema 的工具——等同于预授权，无需 `tool_search` 往返即可直接调用，并且会从 `tools:catalog` 发现面中省略；`native`、`code`、`both` 会忽略它，而被作用域限制移除的 pinned 名称仍然保持隐藏。两个保留传输都不能注册、遮蔽、限制或移除，且无论配置何种模式，这两个名称都是保留的，因为任何 agent 都可能选择非原生模式。code 类模式要求所加载 `ctx.codeRuntime` 的 `language` 有已注册的 SDK 渲染器——TypeScript 经 [`dsh-code-runtime-worker-thread`](../../code-runtime/code-runtime-worker-thread/README.md) 交付；Python 渲染器内置，驱动任何报告 `language: 'python'` 的运行时（第一方 `dsh-code-runtime-python` 后端另行交付）——而 `paged` 完全不需要运行时。没有渲染器的运行时语言会导致提示词组装明确失败；如果 `systemPrompt.toolOrder` 条目指向当前模式未贡献的工具，系统会拒绝组装提示词。`system-prompt/assemble` 监听器可以替换注册表贡献；它返回的组装结果具有权威性，因此该监听器负责保留可用的 Code Mode 协议。
 
 ### 公开 API
 
-- `ctx.tools.register(definition: ToolDefinition): () => void`：注册一个受信任、带类型的同进程定义，其中必须包含规范的 `output` 声明。所在层由调用上下文的作用域决定：普通插件上下文会全局注册；agent 的 `agent.ctx` 只为该 agent 注册，并在此处遮蔽同名全局工具。同一层内名称重复会抛出；非原生模式还会拒绝保留的 `run_code` 传输名称。缺失或不受支持的输出声明，以及非正数或非有限的 `timeoutMs`，都会使注册失败。可选的同步 `finalizeContent` 回调会在调用开始时纳入快照；在所有流水线结果（包括实体化其他结果字段时发现的错误）规范化之后，它只能替换最终面向模型的内容。该注册会随调用方 fiber 一同 dispose（资源释放）。
-- `ctx.tools.presentAs(mode: ToolPresentationMode): () => void`：为本 agent 选择面向模型的呈现方式，仅对该 agent 遮蔽 `mode` 配置；从普通上下文调用会抛出（进程级呈现方式是那个配置字段），同一 scope 内第二次声明也会抛出。code 类模式还会为该 agent 注册它自己的 `tools:sdk` 段。工具目录保持不变：`schemas(agent)` 仍会报告该 agent 的能力；只有组装结果中的工具列表会按所选呈现方式收束。随调用方 fiber dispose。
+- `ctx.tools.register(definition: ToolDefinition): () => void`：注册一个受信任、带类型的同进程定义，其中必须包含规范的 `output` 声明。所在层由调用上下文的作用域决定：普通插件上下文会全局注册；agent 的 `agent.ctx` 只为该 agent 注册，并在此处遮蔽同名全局工具。同一层内名称重复会抛出；保留的 `run_code` 与 `tool_search` 传输名称在任何配置模式下都会被拒绝，因为任何 agent 都可能为自己选择非原生模式。缺失或不受支持的输出声明，以及非正数或非有限的 `timeoutMs`，都会使注册失败。可选的同步 `finalizeContent` 回调会在调用开始时纳入快照；在所有流水线结果（包括实体化其他结果字段时发现的错误）规范化之后，它只能替换最终面向模型的内容。该注册会随调用方 fiber 一同 dispose（资源释放）。
+- `ctx.tools.presentAs(mode: ToolPresentationMode): () => void`：为本 agent 选择面向模型的呈现方式，仅对该 agent 遮蔽 `mode` 配置；从普通上下文调用会抛出（进程级呈现方式是那个配置字段），同一 scope 内第二次声明也会抛出。code 类模式还会为该 agent 注册它自己的 `tools:sdk` 段；paged 模式同样会注册自己的 `tools:paged-only` 规则段与 `tools:catalog` 段。能力集合保持不变：限制与提示词顺序校验仍能看到全部已知工具，只有组装结果中的 wire 工具会改变（在 `paged` 下，`schemas(agent)` 返回模型实际获得的分页投影）。随调用方 fiber dispose。
 - `ctx.tools.restrict(filter)`：对全局工具应用 agent 作用域的允许／拒绝掩码；从普通上下文调用会抛出。筛选器在注册时创建快照；多个掩码取交集，随后再合并作用域本地工具。拒绝掩码会接纳后来出现且未点名的全局工具，而允许掩码会排除后来出现的名称。未知、本地或保留名称以及空筛选器都会被拒绝。这是实时可见性组合，不是权限边界；参见[作用域安全非目标](../../../.agents/notes/implemented/architecture/2026-07-08-agent-scope-contexts.md#security-and-authority-are-non-goals)。
 - `ctx.tools.get(name: string, scope?: ScopeKey): ToolDefinition | undefined`：返回指定作用域可见的解析结果，其中已应用名称遮蔽；被作用域限制排除的全局工具会被视为不存在。呈现器会传入发起调用的 agent，使卡片与实际执行内容一致。
 - `ctx.tools.schemas(scope?: ScopeKey): ToolSchema[]`：返回该作用域可见的所有 schema（不含 `execute` 函数）。已交付工具的 schema 收录在 [docs/tool-catalog.md](../../../docs/tool-catalog.md) 中；该目录通过启动每个工具插件并采集此方法的结果生成（参见[工具 schema 目录 Agent Note](../../../.agents/notes/implemented/process/2026-07-02-tool-schema-catalog.md)）。
@@ -28,7 +29,7 @@ tools:
 
 ### 注入的服务
 
-`SystemPrompt`：注册表通过 `ctx.systemPrompt.tools()` 自动将工具 schema 送入系统提示词组装。审批 seam 则在可用时使用（`ctx.get('approval')`，无静态注入）：未部署该 seam 时仍会将询问退化为拒绝，而无论是否存在该 seam，注册表都会保持活动。
+`SystemPrompt`：注册表通过 `ctx.systemPrompt.tools()` 自动将工具 schema 送入系统提示词组装。审批 seam 则在可用时使用（`ctx.get('approval')`，无静态注入）：未部署该 seam 时仍会将询问退化为拒绝，而无论是否存在该 seam，注册表都会保持活动。分页匹配器 seam 遵循同样的用法（`ctx.get('toolMatcher')`）：未部署时会回退到内置的关键词匹配器。
 
 ### 取消
 
@@ -124,6 +125,10 @@ ctx.tools.register(defineTool({
 - **结算纪律**：桥接层拥有一个运行作用域的中止机制；该中止会跟随传入的外层信号，并在运行因任何原因结算时触发，因此预算耗尽会中止正在运行的子工具，而不会将其遗留。桥接层随后会在返回之前排空队列，使每个 `tool/code-dispatch` 都落在仍打开的轮次内。失败的运行会抛出 `CodeRunFailedError`（`code: 'CODE_RUN_FAILED'`，message = 失败类型 + 已捕获日志），流水线会将其转换为模型可据以自我修正的结构化 `isError`。
 - **结果大小**：中间绑定值会完整传入 worker 进程，且没有逐绑定字节上限。`run_code` 返回规范的 `{ logs: string[], result?: JsonValue }`；字符串原样呈现，其他所有存在的 JSON 根都通过栈安全的美化 JSON 遍历呈现，总缩进最多为 10 个字符（更深的子树保持紧凑），`null` 保持显式，而缺少 `result` 表示程序返回 `undefined`。worker 可配置的 `maxOutputBytes`（默认 64 MiB）只应用于组合序列化后的外层日志数组、完成值或失败消息载荷；固定的结果封装语法和呈现空白不计入该上限。无效和超限的完成会明确失败，只有这个外层结果可以按常规 spill 机制处理。
 
+### Paged Mode
+
+在 `paged` 下，注册表只发送保留的 `tool_search` 传输 schema，并把该作用域的完整能力集合呈现为 `tools:catalog` 提示词段（顺序 151）——每个工具一行 `- 名称 — 一句话摘要`，因此发现的成本是每个工具一行，而不是每个工具一份 schema。`tool_search` 执行会经由已挂载的 `ctx.toolMatcher` 服务（与 `ctx.approval` 相同的按需 seam）或内置关键词匹配器（大小写不敏感的词元重叠，名称命中权重高于描述命中，同分按目录顺序），将其 `intent` 与调用方 scope 分页前的目录（已应用限制，不含传输）匹配，把匹配到的名称授权进调用方 scope 自己的层，并以文本形式返回被授权工具的完整 schema；`limit`（默认 5，钳制到 1..10）限制单次搜索的授权数量。被授权的工具从下一轮起携带完整 schema 出现，并像注册一样沿作用域链向下继承。pinned 工具（`pinned` 配置）是始终已授权的子集：从第一轮起就携带完整 schema，无需 `tool_search` 往返即可调用，并且因为已经存在而不会出现在目录及其 `tool_search` 候选列表里。`tools:paged-only` 规则段（顺序 98）在逐工具指导段之前声明该约定，执行器则经由与 `code` 塌缩相同的门禁强制执行：模型直呼未授权工具时，会在创建执行时、早于 `tools/pre-execute`、审批 `ask` 和 guards 解析为 `UNKNOWN_TOOL`，且拒绝信息会给出正确路径（`only \`tool_search\` and granted tools are callable directly — …`）。授权是 scope 生命周期状态：在执行中产生而非注册而来，绝不撤销，每次授权都会发出 `tools/change`，使下一次组装观察到它。分页一致地适用于一切——作用域自有层的注册与全局工具一样被分页，唯一豁免的是保留传输本身——而 `knownNames`/`restrictableNames` 保持完整，因此限制与提示词顺序校验仍针对完整目录工作。
+
 ### 并行执行
 
 agent loop 将连续的 `parallel` 调用归入有界滚动池，并把每个 `exclusive` 调用视为顺序屏障。只有分发／主体会重叠；策略、持久结果和上下文仍保持模型顺序。Code Mode 绑定通过桥接层自己的池复用同一套分类。[并行工具调用 Agent Note](../../../.agents/notes/implemented/feature/2026-07-10-parallel-tool-call-execution.md) 规定已交付声明及其原理。
@@ -173,6 +178,20 @@ The available tools:
 
 只要 Code Mode 选择、生成的 SDK、传输 schema 和可见工具集合不变，前缀就保持稳定。模式或筛选器变更可能从第一个改变的提示词或 schema token 起使复用失效。
 
+### Paged Mode 目录与授权
+
+#### 模型看到的内容
+
+Paged Mode 会公开 `tool_search` schema、`tools:paged-only` 规则和 `tools:catalog` 段（每个能力一行「名称加摘要」，覆盖分页前的完整集合）。被授权工具的完整 schema 从授权的下一轮起加入 wire 集合，搜索结果本身也以文本形式携带每个被授权工具的完整 schema（名称、描述、JSON 形式的参数）。
+
+#### Token 影响
+
+每次请求的固定成本与目录行数加已授权工具的 schema 成正比，而不是与整个注册表成正比。每次 `tool_search` 结果还会把被授权的 schema 以工具结果文本的形式重新引入，并一直保留到压缩（compaction）。
+
+#### KV Cache 影响
+
+只要模式、目录和已授权集合不变，前缀就保持稳定。每次新的授权都会向 wire 集合添加一份 schema，可能从第一个改变的 schema token 起使复用失效。
+
 ### 工具调用历史与结果
 
 #### 模型看到的内容
@@ -196,3 +215,4 @@ The available tools:
 - **Code Mode 的 SDK 语言由当前加载的运行时决定，且呈现方式按 agent 而非按工具**：`mode: code`/`both` 会拒绝组装提示词，除非 `ctx.codeRuntime.language` 有已注册的 SDK 渲染器（TypeScript 或 Python）；作用域限制／遮蔽与 `presentAs` 会选择每个 agent 的可见绑定及其形态，但在同一个 agent 内不能让一个工具仅使用 Native，而另一个仅使用 Code。
 - **Code Mode 中间值只存在于执行局部，且没有字节上限**：这些规范的类型化值无法从会话回放重建，并可能耗尽进程或 worker 内存；只有外层 `run_code` 输出受 worker 可配置的硬上限约束。每个子调用的持久日志副本则确实有上限：`tools/code-dispatch-log` waterfall 允许 spill 策略把过大的 `tool/code-dispatch` 内容替换为预览加定位符（[原理](../../../.agents/notes/implemented/feature/2026-07-26-code-dispatch-log-spill.md)）。
 - **每次运行都会获得全新的 `run_code` 状态**：MVP 不采用持久 REPL 风格内核（跨调用状态不会出现在日志中）；参见 [Code Mode Agent Note](../../../.agents/notes/implemented/feature/2026-06-15-code-mode.md)。
+- **Paged Mode 授权是 scope 生命周期状态且绝不撤销**：它们存在于调用方 scope 的内存层中，没有解除授权的操作；会话回放时不会重新应用授权，恢复的会话需要通过 `tool_search` 重新授权。

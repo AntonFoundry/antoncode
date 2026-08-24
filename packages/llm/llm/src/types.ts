@@ -146,6 +146,12 @@ export interface LlmProviderInfo {
   id: string
   /** Human-readable provider name for selectors and diagnostics. */
   name: string
+  /**
+   * State of a provider-owned authentication path that is not represented by
+   * an API-key credential (for example, a local OAuth subscription login).
+   * Omitted means the adapter has no separate readiness fact to report.
+   */
+  authConfigured?: boolean
 }
 
 /** Merge-extensible provider model modality vocabulary. */

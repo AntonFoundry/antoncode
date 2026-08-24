@@ -541,6 +541,18 @@ describe('LlmRuntime', () => {
     }])
   })
 
+  it('preserves adapter-owned subscription auth readiness in provider metadata', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    ctx.llm.registerAdapter(['subscription'], new CatalogAdapter(
+      { id: 'subscription', name: 'Subscription', authConfigured: true },
+      [],
+    ))
+    expect(ctx.llm.listProviders()).toEqual([
+      { id: 'subscription', name: 'Subscription', authConfigured: true },
+    ])
+  })
+
   it('defaults adapters to their route name and an empty advisory model list', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)

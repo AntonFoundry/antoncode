@@ -33,6 +33,10 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
+.code[data-notice] {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
 .read,
 .web {
   margin: 0;

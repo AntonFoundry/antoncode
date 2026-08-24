@@ -50,6 +50,14 @@ async function boot(dir: string, config: LlmPiAi.Config): Promise<Context> {
 }
 
 describe('request-level dynamic profiles', () => {
+  it('leaves a native-owned provider route out of pi-ai\'s configurable directory', async () => {
+    const dir = await home()
+    const ctx = await boot(dir, { reservedProviders: ['openai'] })
+    expect(ctx.llm.listConfigurableProviders().some(entry => entry.provider === 'openai')).toBe(false)
+    // Other catalog providers remain configurable; the reservation is narrow.
+    expect(ctx.llm.listConfigurableProviders().some(entry => entry.provider === 'kimi-coding')).toBe(true)
+  })
+
   it('mounts bare and dormant, then registers routes the moment settings supply providers', async () => {
     vi.stubEnv('PI_DYNAMIC_KEY', '')
     const dir = await home()

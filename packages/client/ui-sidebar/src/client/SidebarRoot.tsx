@@ -113,6 +113,55 @@ export function SidebarRoot({
     }
   }, [pointerInside])
 
+  // The memory region's height: by default it shares the column with the
+  // workspace browser (CSS flex), and dragging the separator pins an explicit
+  // pixel height measured from the region's bottom edge. The separator binds
+  // native listeners directly — the slot outlets between this shell and the
+  // document root keep delegated pointer props from seeing the drag. The
+  // pinned height persists across reloads via localStorage.
+  const MEMORY_HEIGHT_STORAGE_KEY = 'dsh.sidebar.memoryHeight'
+  const memoryArea = useRef<HTMLDivElement>(null)
+  const memoryResizer = useRef<HTMLDivElement>(null)
+  const [memoryHeight, setMemoryHeightState] = useState<number | undefined>(() => {
+    try {
+      const stored = Number(window.localStorage.getItem(MEMORY_HEIGHT_STORAGE_KEY))
+      return Number.isFinite(stored) && stored > 0 ? stored : undefined
+    } catch { return undefined }
+  })
+  const [draggingMemory, setDraggingMemory] = useState(false)
+  const setMemoryHeight = (value: number | undefined): void => {
+    setMemoryHeightState(value)
+    try {
+      if (value === undefined) window.localStorage.removeItem(MEMORY_HEIGHT_STORAGE_KEY)
+      else window.localStorage.setItem(MEMORY_HEIGHT_STORAGE_KEY, String(value))
+    } catch { /* storage unavailable; the drag still works for this page view */ }
+  }
+  const clampMemoryHeight = (value: number): number => Math.min(Math.max(value, 120), window.innerHeight - 240)
+  useEffect(() => {
+    const handle = memoryResizer.current
+    if (handle === null || !wide || collapsed) return undefined
+    const onDown = (event: PointerEvent): void => {
+      event.preventDefault()
+      const startY = event.clientY
+      const startHeight = memoryArea.current?.getBoundingClientRect().height ?? 0
+      setDraggingMemory(true)
+      const onMove = (move: PointerEvent): void => {
+        setMemoryHeight(clampMemoryHeight(startHeight + (startY - move.clientY)))
+      }
+      const onUp = (): void => {
+        setDraggingMemory(false)
+        window.removeEventListener('pointermove', onMove)
+        window.removeEventListener('pointerup', onUp)
+      }
+      window.addEventListener('pointermove', onMove)
+      window.addEventListener('pointerup', onUp)
+    }
+    handle.addEventListener('pointerdown', onDown)
+    return () => { handle.removeEventListener('pointerdown', onDown) }
+    // clampMemoryHeight is a pure closure over window geometry; excluded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wide, collapsed])
+
   return (
     <div
       ref={column}
@@ -173,6 +222,31 @@ export function SidebarRoot({
           foot in both states; its rail icon column rides the same slot. */}
       <div className={css.regionArea}>
         {renderSlot('sidebar.workspaces', {
+          wide,
+          expandSidebar: () => { if (collapsed) toggleSidebar() },
+        })}
+      </div>
+
+      {/* Memory is a first-class plugin surface, kept visible above the
+          footer without coupling the sidebar shell to any memory engine. The
+          separator above it drags to pin its height. */}
+      {wide && !collapsed && (
+        <div
+          ref={memoryResizer}
+          className={css.memoryResizer}
+          data-dragging={draggingMemory ? '' : undefined}
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize the memory panel"
+          title="Drag to resize the execution tree"
+        />
+      )}
+      <div
+        ref={memoryArea}
+        className={css.memoryArea}
+        style={memoryHeight === undefined ? undefined : { flex: 'none', height: memoryHeight, maxHeight: 'none' }}
+      >
+        {renderSlot('sidebar.memory', {
           wide,
           expandSidebar: () => { if (collapsed) toggleSidebar() },
         })}

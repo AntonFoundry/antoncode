@@ -177,20 +177,28 @@ export interface TurnEndReasonMap {
 export type TurnEndReason = TurnEndReasonMap[keyof TurnEndReasonMap]
 
 /**
- * One entry in an agent's todo list — the unit of the `todo/write`
- * {@link SessionEventMap} event's whole-list snapshot.
+ * One node in an agent's todo tree — the unit of the `todo/write`
+ * {@link SessionEventMap} event's whole-tree snapshot.
  *
- * Deliberately minimal: a human-readable `content` line and a three-state
- * `status`. No id, priority, or `activeForm` — the list is replaced wholesale
- * on every write (last-write-wins), so entries need no stable identity. The
- * three statuses describe the complete portable lifecycle needed by model and
- * UI consumers.
+ * A node carries a human-readable `content` line, a four-state `status`, an
+ * optional `priority`, and optional nested `children` — up to three levels
+ * (top-level task, child, grandchild), enforced at the tool-JSON boundary and
+ * by the owning package invariant, not by this type. The tree is replaced
+ * wholesale on every write (last-write-wins), so nodes need no stable identity.
  */
 export interface TodoItem {
   /** What this task is — a short imperative line shown in the UI. */
   content: string
-  /** Lifecycle state. `in_progress` marks a task being worked now; parallel work may mark several. */
-  status: 'pending' | 'in_progress' | 'completed'
+  /**
+   * Lifecycle state. `in_progress` marks a task being worked now; parallel
+   * work may mark several. `cancelled` retires a node no longer needed without
+   * counting it unfinished.
+   */
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled'
+  /** Scheduling weight the model assigns; presentation-only. */
+  priority?: 'high' | 'medium' | 'low'
+  /** Nested subtasks, at most two levels below a top-level node (three levels total). */
+  children?: TodoItem[]
 }
 
 /**

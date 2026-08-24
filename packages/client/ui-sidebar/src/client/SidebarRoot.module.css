@@ -148,7 +148,7 @@
   height: 36px;
 }
 
-/* Rail logo swap: collapsed, the toggle rests as the whale mark (brand ink,
+/* Rail logo swap: collapsed, the toggle rests as the Anton mark (brand ink,
    no hover circle) and hovering reveals the panel icon — the expand
    affordance (figma sidebar-hover flow). Expanded it is a plain panel icon. */
 .collapsed .toggle .panelIcon {
@@ -239,6 +239,59 @@
   margin-left: 0;
   margin-right: 0;
   padding-left: 0;
+}
+
+/* A plugin-owned region immediately below navigation, sharing the column with
+   the workspace browser: at least half the free height by default, resizable
+   by the separator above it. It does not participate in the workspace
+   browser's scroll model, so a memory plugin can remain visible while a long
+   session list still scrolls independently. */
+.memoryResizer {
+  flex: none;
+  height: 7px;
+  margin: -3px 0 0;
+  cursor: row-resize;
+  border-radius: 4px;
+  position: relative;
+}
+
+/* The split line itself: a faint centered hairline so the draggable boundary
+   between Workspaces (above) and the Execution tree (below) is discoverable
+   without hovering, brightening on hover and while a drag is live. */
+.memoryResizer::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: 50%;
+  height: 1px;
+  transform: translateY(-50%);
+  background: var(--dsw-alias-stroke-subtle, var(--dsw-alias-label-tertiary, currentColor));
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.memoryResizer:hover::after,
+.memoryResizer[data-dragging]::after {
+  opacity: 0.9;
+}
+
+.memoryResizer:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.memoryArea {
+  flex: 1 1 50%;
+  min-width: 0;
+  min-height: 120px;
+  overflow: auto;
+}
+
+.collapsed .memoryArea {
+  flex: none;
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
 }
 
 /* Footer seats: additive actions stack above Settings. Each occupant owns its

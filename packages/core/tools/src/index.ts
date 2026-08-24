@@ -23,6 +23,7 @@ import { assertSupportedJsonSchema, validateJsonSchemaValue } from './json-schem
 import type { JsonSchemaNode } from './json-schema.ts'
 import { createRunCodeTool, RUN_CODE_NAME, SDK_SECTION_ORDER } from './code-mode.ts'
 import type { CodeSdkLanguage } from './code-mode.ts'
+import { CATALOG_SECTION_ORDER, createToolSearchTool, renderToolsCatalog, TOOL_SEARCH_NAME } from './paged-mode.ts'
 import { renderToolsSdk } from './ts-types.ts'
 import type { ToolSdkSchema } from './ts-types.ts'
 import { renderToolsSdkPy } from './py-types.ts'
@@ -49,6 +50,26 @@ import { renderToolsSdkPy } from './py-types.ts'
  * call before it reads what each one is for.
  */
 const COLLAPSE_SECTION_ORDER = 99
+
+/**
+ * Prompt order of the `paged` rule statement: the same slot class as
+ * {@link COLLAPSE_SECTION_ORDER} — after the persona and before the 100-199
+ * per-tool guidance band, so the model reads which tools it may call before
+ * it reads what each one is for. A distinct value rather than a shared one:
+ * the two rules never render for the same scope (one scope has one effective
+ * mode), but a tie would make their relative order an accident of
+ * registration sequence.
+ */
+const PAGED_RULE_SECTION_ORDER = 98
+
+/**
+ * The model-facing statement of the `paged` paging gate. Names the route
+ * (`tool_search` first), the consequence (grants become callable next turn),
+ * and the failure mode (a direct call naming any other tool fails), because
+ * a rule the model can only discover by being denied is one it corrects too
+ * late.
+ */
+const PAGED_ONLY_INSTRUCTION = `Tools are paged: the catalog below lists names and one-line summaries only, not full schemas. To use a tool, first call \`${TOOL_SEARCH_NAME}\` with your intent; the tools it grants become directly callable from the next turn. Only \`${TOOL_SEARCH_NAME}\` and already-granted tools may be called directly — a call naming any other tool fails.`
 
 /**
  * The model-facing statement of the `code` collapse. Names the consequence
@@ -102,6 +123,7 @@ export type { JsonValue } from '@deepseek-ai/dsh-session'
 export type { CodeDispatchEventData, CodeDispatchStartEventData } from './types.ts'
 
 export { CodeRunFailedError, RUN_CODE_NAME } from './code-mode.ts'
+export { TOOL_SEARCH_NAME, type ToolMatcher } from './paged-mode.ts'
 export { jsonSchemaToTs, renderToolsSdk } from './ts-types.ts'
 export { jsonSchemaToPy, renderToolsSdkPy } from './py-types.ts'
 export { defineContentToolFixture, type ContentToolFixtureOptions } from './testing.ts'
@@ -648,7 +670,7 @@ function errorInfo(error: unknown): ToolErrorInfo | undefined {
 }
 
 /** How the registry presents its tools to the model (see {@link Config.mode}). */
-export type ToolPresentationMode = 'native' | 'code' | 'both'
+export type ToolPresentationMode = 'native' | 'code' | 'both' | 'paged'
 
 /** Plugin config: how the registered tools are presented to the model. */
 export interface Config {
@@ -657,10 +679,16 @@ export interface Config {
    * sends only `run_code` plus a generated SDK prompt and collapses the
    * executor to the same surface (a model-direct call may only name
    * `run_code`; `run_code` SDK sub-dispatches keep every visible tool); `both`
-   * sends both forms. Code modes require a `ctx.codeRuntime` whose `language`
+   * sends both forms; `paged` sends only the reserved `tool_search` transport
+   * plus a name-and-summary catalog section, and `tool_search` executions
+   * grant the matched tools into the calling scope — granted tools join the
+   * wire set from the next turn, while a model-direct call naming any other
+   * tool resolves to `UNKNOWN_TOOL` before policy runs, exactly like the
+   * `code` collapse. Code modes require a `ctx.codeRuntime` whose `language`
    * has a registered SDK renderer (TypeScript or Python) and fail prompt
-   * assembly when it is absent or has no renderer. Under `code`, native names
-   * in `toolOrder` are invalid.
+   * assembly when it is absent or has no renderer; `paged` needs no runtime.
+   * Under `code`, native names in `toolOrder` are invalid; under `paged` the
+   * full catalog stays valid.
    */
   mode?: ToolPresentationMode
   /**
@@ -671,11 +699,23 @@ export interface Config {
    * restores strictly serial dispatch. Must be a positive integer.
    */
   maxParallelSubCalls?: number
+  /**
+   * Tool names always wired with full schemas under `paged`, in addition to
+   * the reserved `tool_search` transport and any dynamically granted tools.
+   * A pinned tool is effectively pre-granted: it is visible and directly
+   * callable from the first turn without a `tool_search` round-trip, and it
+   * is omitted from the `tools:catalog` discovery surface (re-listing an
+   * already-wired tool is noise). A pinned name that resolves to no
+   * registered tool, or that a scoped restriction removes, is ignored —
+   * pinning grants visibility, it does not override restrictions. `native`,
+   * `code`, and `both` ignore this field.
+   */
+  pinned?: string[]
 }
 
 /**
  * Per-scope filter over global tools. Restrictions intersect and do not affect
- * scoped registrations or the reserved Code Mode transport.
+ * scoped registrations or the reserved Code Mode and Paged Mode transports.
  */
 export interface ToolRestriction {
   /** Global tool names that stay visible; everything else is removed. */
@@ -692,7 +732,7 @@ interface CompiledToolRestriction {
 
 /** One scope's complete registry view, derived in a single layer traversal. */
 interface ToolView {
-  /** Visible definitions after restrictions, scoped shadowing, and transport insertion. */
+  /** Visible definitions after restrictions, scoped shadowing, transport insertion, and any `paged` grant filter. */
   readonly visible: ReadonlyMap<string, ToolDefinition>
   /** Pre-restriction capability names used by prompt-order validation. */
   readonly knownNames: ReadonlySet<string>
@@ -716,6 +756,15 @@ class ToolLayer implements ScopeLayer {
   readonly restrictions = new AnonymousEntries<CompiledToolRestriction>()
   readonly guards = new AnonymousEntries<ToolGuard>()
   /**
+   * Names this scope's `tool_search` executions have granted for direct model
+   * calls. Scope-lifetime state rather than an effect-owned contribution: a
+   * grant is minted by a tool body mid-execution and has no disposer to ride,
+   * so it enters through `ScopedLayers.ensure` and is never revoked — paging
+   * only widens a scope's surface over a session, never narrows it
+   * mid-flight.
+   */
+  readonly granted = new Set<string>()
+  /**
    * Presentation this scope's agent declared for itself, shadowing the
    * deployment default. One cell rather than an entry table: two answers to
    * "which form does the model see" is a contradiction, not a merge.
@@ -731,7 +780,7 @@ class ToolLayer implements ScopeLayer {
   /** Whether every contribution table in this aggregate layer is empty. */
   isEmpty(): boolean {
     return this.tools.isEmpty() && this.restrictions.isEmpty() && this.guards.isEmpty()
-      && this.mode === undefined
+      && this.mode === undefined && this.granted.size === 0
   }
 
   /** Whether every compiled restriction in this layer admits a global tool name. */
@@ -788,8 +837,9 @@ export class ToolRuntime extends Service {
   static inject = ['systemPrompt']
 
   static Config: z<Config> = z.object({
-    mode: z.union(['native', 'code', 'both'] as const).default('native'),
+    mode: z.union(['native', 'code', 'both', 'paged'] as const).default('native'),
     maxParallelSubCalls: z.natural().min(1).default(10),
+    pinned: z.array(z.string()).default([]),
   })
 
   /** Internal staged view consumed by `dsh-agent-loop`'s parallel scheduler. */
@@ -816,12 +866,25 @@ export class ToolRuntime extends Service {
   private readonly defaultMode: ToolPresentationMode
   private readonly maxParallelSubCalls: number
   /**
+   * Deployment-level names always granted under `paged` — wired with full
+   * schemas from the first turn and never requiring a `tool_search`
+   * round-trip. Read-only: fixed at construction, unlike the per-scope
+   * {@link ToolLayer.granted} sets that widen over a session.
+   */
+  private readonly pinned: ReadonlySet<string>
+  /**
    * Reserved presentation transport, kept outside the filterable registration
    * layers. Built on first need rather than at construction: which agents run
    * a code mode is no longer known when the service is constructed, and the
    * transport is stateless beyond its closures over `this`.
    */
   private codeTransport: ToolDefinition | undefined
+  /**
+   * Reserved paged presentation transport, kept outside the filterable
+   * registration layers for the same reason as {@link codeTransport}, and
+   * likewise built on first need.
+   */
+  private searchTransport: ToolDefinition | undefined
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'tools')
@@ -829,10 +892,15 @@ export class ToolRuntime extends Service {
     // optional-input type for direct (non-Loader) construction in tests.
     this.defaultMode = config.mode ?? 'native'
     this.maxParallelSubCalls = resolveMaxParallelSubCalls(config.maxParallelSubCalls)
+    this.pinned = new Set(config.pinned ?? [])
     ctx.systemPrompt.tools(context => this.wireSchemas(context.scope))
-    if (this.defaultMode !== 'native') {
+    if (this.defaultMode === 'code' || this.defaultMode === 'both') {
       ctx.systemPrompt.section(this.collapseSection())
       ctx.systemPrompt.section(this.sdkSection())
+    }
+    if (this.defaultMode === 'paged') {
+      ctx.systemPrompt.section(this.pagedRuleSection())
+      ctx.systemPrompt.section(this.catalogSection())
     }
   }
 
@@ -867,9 +935,9 @@ export class ToolRuntime extends Service {
    * deployment and per scope by {@link presentAs}.
    *
    * The body regenerates from the CALLING scope, and renders empty for an
-   * agent presenting natively — an agent that opted out under a code-mode
-   * deployment still sees the global registration, and an empty section is
-   * dropped from the rendered prompt.
+   * agent presenting natively or paged — an agent that opted out under a
+   * code-mode deployment still sees the global registration, and an empty
+   * section is dropped from the rendered prompt.
    * @returns the section registration.
    */
   private sdkSection(): { name: string; order: number; text: (context: { scope?: ScopeKey }) => string } {
@@ -879,7 +947,11 @@ export class ToolRuntime extends Service {
       // Regenerate from the calling scope's visible tools in stable order.
       text: (context) => {
         const mode = this.modeFor(context.scope)
-        if (mode === 'native') return ''
+        // Empty outside code modes: a native agent under a code-mode
+        // deployment still sees the global registration (an empty section is
+        // dropped from the rendered prompt), and a paged scope must not trip
+        // the code-runtime requirement it never opted into.
+        if (mode !== 'code' && mode !== 'both') return ''
         const runtime = this.requireCodeRuntime(mode)
         // Own-property read: a language like `toString`/`constructor` would
         // otherwise resolve an inherited Object.prototype member as a renderer.
@@ -887,6 +959,53 @@ export class ToolRuntime extends Service {
         /* v8 ignore next -- requireCodeRuntime rejects an unknown language before this runs. */
         if (render === undefined) throw new Error(`dsh-tools: no SDK renderer for ${runtime.language}`)
         return render(this.sdkSchemas(context.scope))
+      },
+    }
+  }
+
+  /**
+   * The prompt statement of the `paged` executor gate, registered wherever
+   * {@link catalogSection} is and rendering empty outside an effective
+   * `paged`. Same purpose as {@link collapseSection}: without it the model
+   * reads a catalog of tools it is invited to use and no statement that only
+   * `tool_search` and granted tools may be called directly, so it emits a
+   * native call, receives `UNKNOWN_TOOL` for a tool the prompt just
+   * advertised, and concludes the deployment is inconsistent.
+   * {@link PAGED_RULE_SECTION_ORDER} places the rule before the per-tool
+   * guidance band rather than after it.
+   * @returns the section registration.
+   */
+  private pagedRuleSection(): { name: string; order: number; text: (context: { scope?: ScopeKey }) => string } {
+    return {
+      name: 'tools:paged-only',
+      order: PAGED_RULE_SECTION_ORDER,
+      // The SAME predicate the executor denies by, so the prompt cannot state
+      // a rule the registry does not enforce (see `collapses`).
+      text: context => this.modeFor(context.scope) === 'paged' ? PAGED_ONLY_INSTRUCTION : '',
+    }
+  }
+
+  /**
+   * The name-and-summary catalog prompt section, registered globally by a
+   * paged deployment and per scope by {@link presentAs}.
+   *
+   * The catalog is the discovery surface: it lists the scope's FULL
+   * pre-paging capability set (restrictions applied), not merely the granted
+   * tools, so the model can find a tool it has never used; the reserved
+   * transport never lists itself. The body regenerates from the CALLING
+   * scope, and renders empty for an agent presenting another mode — an agent
+   * that opted out under a paged deployment still sees the global
+   * registration, and an empty section is dropped from the rendered prompt.
+   * @returns the section registration.
+   */
+  private catalogSection(): { name: string; order: number; text: (context: { scope?: ScopeKey }) => string } {
+    return {
+      name: 'tools:catalog',
+      order: CATALOG_SECTION_ORDER,
+      // Regenerate from the calling scope's capability set in stable order.
+      text: (context) => {
+        if (this.modeFor(context.scope) !== 'paged') return ''
+        return renderToolsCatalog(this.searchCandidates(context.scope))
       },
     }
   }
@@ -933,6 +1052,26 @@ export class ToolRuntime extends Service {
   }
 
   /**
+   * The reserved `tool_search` transport, built on first need.
+   *
+   * Like {@link requireCodeTransport} it never enters the filterable
+   * registration layers: per-agent restrictions must not remove it and a
+   * scoped registration must not shadow it, and the visibility resolver
+   * appends it only for scopes whose effective mode is `paged`.
+   * @returns the shared transport definition.
+   */
+  private requireToolSearchTransport(): ToolDefinition {
+    this.searchTransport ??= createToolSearchTool({
+      catalog: scope => this.searchCandidates(scope),
+      grant: (scope, names) => { this.grantTools(scope, names) },
+      // The matcher seam is optional at runtime — a deployment without a
+      // `toolMatcher` service falls back to the built-in keyword matcher.
+      peekMatcher: () => this.ctx.get('toolMatcher'),
+    })
+    return this.searchTransport
+  }
+
+  /**
    * Present the calling scope's tools in `mode` instead of the deployment
    * default. Nearest scope on the chain wins, so a preset's standing
    * declaration covers every agent joined under it.
@@ -961,12 +1100,17 @@ export class ToolRuntime extends Service {
         { label: 'tools.presentAs()' },
       )
       // The SDK and collapse sections are per scope for the same reason the
-      // mode is. Under a deployment that already defaults to a code mode this
-      // shadows the global registration with an identical body, which costs
-      // nothing and keeps one rule instead of a case analysis.
-      if (mode !== 'native') {
+      // mode is, and a paged scope likewise owns its rule and catalog
+      // sections. Under a deployment that already defaults to the same mode
+      // this shadows the global registration with an identical body, which
+      // costs nothing and keeps one rule instead of a case analysis.
+      if (mode === 'code' || mode === 'both') {
         yield ctx.systemPrompt.section(this.collapseSection())
         yield ctx.systemPrompt.section(this.sdkSection())
+      }
+      if (mode === 'paged') {
+        yield ctx.systemPrompt.section(this.pagedRuleSection())
+        yield ctx.systemPrompt.section(this.catalogSection())
       }
     }.bind(this), 'tools.presentAs()')
     // oxlint-disable-next-line typescript/no-misused-promises -- synchronous composite teardown; direct return preserves disposer identity
@@ -983,6 +1127,15 @@ export class ToolRuntime extends Service {
     if (mode === 'native') {
       const schemas = [...view.visible.values()].map(definition => this.schemaOf(definition, false))
       return { schemas, knownNames: [...view.knownNames] }
+    }
+    if (mode === 'paged') {
+      // view() already paged the visible map down to the granted tools plus
+      // `tool_search`, so this is the native branch's shape over a filtered
+      // map. knownNames stays the FULL pre-paging universe (plus the
+      // transport) so a `toolOrder` entry naming any catalog tool keeps
+      // validating — paging hides schemas, not capabilities.
+      const schemas = [...view.visible.values()].map(definition => this.schemaOf(definition, false))
+      return { schemas, knownNames: [...view.knownNames, TOOL_SEARCH_NAME] }
     }
     // Validate the runtime language BEFORE projecting schemas: schemaOf reads
     // run_code's language-aware description/parameters getters, whose own
@@ -1048,11 +1201,14 @@ export class ToolRuntime extends Service {
       && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
       throw new TypeError(`tool "${name}" timeoutMs must be a positive finite number`)
     }
-    // Reserved unconditionally: any agent may select a code mode for itself,
-    // so a name free to take under the deployment default would become a
-    // collision the moment a preset mounted.
+    // Reserved unconditionally: any agent may select a code or paged mode for
+    // itself, so a name free to take under the deployment default would become
+    // a collision the moment a preset mounted.
     if (name === RUN_CODE_NAME) {
       throw new Error(`tool name "${RUN_CODE_NAME}" is reserved for the Code Mode presentation transport and cannot be registered or shadowed`)
+    }
+    if (name === TOOL_SEARCH_NAME) {
+      throw new Error(`tool name "${TOOL_SEARCH_NAME}" is reserved for the Paged Mode presentation transport and cannot be registered or shadowed`)
     }
     return this.layers.effect(
       this.ctx,
@@ -1084,6 +1240,9 @@ export class ToolRuntime extends Service {
     }
     if ([...allow ?? [], ...deny ?? []].includes(RUN_CODE_NAME)) {
       throw new Error(`tools.restrict() cannot name reserved Code Mode presentation transport "${RUN_CODE_NAME}"; restrict end-capability tools instead`)
+    }
+    if ([...allow ?? [], ...deny ?? []].includes(TOOL_SEARCH_NAME)) {
+      throw new Error(`tools.restrict() cannot name reserved Paged Mode presentation transport "${TOOL_SEARCH_NAME}"; restrict end-capability tools instead`)
     }
     const known = this.view(scope).restrictableNames
     const unknown = [...allow ?? [], ...deny ?? []].filter(name => !known.has(name))
@@ -1146,10 +1305,15 @@ export class ToolRuntime extends Service {
    * presets moved them onto the agent plane they became an ANCESTOR
    * contribution, so a child's filter silently stopped constraining anything
    * it was given.
+   *
+   * This is the PRE-PAGING view: under `paged` it still holds every
+   * capability the scope may use, which is exactly the discovery surface
+   * `tool_search` and the catalog section read. {@link view} applies the
+   * paging filter on top.
    * @param scope - the viewing scope (the agent), or undefined for the global view.
    * @returns the complete derived view for that scope.
    */
-  private view(scope?: ScopeKey): ToolView {
+  private capabilityView(scope?: ScopeKey): ToolView {
     // Scope-chain layers, farthest ancestor first, the exact scope last.
     const layers = this.layers.chainLayers(scope)
     // Chain-blind on purpose: this is the ONE layer whose registrations the
@@ -1186,10 +1350,94 @@ export class ToolRuntime extends Service {
     // an invariant assertion as well as protection against future layer
     // changes. Per scope: a native agent must not find `run_code` in its
     // dispatch table because some other agent in the process presents it.
-    if (this.modeFor(scope) !== 'native') {
+    // Paged scopes get their own transport from the paging wrapper (`view`),
+    // never `run_code` — a paged deployment need not carry a code runtime.
+    const mode = this.modeFor(scope)
+    if (mode === 'code' || mode === 'both') {
       visible.set(RUN_CODE_NAME, this.requireCodeTransport())
     }
     return { visible, knownNames, restrictableNames }
+  }
+
+  /**
+   * The model-facing view: {@link capabilityView} unchanged outside `paged`,
+   * and under `paged` filtered down to the scope's granted names (including
+   * the deployment-level pinned set) plus the reserved `tool_search`
+   * transport. Paging touches ONLY the visible map — `knownNames` and
+   * `restrictableNames` stay full, so restrictions and prompt-order
+   * validation keep working against the complete catalog — and it applies
+   * uniformly to own-layer scoped registrations, so the one exemption from
+   * paging is the transport itself.
+   * @param scope - the viewing scope (the agent), or undefined for the global view.
+   * @returns the derived view as the model may use it.
+   */
+  private view(scope?: ScopeKey): ToolView {
+    const base = this.capabilityView(scope)
+    if (this.modeFor(scope) !== 'paged') return base
+    const granted = this.grantedNames(scope)
+    const visible = new Map<string, ToolDefinition>()
+    for (const [name, definition] of base.visible) {
+      if (granted.has(name)) visible.set(name, definition)
+    }
+    // Same last-and-outside-filtering discipline as the `run_code` insertion
+    // in capabilityView: restrictions and grants must not remove the one
+    // tool through which further grants are minted.
+    visible.set(TOOL_SEARCH_NAME, this.requireToolSearchTransport())
+    return { visible, knownNames: base.knownNames, restrictableNames: base.restrictableNames }
+  }
+
+  /**
+   * The chain union of granted names a paged scope may call directly: the
+   * deployment-level pinned set, the global layer's grants, plus every
+   * ancestor overlay's, so a grant minted for a preset's standing scope
+   * covers every agent parented under it, exactly like inherited
+   * registrations do. Pinned names are the always-granted subset — wired from
+   * the first turn, never requiring a `tool_search` round-trip.
+   * @param scope - the viewing scope (the agent), or undefined for the global view.
+   * @returns the union of names granted anywhere on the scope's chain.
+   */
+  private grantedNames(scope: ScopeKey | undefined): ReadonlySet<string> {
+    const granted = new Set<string>(this.layers.global.granted)
+    for (const name of this.pinned) granted.add(name)
+    for (const layer of this.layers.chainLayers(scope)) {
+      for (const name of layer.granted) granted.add(name)
+    }
+    return granted
+  }
+
+  /**
+   * Grant tool names into one scope's own layer — the `tool_search` body's
+   * only registry mutation. Grants are scope-lifetime state, not
+   * registrations, so they enter through `ScopedLayers.ensure` rather than an
+   * effect, and the change notification fires AFTER the mutation so the next
+   * prompt assembly observes the granted set.
+   * @param scope - the calling scope (the agent), or undefined for a global grant.
+   * @param names - the matched tool names to grant.
+   */
+  private grantTools(scope: ScopeKey | undefined, names: readonly string[]): void {
+    if (names.length === 0) return
+    const layer = scope === undefined ? this.layers.global : this.layers.ensure(scope)
+    for (const name of names) layer.granted.add(name)
+    this.ctx.emit('tools/change')
+  }
+
+  /**
+   * The discovery surface for `tool_search` and the catalog section: the
+   * scope's full pre-paging capability set as model-facing schemas. Read from
+   * {@link capabilityView} so a never-granted tool is still discoverable,
+   * while a restricted-away tool stays out — advertising it would promise a
+   * grant the restriction then voids. The reserved transports never advertise
+   * themselves, and neither do pinned names: a pinned tool is already wired
+   * with its full schema, so re-listing it in the catalog is noise.
+   * @param scope - the viewing scope (the agent), or undefined for the global view.
+   * @returns one detached schema per discoverable tool, in catalog order.
+   */
+  private searchCandidates(scope: ScopeKey | undefined): ToolSchema[] {
+    return [...this.capabilityView(scope).visible.values()]
+      .filter(definition => definition.name !== RUN_CODE_NAME
+        && definition.name !== TOOL_SEARCH_NAME
+        && !this.pinned.has(definition.name))
+      .map(definition => this.schemaOf(definition, true))
   }
 
   /**
@@ -1306,10 +1554,11 @@ export class ToolRuntime extends Service {
   }
 
   /**
-   * Whether the `code` mode collapse denies a model-direct call: only the
-   * reserved `run_code` transport may be named. Nested sub-dispatches (a
-   * `parent` token set) bypass the collapse. One home for the
-   * security-relevant predicate, shared by {@link resolveExecution} and
+   * Whether the effective mode denies a model-direct call. Under `code` only
+   * the reserved `run_code` transport may be named; under `paged` only
+   * `tool_search` and names the scope's chain has been granted. Nested
+   * sub-dispatches (a `parent` token set) bypass the collapse. One home for
+   * the security-relevant predicate, shared by {@link resolveExecution} and
    * {@link createExecution} so the two can never drift apart.
    *
    * Resolved through {@link modeFor}, NOT `defaultMode`: an agent given `code`
@@ -1322,7 +1571,28 @@ export class ToolRuntime extends Service {
    * @param nested - whether the call is a transport sub-dispatch, not a model-direct call.
    */
   private collapses(name: string, scope: ScopeKey | undefined, nested: boolean): boolean {
-    return !nested && this.modeFor(scope) === 'code' && name !== RUN_CODE_NAME
+    if (nested) return false
+    const mode = this.modeFor(scope)
+    if (mode === 'code') return name !== RUN_CODE_NAME
+    if (mode === 'paged') return name !== TOOL_SEARCH_NAME && !this.grantedNames(scope).has(name)
+    return false
+  }
+
+  /**
+   * The route a collapse denial names, per the scope's effective mode. The
+   * name IS visible (or advertised in the paged catalog), so the denial
+   * carries how the model reaches the tool instead; without it a bare
+   * `unknown tool` for a tool the prompt declared reads as a broken
+   * deployment rather than a correction.
+   * @param name - the denied tool name.
+   * @param scope - the viewing scope whose effective presentation mode applies.
+   * @returns the model-facing route suffix for the UNKNOWN_TOOL denial.
+   */
+  private collapseRoute(name: string, scope: ScopeKey | undefined): string {
+    if (this.modeFor(scope) === 'paged') {
+      return `only \`${TOOL_SEARCH_NAME}\` and granted tools are callable directly — call \`${TOOL_SEARCH_NAME}\` with your intent to grant \`${name}\` first`
+    }
+    return `only \`${RUN_CODE_NAME}\` is callable directly — call \`${name}\` from inside a \`${RUN_CODE_NAME}\` program instead`
   }
 
   /**
@@ -1371,14 +1641,25 @@ export class ToolRuntime extends Service {
     const parent = exec.parent
     const signal = exec.signal
     // Distinguish a mode-collapsed call (visible in the scope, denied only by
-    // the `code` collapse) from a genuinely unknown tool. A collapsed call is
+    // the mode's collapse) from a genuinely unknown tool. A collapsed call is
     // deterministically denied, so it terminates BEFORE the extensible policy
     // pipeline: pre-execute listeners, approval `ask`, and guards must never
     // observe — or worse, approve — a call that can only fail. An unknown tool
     // keeps the historical dispatch-stage `UNKNOWN_TOOL` path so policy
     // listeners still see every name that reaches the registry.
     const visible = this.get(name, agent)
-    const collapsed = visible !== undefined && this.collapses(name, agent, parent !== undefined)
+    // Under `paged` an UNGRANTED tool is already absent from the model-facing
+    // view above, yet its denial belongs to the collapse, not the
+    // unknown-tool path — a bare `unknown tool` for a tool the catalog just
+    // advertised reads as a broken deployment, the exact failure the route
+    // message exists to prevent. The gate therefore also reads the PRE-PAGING
+    // capability surface; a name absent there too (unregistered, or
+    // restricted away) stays on the ordinary unknown-tool path, mirroring a
+    // restricted-away tool under `code`.
+    const reachable = visible ?? (this.modeFor(agent) === 'paged'
+      ? this.capabilityView(agent).visible.get(name)
+      : undefined)
+    const collapsed = reachable !== undefined && this.collapses(name, agent, parent !== undefined)
     const concludingExecutions = this.concludingExecutions
     const base = {
       token,
@@ -1429,17 +1710,14 @@ export class ToolRuntime extends Service {
         if (signal.aborted) {
           return { kind: 'final-result', exec: execution, result: toolAbortedBeforeDispatchResult() }
         }
-        // The name IS visible here, so the denial carries the route the model
-        // must take instead. Without it the model reads a bare `unknown tool`
-        // for a tool the prompt just declared and concludes the deployment is
-        // broken rather than correcting itself.
+        // The name IS reachable here, so the denial carries the route the
+        // model must take instead. Without it the model reads a bare `unknown
+        // tool` for a tool the prompt just declared and concludes the
+        // deployment is broken rather than correcting itself.
         return {
           kind: 'final-result',
           exec: execution,
-          result: toolErrorResult(new ToolNotFoundError(
-            name,
-            `only \`${RUN_CODE_NAME}\` is callable directly — call \`${name}\` from inside a \`${RUN_CODE_NAME}\` program instead`,
-          )),
+          result: toolErrorResult(new ToolNotFoundError(name, this.collapseRoute(name, agent))),
         }
       }
       return { kind: 'ready', exec: execution }

@@ -1377,3 +1377,223 @@ describe('API key field', () => {
     expect(screen.queryByText(en.customTitle)).toBeNull()
   })
 })
+
+/** The llm-openai section shape as the host serializes it. */
+const OpenAiConfig = Schema.object({
+  apiKeyEnv: Schema.string().role('credential-ref'),
+  baseURL: Schema.string(),
+  providers: Schema.dict(Schema.object({
+    apiKeyEnv: Schema.string().role('credential-ref'),
+    baseURL: Schema.string(),
+    displayName: Schema.string(),
+  })),
+})
+
+/** The llm-codex section shape as the host serializes it. */
+const CodexConfig = Schema.object({
+  codexHome: Schema.string(),
+  providers: Schema.dict(Schema.object({
+    codexHome: Schema.string(),
+    baseURL: Schema.string(),
+    displayName: Schema.string(),
+  })),
+})
+
+/** One directory row a native path-addressed adapter declares. */
+interface NativeRoute {
+  provider: string
+  displayName: string
+  /** Registered route: only while its profile exists. */
+  live: boolean
+  /** Adapter-owned auth readiness (the Codex subscription login). */
+  authConfigured?: boolean
+}
+
+/** A scripted wire face standing in for a native path-addressed adapter family. */
+function nativeFace(options: {
+  ns: 'llm-openai' | 'llm-codex'
+  config: { toJSON(): unknown }
+  routes: readonly NativeRoute[]
+  /** Profiles present in the user layer (and therefore the effective value). */
+  profiles: Record<string, unknown>
+  /** References the managed credential store holds. */
+  storedCredentials?: readonly string[]
+}) {
+  const namespace: SettingsNamespaceView = {
+    ns: options.ns,
+    schema: JSON.parse(JSON.stringify(options.config.toJSON())) as unknown,
+    value: { providers: options.profiles },
+    base: { providers: {} },
+    user: { providers: options.profiles },
+    applies: 'live',
+    secrets: [],
+    revision: 1,
+  }
+  const mutate = vi.fn(() => Promise.resolve(ok(namespace)))
+  const set = vi.fn(() => Promise.resolve(ok({})))
+  const unset = vi.fn(() => Promise.resolve(ok({})))
+  const face = {
+    llm: {
+      providers: vi.fn(() => Promise.resolve(ok({
+        providers: options.routes.map(route => ({
+          provider: route.provider,
+          displayName: route.displayName,
+          settingsNs: options.ns,
+          settingsPath: ['providers', route.provider],
+          active: route.live,
+          ...route.authConfigured === undefined ? {} : { authConfigured: route.authConfigured },
+        })),
+      }))),
+      models: vi.fn(() => Promise.resolve(ok({ groups: [], failures: [] }))),
+      discoverModels: vi.fn(() => Promise.resolve(ok({ models: [] }))),
+    },
+    settings: {
+      describe: vi.fn(() => Promise.resolve(ok({ writable: true, namespaces: [namespace] }))),
+      update: vi.fn(),
+      replace: vi.fn(),
+      mutate,
+    },
+    credentials: {
+      describe: vi.fn((payload: { refs: string[] }) => Promise.resolve(ok({
+        credentials: Object.fromEntries(payload.refs.map(ref => [
+          ref,
+          { configured: options.storedCredentials?.includes(ref) ?? false, writable: true },
+        ])),
+      }))),
+      set,
+      unset,
+    },
+  }
+  return { face, mutate, set, unset, namespace }
+}
+
+async function mountNative(options: Parameters<typeof nativeFace>[0]) {
+  const scripted = nativeFace(options)
+  const controller = new ModelsSettingsStore(scripted.face as unknown as WireFace)
+  await controller.load()
+  const injected: ModelsSectionInjected = {
+    controller,
+    useSnapshot: bindSnapshotSelector(controller.store),
+    api: scripted.face as never,
+    t,
+  }
+  render(<ModelsSection {...injected} />)
+  return { ...scripted, controller }
+}
+
+describe('built-in path-addressed provider families', () => {
+  const openAiRoutes: readonly NativeRoute[] = [
+    { provider: 'openai', displayName: 'OpenAI', live: false },
+    { provider: 'openai-compatible', displayName: 'OpenAI Compatible', live: false },
+  ]
+
+  it('offers the dormant built-ins in the add select and materializes a blank profile', async () => {
+    const { mutate } = await mountNative({
+      ns: 'llm-openai', config: OpenAiConfig, routes: openAiRoutes, profiles: {},
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    const pick = screen.getByLabelText(en.provider)
+    const options = [...pick.querySelectorAll('option')].map(option => option.textContent)
+    expect(options).toEqual(['OpenAI', 'OpenAI Compatible'])
+
+    // A blank key stores nothing and writes the empty profile whose key's
+    // presence IS the route's registration.
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate)).toMatchObject({
+      ns: 'llm-openai',
+      ops: [{ op: 'set', path: ['providers', 'openai'], value: {} }],
+    })
+  })
+
+  it('stores a typed key under the route\'s derived reference and records it in the profile', async () => {
+    const { mutate, set } = await mountNative({
+      ns: 'llm-openai', config: OpenAiConfig, routes: openAiRoutes, profiles: {},
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'sk-openai-e2e' } })
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(set).toHaveBeenCalled() })
+    expect(set).toHaveBeenCalledWith({ ref: 'OPENAI_API_KEY', value: 'sk-openai-e2e' })
+    expect(firstMutate(mutate)).toMatchObject({
+      ns: 'llm-openai',
+      ops: [{ op: 'set', path: ['providers', 'openai', 'apiKeyEnv'], value: 'OPENAI_API_KEY' }],
+    })
+  })
+
+  it('removes a user-added built-in through the shared delete flow, key first', async () => {
+    const { mutate, unset } = await mountNative({
+      ns: 'llm-openai',
+      config: OpenAiConfig,
+      routes: [{ provider: 'openai', displayName: 'OpenAI', live: true }],
+      profiles: { openai: { apiKeyEnv: 'OPENAI_API_KEY' } },
+      storedCredentials: ['OPENAI_API_KEY'],
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete OpenAI (openai)' }))
+    fireEvent.click(await screen.findByText('Delete OpenAI (openai)', { selector: 'button' }))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    // Credential removal lands first so a second-step failure stays retryable.
+    expect(unset).toHaveBeenCalledWith({ ref: 'OPENAI_API_KEY' })
+    expect(firstMutate(mutate)).toMatchObject({
+      ns: 'llm-openai',
+      ops: [{ op: 'unset', path: ['providers', 'openai'] }],
+    })
+  })
+
+  it('adds the Codex route without a key field', async () => {
+    const { mutate, set } = await mountNative({
+      ns: 'llm-codex',
+      config: CodexConfig,
+      routes: [{ provider: 'codex', displayName: 'OpenAI Codex', live: false, authConfigured: false }],
+      profiles: {},
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    // No key input by design: the subscription login authenticates this route.
+    expect(screen.queryByLabelText(en.keyInput)).toBeNull()
+    expect(screen.getByText(en.subscriptionHint)).toBeTruthy()
+
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(set).not.toHaveBeenCalled()
+    expect(firstMutate(mutate)).toMatchObject({
+      ns: 'llm-codex',
+      ops: [{ op: 'set', path: ['providers', 'codex'], value: {} }],
+    })
+  })
+
+  it('adds the Antigravity route without a key field', async () => {
+    const AntigravityConfig = Schema.object({
+      accountsPath: Schema.string(),
+      providers: Schema.dict(Schema.object({
+        accountsPath: Schema.string(),
+        baseURL: Schema.string(),
+        displayName: Schema.string(),
+      })),
+    })
+    const { mutate, set } = await mountNative({
+      ns: 'llm-antigravity' as unknown as 'llm-codex',
+      config: AntigravityConfig,
+      routes: [{ provider: 'antigravity', displayName: 'Google Antigravity', live: false, authConfigured: true }],
+      profiles: {},
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    expect(screen.queryByLabelText(en.keyInput)).toBeNull()
+    expect(screen.getByText(en.antigravitySubscriptionHint)).toBeTruthy()
+
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(set).not.toHaveBeenCalled()
+    expect(firstMutate(mutate)).toMatchObject({
+      ns: 'llm-antigravity',
+      ops: [{ op: 'set', path: ['providers', 'antigravity'], value: {} }],
+    })
+  })
+})
+

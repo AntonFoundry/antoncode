@@ -205,11 +205,6 @@ function imageInEvent(event: SessionEvent, match: (ref: ImageAttachmentRef) => b
   return undefined
 }
 
-/** True when the current model-visible surface contains an image. */
-function messagesHaveImage(messages: readonly { content: readonly ContentBlock[] }[]): boolean {
-  return messages.some(message => contentHasImage(message.content))
-}
-
 /** Resolve the first reference matching one opaque id. */
 function referencedImage(events: readonly SessionEvent[], attachmentId: string): ImageAttachmentRef | undefined {
   for (const event of events) {
@@ -2234,12 +2229,18 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             })
             const pendingImage = [...found.agent.inbox.nextTurn, ...found.agent.inbox.nextStep]
               .some(message => contentHasImage(message.content))
-            if (pendingImage || messagesHaveImage(found.agent.session.deriveMessages())) {
+            // Selecting a route does not itself send the session transcript.
+            // Historic attachments can be represented by a memory/vision
+            // adapter before the next request, so they must not prevent a user
+            // from changing to a text-only model. A queued image is different:
+            // it is about to enter the next request and has not yet had a
+            // chance to be adapted.
+            if (pendingImage) {
               const info = await ctx.llm.resolveModelInfo(resolved.provider, resolved.model)
               if (info.inputModalities !== undefined && !info.inputModalities.includes('image')) {
                 return err(request, {
                   code: 'model-unavailable',
-                  message: `Model "${resolved.model}" does not accept image input, but this session already contains images; select an image-capable model.`,
+                  message: `Model "${resolved.model}" does not accept image input, but the next queued prompt contains images; send it with an image-capable model.`,
                   details: { provider, model },
                 })
               }
@@ -3307,7 +3308,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     llm: {
       providers(request) {
         const registered = ctx.llm.listProviders()
-        const active = new Set(registered.map(provider => provider.id))
+        const active = new Map(registered.map(provider => [provider.id, provider]))
         const directory = ctx.llm.listConfigurableProviders()
         const declared = new Set(directory.map(entry => entry.provider))
         const views: ConfigurableProviderView[] = directory.map(entry => ({
@@ -3316,6 +3317,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           settingsNs: entry.settingsNs,
           settingsPath: [...entry.settingsPath],
           active: active.has(entry.provider),
+          ...active.get(entry.provider)?.authConfigured === undefined
+            ? {}
+            : { authConfigured: active.get(entry.provider)!.authConfigured },
           ...entry.declared === undefined ? {} : { declared: entry.declared },
         }))
         // Routes registered without a directory declaration still appear —
@@ -3329,6 +3333,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             settingsNs: '',
             settingsPath: [],
             active: true,
+            ...provider.authConfigured === undefined ? {} : { authConfigured: provider.authConfigured },
           })
         }
         return Promise.resolve(ok(request, { providers: views }))

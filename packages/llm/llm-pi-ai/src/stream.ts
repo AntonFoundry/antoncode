@@ -109,6 +109,11 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
       const text = message.errorMessage ?? 'pi-ai stream error'
       return { kind: 'error', failure: { message: text, code: classifyPiAiError(text) } }
     }
+    case 'pending':
+    case 'deferred': {
+      const text = message.errorMessage ?? `unexpected ${message.stopReason} stop reason`
+      return { kind: 'error', failure: { message: text, code: classifyPiAiError(text) } }
+    }
   }
 }
 

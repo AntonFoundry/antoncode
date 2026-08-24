@@ -74,12 +74,15 @@ export function DetailsPanel({ useSession, useSessions, sessionId, useStore, ren
   const material = useSession(
     s => (callId === undefined ? null : materialFor(s, callId)),
     (a, b) => shallowEqual(a, b))
+  const contextMap = renderSlot('conversation.details.context', {}, { fallback: null })
 
   return (
     <div className={css.root}>
       <div className={css.header}>
         <div className={css.title}>
-          {selection === null ? t('details.title') : material?.name ?? selection.toolName ?? t('details.title')}
+          {contextMap != null
+            ? <span className={css.contextTitle}>c0ntext</span>
+            : selection === null ? t('details.title') : material?.name ?? selection.toolName ?? t('details.title')}
         </div>
         <button
           type="button" className={css.close} aria-label={t('details.close')}
@@ -90,7 +93,12 @@ export function DetailsPanel({ useSession, useSessions, sessionId, useStore, ren
           </svg>
         </button>
       </div>
-      <div className={css.body}>
+      {contextMap != null && (
+        <div className={selection === null ? css.contextOnly : css.contextArea}>
+          {contextMap}
+        </div>
+      )}
+      {(selection !== null || contextMap == null) && <div className={css.body}>
         {selection === null || callId === undefined
           ? <div className={css.empty}>{t('details.empty')}</div>
           : material === null
@@ -123,7 +131,7 @@ export function DetailsPanel({ useSession, useSessions, sessionId, useStore, ren
                 </section>
               </>
             )}
-      </div>
+      </div>}
     </div>
   )
 }

@@ -1860,6 +1860,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'toolMatcher',
+    summary: 'The intent-to-tools matcher a deployment may mount as the `toolMatcher` service.',
+    description: 'The intent-to-tools matcher a deployment may mount as the `toolMatcher` service. Consumed opportunistically (`ctx.get(\'toolMatcher\')`, no static inject — the same idiom as the approval seam): a deployment without one falls back to defaultToolMatcher, and the registry stays active either way. Implementations must be deterministic for a stable catalog — the returned names ride the prefix-cached prompt the next turn.',
+    methods: [
+      {
+        signature: 'match(intent: string, candidates: readonly ToolSchema[], limit: number): string[] | Promise<string[]>',
+        description: 'Rank the catalog against one intent.',
+        parameters: [{ name: 'intent', description: 'the model\'s free-text need, exactly as passed to `tool_search`.' }, { name: 'candidates', description: 'the calling scope\'s full pre-paging catalog (restrictions applied, transports excluded).' }, { name: 'limit', description: 'the clamped maximum number of names to return.' }],
+        returns: 'the matched tool names, best first; unknown names are dropped by the transport.',
+      },
+    ],
+  },
+  {
     key: 'toolResultPruner',
     summary: 'Deterministic head/middle/tail pruning for current tool-result surface nodes.',
     description: 'Deterministic head/middle/tail pruning for current tool-result surface nodes.',
@@ -3309,7 +3322,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmProviderInfo',
-    declaration: 'export interface LlmProviderInfo {\n    id: string;\n    name: string;\n}',
+    declaration: 'export interface LlmProviderInfo {\n    id: string;\n    name: string;\n    authConfigured?: boolean;\n}',
   },
   {
     name: 'LlmReasoningEffortInfo',
@@ -4333,7 +4346,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'TodoItem',
-    declaration: 'export interface TodoItem {\n    content: string;\n    status: \'pending\' | \'in_progress\' | \'completed\';\n}',
+    declaration: 'export interface TodoItem {\n    content: string;\n    status: \'pending\' | \'in_progress\' | \'completed\' | \'cancelled\';\n    priority?: \'high\' | \'medium\' | \'low\';\n    children?: TodoItem[];\n}',
   },
   {
     name: 'TokenMeasurement',
@@ -4417,7 +4430,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolPresentationMode',
-    declaration: 'export type ToolPresentationMode = \'native\' | \'code\' | \'both\';',
+    declaration: 'export type ToolPresentationMode = \'native\' | \'code\' | \'both\' | \'paged\';',
   },
   {
     name: 'ToolProviderResult',

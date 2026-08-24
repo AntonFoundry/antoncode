@@ -293,7 +293,7 @@ describe('stream failure edges', () => {
     const ctx = await harness(adapter)
     const agent = ctx.agentLoop.create(SessionId('stream-no-facts'), { provider: 'mock', model: 'mock' })
     let recoveries = 0
-    ctx.on('agent/request-error', async () => { recoveries += 1 })
+    ctx.on('agent/request-error', async () => { recoveries += 1; return undefined })
     // A pre-commit chunk veto throws INSIDE the stream-consumption try, but it
     // is not an adapter-boundary failure, so llmFailureOf yields no facts.
     let vetoed = false
@@ -427,7 +427,7 @@ describe('recovery without a retry action', () => {
     const ctx = await harness(adapter)
     const agent = ctx.agentLoop.create(SessionId('recovery-no-retry'), { provider: 'mock', model: 'mock' })
     let recoveries = 0
-    ctx.on('agent/request-error', async () => { recoveries += 1 })
+    ctx.on('agent/request-error', async () => { recoveries += 1; return undefined })
 
     send(agent, 'go')
     await agent.whenIdle()

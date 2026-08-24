@@ -5,12 +5,14 @@
  * under the profile's reference, deriving `<ROUTE>_API_KEY` when the profile
  * has none. The pi-ai profile records that derivation as `apiKeyEnv` only when
  * a key is entered; a blank key materializes a reference-free profile for
- * provider-native authentication);
+ * provider-native authentication — as does the OpenAI family, whose routes
+ * then fall back to their derived-reference default);
  * the collapsed 自定义设置 area carries the per-family extras (`baseURL` for
- * both families, DeepSeek's id/name/context-window model catalog, and the
- * display name and wire protocol of a pi-ai route the adapter does not ship —
- * the two fields the create card asked that route for, editable here for the
- * same reason).
+ * the deepseek, pi-ai, and OpenAI families, DeepSeek's id/name/context-window
+ * model catalog, and the display name and wire protocol of a pi-ai route the
+ * adapter does not ship — the two fields the create card asked that route for,
+ * editable here for the same reason). The Codex card carries no key field at
+ * all: that route authenticates through the shared subscription login.
  * Reasoning effort is deliberately absent: it is a per-MODEL capability, and
  * the models under one provider disagree about it, so a provider-scoped
  * control can only be set to a value some of them reject. The composer's
@@ -38,7 +40,7 @@ import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
 /** Per-adapter-family curated field sets (unknown namespaces get the hint alone). */
-type EditorLayout = 'deepseek' | 'pi-ai' | 'unknown'
+type EditorLayout = 'deepseek' | 'pi-ai' | 'openai' | 'codex' | 'antigravity' | 'unknown'
 
 /** The public DeepSeek endpoint shown as the deepseek base-URL placeholder. */
 const DEEPSEEK_PUBLIC_BASE_URL = 'https://api.deepseek.com'
@@ -125,6 +127,9 @@ export function pathOps(
 function layoutOf(ns: string): EditorLayout {
   if (ns === 'llm-deepseek') return 'deepseek'
   if (ns === 'llm-pi-ai') return 'pi-ai'
+  if (ns === 'llm-openai') return 'openai'
+  if (ns === 'llm-codex') return 'codex'
+  if (ns === 'llm-antigravity') return 'antigravity'
   return 'unknown'
 }
 
@@ -236,9 +241,11 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
    */
   const applyOnce = async (): Promise<string | undefined> => {
     const ns = namespace.ns
-    // A pi-ai profile names the conventional reference only when this page is
-    // about to store a key. Otherwise the provider keeps its native auth path.
-    const next = layout === 'pi-ai' && stringAt(draft, 'apiKeyEnv') === undefined
+    // A profile names the conventional reference only when this page is about
+    // to store a key. Otherwise the provider keeps its own auth path — for the
+    // OpenAI family that is the route's derived reference default, for pi-ai
+    // the provider's native discovery.
+    const next = (layout === 'pi-ai' || layout === 'openai') && stringAt(draft, 'apiKeyEnv') === undefined
       && stringAt(fallback, 'apiKeyEnv') === undefined && keyValue.length > 0
       ? setPath(draft, ['apiKeyEnv'], keyRef)
       : draft
@@ -258,7 +265,9 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       const sectionError = validateDraft(node, next)
       if (sectionError !== undefined) return sectionError
     }
-    const materializesNativeProfile = layout === 'pi-ai'
+    // A brand-new path-addressed profile the card leaves empty still has to
+    // materialize: the dict key's presence IS the route's registration.
+    const materializesNativeProfile = (layout === 'pi-ai' || layout === 'openai' || layout === 'codex' || layout === 'antigravity')
       && fallback === undefined
       && committedOriginal === undefined
       && Object.keys(next).length === 0
@@ -329,9 +338,11 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   /**
    * The curated fields of one known adapter family. The family arrives
    * narrowed so the per-family branches below are total: an unknown namespace
-   * renders the hint instead and never reaches this body.
+   * renders the hint instead and never reaches this body. `openai` carries a
+   * key and an endpoint; `codex` carries neither — its card only switches the
+   * subscription-auth route on.
    */
-  const curatedFields = (family: 'deepseek' | 'pi-ai'): ReactNode => {
+  const curatedFields = (family: 'deepseek' | 'pi-ai' | 'openai' | 'codex' | 'antigravity'): ReactNode => {
     // What a hand-declared route names for itself and nothing else can supply.
     // A whole-section `llm-deepseek` profile is a composition fact with no
     // per-route identity for its schema to carry, hence the family test.
@@ -345,7 +356,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       ? t('keyEnvLocked')
       : keyState?.configured === true && props.credentialRequired !== true
         ? t('keyStored')
-        : family === 'pi-ai' ? t('keyPlaceholderNative') : t('keyPlaceholder')
+        : family === 'deepseek' ? t('keyPlaceholder') : t('keyPlaceholderNative')
     /** What both family editors take: the rows, whose layer owns them, and the two writes. */
     const catalogProps = {
       models,
@@ -359,24 +370,34 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     }
     return (
       <>
-        <div className={styles['field']}>
-          <span className={styles['fieldLabel']}>{t('keyInput')}</span>
-          <input
-            className={styles['input']}
-            type="password"
-            autoComplete="off"
-            value={keyDraft}
-            placeholder={keyPlaceholder}
-            aria-label={t('keyInput')}
-            aria-invalid={shownKeyFailure !== undefined}
-            required={props.credentialRequired === true}
-            autoFocus={props.autoFocusCredential === true}
-            disabled={disabled || keyLocked}
-            onChange={(event) => { setKeyDraft(event.target.value) }}
-          />
-          {shownKeyFailure === undefined ? null : <p className={styles['error']}>{t(shownKeyFailure)}</p>}
-        </div>
-        {props.credentialOnly === true ? null : <details className={styles['customized']}>
+        {family === 'codex' || family === 'antigravity'
+          // No key input by design: the route authenticates through the
+          // shared Codex / Antigravity OAuth login, so the card says so instead.
+          ? (
+            <p className={styles['advancedHint']}>
+              {family === 'codex' ? t('subscriptionHint') : t('antigravitySubscriptionHint')}
+            </p>
+          )
+          : (
+            <div className={styles['field']}>
+              <span className={styles['fieldLabel']}>{t('keyInput')}</span>
+              <input
+                className={styles['input']}
+                type="password"
+                autoComplete="off"
+                value={keyDraft}
+                placeholder={keyPlaceholder}
+                aria-label={t('keyInput')}
+                aria-invalid={shownKeyFailure !== undefined}
+                required={props.credentialRequired === true}
+                autoFocus={props.autoFocusCredential === true}
+                disabled={disabled || keyLocked}
+                onChange={(event) => { setKeyDraft(event.target.value) }}
+              />
+              {shownKeyFailure === undefined ? null : <p className={styles['error']}>{t(shownKeyFailure)}</p>}
+            </div>
+          )}
+        {props.credentialOnly === true || family === 'codex' || family === 'antigravity' ? null : <details className={styles['customized']}>
           <summary className={styles['customizedSummary']}>{t('customized')}</summary>
           <div className={styles['customizedBody']}>
             {/* The name and the protocol are the create card's two remaining
@@ -447,9 +468,10 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                 </div>
               )
               : null}
-            {/* Both families edit the same rows through the same contract; only
-                the extras differ — DeepSeek's inherited capacities, pi-ai's
-                endpoint interrogation. */}
+            {/* The deepseek and pi-ai families edit the same rows through the
+                same contract; only the extras differ — DeepSeek's inherited
+                capacities, pi-ai's endpoint interrogation. The OpenAI family's
+                catalog stays in settings.yaml: its profile owns no models. */}
             {family === 'deepseek'
               ? (
                 <DeepSeekModelsEditor
@@ -460,7 +482,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                   defaultMaxTokens={typeof defaultMaxTokens === 'number' ? defaultMaxTokens : undefined}
                 />
               )
-              : <ModelListEditor {...catalogProps} probe={probe} probeBlocked={keyFailure} api={api} />}
+              : family === 'pi-ai' ? <ModelListEditor {...catalogProps} probe={probe} probeBlocked={keyFailure} api={api} /> : null}
           </div>
         </details>}
       </>

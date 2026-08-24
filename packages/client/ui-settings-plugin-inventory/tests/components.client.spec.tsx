@@ -124,4 +124,32 @@ describe('PluginInventorySettingsTab', () => {
     pendingFailure.unmount()
     await act(async () => { deferredFailure.reject(new Error('late failure')) })
   })
+
+  it('handles toggle switch interaction with optimistic update and failure rollback', async () => {
+    const list = vi.fn(async () => SNAPSHOT)
+    const toggle = vi.fn(async (_entryId: string, _enabled: boolean) => {})
+    render(<PluginInventorySettingsTab {...props(list)} toggle={toggle} />)
+
+    const switchBtn = await screen.findByRole('switch', { name: 'Disable hmr' })
+    expect(switchBtn.getAttribute('aria-checked')).toBe('true')
+    expect(switchBtn.getAttribute('data-checked')).toBe('true')
+
+    // Click to toggle off (optimistic update)
+    fireEvent.click(switchBtn)
+    expect(toggle).toHaveBeenCalledWith('8a1b2c3d', false)
+    expect(switchBtn.getAttribute('aria-checked')).toBe('false')
+    expect(switchBtn.getAttribute('data-checked')).toBe('false')
+
+    // Test toggle failure with rollback
+    cleanup()
+    const failingToggle = vi.fn(async () => { throw new Error('toggle rejected') })
+    render(<PluginInventorySettingsTab {...props(list)} toggle={failingToggle} />)
+    const activeSwitch = await screen.findByRole('switch', { name: 'Disable hmr' })
+    fireEvent.click(activeSwitch)
+    expect(failingToggle).toHaveBeenCalledWith('8a1b2c3d', false)
+    await waitFor(() => {
+      expect(activeSwitch.getAttribute('aria-checked')).toBe('true')
+      expect(activeSwitch.getAttribute('data-checked')).toBe('true')
+    })
+  })
 })

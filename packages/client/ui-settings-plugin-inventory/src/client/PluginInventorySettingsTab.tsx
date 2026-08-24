@@ -12,6 +12,8 @@ import css from './PluginInventorySettingsTab.module.css'
 export interface PluginInventorySettingsTabInjected {
   /** Read a current Host inventory snapshot. */
   list: () => Promise<PluginInventorySnapshot>
+  /** Toggle a plugin's enabled state. */
+  toggle: (entryId: string, enabled: boolean) => Promise<void>
 }
 
 type PluginInventoryEntry = PluginInventorySnapshot['entries'][number]
@@ -61,12 +63,13 @@ function matches(entry: PluginInventoryEntry, normalizedQuery: string): boolean 
 }
 
 /** Render the read-only current Loader inventory. */
-export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsTabProps): ReactNode {
+export function PluginInventorySettingsTab({ list, toggle, t }: PluginInventorySettingsTabProps): ReactNode {
   const catalogId = useId()
   const [request, setRequest] = useState(0)
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState<PluginInventoryEntry['entryId'] | null>(null)
   const [state, setState] = useState<ViewState>({ status: 'loading' })
+  const [toggling, setToggling] = useState<Set<PluginInventoryEntry['entryId']>>(new Set())
 
   useEffect(() => {
     let current = true
@@ -94,6 +97,48 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
   const retry = (): void => {
     setState({ status: 'loading' })
     setRequest(value => value + 1)
+  }
+
+  const handleToggle = async (entry: PluginInventoryEntry): Promise<void> => {
+    const newEnabled = !entry.enabled
+    setToggling(prev => new Set(prev).add(entry.entryId))
+    // Optimistic UI update: flip switch immediately for native responsiveness
+    setState(current => {
+      if (current.status !== 'ready') return current
+      return {
+        ...current,
+        snapshot: {
+          ...current.snapshot,
+          entries: current.snapshot.entries.map(e =>
+            e.entryId === entry.entryId ? { ...e, enabled: newEnabled } : e
+          ),
+        },
+      }
+    })
+    try {
+      await toggle(entry.entryId, newEnabled)
+    } catch (err) {
+      console.error('Failed to toggle plugin', entry.entryId, err)
+      // Rollback to original state on failure
+      setState(current => {
+        if (current.status !== 'ready') return current
+        return {
+          ...current,
+          snapshot: {
+            ...current.snapshot,
+            entries: current.snapshot.entries.map(e =>
+              e.entryId === entry.entryId ? { ...e, enabled: !newEnabled } : e
+            ),
+          },
+        }
+      })
+    } finally {
+      setToggling(prev => {
+        const next = new Set(prev)
+        next.delete(entry.entryId)
+        return next
+      })
+    }
   }
 
   return (
@@ -131,7 +176,6 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
               {filteredEntries.map((entry) => {
                 const status = phaseLabel(entry.fiberPhase, t)
                 const title = moduleShortName(entry.moduleName)
-                const configuration = t(entry.enabled ? 'enabledTag' : 'disabledTag')
                 const open = expanded === entry.entryId
                 const detailId = `${catalogId}-details-${encodeURIComponent(entry.entryId)}`
                 return (
@@ -141,40 +185,64 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
                     data-plugin-entry={entry.entryId}
                     data-open={open ? 'true' : undefined}
                   >
-                    <button
-                      className={css.cardContent}
-                      type="button"
-                      aria-expanded={open}
-                      aria-controls={detailId}
-                      aria-label={entry.enabled ? `${title}, ${status}, ${configuration}` : `${title}, ${configuration}`}
-                      onClick={() => {
-                        setExpanded(current => current === entry.entryId ? null : entry.entryId)
-                      }}
-                    >
-                      <strong className={css.cardTitle} title={entry.moduleName}>{title}</strong>
-                      <span className={css.cardTrailing}>
-                        {entry.enabled ? (
+                    <div className={css.cardRow}>
+                      <button
+                        className={css.cardContent}
+                        type="button"
+                        aria-expanded={open}
+                        aria-controls={detailId}
+                        aria-label={entry.enabled ? `${title}, ${status}, ${t('enabledTag')}` : `${title}, ${t('disabledTag')}`}
+                        onClick={() => {
+                          setExpanded(current => current === entry.entryId ? null : entry.entryId)
+                        }}
+                      >
+                        <strong className={css.cardTitle} title={entry.moduleName}>{title}</strong>
+                        <span className={css.cardTrailing}>
+                          {entry.enabled ? (
+                            <span
+                              className={css.statusDot}
+                              data-phase={entry.fiberPhase ?? 'unobserved'}
+                              role="img"
+                              aria-label={status}
+                              title={status}
+                            />
+                          ) : null}
                           <span
-                            className={css.statusDot}
-                            data-phase={entry.fiberPhase ?? 'unobserved'}
-                            role="img"
-                            aria-label={status}
-                            title={status}
-                          />
-                        ) : null}
-                        <span className={css.configTag} data-enabled={entry.enabled ? 'true' : 'false'}>
-                          {configuration}
+                            className={css.configTag}
+                            data-enabled={entry.enabled ? 'true' : undefined}
+                          >
+                            {entry.enabled ? t('enabledTag') : t('disabledTag')}
+                          </span>
+                          <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
                         </span>
-                        <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
-                      </span>
-                    </button>
+                      </button>
+                      <button
+                        className={css.toggle}
+                        type="button"
+                        role="switch"
+                        aria-checked={entry.enabled}
+                        data-checked={entry.enabled ? 'true' : 'false'}
+                        aria-label={entry.isProtected ? `${title} (Core plugin - protected)` : entry.enabled ? `Disable ${title}` : `Enable ${title}`}
+                        title={entry.isProtected ? 'Core plugin - protected' : undefined}
+                        disabled={entry.isProtected || toggling.has(entry.entryId)}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          event.preventDefault()
+                          if (!entry.isProtected) {
+                            void handleToggle(entry)
+                          }
+                        }}
+                      >
+                        <span className={css.toggleThumb} />
+                      </button>
+                    </div>
                     {open ? (
                       <div className={css.cardDetails} id={detailId}>
                         <code className={css.entryValue} data-loader-entry>{entry.entryId}</code>
                         <dl className={css.details}>
                           <div>
                             <dt>{t('configuration')}</dt>
-                            <dd>{configuration}</dd>
+                            <dd>{entry.enabled ? t('enabledTag') : t('disabledTag')}</dd>
                           </div>
                           {entry.enabled ? (
                             <div>

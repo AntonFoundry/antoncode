@@ -57,11 +57,31 @@ describe('dsh-tool-todo', () => {
     expect(schema).toBeDefined()
     const props = (schema!.parameters as { properties?: Record<string, unknown> }).properties ?? {}
     expect(Object.keys(props)).toEqual(['todos'])
-    const todos = props.todos as { type: string; items?: { properties?: Record<string, { type: string; enum?: string[] }> } }
+    const todos = props.todos as {
+      type: string
+      items?: {
+        properties?: Record<string, { type: string; enum?: string[] }>
+      }
+    }
     expect(todos.type).toBe('array')
     const itemProps = todos.items?.properties ?? {}
-    expect(Object.keys(itemProps).sort()).toEqual(['content', 'status'])
-    expect(itemProps.status?.enum).toEqual(['pending', 'in_progress', 'completed'])
+    // A top-level node: content, the four-state status, optional priority, optional children.
+    expect(Object.keys(itemProps).sort()).toEqual(['children', 'content', 'priority', 'status'])
+    expect(itemProps.status?.enum).toEqual(['pending', 'in_progress', 'completed', 'cancelled'])
+
+    // Level two carries the same fields plus its own children (level three).
+    const childItems = itemProps.children as {
+      items?: { properties?: Record<string, unknown> }
+    }
+    const childProps = childItems.items?.properties ?? {}
+    expect(Object.keys(childProps).sort()).toEqual(['children', 'content', 'priority', 'status'])
+
+    // Level three is leaf-shaped: no further nesting can be expressed.
+    const grandItems = childProps.children as {
+      items?: { properties?: Record<string, unknown> }
+    }
+    const grandProps = grandItems.items?.properties ?? {}
+    expect(Object.keys(grandProps).sort()).toEqual(['content', 'priority', 'status'])
   })
 
   it('appends a todo/write event carrying the whole list to the calling session', async () => {
@@ -76,9 +96,9 @@ describe('dsh-tool-todo', () => {
     if (result.isError) throw new Error('expected todo_write success')
     expect(result.value).toEqual({
       todos,
-      counts: { pending: 1, inProgress: 1, completed: 0 },
+      counts: { pending: 1, inProgress: 1, completed: 0, cancelled: 0 },
     })
-    expect(text(result)).toContain('1 pending, 1 in progress, 0 completed')
+    expect(text(result)).toContain('1 pending, 1 in progress, 0 completed, 0 cancelled')
 
     const event = agent.session.events.findLast(e => e.type === 'todo/write')!
     expect(event.data.todos).toEqual(todos)
@@ -110,6 +130,64 @@ describe('dsh-tool-todo', () => {
     ])
   })
 
+  it('stores a nested three-level tree and counts across every level', async () => {
+    const ctx = await setup(true)
+    const agent = agentWithSession('tree')
+    const todos: TodoItem[] = [
+      {
+        content: 'ship feature',
+        status: 'in_progress',
+        priority: 'high',
+        children: [
+          {
+            content: 'implement',
+            status: 'completed',
+            children: [{ content: 'core logic', status: 'completed' }],
+          },
+          { content: 'test', status: 'pending', priority: 'medium' },
+          { content: 'old approach', status: 'cancelled' },
+        ],
+      },
+    ]
+    const result = await callTodo(ctx, { todos }, { agent })
+    expect(result.isError).toBe(false)
+    if (result.isError) throw new Error('expected todo_write success')
+    // Counts span the whole tree: 2 completed (one is a grandchild), 1 pending,
+    // 1 active top-level node, 1 cancelled.
+    expect(result.value).toEqual({
+      todos,
+      counts: { pending: 1, inProgress: 1, completed: 2, cancelled: 1 },
+    })
+    expect(text(result)).toContain('1 pending, 1 in progress, 2 completed, 1 cancelled')
+
+    const event = agent.session.events.findLast(e => e.type === 'todo/write')!
+    expect(event.data.todos).toEqual(todos)
+  })
+
+  it('counts an in_progress child toward the whole-tree single-active rule', async () => {
+    const ctx = await setup(false)
+    const agent = agentWithSession('nested-active')
+    const result = await callTodo(ctx, { todos: [{
+      content: 'parent',
+      status: 'in_progress',
+      children: [{ content: 'child', status: 'in_progress' }],
+    }] }, { agent })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('at most one task may be in_progress across the whole tree')
+    expect(agent.session.events.some(e => e.type === 'todo/write')).toBe(false)
+  })
+
+  it('rejects duplicate content across different levels', async () => {
+    const ctx = await setup(true)
+    const result = await callTodo(ctx, { todos: [{
+      content: 'dup',
+      status: 'pending',
+      children: [{ content: 'dup', status: 'pending' }],
+    }] })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('duplicate')
+  })
+
   it('rejects a malformed status before execute runs (registry arg-validation)', async () => {
     const ctx = await setup(true)
     const result = await callTodo(ctx, { todos: [{ content: 'x', status: 'doing' }] })
@@ -135,7 +213,7 @@ describe('dsh-tool-todo', () => {
     if (result.isError) throw new Error('expected todo_write success')
     expect(result.value).toEqual({
       todos,
-      counts: { pending: 1, inProgress: 2, completed: 0 },
+      counts: { pending: 1, inProgress: 2, completed: 0, cancelled: 0 },
     })
     expect(agent.session.events.findLast(e => e.type === 'todo/write')!.data.todos).toEqual(todos)
   })
@@ -175,11 +253,11 @@ describe('dsh-tool-todo', () => {
     it('instructs the model to keep at most one active, while true instructs parallel', async () => {
       const single = await setup(false)
       const singleDesc = single.tools.schemas().find(s => s.name === 'todo_write')!.description
-      expect(singleDesc).toContain('Keep AT MOST ONE todo `in_progress`')
+      expect(singleDesc).toContain('Keep AT MOST ONE node `in_progress`')
       expect(singleDesc).not.toContain('several at once')
 
       const parallelDesc = (await setup(true)).tools.schemas().find(s => s.name === 'todo_write')!.description
-      expect(parallelDesc).toContain('several at once when work genuinely runs in parallel')
+      expect(parallelDesc).toContain('several at once when work genuinely runs concurrently')
       expect(parallelDesc).not.toContain('AT MOST ONE')
     })
   })
@@ -187,7 +265,8 @@ describe('dsh-tool-todo', () => {
   it.each([
     { label: 'empty content', todos: [{ content: '   ', status: 'pending' }], fragment: 'non-empty' },
     { label: 'duplicate content', todos: [{ content: 'dup', status: 'pending' }, { content: 'dup', status: 'completed' }], fragment: 'duplicate' },
-    { label: 'unknown item keys', todos: [{ content: 'a', status: 'pending', children: [] }], fragment: 'not a declared property' },
+    { label: 'a fourth level of nesting', todos: [{ content: 'a', status: 'pending', children: [{ content: 'b', status: 'pending', children: [{ content: 'c', status: 'pending', children: [{ content: 'd', status: 'pending' }] }] }] }], fragment: 'not a declared property' },
+    { label: 'an unknown priority', todos: [{ content: 'a', status: 'pending', priority: 'urgent' }], fragment: 'must be one of' },
   ])('rejects $label as an isError result', async ({ todos, fragment }) => {
     const ctx = await setup(true)
     const result = await callTodo(ctx, { todos })
@@ -202,11 +281,11 @@ describe('dsh-tool-todo', () => {
     expect(text(result)).toContain('owning agent session')
   })
 
-  it('presents the call with a stable title and the list as raw input', async () => {
+  it('presents the call with a stable title and the tree as raw input', async () => {
     const ctx = await setup(true)
     const def = ctx.tools.get('todo_write')!
     const todos = [{ content: 'a', status: 'pending' }]
-    expect(def.presentCall?.({ todos })).toEqual({ card: 'generic', title: 'Update todo list', kind: 'other', rawInput: todos })
+    expect(def.presentCall?.({ todos })).toEqual({ card: 'generic', title: 'Update todo tree', kind: 'other', rawInput: todos })
   })
 
   it('unregisters the tool when its contributing fiber is disposed (HMR-safety)', async () => {

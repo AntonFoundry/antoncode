@@ -36,9 +36,9 @@
   config:
     # TEMPORARY workaround: DSH_TOOLS_MODE (native|code|both) opts a whole dsh
     # process into Code Mode while per-session tool-presentation selection is being
-    # designed; unset keeps the schema default (native). Remove the env seam
-    # once the web UI owns the choice per session.
-    mode: !!js process.env.DSH_TOOLS_MODE
+    # designed; unset defaults to paged (catalog + tool_search) to bound per-request
+    # tool-schema tokens. Remove the env seam once the web UI owns the choice per session.
+    mode: !!js process.env.DSH_TOOLS_MODE ?? 'paged'
 
 # ── web-only host rows, the transport layer, and the browser roster ─────────
 
@@ -348,18 +348,26 @@
 - id: plan-mode
   disabled: true
 
-# The token METER stays on the host plane; only the compaction backend that
-# reads it moves. It owns the context-meter projection units, and that table is
-# process-wide, so preset ownership would make the meter a function of which
-# presets happen to be mounted rather than a per-session fact. Same criterion as
-# `tasks` and `goals`; the reasoning has one home in
-# `.agents/notes/implemented/architecture/2026-08-10-host-plane-ownership-after-presets.md`.
+# Context pressure is owned by the c0ntext evictor (zones + surface
+# eviction at the 40% watermark), not by generic compaction. `compaction-basic`
+# and the tool-result pruner stay off: silent pruning contradicts the
+# eviction-first policy, and the evictor mirrors raw evidence into the engine
+# BEFORE evicting, so nothing is lost that bitemporal search cannot revive.
+# `command-compact` stays on as the rare, human-invoked special command.
 
 - id: compaction-basic
-  disabled: true
+  config:
+    # Mounted service-only: `command-compact` (the human `/compact`) needs
+    # this backend, but automatic compaction is off — context pressure is
+    # owned by the c0ntext evictor (zones + surface eviction at the 40%
+    # watermark), and the evictor mirrors raw evidence into the engine
+    # BEFORE evicting, so nothing is lost that bitemporal search cannot
+    # revive. The tool-result pruner stays off for the same reason: silent
+    # pruning drops evidence the engine never saw.
+    auto: false
 
 - id: command-compact
-  disabled: true
+  disabled: false
 
 - id: tool-result-pruner
   disabled: true

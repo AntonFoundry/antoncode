@@ -1,5 +1,7 @@
 {
-  // Client-side typecheck aggregate: packages/client tests (.ts and .tsx).
+  // Client-side production aggregate. Test files are typechecked by Vitest;
+  // keeping them out of the build graph lets a production Web bundle be built
+  // independently of test-only React generic incompatibilities.
   // Split from the host aggregate because both sides merge cordis Context
   // under the same keys (sessions, loader) with different services; shared
   // leaves (session/llm/tools/apiproxy/...) build once and are referenced by
@@ -17,23 +19,10 @@
     // Source-subpath test imports can arrive through workspace links whose
     // realpath semantics vary by host. Load package CSS declarations directly.
     "packages/client/*/src/css-modules.d.ts",
-    "packages/client/*/tests/**/*.ts",
-    "packages/client/*/tests/**/*.tsx",
-    "packages/*/*/tests/**/*.client.spec.ts",
-    "packages/*/*/tests/**/*.client.spec.tsx",
-    "packages/*/*/tests/**/*.client.tsx",
-    "packages/*/*/tests/**/*.client.ts",
     // Client package outside packages/client with a local CSS module face.
     "packages/extensions/ui-cordis/src/css-modules.d.ts",
     "packages/client/tsdown.client.ts",
-    "scripts/client-bundle-css.spec.ts",
-    "scripts/client-bundle-purity.spec.ts"
-  ],
-  // A `*.host.spec.ts` covers the Host half of a split client package and
-  // belongs to the host aggregate, which excludes this program's `*.client.*`
-  // in turn. `exclude` wins over `include`, so the test glob above stays broad.
-  "exclude": [
-    "packages/client/*/tests/**/*.host.spec.ts"
+    "packages/client/tsdown.client.ts"
   ],
   "references": [
     // Shared leaf: web e2e boots the real host webserver (fixture + real-host
