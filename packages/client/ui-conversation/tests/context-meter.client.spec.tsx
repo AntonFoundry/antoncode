@@ -20,6 +20,8 @@ const BREAKDOWN = { systemTokens: 120, toolsTokens: 21_500, messageTokens: 477_0
 
 const segmentClass = css.segment
 if (segmentClass === undefined) throw new Error('segment class missing from ContextMeter.module.css')
+const additionMarkerClass = css.additionMarker
+if (additionMarkerClass === undefined) throw new Error('additionMarker class missing from ContextMeter.module.css')
 
 /** Stub the projection seat: a key-addressed table of whole values. */
 function projections(values: Record<string, unknown>): ContextMeterProps['useProjection'] {
@@ -54,6 +56,8 @@ describe('ContextMeter', () => {
     expect(panel.textContent).toContain('对话消息~477K')
     // The occupancy bar splits into one colored segment per composition row.
     expect(panel.getElementsByClassName(segmentClass)).toHaveLength(3)
+    // The red bar marks the point where new token additions will occur.
+    expect(panel.getElementsByClassName(additionMarkerClass)).toHaveLength(1)
     // Clicking the trigger again toggles the panel shut.
     fireEvent.click(trigger)
     expect(view.container.querySelector('[role="dialog"]')).toBeNull()

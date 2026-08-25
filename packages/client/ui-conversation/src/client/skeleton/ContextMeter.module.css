@@ -101,6 +101,14 @@
   background: var(--meter-tint, var(--dsw-alias-label-tertiary));
 }
 
+.additionMarker {
+  flex: none;
+  width: 2px;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--dsw-static-red-500, rgb(239, 68, 68));
+}
+
 .swatch {
   display: inline-block;
   margin-right: 6px;

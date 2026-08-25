@@ -132,6 +132,7 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
                 style={{ width: `${segment.width}%` }}
               />
             ))}
+            <div className={css.additionMarker} aria-hidden />
           </div>
           {breakdown !== undefined && (
             <dl className={css.rows}>
