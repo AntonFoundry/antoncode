@@ -16,6 +16,7 @@ import { SESSION_FORMAT_VERSION, SessionId } from './types.ts'
 import type { TypertLookup } from '@deepseek-ai/dsh-typert-protocol'
 import type { CreateSessionOptions, EpochHeader, PrepareSessionOptions, RequestContext, SessionEvent, SessionEventMap, SessionEventType, SessionHeader, SurfaceIntent, SurfaceEventType } from './types.ts'
 import { snapshotJsonValue } from './json.ts'
+import { KNOWN_SESSION_EVENT_TYPES } from './known-event-types.ts'
 import { deriveEventMessage, SurfaceManager } from './surface.ts'
 import type { SessionSurface } from './surface.ts'
 import { foldRequestHeader } from './request-header.ts'
@@ -583,7 +584,12 @@ export class Session {
    *   declare how it joins the surface, the sole source of derived model
    *   history) and
    *   rejected by the compiler for non-surface types like `turn/start` or
-   *   `assistant/chunk`.
+   *   `assistant/chunk`. Either kind of event may also carry
+   *   `{ ignorable: true }`. A type outside this build's generated vocabulary
+   *   (an out-of-repo plugin event) is marked ignorable AUTOMATICALLY — the
+   *   envelope marker lets a reader that does not know the type admit the
+   *   record instead of refusing the whole log, and the event still reaches
+   *   type-dispatched folds and projections that do know it.
    * @returns the logged event — its assigned `seq`/`time` plus the SNAPSHOT of
    *   `data` that entered the log, so reading `event.data` back sees the logged
    *   value, never the caller's still-mutable input.
@@ -604,9 +610,21 @@ export class Session {
   append<T extends SessionEventType>(
     type: T,
     data: SessionEventMap[T],
-    ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent] : []
+    ...opts: T extends SurfaceEventType
+      ? [opts: SurfaceIntent & { ignorable?: true }]
+      : [opts?: { ignorable?: true }]
   ): SessionEvent<T> {
-    const surfaceOpts: SurfaceIntent | undefined = opts[0]
+    // A type outside this build's generated vocabulary (an out-of-repo plugin
+    // event) is auto-marked ignorable: the writer knows a foreign reader cannot
+    // require it, and the persistence gate refuses unmarked unknown types
+    // because skipping a REQUIRED event would misreconstruct the log. The
+    // marker only bypasses that gate — the event still enters the log, folds
+    // still dispatch by type, and a plugin projection that knows the type
+    // still consumes it after a load. An explicit `{ ignorable: false }` is not
+    // accepted: a foreign event cannot be required by a reader that does not
+    // know it. (merge-extensible log-only events keep their documented freedom)
+    const ignorable = opts[0]?.ignorable === true || !KNOWN_SESSION_EVENT_TYPES.has(type)
+    const surfaceOpts = opts[0] as (SurfaceIntent & { ignorable?: true }) | undefined
     const surfaceMetadata = {
       ...surfaceOpts?.sourceEventSeqs === undefined ? {} : { sourceEventSeqs: surfaceOpts.sourceEventSeqs },
       ...surfaceOpts?.surfaceOp === undefined ? {} : { surfaceOp: surfaceOpts.surfaceOp },
@@ -629,6 +647,7 @@ export class Session {
       seq: this.log.length,
       time: Date.now(),
       data: dataSnapshot,
+      ...(ignorable ? { ignorable: true as const } : {}),
       ...(surfaceMetadataSnapshot as { surfaceOp?: unknown; sourceEventSeqs?: unknown }),
     } as unknown as SessionEvent<T>)
     this.surfaceManager.validateNext(event as SessionEvent)

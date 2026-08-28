@@ -1088,6 +1088,23 @@ describe('Session', () => {
     ])
     expect(marked.events[0]?.ignorable).toBe(true)
   })
+
+  it('auto-marks appended foreign event types ignorable', () => {
+    // An out-of-vocabulary plugin event must carry the envelope marker, or a
+    // later load refuses the whole log (unknown required event). The append
+    // site marks it automatically: the writer knows a foreign reader cannot
+    // require the type, and the marker only bypasses the persistence gate —
+    // the event still enters the log for type-dispatched folds/projections.
+    const session = Session.create(SessionId('auto-ignorable'))
+    const appendForeign = session.append.bind(session) as unknown as
+      (type: string, data: unknown, opts?: { ignorable?: true }) => SessionEvent
+    const auto = appendForeign('c0ntext/page-enrichment', { startSeq: 0, endSeq: 0, topics: [], status: 'failed' })
+    expect(auto.ignorable).toBe(true)
+    // An explicit marker is preserved; a known type never gains one.
+    const explicit = appendForeign('plugin/marker', {}, { ignorable: true })
+    expect(explicit.ignorable).toBe(true)
+    expect(session.append('turn/start', { turn: 1 }).ignorable).toBeUndefined()
+  })
 })
 
 
