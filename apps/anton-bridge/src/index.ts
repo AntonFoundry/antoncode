@@ -111,6 +111,29 @@ const contextRoot = defaultContextRoot()
 // supplies Application Support paths; checkout development gets ~/.anton/dsh
 // so it cannot accidentally mutate a developer's ordinary ~/.dsh profile.
 const dshHome = process.env.ANTON_DSH_HOME ?? join(homedir(), '.anton', 'dsh')
+
+/**
+ * Resolve the c0ntext engine key for the harness process. The credentials
+ * file is flat `KEY: value` YAML written by the app; only this exact key name
+ * is read and it is never logged. The engine rejects unauthenticated queries,
+ * so a harness launched without `ANTON_CONTEXT_API_KEY` set loses every
+ * c0ntext turn even though `/health` still answers.
+ */
+function resolveContextApiKey(): string {
+  const existing = process.env.ANTON_CONTEXT_API_KEY?.trim()
+  if (existing) return existing
+  try {
+    for (const line of readFileSync(join(dshHome, '.credentials.yaml'), 'utf8').split('\n')) {
+      if (line.startsWith('ANTON_CONTEXT_API_KEY:')) {
+        return line.slice('ANTON_CONTEXT_API_KEY:'.length).trim()
+      }
+    }
+  } catch {
+    // Absent or unreadable credentials file — the caller still launches the
+    // harness; the engine per-request rejection will surface the gap.
+  }
+  return ''
+}
 const bundledContextPluginRoot = process.env.ANTON_CONTEXT_PLUGIN_ROOT
   ?? join(contextRoot, 'deepseek-harness-plugin')
 
@@ -138,18 +161,23 @@ function patchBody(toolsMode: string): string {
     '  config:',
     '    endpoint: http://127.0.0.1:8090',
     '    endpointEnv: ANTON_CONTEXT_ENDPOINT',
+    "    apiKey: ''",
+    '    apiKeyEnv: ANTON_CONTEXT_API_KEY',
     '    projectId: c0ntext',
     '    tokenBudget: 1200',
     '    requestedZones: [goal, constraints, active_plan, active_tabs, focus_artifact, findings, next_actions, project_decisions, project_facts, project_investigations, episodes, investigations, agent_cases, hypotheses]',
     '    mirrorSession: true',
-    '    # Human-memory policy: evict before the surface reaches 40% of the',
-    '    # declared window (research threshold where model intelligence starts',
-    '    # degrading on long contexts). Sweeps batch down to the 60% watermark',
-    '    # so eviction runs rarely, in large contiguous pages, not one node at a',
-    '    # time. Evicted ranges are mirrored into the engine first; bitemporal',
-    '    # search resuscitates them when a later query needs them.',
-    '    maxSurfaceRatio: 0.60',
-    '    retainTokens: 4000',    '    evictorEnabled: true',
+    '    # Human-memory policy: evict only when the surface reaches 80% of the',
+    '    # declared window. No sweep watermark: selection evicts the contiguous',
+    '    # low-value historical range (task-linked and pinned events anchor the',
+    '    # boundary). Everything outside that selected range remains; there is',
+    '    # no minimum retained-token floor or sweep target. Evicted ranges are',
+    '    # mirrored into the engine first; bitemporal search resuscitates them',
+    '    # when a later query needs them.',
+    '    maxSurfaceRatio: 0.80',
+    '    # Keep c0ntext retrieval and mirroring active, but do not rewrite the live',
+    '    # conversation while developing. Re-enable explicitly for long sessions.',
+    '    evictorEnabled: false',
     '    searchToolEnabled: true',
     '    imageFallbackEnabled: true',
     '    visionProvider: kimi-coding',
@@ -181,15 +209,15 @@ function ensureBundledContextProfile(): void {
   const profileDir = join(dshHome, 'profiles', profile)
   const manifestPath = join(profileDir, 'package.json')
   const patchPath = join(profileDir, 'cordis.patch.yml')
-  const pluginLink = join(profileDir, 'node_modules', '@c0ntext', 'dsh-context')
+  const pluginLink = join(profileDir, 'node_modules', '@c0ntext', 'dsh-c0ntext')
   mkdirSync(dirname(pluginLink), { recursive: true })
 
   if (!existsSync(manifestPath)) {
     writeFileSync(manifestPath, `${JSON.stringify({
       name: `anton-profile-${profile}`,
       private: true,
-      dependencies: { '@c0ntext/dsh-context': `file:${bundledContextPluginRoot}` },
-      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@c0ntext/dsh-context'] } },
+      dependencies: { '@c0ntext/dsh-c0ntext': `file:${bundledContextPluginRoot}` },
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@c0ntext/dsh-c0ntext'] } },
     }, null, 2)}\n`)
   }
   if (!existsSync(patchPath)) {
@@ -291,7 +319,12 @@ async function startHarness(): Promise<{ started: boolean; reused: boolean }> {
       stdin: 'ignore',
       stdout: 'inherit',
       stderr: 'inherit',
-      env: { ...process.env, ANTON_CONTEXT_ENDPOINT: contextEndpoint, DSH_HOME: dshHome },
+      env: {
+        ...process.env,
+        ANTON_CONTEXT_ENDPOINT: contextEndpoint,
+        ANTON_CONTEXT_API_KEY: resolveContextApiKey(),
+        DSH_HOME: dshHome,
+      },
     },
   )
   harnessProcess = child
