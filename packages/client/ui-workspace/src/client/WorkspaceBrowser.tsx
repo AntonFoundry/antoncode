@@ -22,6 +22,7 @@ import type { WorkspaceBrowserProps } from './contract/slots.ts'
 import type { SessionNode, SessionOrderBy } from './tree.ts'
 import { deriveFlat, deriveGroups, deriveSearchResults, UNGROUPED_KEY } from './tree.ts'
 import { ProjectRowItem, SearchResultItem, SessionNodeItem } from './rows/Rows.tsx'
+import { orderWorkspacesByActivity } from './workspace-activity.ts'
 import { FLAT_SESSION_ORDER_KEY } from './stores.ts'
 import { WorkspacePickFlow } from './WorkspacePicker.tsx'
 import css from './WorkspaceBrowser.module.css'
@@ -318,16 +319,26 @@ function SessionTree({
     () => reconciledSessionOrder(ungroupedSessionIds, sessionOrderByAccount[UNGROUPED_KEY]),
     [sessionOrderByAccount, ungroupedSessionIds],
   )
+  // Activity float is display-only: deriveGroups still reads each workspace's
+  // own session order, and the Host/persisted workspace order is never written.
+  const now = Date.now()
+  const activityEntries = useMemo(
+    () => orderWorkspacesByActivity(orderedWorkspaces, list, now),
+    [orderedWorkspaces, list, now],
+  )
+  const activityByKey = useMemo(
+    () => new Map(activityEntries.map(entry => [entry.workspace.workspaceId as string, entry.active])),
+    [activityEntries],
+  )
   const groups = useMemo(
-    () => deriveGroups(list, orderedWorkspaces, archivedSessionIds, {
+    () => deriveGroups(list, activityEntries.map(entry => entry.workspace), archivedSessionIds, {
       expandedGroups,
       ...(sessionOrderByAccount[UNGROUPED_KEY] === undefined
         ? {}
         : { ungroupedOrder: sessionOrderByAccount[UNGROUPED_KEY] }),
     }),
-    [list, orderedWorkspaces, archivedSessionIds, expandedGroups, sessionOrderByAccount],
+    [list, activityEntries, archivedSessionIds, expandedGroups, sessionOrderByAccount],
   )
-  const now = Date.now()
   const commitSessionDrag = (activeDrag: DragState, over: NonNullable<DragState['over']>): void => {
     if (sessionDropCommitted.current) return
     sessionDropCommitted.current = true
@@ -450,6 +461,7 @@ function SessionTree({
             >
               <ProjectRowItem
                 group={group}
+                activityActive={activityByKey.get(group.key) === true}
                 t={t}
                 onToggle={() => {
                   if (group.expanded) {

@@ -61,10 +61,12 @@ import { assertUsableApiKey, LlmError } from '@deepseek-ai/dsh-llm'
 import type { AdapterRegistrationHandle, DirectoryRegistrationHandle, LlmConfigurableProvider } from '@deepseek-ai/dsh-llm'
 import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { PiAiAdapter } from './adapter.ts'
-import { catalogProviderIds, catalogProviderTakesApiKey } from './catalog.ts'
+import { catalogProvider, catalogProviderIds, catalogProviderTakesApiKey } from './catalog.ts'
+import type { PiAiLiveModel } from './catalog.ts'
 import { assertServiceable, Config, resolveProfiles } from './config.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { discoverModels } from './discovery.ts'
+import { fetchModelsDevLiveModels } from './models-dev.ts'
 
 export { PiAiAdapter } from './adapter.ts'
 export type { PiAiAdapterOptions } from './adapter.ts'
@@ -158,6 +160,9 @@ export function apply(ctx: Context, config: Config): void {
   let current: () => Config = () => config
   let lastRaw: Config | undefined
   let memoized: ReadonlyMap<string, ResolvedPiAiProviderProfile> | undefined
+  const liveModels = new Map<string, readonly PiAiLiveModel[]>()
+  let refreshedZai = false
+  let refreshPromise: Promise<void> | undefined
   /**
    * The resolved profiles for the current configuration, memoized by the raw
    * snapshot's identity — which is also what makes the adapter's own snapshot
@@ -172,7 +177,7 @@ export function apply(ctx: Context, config: Config): void {
   const profiles = (): ReadonlyMap<string, ResolvedPiAiProviderProfile> => {
     const raw = current()
     if (raw === lastRaw && memoized !== undefined) return memoized
-    const next = resolveProfiles(raw.providers)
+    const next = resolveProfiles(raw.providers, liveModels)
     lastRaw = raw
     memoized = next
     return next
@@ -215,9 +220,63 @@ export function apply(ctx: Context, config: Config): void {
     )
   }
 
+  const refreshModels = async (provider: string): Promise<void> => {
+    if (provider !== 'zai' || refreshedZai) return
+    if (refreshPromise !== undefined) return refreshPromise
+    refreshPromise = (async () => {
+      const raw = current().providers?.[provider]
+      // Schemastery materializes an absent `models` as `[]`, and `[]` serves
+      // no request, so both mean "the catalog decides" — the same reading
+      // `resolveRouteModels` applies.
+      if (raw === undefined || (raw.models !== undefined && raw.models.length > 0)) return
+      const profile = profiles().get(provider)
+      const baseURL = profile?.baseURL ?? catalogProvider(provider)?.baseUrl
+      if (profile === undefined || baseURL === undefined) return
+      const adopt = (discovered: readonly PiAiLiveModel[]): void => {
+        liveModels.set(provider, discovered)
+        lastRaw = undefined
+        memoized = undefined
+        refreshedZai = true
+      }
+      const gatewayListing = (): Promise<readonly PiAiLiveModel[]> =>
+        discoverModels({
+          provider,
+          baseURL,
+          api: profile.api ?? 'openai-completions',
+          forceNetwork: true,
+        }, () => resolveApiKey(provider, profile))
+      try {
+        // An explicit liveModelDiscovery asks the endpoint's own listing,
+        // whose answer is the most current thing the gateway serves. The
+        // default reads models.dev — the catalog source OpenCode serves its
+        // pickers from — so a provider's newest ids arrive at startup without
+        // a dependency bump, and falls back to the endpoint listing when that
+        // fetch fails for any reason; the models.dev error is subsumed by the
+        // fallback attempt and, if that also fails, the diagnostic below.
+        if (raw.liveModelDiscovery === true) {
+          adopt(await gatewayListing())
+          return
+        }
+        try {
+          adopt(await fetchModelsDevLiveModels())
+        } catch {
+          adopt(await gatewayListing())
+        }
+      } catch (error) {
+        ctx.logger.warn(`llm-pi-ai: live ZAI model discovery failed; using bundled catalog (${error instanceof Error ? error.message : String(error)})`)
+      }
+    })()
+    try {
+      await refreshPromise
+    } finally {
+      refreshPromise = undefined
+    }
+  }
+
   const adapter = new PiAiAdapter({
     profiles,
     resolveApiKey,
+    refreshModels,
     resolveAttachments: () => ctx.get('attachments'),
     onReplayDegrade: ({ provider, model, reason }) => {
       ctx.logger.warn(
@@ -299,6 +358,12 @@ export function apply(ctx: Context, config: Config): void {
     registeredFacts = facts
   }
   ensureRegistrationFacts()
+  // Warm the configured ZAI catalog during plugin startup from models.dev
+  // (or, with liveModelDiscovery, the endpoint itself). The static pi-ai
+  // catalog remains available while this fetch is in flight; a successful
+  // response invalidates the immutable profile snapshot and the next
+  // picker/model read sees the provider's current IDs.
+  void refreshModels('zai')
 
   installSettingsSection(ctx, NS, Config, config, {
     // Refuse an unserviceable section where it is written: without this a
@@ -307,8 +372,13 @@ export function apply(ctx: Context, config: Config): void {
     validate: assertServiceable,
     setSource: (source) => {
       current = source
+      refreshedZai = false
+      liveModels.delete('zai')
+      lastRaw = undefined
+      memoized = undefined
     },
     onChange: () => {
+      void refreshModels('zai')
       // Named here rather than left to the settings watcher: `assertServiceable`
       // cannot see the llm registry, so a profile claiming a route another
       // adapter family owns is stored successfully and only fails at this swap.

@@ -217,6 +217,8 @@ export interface LlmModelDiscoveryRequest {
   apiKey?: string
   /** Caller cancellation; implementations must settle promptly after it aborts. */
   signal?: AbortSignal
+  /** Force a network refresh when the adapter has a bundled catalog for this provider. */
+  forceNetwork?: boolean
 }
 
 /**

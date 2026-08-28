@@ -148,6 +148,13 @@
   color: var(--dsw-alias-state-business-primary);
 }
 
+/* Activity accent: an active Workspace's folder tints green (the same accent
+   the running-session StateDot uses) and a small cue dot precedes the title,
+   explaining why the row floats above the Host-ordered inactive rows. */
+.folderActivity {
+  color: var(--dsw-alias-state-success-primary);
+}
+
 
 /* Project leading slot: folder by default, expand arrow on row hover. */
 .projectRow .chevron { display: none; }

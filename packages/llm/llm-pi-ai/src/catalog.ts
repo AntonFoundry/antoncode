@@ -247,6 +247,27 @@ export interface PiAiModelProfile {
  */
 export type PiAiModelOverride = Omit<PiAiModelProfile, 'id'>
 
+/** One model disclosed by a provider's live listing. */
+export interface PiAiLiveModel {
+  /** Provider model id. */
+  id: string
+  /** Provider display label, when disclosed. */
+  name?: string
+  /** Provider context capacity, when disclosed. */
+  contextWindow?: number
+  /** Provider output capacity, when disclosed. */
+  maxTokens?: number
+  /**
+   * Reasoning efforts a catalog source declares for the model, applied only
+   * when the installed catalog does not describe the id. An endpoint's own
+   * `GET /models` listing never sets it: no listing endpoint reports a
+   * model's reasoning protocol.
+   */
+  reasoningEfforts?: false | PiAiReasoningEfforts
+  /** Input modalities a catalog source declares; absent keeps the route default. */
+  input?: readonly PiAiModality[]
+}
+
 /** The route-level facts model materialization reads. */
 export interface RouteCatalogRequest {
   /** Provider route key, stamped onto every materialized model. */
@@ -259,6 +280,8 @@ export interface RouteCatalogRequest {
   models?: readonly PiAiModelProfile[]
   /** Installed-catalog customizations by model id; only meaningful while `models` is absent. */
   modelOverrides?: Readonly<Record<string, PiAiModelOverride>>
+  /** Live endpoint models that augment the installed catalog when supplied. */
+  liveModels?: readonly PiAiLiveModel[]
   /** Reasoning-dispatch switches for every `openai-completions` model on the route; entries override per field. */
   compat?: PiAiCompatProfile
   /** Context capacity for a model neither the entry nor the catalog sizes. */
@@ -478,9 +501,19 @@ export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
   // An override becomes the catalog entry's configuration, so everything a
   // models entry may declare — capacities, efforts, compat — resolves through
   // the same path with the same diagnostics and request-default semantics.
-  const entries: readonly PiAiModelProfile[] = configured.length > 0
+  const configuredEntries: readonly PiAiModelProfile[] = configured.length > 0
     ? configured
-    : [...defaults.values()].map(model => ({ id: model.id, ...overrides[model.id] }))
+    : request.liveModels !== undefined
+      ? request.liveModels.map(model => ({
+        id: model.id,
+        ...model.name === undefined ? {} : { name: model.name },
+        ...model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow },
+        ...model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens },
+        ...model.reasoningEfforts === undefined ? {} : { reasoningEfforts: model.reasoningEfforts },
+        ...model.input === undefined ? {} : { input: [...model.input] },
+      }))
+      : [...defaults.values()].map(model => ({ id: model.id, ...overrides[model.id] }))
+  const entries: readonly PiAiModelProfile[] = configuredEntries
   if (entries.length === 0) {
     invalid(provider, 'resolves no models; the installed catalog does not describe this route, so its models'
       + ' must be listed in configuration')

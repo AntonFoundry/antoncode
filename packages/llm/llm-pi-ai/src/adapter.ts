@@ -81,6 +81,8 @@ export interface PiAiAdapterOptions {
    * conversion because its stored replay state is unusable by this build.
    */
   onReplayDegrade?: (detail: { provider: string; model: string; reason: string }) => void
+  /** Refresh a provider's live model catalog before a model-list read. */
+  refreshModels?: (provider: string) => Promise<void>
 }
 
 /** Copy profile stream knobs into pi-ai's common option vocabulary. */
@@ -240,7 +242,8 @@ export class PiAiAdapter extends LlmAdapter {
     return this.current().profiles.get(provider)?.retryPolicy
   }
 
-  override listModels(provider: string): Promise<readonly LlmModelInfo[]> {
+  override async listModels(provider: string): Promise<readonly LlmModelInfo[]> {
+    await this.config.refreshModels?.(provider)
     return Promise.resolve().then(() => {
       const snapshot = this.current()
       this.profileOf(snapshot, provider)

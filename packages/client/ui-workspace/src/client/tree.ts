@@ -8,6 +8,7 @@ import {
   type SessionSearchResultItem, type SessionSummary, type SubagentDescendantSummary,
   type WorkspaceId, type WorkspaceView,
 } from '@deepseek-ai/dsh-client-runtime/client'
+import { liveJobCounts } from './workspace-activity.ts'
 
 /** Group key for Sessions outside every Workspace. */
 export const UNGROUPED_KEY = ''
@@ -27,6 +28,8 @@ export interface SessionNode {
   running: boolean
   /** Running descendants connected through uninterrupted subagent-origin lineage. */
   runningSubagentCount: number
+  /** Live (running or stopping) background jobs owned by this session. */
+  runningJobCount: number
   /** Finished running while not selected and not yet opened (the green "done" reminder dot). */
   completed: boolean
   updatedAt: number
@@ -64,6 +67,8 @@ export interface SearchResultNode {
   running: boolean
   /** Running descendants connected through uninterrupted subagent-origin lineage. */
   runningSubagentCount: number
+  /** Live (running or stopping) background jobs owned by this session. */
+  runningJobCount: number
   /** Finished running while not selected and not yet opened (the green "done" reminder dot). */
   completed: boolean
   snippet?: string
@@ -214,6 +219,7 @@ function groupByWorkspace(
 function sessionNode(
   s: SessionSummary,
   descendants: ReadonlyMap<SessionId, SubagentDescendantSummary>,
+  runningJobCount: number,
 ): SessionNode {
   return {
     id: s.id,
@@ -221,6 +227,7 @@ function sessionNode(
     blank: s.blank,
     running: s.running,
     runningSubagentCount: descendants.get(s.id)?.runningCount ?? 0,
+    runningJobCount,
     completed: s.completed === true,
     updatedAt: s.updatedAt,
     ...(s.pendingInteraction === undefined ? {} : { pendingInteraction: s.pendingInteraction }),
@@ -250,6 +257,7 @@ export function deriveGroups(
   const archived = new Set(archivedSessionIds)
   const expandedGroups = new Set(view.expandedGroups)
   const descendants = indexSubagentDescendants(list.byId)
+  const jobCounts = liveJobCounts(list.jobsBySession)
   const currentGroup = list.current === undefined
     ? undefined
     : (workspaces.find(w => w.sessionIds.includes(list.current as SessionId))?.workspaceId as string | undefined)
@@ -266,7 +274,7 @@ export function deriveGroups(
       sessionCount: g.sessions.length,
       expanded,
       containsCurrent: g.key === currentGroup,
-      sessions: expanded ? g.sessions.map(session => sessionNode(session, descendants)) : [],
+      sessions: expanded ? g.sessions.map(session => sessionNode(session, descendants, jobCounts.get(session.id) ?? 0)) : [],
     })
   }
   return groups
@@ -287,6 +295,7 @@ export function deriveFlat(
 ): SessionNode[] {
   const archived = new Set(archivedSessionIds)
   const descendants = indexSubagentDescendants(list.byId)
+  const jobCounts = liveJobCounts(list.jobsBySession)
   const rows: SessionSummary[] = []
   for (const id of list.ids) {
     const s = list.byId[id]
@@ -294,7 +303,7 @@ export function deriveFlat(
     rows.push(s)
   }
   rows.sort(byRecency)
-  return rows.map(session => sessionNode(session, descendants))
+  return rows.map(session => sessionNode(session, descendants, jobCounts.get(session.id) ?? 0))
 }
 
 /** Relative-time bucket of a session row's trailing label. */
@@ -330,6 +339,7 @@ export function deriveSearchResults(
   if (q === '') return { items: [], hasMore: false }
   const archived = new Set(archivedSessionIds)
   const descendants = indexSubagentDescendants(list.byId)
+  const jobCounts = liveJobCounts(list.jobsBySession)
 
   const workspaceBySession = new Map<SessionId, string>()
   for (const workspace of workspaces) {
@@ -381,6 +391,7 @@ export function deriveSearchResults(
         workspace: labelOf(summary),
         running: summary.running,
         runningSubagentCount: descendants.get(summary.id)?.runningCount ?? 0,
+        runningJobCount: jobCounts.get(summary.id) ?? 0,
         ...(summary.pendingInteraction === undefined
           ? {}
           : { pendingInteraction: summary.pendingInteraction }),

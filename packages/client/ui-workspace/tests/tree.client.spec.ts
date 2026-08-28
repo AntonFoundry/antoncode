@@ -307,6 +307,7 @@ describe('deriveSearchResults', () => {
           workspace: 'Alpha',
           running: false,
           runningSubagentCount: 0,
+          runningJobCount: 0,
           pendingInteraction: 'plan-review',
           completed: false,
           snippet: 'title session body excerpt',
@@ -317,6 +318,7 @@ describe('deriveSearchResults', () => {
           workspace: 'Needle Workspace',
           running: false,
           runningSubagentCount: 0,
+          runningJobCount: 0,
           completed: false,
         },
         {
@@ -325,6 +327,7 @@ describe('deriveSearchResults', () => {
           workspace: 'c',
           running: false,
           runningSubagentCount: 0,
+          runningJobCount: 0,
           completed: false,
           snippet: 'body needle excerpt',
         },

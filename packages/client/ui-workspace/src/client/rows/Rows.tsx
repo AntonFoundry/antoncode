@@ -101,14 +101,18 @@ function rowHalf(e: { clientY: number; currentTarget: HTMLElement }): 'before' |
  * Workspace shows its hover card (the ungrouped bucket has none).
  * `containsCurrent` arrives on the node (derivation fact, no renderer scan).
  * @param props.group - derived group node.
+ * @param props.activityActive - a member session is running or recently active
+ *   (the floated row's green folder tint and cue dot).
  * @param props.onToggle - expand/collapse the group.
  * @param props.onCreate - start a frontend Session inside this Workspace.
  * @param props.drag - optional workspace-row drag wiring.
  * @param props.t - the browser root's locale seat.
  * @returns the row element.
  */
-export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, t }: {
+export function ProjectRowItem({ group, activityActive = false, onToggle, onCreate, actions, drag, t }: {
   group: GroupNode
+  /** Render the activity accent (folder tint + cue dot) on this row. */
+  activityActive?: boolean | undefined
   onToggle: () => void
   onCreate: () => void
   /** Real-Workspace actions; absent for the ungrouped bucket (no menu shown). */
@@ -142,7 +146,11 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, t }: 
         }}
       onDragEnd={drag?.end}
     >
-      <span className={clsx(css.slot, css.folder, active && css.folderActive)}>
+      <span
+        className={clsx(
+          css.slot, css.folder, active && css.folderActive, activityActive && css.folderActivity,
+        )}
+      >
         {row.expanded ? <IconFolderOpen16 /> : <IconFolderClose16 />}
       </span>
       <span className={clsx(css.slot, css.chevron)}>
@@ -220,7 +228,7 @@ interface SessionStatus {
  * outranks completion reminders.
  */
 function sessionStatuses(
-  node: Pick<SessionNode, 'pendingInteraction' | 'running' | 'runningSubagentCount' | 'completed'>,
+  node: Pick<SessionNode, 'pendingInteraction' | 'running' | 'runningSubagentCount' | 'runningJobCount' | 'completed'>,
   t: RowTranslate,
 ): readonly [SessionStatus, ...SessionStatus[]] {
   const subagents: SessionStatus | undefined = node.runningSubagentCount === 0
@@ -249,12 +257,31 @@ function sessionStatuses(
     /* v8 ignore next -- closed PendingInteractionStatus union */
     default: return assertNever(node.pendingInteraction)
   }
-  if (pending !== undefined) return subagents === undefined ? [pending] : [pending, subagents]
+  const jobs: SessionStatus | undefined = node.runningJobCount === 0
+    ? undefined
+    : {
+      state: 'ongoing',
+      label: t(
+        node.runningJobCount === 1 ? 'status.jobsRunning.one' : 'status.jobsRunning.other',
+        { n: node.runningJobCount },
+      ),
+    }
+  if (pending !== undefined) {
+    if (subagents !== undefined && jobs !== undefined) return [pending, subagents, jobs]
+    if (subagents !== undefined) return [pending, subagents]
+    if (jobs !== undefined) return [pending, jobs]
+    return [pending]
+  }
   if (node.running) {
     const primary: SessionStatus = { state: 'ongoing', label: t('status.running') }
-    return subagents === undefined ? [primary] : [primary, subagents]
+    if (subagents !== undefined && jobs !== undefined) return [primary, subagents, jobs]
+    if (subagents !== undefined) return [primary, subagents]
+    if (jobs !== undefined) return [primary, jobs]
+    return [primary]
   }
+  if (subagents !== undefined && jobs !== undefined) return [subagents, jobs]
   if (subagents !== undefined) return [subagents]
+  if (jobs !== undefined) return [jobs]
   if (node.completed) return [{ state: 'done', label: t('status.completed') }]
   return [{ state: 'done', label: t('status.idle') }]
 }

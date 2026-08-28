@@ -483,6 +483,25 @@ describe('catalog routes with per-model configuration', () => {
     expect(server.requests).toHaveLength(0)
   })
 
+  it('materializes live catalog ids while preserving explicit model lists', () => {
+    const live = resolveProfiles({
+      zai: { apiKeyEnv: KEY_ENV, liveModelDiscovery: true },
+    }, new Map([
+      ['zai', [
+        { id: 'glm-5.3', name: 'GLM-5.3', contextWindow: 200_000, maxTokens: 131_072 },
+      ]],
+    ]))
+    const liveModels = live.get('zai')?.piProvider.getModels() ?? []
+    expect(liveModels.map(model => model.id)).toEqual(['glm-5.3'])
+    expect(liveModels[0]?.name).toBe('GLM-5.3')
+    expect(liveModels[0]?.contextWindow).toBe(200_000)
+
+    const explicit = resolveProfiles({
+      zai: { models: [{ id: 'chosen', contextWindow: 4096, maxTokens: 512 }] },
+    }, new Map([['zai', [{ id: 'ignored-live-model' }]]]))
+    expect(explicit.get('zai')?.piProvider.getModels().map(model => model.id)).toEqual(['chosen'])
+  })
+
   it('preserves catalog-only model metadata the profile cannot express', () => {
     // Some catalog models carry provider-required request headers; overriding a
     // capacity must not drop them, because configuration has no way to restate
