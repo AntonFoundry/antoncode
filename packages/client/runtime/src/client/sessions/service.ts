@@ -532,6 +532,22 @@ export class SessionRuntime implements ISessions {
   }
 
   /**
+   * Fork a session minus the turns containing the excluded message seqs
+   * (same synchronous-addressability guarantee as {@link SessionRuntime.fork}:
+   * on resolution the child is in the list store and open() can target it).
+   * The host names the child `[FORK n] <base>`; no client-side rename.
+   * @param opts - source session id and the durable seqs of the messages to exclude.
+   * @returns the child session id.
+   * @throws {SessionForkError} with the source id.
+   */
+  async forkExcluding(opts: { sessionId: SessionId; excludeSeqs: number[] }): Promise<SessionId> {
+    const result = await this.manager.forkExcluding(opts)
+    if (!result.ok) throw new SessionForkError(result.error, opts.sessionId)
+    this.projectList()
+    return result.value.sessionId
+  }
+
+  /**
    * Resolve an Agent-scoped context view (use-and-discard).
    * @param id - session id (the agent identity — 1:1 same axis).
    * @returns scoped ctx, or undefined for a session neither listed nor already scoped.

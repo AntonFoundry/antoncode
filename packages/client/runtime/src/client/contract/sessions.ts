@@ -96,6 +96,19 @@ export interface ISessions {
    */
   fork(opts: { sessionId: SessionId; atSeq?: number; increaseTitle?: boolean }): Promise<SessionId>
   /**
+   * Fork a session minus whole turns: every turn containing one of the
+   * excluded message seqs (its replies and tool activity included) is dropped
+   * from the child's seed; on resolution the child is in the list store and
+   * `open()` can target it. The child is never blank and the host names it
+   * `[FORK n] <base>` (incrementing n when the source title is itself a
+   * fork); no client-side rename happens. Selecting nothing, or excluding
+   * every turn, fails host-side with `fork-unavailable`.
+   * @param opts - source session id and the durable seqs of the messages to exclude.
+   * @returns the child session id.
+   * @throws when the fork fails.
+   */
+  forkExcluding(opts: { sessionId: SessionId; excludeSeqs: number[] }): Promise<SessionId>
+  /**
    * Register a per-session standard-props provider (hooks become `use<Name>`
    * selector hooks on the render side; props spread verbatim).
    * @param descriptor - static member roster plus per-session resolver.

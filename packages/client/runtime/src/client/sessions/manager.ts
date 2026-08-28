@@ -603,6 +603,41 @@ export class SessionManager {
   }
 
   /**
+   * Contract session.forkExcluding; on success merge the child into summaries
+   * immediately (same synchronous-addressability guarantee as create). The
+   * child carries the retained history, so it is never blank; lineage rides
+   * parentSessionId so the list nests it under its source. A child published
+   * before Workspace attachment fails is also reconciled into the list.
+   * @param opts - source session id and the durable seqs of the messages
+   *   whose owning turns the child drops.
+   * @returns the fork result (the child session id).
+   */
+  async forkExcluding(
+    opts: { sessionId: SessionId; excludeSeqs: number[] },
+  ): Promise<RpcResult<{ sessionId: SessionId }>> {
+    try {
+      const source = this.summaries.find(s => s.sessionId === opts.sessionId)
+      const { result } = await this.api.sessions.forkExcluding({
+        sessionId: opts.sessionId,
+        excludeSeqs: opts.excludeSeqs,
+      })
+      const childId = result.ok
+        ? result.value.sessionId
+        : workspaceAttachSessionId(result.error)
+      if (childId !== undefined) {
+        this.recordMutation({ kind: 'upsert', summary: {
+          sessionId: childId, updatedAt: Date.now(), running: false, blank: false,
+          parentSessionId: opts.sessionId,
+          ...(source?.cwd !== undefined ? { cwd: source.cwd } : {}),
+        } })
+      }
+      return result
+    } catch (error) {
+      return transportError(error)
+    }
+  }
+
+  /**
    * Insert-or-enrich a locally synthesized summary: a new id prepends; an
    * existing entry only gains fields it lacks (the session-added frame and the
    * create() echo race — whichever lands second must fill the placeholder's

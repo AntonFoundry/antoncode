@@ -791,6 +791,23 @@ describe('remaining branches', () => {
     })])
   })
 
+  it('reconciles a forkExcluding child published before workspace attachment fails', async () => {
+    const api = new FakeApiClient()
+    api.onForkExcluding = () => Promise.resolve(err({
+      code: 'workspace-attach-failed',
+      message: 'forked but unattached',
+      details: { sessionId: S2, workspaceId: 'w1' },
+    } as never))
+    const manager = new SessionManager(api, fakeRemote())
+    const result = await manager.forkExcluding({ sessionId: S1, excludeSeqs: [7] })
+    expect(result).toMatchObject({ ok: false, error: { code: 'workspace-attach-failed' } })
+    expect(manager.getListSnapshot().items).toEqual([expect.objectContaining({
+      sessionId: S2,
+      parentSessionId: S1,
+      blank: false,
+    })])
+  })
+
   it('reconciles a preallocated id after an ordinary transport failure', async () => {
     const api = new FakeApiClient()
     api.onCreate = () => Promise.reject(new Error('response lost'))

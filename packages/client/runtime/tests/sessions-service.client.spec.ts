@@ -592,6 +592,21 @@ describe('fork', () => {
       .rejects.toThrow('fork child rename failed: title-invalid: rejected')
     expect(b.svc.binding(sid('child'))).toBeDefined()
   })
+
+  it('forkExcluding resolves to the host-named child with no client-side rename', async () => {
+    const b = bench()
+    await feedList(b, [{ id: 'source', cwd: '/work' }])
+    b.api.onForkExcluding = () => Promise.resolve(ok({ sessionId: sid('child'), title: '[FORK 1] source' }))
+
+    await expect(b.svc.forkExcluding({ sessionId: sid('source'), excludeSeqs: [4, 9] })).resolves.toBe('child')
+
+    expect(b.api.callsOf('session.forkExcluding')).toEqual([{ sessionId: 'source', excludeSeqs: [4, 9] }])
+    expect(b.api.callsOf('session.rename')).toEqual([])
+    expect(b.svc.list.getSnapshot().byId[sid('child')]).toMatchObject({
+      parentId: 'source',
+      blank: false,
+    })
+  })
 })
 
 describe('scope lifecycle rides the list mirror (entity parity: no client-side pre-birth)', () => {
