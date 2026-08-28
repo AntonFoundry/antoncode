@@ -23,9 +23,10 @@ if (segmentClass === undefined) throw new Error('segment class missing from Cont
 const additionMarkerClass = css.additionMarker
 if (additionMarkerClass === undefined) throw new Error('additionMarker class missing from ContextMeter.module.css')
 
-/** Stub the projection seat: a key-addressed table of whole values. */
+/** Stub the projection seat: a key-addressed table of whole values, with the selector overload. */
 function projections(values: Record<string, unknown>): ContextMeterProps['useProjection'] {
-  return (key: string) => values[key]
+  return ((key: string, selector?: (value: unknown) => unknown) =>
+    selector === undefined ? values[key] : selector(values[key])) as ContextMeterProps['useProjection']
 }
 
 function meter(values: Record<string, unknown>, translate: ContextMeterProps['t'] = t) {
@@ -56,11 +57,33 @@ describe('ContextMeter', () => {
     expect(panel.textContent).toContain('对话消息~477K')
     // The occupancy bar splits into one colored segment per composition row.
     expect(panel.getElementsByClassName(segmentClass)).toHaveLength(3)
-    // The red bar marks the point where new token additions will occur.
-    expect(panel.getElementsByClassName(additionMarkerClass)).toHaveLength(1)
+    // Without a published eviction threshold the marker stays hidden.
+    expect(panel.getElementsByClassName(additionMarkerClass)).toHaveLength(0)
     // Clicking the trigger again toggles the panel shut.
     fireEvent.click(trigger)
     expect(view.container.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('draws the eviction threshold marker at the published ratio for the same window', () => {
+    const view = meter({
+      contextPressure: { pressureTokens: 32_000, contextWindow: 128_000 },
+      contextBreakdown: BREAKDOWN,
+      c0ntext: { evictionWindow: { thresholdRatio: 0.8, windowTokens: 128_000 } },
+    })
+    fireEvent.click(view.getByRole('button', { name: '上下文已用 25%' }))
+    const marker = view.container.querySelector('[role="dialog"]')!.getElementsByClassName(additionMarkerClass)[0] as HTMLElement
+    expect(marker).toBeDefined()
+    expect(marker.style.left).toBe('80%')
+
+    // A threshold published against a different window than the displayed
+    // route is stale: hide the marker instead of pointing at the wrong spot.
+    const stale = meter({
+      contextPressure: { pressureTokens: 32_000, contextWindow: 128_000 },
+      contextBreakdown: BREAKDOWN,
+      c0ntext: { evictionWindow: { thresholdRatio: 0.8, windowTokens: 1_000_000 } },
+    })
+    fireEvent.click(stale.container.querySelector<HTMLElement>('[aria-haspopup="dialog"]')!)
+    expect(stale.container.querySelector('[role="dialog"]')!.getElementsByClassName(additionMarkerClass)).toHaveLength(0)
   })
 
   it('lets each locale own the headline word order around the reading', () => {

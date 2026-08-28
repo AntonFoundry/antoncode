@@ -84,6 +84,7 @@
 }
 
 .bar {
+  position: relative;
   display: flex;
   gap: 1px;
   margin: 10px 0 12px;
@@ -102,7 +103,8 @@
 }
 
 .additionMarker {
-  flex: none;
+  position: absolute;
+  top: 0;
   width: 2px;
   height: 100%;
   border-radius: 1px;

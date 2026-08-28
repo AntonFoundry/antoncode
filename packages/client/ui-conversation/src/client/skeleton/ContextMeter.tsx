@@ -13,6 +13,23 @@ import type { ComposerBarProps } from '../contract/slots.ts'
 import { contextOccupancy, formatTokens } from '../chat/StatsLine.tsx'
 import css from './ContextMeter.module.css'
 
+/**
+ * The slice of the external c0ntext plugin's `c0ntext` projection this meter
+ * reads: where its eviction threshold sits. Declared locally as an optional
+ * hint — the plugin owns the real key and is not a workspace dependency; the
+ * client store returns `undefined` for any key no mounted plugin publishes,
+ * so absence simply hides the marker.
+ */
+interface C0ntextEvictionHint {
+  evictionWindow?: { thresholdRatio: number; windowTokens: number }
+}
+declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionMap {
+    /** Eviction-policy telemetry published by the optional c0ntext plugin. */
+    c0ntext: C0ntextEvictionHint
+  }
+}
+
 /** Ring geometry: 14px viewBox, 2px stroke. */
 const RADIUS = 5.5
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS
@@ -40,6 +57,7 @@ export interface ContextMeterProps {
 export function ContextMeter({ useProjection, t }: ContextMeterProps) {
   const pressure = useProjection('contextPressure')
   const breakdown = useProjection('contextBreakdown')
+  const eviction = useProjection('c0ntext', hint => hint?.evictionWindow)
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLSpanElement | null>(null)
   const context = contextOccupancy(pressure)
@@ -87,6 +105,15 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
     ? [{ key: 'total', color: undefined, width: percent }]
     : ROWS.map(row => ({ key: row.key, color: row.color, width: percent * breakdown[row.key] / breakdownTotal }))
   const segments = parts.filter(part => part.width > 0)
+  // The red marker sits at c0ntext's eviction threshold — the surface fraction
+  // of the routed model's window where paging begins — rather than trailing the
+  // occupancy fill. No published threshold (plugin absent, window unresolved,
+  // or a window measured against a different route) hides the marker.
+  const thresholdPercent = eviction !== undefined
+    && context.contextWindow > 0
+    && eviction.windowTokens === context.contextWindow
+    ? Math.min(100, Math.max(0, eviction.thresholdRatio * 100))
+    : null
 
   return (
     <span ref={rootRef} className={css.root}>
@@ -132,7 +159,9 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
                 style={{ width: `${segment.width}%` }}
               />
             ))}
-            <div className={css.additionMarker} aria-hidden />
+            {thresholdPercent !== null && (
+              <div className={css.additionMarker} style={{ left: `${thresholdPercent}%` }} aria-hidden />
+            )}
           </div>
           {breakdown !== undefined && (
             <dl className={css.rows}>
