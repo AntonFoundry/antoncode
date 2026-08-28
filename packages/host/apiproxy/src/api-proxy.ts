@@ -5,7 +5,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { basename, dirname } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type { Agent, ModelSelection, ModelSelectionRef, AgentOptions, AgentStatus } from '@deepseek-ai/dsh-agent'
@@ -80,8 +80,9 @@ import type {} from '@deepseek-ai/dsh-skill'
 import { SettingsConflictError, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from '@deepseek-ai/dsh-settings'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
-// Value edge: the rename impl narrows the title service's validation failure; the import also resolves `ctx.get('sessionTitle')`.
-import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
+// Value edge: foldSessionTitle reads the source title a forkExcluding rename
+// builds on; the rename impl narrows the title service's validation failure.
+import { foldSessionTitle, SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
 import type { CallId } from '@deepseek-ai/dsh-llm/brand'
 import type { ScopeKey } from '@deepseek-ai/dsh-scope'
 import type { ApprovalOutcome, ApprovalRequestId } from '@deepseek-ai/dsh-user-approval'
@@ -2399,6 +2400,138 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         return ok(request, { sessionId: childId })
       },
 
+      async forkExcluding(request) {
+        const { sessionId, excludeSeqs } = request.payload
+        if (excludeSeqs.length === 0) {
+          return err(request, {
+            code: 'fork-unavailable',
+            message: `no messages were selected for exclusion in session "${sessionId}"`,
+            details: { sessionId },
+          })
+        }
+        let source: SessionReadState
+        try {
+          source = await readSessionState(sessionId)
+        } catch (error: unknown) {
+          if (error instanceof SessionNotFound) {
+            return err(request, { code: 'session-not-found', message: error.message, details: { sessionId } })
+          }
+          return err(request, {
+            code: 'internal',
+            message: `fork source unavailable for session "${sessionId}": ${String(error)}`,
+            details: {},
+          })
+        }
+        const events = source.events
+        // Turn ranges (by seq). A trailing open turn counts up to the log end.
+        const turns: Array<{ start: number; end: number }> = []
+        let openStart: number | undefined
+        for (const event of events) {
+          if (event.type === 'turn/start') openStart = event.seq
+          else if (event.type === 'turn/end' && openStart !== undefined) {
+            turns.push({ start: openStart, end: event.seq })
+            openStart = undefined
+          }
+        }
+        const lastEvent = events.at(-1)
+        if (openStart !== undefined && lastEvent !== undefined) turns.push({ start: openStart, end: lastEvent.seq })
+        const excluded = new Set(excludeSeqs)
+        const dropped = turns.filter(turn => [...excluded].some(seq => seq >= turn.start && seq <= turn.end))
+        const inDropped = (seq: number): boolean => dropped.some(turn => seq >= turn.start && seq <= turn.end)
+        // Flatten: drop dropped-turn events, chunk telemetry, and compaction
+        // transactions; retained surface events normalize to plain appends without
+        // source citations, so the renumbered seed never cites a stale absolute seq.
+        const kept: SessionEvent[] = []
+        for (const event of events) {
+          if (inDropped(event.seq)) continue
+          if (event.type.startsWith('compaction/')) continue
+          if (event.type === 'assistant/chunk') continue
+          if (event.type === 'user/message' || event.type === 'assistant/message' || event.type === 'tool/result') {
+            if (event.surfaceOp !== undefined && event.surfaceOp !== 'append') continue
+            kept.push({
+              type: event.type,
+              seq: event.seq,
+              time: event.time,
+              data: event.data,
+              ...event.ignorable === true ? { ignorable: event.ignorable } : {},
+              surfaceOp: 'append',
+            } as SessionEvent)
+            continue
+          }
+          kept.push(event)
+        }
+        if (kept.length === 0) {
+          return err(request, {
+            code: 'fork-unavailable',
+            message: `every turn of session "${sessionId}" would be excluded`,
+            details: { sessionId },
+          })
+        }
+        const seed = kept.map((event, index) => ({ ...event, seq: index }))
+        let workspace: Workspace | undefined
+        try {
+          workspace = await forkWorkspace(source)
+        } catch (error: unknown) {
+          return err(request, {
+            code: 'internal',
+            message: `failed to resolve fork workspace for session "${sessionId}": ${String(error)}`,
+            details: {},
+          })
+        }
+        const childId = `session-${randomUUID()}` as SessionId
+        const forkComposition = await composeAgent(resolveSessionPreset(source))
+        try {
+          await ctx.agents.create({
+            sessionId: childId,
+            seed,
+            meta: {
+              ...source.header.cwd === undefined ? {} : { cwd: source.header.cwd },
+              parentSession: source.id,
+              seedLength: seed.length,
+              ...forkComposition.agentPreset === undefined
+                ? {}
+                : { agentPreset: forkComposition.agentPreset },
+            },
+            agentOptions: agentOptions(),
+            setup: forkComposition.setup,
+          })
+        } catch (error: unknown) {
+          return err(request, {
+            code: 'internal',
+            message: `failed to fork session "${sessionId}": ${String(error)}`,
+            details: {},
+          })
+        }
+        if (workspace !== undefined) {
+          try {
+            await workspace.attachSession(childId)
+          } catch (error: unknown) {
+            return err(request, {
+              code: 'workspace-attach-failed',
+              message: `session "${childId}" was forked but could not attach to workspace "${workspace.id}": ${String(error)}`,
+              details: { sessionId: childId, workspaceId: workspace.id },
+            })
+          }
+        }
+        const titleSnapshot = foldSessionTitle(source.events)
+        const rawTitle = titleSnapshot?.title ?? (source.header.cwd !== undefined ? basename(source.header.cwd) : 'Session')
+        const forked = /^\[FORK (\d+)\] (.+)$/s.exec(rawTitle)
+        const nextNumber = forked === null ? 1 : Number(forked[1]) + 1
+        const baseTitle = forked === null ? rawTitle : forked[2]
+        const childTitle = `[FORK ${String(nextNumber)}] ${baseTitle}`
+        try {
+          // A decorative rename only: the child exists either way, and a title
+          // service failure must not fail an already-created fork. Nothing else
+          // reaches this failure — no caller observes the rejected rename.
+          const titles = ctx.get('sessionTitle')
+          const child = ctx.sessions.get(childId)
+          if (titles !== undefined && child !== undefined) titles.rename(child, childTitle)
+        } catch {
+          return ok(request, { sessionId: childId, title: childTitle })
+        }
+        return ok(request, { sessionId: childId, title: childTitle })
+      },
+
       async prompt(request) {
         const { sessionId, mode, content, clientTimeZone } = request.payload
         const canonicalTimeZone = clientTimeZone === undefined
@@ -3317,9 +3450,10 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           settingsNs: entry.settingsNs,
           settingsPath: [...entry.settingsPath],
           active: active.has(entry.provider),
-          ...active.get(entry.provider)?.authConfigured === undefined
-            ? {}
-            : { authConfigured: active.get(entry.provider)!.authConfigured },
+          ...(() => {
+            const auth = active.get(entry.provider)
+            return auth?.authConfigured === undefined ? {} : { authConfigured: auth.authConfigured }
+          })(),
           ...entry.declared === undefined ? {} : { declared: entry.declared },
         }))
         // Routes registered without a directory declaration still appear —

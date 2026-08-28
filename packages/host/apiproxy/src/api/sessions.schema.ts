@@ -138,6 +138,18 @@ export const sessionForkValueSchema = z.object({
   sessionId: sessionIdSchema,
 }) satisfies z.ZodType<Wire<ResponseValue<'session.fork'>>>
 
+/** session.forkExcluding request payload (message seqs whose owning turns are dropped). */
+export const sessionForkExcludingRequestSchema = z.object({
+  sessionId: sessionIdSchema,
+  excludeSeqs: z.array(z.number().int().nonnegative()),
+}) satisfies z.ZodType<Wire<RequestPayload<'session.forkExcluding'>>>
+
+/** session.forkExcluding response value (the child session id and its accepted title). */
+export const sessionForkExcludingValueSchema = z.object({
+  sessionId: sessionIdSchema,
+  title: z.string().min(1),
+}) satisfies z.ZodType<Wire<ResponseValue<'session.forkExcluding'>>>
+
 /** session.history request payload (beforeSeq/maxMessages page backwards from the window tail). */
 export const sessionHistoryRequestSchema = z.object({
   sessionId: sessionIdSchema,

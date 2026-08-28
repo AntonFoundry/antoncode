@@ -338,6 +338,20 @@ export interface SessionsApi {
   Promise<RpcResponse<{ sessionId: SessionId }>>
 
   /**
+   * Forks a new session from the source log minus whole turns: every turn
+   * containing one of `excludeSeqs` is dropped from the child's seed, together
+   * with all chunk telemetry and compaction transactions (a compacted child
+   * replays the original retained messages instead of summary artifacts). The
+   * child inherits cwd, preset composition, and lineage like {@link fork}, is
+   * renamed `[FORK n] <base>` — incrementing n when the source title is
+   * itself a fork — and the accepted title returns for immediate display.
+   * Selecting nothing fails with `fork-unavailable`; excluding every turn
+   * fails with `fork-unavailable` (nothing would remain).
+   */
+  forkExcluding(request: RpcRequest<{ sessionId: SessionId; excludeSeqs: number[] }>):
+  Promise<RpcResponse<{ sessionId: SessionId; title: string }>>
+
+  /**
    * Sends text and temporary image bytes to an ordinary session Agent after durable host admission.
    * Browser callers attach their current IANA zone;
    * the Host validates, canonicalizes, and records it on that exact user message. Omission remains

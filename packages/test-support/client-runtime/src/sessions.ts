@@ -33,11 +33,15 @@ export class FixtureSession implements SessionFace {
    * @param sessionId - host identity (branded view of the fixture id).
    * @param store - conversation snapshot store (updateSnapshot writes it).
    * @param overrides - fixture-declared behavior face, grafted over the stubs.
+   * @param publishProjection - republishes one projection write into the list
+   *   row's `projectionValues` summary, mirroring the production store's
+   *   whole-value map publication; omitted in direct construction.
    */
   constructor(
     readonly sessionId: SessionId,
     private readonly store: SnapshotStore<ConversationSnapshot>,
     overrides: Record<string, unknown>,
+    publishProjection?: (key: string, value: unknown) => void,
   ) {
     const values = new Map<string, unknown>()
     const listeners = new Map<string, Set<() => void>>()
@@ -62,6 +66,7 @@ export class FixtureSession implements SessionFace {
       set: (key: string, value: unknown) => {
         values.set(key, value)
         for (const fn of [...(listeners.get(key) ?? [])]) fn()
+        publishProjection?.(key, value)
       },
     }
     Object.assign(this, overrides)
@@ -243,7 +248,15 @@ export class TestSessions implements ISessions {
     this.records.set(id, {
       summary,
       snapshot,
-      session: new FixtureSession(id, snapshot, fixture.session ?? {}),
+      session: new FixtureSession(id, snapshot, fixture.session ?? {}, (key, value) => {
+        // Production republishes every projection write into the list row's
+        // whole-value map; global list consumers ride that, not per-session faces.
+        this.list.update((draft) => {
+          const row = draft.byId[id]
+          if (row === undefined) return
+          draft.byId[id] = { ...row, projectionValues: { ...row.projectionValues, [key]: value } }
+        })
+      }),
       scope: undefined,
       scopeFiber: undefined,
       provideInfo: undefined,
