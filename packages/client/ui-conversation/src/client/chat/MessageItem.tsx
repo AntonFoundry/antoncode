@@ -249,9 +249,15 @@ export function PendingSteeringBubble({ content, loadImage, t }: {
 
 /** User and admitted-steering keyed Chat renderer. */
 export const UserMessageNodeView = memo(function UserMessageNodeView({
-  node, loadImage, t,
+  node, loadImage, deleteViaFork = () => {}, selectionActive = false,
+  selectedSeqs = new Set<number>(), onEnterSelection = () => {}, onToggleSeqSelection = () => {},
+  t,
 }: ChatNodeViewProps<'user' | 'steering'>) {
   const data = node.data
+  // Selection and the delete menu address durable messages only; the
+  // admitted-steering projection renders the same row chrome without them.
+  const selectable = node.kind === 'user'
+  const seq = data.seq
   return (
     <UserStyleBubble
       content={data.content}
@@ -263,6 +269,13 @@ export const UserMessageNodeView = memo(function UserMessageNodeView({
           time={data.time}
           clock="start"
           className={css.actions}
+          {...selectable ? {
+            onDelete: () => { deleteViaFork([seq]) },
+            onSelectMessages: onEnterSelection,
+            selectionActive,
+            selectionChecked: selectedSeqs.has(seq),
+            onToggleSelect: () => { onToggleSeqSelection(seq) },
+          } : {}}
           t={t}
         />
       )}

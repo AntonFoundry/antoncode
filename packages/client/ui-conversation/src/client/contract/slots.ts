@@ -367,6 +367,16 @@ export interface ChatNodeOwnerProps {
   openFile: (path: string) => void
   inspectCall: (callId: CallId) => void
   forkAt: (seq: number) => void
+  /** Fork a child session minus the turns owning these message seqs, then open it. */
+  deleteViaFork: (seqs: number[]) => void
+  /** Whether per-message selection checkboxes replace the message menus. */
+  selectionActive: boolean
+  /** The currently selected durable message seqs. */
+  selectedSeqs: ReadonlySet<number>
+  /** Enter selection mode (the per-message menu's "Select messages" row). */
+  onEnterSelection: () => void
+  /** Add or remove one durable message seq from the selection. */
+  onToggleSeqSelection: (seq: number) => void
   /** Resolve a session-authorized historical image for inline display. */
   loadImage: (attachment: ImageAttachmentRef) => Promise<string>
   fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined
@@ -704,6 +714,12 @@ export interface ChatViewInjected {
   }
   /** Fork through the completed turn ending at the eligible message `seq`, then open the child. */
   forkAt: (seq: number) => void
+  /**
+   * Fork a new session minus the turns containing the excluded message seqs,
+   * then open the child (host names it `[FORK n] <base>`). The source session
+   * stays unchanged.
+   */
+  deleteViaFork: (seqs: number[]) => void
   /**
    * Prose file-mention vocabulary for one closing message, from the optional
    * {@link ChatFileMentions} service (resolved lazily per call, so composing

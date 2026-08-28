@@ -1,9 +1,11 @@
 // Shared IconActions chrome for user and assistant messages: copy
-// live, optional branch wiring, and an optional date-aware clock.
+// live, optional branch wiring, an optional date-aware clock, the
+// delete-via-fork menu, and the selection-mode checkbox.
 
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import {
-  IconBranchOutline16, IconCheckOutline16, IconCopyOutline16, Tooltip, writeClipboard,
+  IconBranchOutline16, IconCheckOutline16, IconCopyOutline16, IconEllipsisOutline16, IconTrashOutline16,
+  Menu, Tooltip, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import { formatLatencySeconds, formatMessageClock, formatRunDuration, formatTokensPerSecond } from './message-chrome.ts'
@@ -27,6 +29,16 @@ export interface MessageIconActionsProps {
   onBranch?: (() => void) | undefined
   /** The message is not a completed transcript tail, so branch stays visible but unavailable. */
   branchUnavailable?: boolean | undefined
+  /** Open the confirm dialog deleting this message (and its turn) via fork; omission hides the menu. */
+  onDelete?: (() => void) | undefined
+  /** Enter selection mode; omitted on rows the selection excludes (pending bubbles). */
+  onSelectMessages?: (() => void) | undefined
+  /** Selection mode: the checkbox replaces the menu. */
+  selectionActive?: boolean | undefined
+  /** Selection mode: whether this message's checkbox is ticked. */
+  selectionChecked?: boolean | undefined
+  /** Selection mode: toggle this message's checkbox. */
+  onToggleSelect?: (() => void) | undefined
   /** Parent layout class composed onto the actions row. */
   className?: string | undefined
   /**
@@ -39,16 +51,19 @@ export interface MessageIconActionsProps {
 }
 
 /**
- * Copy / branch (/ clock) IconActions row shared by user and assistant chrome.
+ * Copy / branch (/ clock) IconActions row shared by user and assistant chrome,
+ * with the delete-via-fork menu and selection checkbox.
  * @param props - Copy text, event time, clock side, branch callback, className.
  * @returns The actions row element.
  */
 export function MessageIconActions({
-  text, time, runMs, ttftMs, tokensPerSecond, clock, onBranch, branchUnavailable = false, className,
-  extraActions, t,
+  text, time, runMs, ttftMs, tokensPerSecond, clock, onBranch, branchUnavailable = false,
+  onDelete, onSelectMessages, selectionActive = false, selectionChecked = false, onToggleSelect,
+  className, extraActions, t,
 }: MessageIconActionsProps) {
   const day = useCalendarDay()
   const reasonId = useId()
+  const [menuOpen, setMenuOpen] = useState(false)
   // Same success chrome as CodeBlock: a short check swap after the write,
   // gated so re-clicks during the window neither re-copy nor stack timers.
   const [copied, setCopied] = useState(false)
@@ -134,6 +149,47 @@ export function MessageIconActions({
       )}
       {onBranch !== undefined && branchUnavailable && (
         <span id={reasonId} className={css.visuallyHidden}>{t('message.branchUnavailable')}</span>
+      )}
+      {selectionActive && onToggleSelect !== undefined ? (
+        <label className={css.selectionBox}>
+          <input
+            type="checkbox"
+            checked={selectionChecked}
+            aria-label={t('message.selectMessages')}
+            onChange={onToggleSelect}
+          />
+        </label>
+      ) : onDelete !== undefined && onSelectMessages !== undefined && (
+        <Menu
+          open={menuOpen}
+          onClose={() => { setMenuOpen(false) }}
+          items={[
+            { id: 'delete', label: t('message.deleteMenu'), icon: <IconTrashOutline16 /> },
+            { id: 'select', label: t('message.selectMessages'), icon: <IconCheckOutline16 /> },
+          ]}
+          onSelect={(id) => {
+            setMenuOpen(false)
+            // Unknown ids leave before the dispatch: a future menu row must
+            // not inherit a destructive branch as an else fallback.
+            if (id !== 'delete' && id !== 'select') return
+            if (id === 'delete') onDelete()
+            else onSelectMessages()
+          }}
+          portal
+          closeOnPointerLeave
+          anchor={(
+            <Tooltip label={t('message.moreActions')} side="bottom">
+              <button
+                type="button"
+                className={css.action}
+                aria-label={t('message.moreActions')}
+                onClick={() => { setMenuOpen(v => !v) }}
+              >
+                <IconEllipsisOutline16 />
+              </button>
+            </Tooltip>
+          )}
+        />
       )}
       {clock === 'end' ? clockEl : null}
     </div>

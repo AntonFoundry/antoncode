@@ -10,7 +10,9 @@ type TurnTailNodeViewProps = ChatNodeViewProps<'turn-tail'>
 
 /** Turn-local actions and feature tail over the Location index, independent of Assistant placement. */
 export const TurnTailNodeView = memo(function TurnTailNodeView({
-  node, openFile, forkAt, renderSlot, renderSlotChain, t, useSession,
+  node, openFile, forkAt, deleteViaFork = () => {}, selectionActive = false,
+  selectedSeqs = new Set<number>(), onEnterSelection = () => {}, onToggleSeqSelection = () => {},
+  renderSlot, renderSlotChain, t, useSession,
 }: TurnTailNodeViewProps) {
   const data = node.data
   const hasLaterChatNode = useSession(snapshot =>
@@ -44,6 +46,11 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
         clock="end"
         onBranch={() => { forkAt(closing.finalNode.seq) }}
         branchUnavailable={data.branchUnavailable || hasLaterChatNode}
+        onDelete={() => { deleteViaFork([closing.finalNode.seq]) }}
+        onSelectMessages={onEnterSelection}
+        selectionActive={selectionActive}
+        selectionChecked={selectedSeqs.has(closing.finalNode.seq)}
+        onToggleSelect={() => { onToggleSeqSelection(closing.finalNode.seq) }}
         className={css.actions}
         extraActions={assistantActions}
         t={t}

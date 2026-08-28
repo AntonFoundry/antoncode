@@ -84,3 +84,21 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* Selection-mode checkbox occupying the menu's seat (native input styled to
+   the actions-row metrics; no shared checkbox primitive exists). */
+.selectionBox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+}
+
+.selectionBox input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--dsw-alias-interactive-bg-active, var(--dsw-alias-label-primary));
+  cursor: pointer;
+}

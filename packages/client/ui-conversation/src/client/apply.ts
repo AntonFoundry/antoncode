@@ -421,6 +421,15 @@ export function apply(ctx: Context): void {
               // Fork or child-rename failure keeps the source view untouched.
             })
         },
+        deleteViaFork: (seqs) => {
+          void sessions.forkExcluding({ sessionId, excludeSeqs: seqs })
+            .then((childId) => { sessions.open(childId) })
+            .catch((error: unknown) => {
+              // Keep the current session usable; the host error surface stays
+              // the dialog's error slot, so a console-level record is enough.
+              console.warn('ui-conversation: delete-via-fork failed', error)
+            })
+        },
       }
     },
   }, ChatView)
@@ -434,9 +443,9 @@ export function apply(ctx: Context): void {
   // this service remains only where conversation actions are required.
   ctx.plugin(ConversationController, { input: inputHub, blocks: composerBlocks })
 
-  // Task state renders as c0ntext's single execution tree: the todo tree
-  // rides the details panel's context seat rather than a second, flat list
-  // above the composer.
+  // Task state renders as the sidebar's execution tree: the todo tree rides
+  // ui-sidebar's memory area (root scope) instead of the details panel's
+  // context seat, keeping the right panel for call inspection.
   ctx.plugin(todoTreeEntry)
 
   // The read-only queue dock entry rides the same

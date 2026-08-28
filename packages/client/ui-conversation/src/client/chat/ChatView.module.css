@@ -20,6 +20,43 @@
   padding: 16px calc(var(--dsh-composer-side-clearance) + 16px);
 }
 
+/* Delete-selection action bar pinned above the chat scroll area. */
+.selectionBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--dsw-alias-border-secondary);
+  background: var(--dsw-alias-surface-primary);
+}
+
+.selectionCount {
+  margin-right: auto;
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.selectionAction {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.selectionAction:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.selectionAction:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 :global([data-conversation-scroll]) .root {
   flex: 0 0 auto;
   min-height: auto;

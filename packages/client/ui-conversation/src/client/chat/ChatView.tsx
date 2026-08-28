@@ -12,9 +12,9 @@
 // ChatNodeSeat subscribes to one Node key, so Assistant deltas and Tool
 // lifecycle updates replace only their own row without remounting it.
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ConversationTimelineSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
-import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutline14, RiskConfirmation } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import { PendingSteeringBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
@@ -22,6 +22,8 @@ import { formatRunDuration } from './message-chrome.ts'
 import css from './ChatView.module.css'
 
 const FOLLOW_THRESHOLD = 24
+/** Identity-stable empty selection (React bailout on render-phase resets). */
+const EMPTY_SELECTION: ReadonlySet<number> = new Set()
 
 /** Active column host when present; otherwise the view-local scroller. */
 function scrollerOf(from: HTMLElement): HTMLElement {
@@ -145,7 +147,7 @@ function TurnStatus({ startTime, t }: {
  */
 export function ChatView({
   useSession, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, loadImage, inspectCall, chatScroll, forkAt,
-  fileMentions, t,
+  deleteViaFork, fileMentions, t,
 }: ChatViewSlotProps) {
   const order = useSession(s => s.chat.order)
   const nodeStore = useSession(s => s.chat.nodes)
@@ -159,6 +161,62 @@ export function ChatView({
   const hasMore = useSession(s => s.hasMore)
   const loadingOlder = useSession(s => s.loadingOlder)
   const selectedCallId = useStore(s => s.selection?.callId)
+
+  // Delete-via-fork selection state: component-local viewing state (resets on
+  // session change and after a successful delete, which opens the child and
+  // lands here with a new sessionId). Only durable message seqs — user rows
+  // and each turn's closing assistant — are selectable.
+  const [selectionActive, setSelectionActive] = useState(false)
+  const [selectedSeqs, setSelectedSeqs] = useState<ReadonlySet<number>>(EMPTY_SELECTION)
+  const [confirmSeqs, setConfirmSeqs] = useState<readonly number[] | null>(null)
+  const [acknowledged, setAcknowledged] = useState(false)
+  // Render-phase reset when the session changes (a successful delete opens
+  // the child and lands here with a new sessionId): identity-stable empty
+  // values let React bail out of the no-op remount case.
+  const selectionSessionRef = useRef(sessionId)
+  if (selectionSessionRef.current !== sessionId) {
+    selectionSessionRef.current = sessionId
+    setSelectionActive(false)
+    setSelectedSeqs(EMPTY_SELECTION)
+    setConfirmSeqs(null)
+    setAcknowledged(false)
+  }
+  const toggleSeqSelection = useCallback((seq: number): void => {
+    setSelectedSeqs((current) => {
+      const next = new Set(current)
+      if (next.has(seq)) next.delete(seq)
+      else next.add(seq)
+      return next
+    })
+  }, [])
+  const enterSelection = useCallback(() => { setSelectionActive(true) }, [])
+  const exitSelection = (): void => {
+    setSelectionActive(false)
+    setSelectedSeqs(new Set())
+    setConfirmSeqs(null)
+    setAcknowledged(false)
+  }
+  // Durable message seqs over the assembled Node list: user rows carry their
+  // event seq; a turn's selectable assistant message is its closing node's.
+  const selectableSeqs = useMemo(() => {
+    const seqs: number[] = []
+    for (const key of order) {
+      const node = nodeStore.get(key)
+      if (node === undefined) continue
+      if (node.kind === 'user') {
+        seqs.push((node.data as { seq: number }).seq)
+      } else if (node.kind === 'turn-tail') {
+        const closing = (node.data as { closing: { finalNode: { seq: number } } | null }).closing
+        if (closing !== null) seqs.push(closing.finalNode.seq)
+      }
+    }
+    return seqs
+  }, [order, nodeStore])
+  const allSelected = selectableSeqs.length > 0
+    && selectableSeqs.every(seq => selectedSeqs.has(seq))
+  const toggleAll = (): void => {
+    setSelectedSeqs(allSelected ? new Set() : new Set(selectableSeqs))
+  }
 
   const pendingSteering = useMemo(
     () => inbox.filter(item => item.placement === 'steering'),
@@ -364,6 +422,33 @@ export function ChatView({
 
   return (
     <div className={css.root}>
+      {selectionActive && (
+        <div className={css.selectionBar} role="toolbar" aria-label={t('message.selection.bar.aria')}>
+          <span className={css.selectionCount}>{t('message.selection.count', { n: selectedSeqs.size })}</span>
+          <button
+            type="button"
+            className={css.selectionAction}
+            disabled={selectableSeqs.length === 0}
+            onClick={toggleAll}
+          >
+            {allSelected ? t('message.selection.deselectAll') : t('message.selection.selectAll')}
+          </button>
+          <button
+            type="button"
+            className={css.selectionAction}
+            disabled={selectedSeqs.size === 0}
+            onClick={() => {
+              setConfirmSeqs([...selectedSeqs])
+              setAcknowledged(false)
+            }}
+          >
+            {t('message.selection.delete')}
+          </button>
+          <button type="button" className={css.selectionAction} onClick={exitSelection}>
+            {t('message.selection.cancel')}
+          </button>
+        </div>
+      )}
       <div ref={listRef} className={css.scroll}>
         <div ref={columnRef} className={css.column} data-chat-flow="">
           {openState === 'loading' && <div className={css.hint}>{t('chat.loadingHistory')}</div>}
@@ -389,6 +474,11 @@ export function ChatView({
               openFile={openFile}
               inspectCall={inspectCall}
               forkAt={forkAt}
+              deleteViaFork={deleteViaFork}
+              selectionActive={selectionActive}
+              selectedSeqs={selectedSeqs}
+              onEnterSelection={enterSelection}
+              onToggleSeqSelection={toggleSeqSelection}
               loadImage={loadImage}
               fileMentions={fileMentions}
               renderSlot={renderSlot}
@@ -422,6 +512,26 @@ export function ChatView({
           </div>
         )}
       </div>
+      <RiskConfirmation
+        open={confirmSeqs !== null}
+        title={t('message.deleteDialog.title')}
+        description={t('message.deleteDialog.body', { count: confirmSeqs?.length ?? 0 })}
+        acknowledgeLabel={t('message.deleteDialog.acknowledge')}
+        confirmLabel={t('message.deleteDialog.confirm')}
+        cancelLabel={t('message.deleteDialog.cancel')}
+        acknowledged={acknowledged}
+        onAcknowledgedChange={setAcknowledged}
+        onCancel={() => { setConfirmSeqs(null) }}
+        onConfirm={() => {
+          if (confirmSeqs === null) return
+          deleteViaFork([...confirmSeqs])
+          // A successful delete opens the child, so this view's reset rides
+          // the sessionId change; a failed fork keeps the source and its
+          // selection untouched. Either way only the dialog closes here.
+          setConfirmSeqs(null)
+          setAcknowledged(false)
+        }}
+      />
     </div>
   )
 }
