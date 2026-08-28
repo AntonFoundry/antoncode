@@ -11,6 +11,9 @@ export type PluginsSettingsLocaleKey =
   | 'webSearchTitle' | 'webSearchDescription'
   | 'webSearchApiKey' | 'webSearchApiKeyHint' | 'webSearchApiKeySet' | 'webSearchApiKeyUnset'
   | 'webSearchBaseUrl' | 'webSearchBaseUrlHint' | 'webSearchMaxUses' | 'webSearchMaxUsesHint'
+  | 'contextTitle' | 'contextDescription' | 'contextEndpoint' | 'contextEndpointHint' | 'contextApiKey' | 'contextApiKeyHint'
+  | 'contextProjectId' | 'contextProjectIdHint' | 'contextMaxSurfaceRatio' | 'contextMaxSurfaceRatioHint'
+  | 'contextWindowTokens' | 'contextWindowTokensHint' | 'contextEvictorEnabled' | 'contextEvictorEnabledHint'
 
 /** English copy. */
 export const en: Record<PluginsSettingsLocaleKey, string> = {
@@ -51,6 +54,20 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   webSearchBaseUrlHint: 'Leave blank to use the provider default.',
   webSearchMaxUses: 'Max searches per request',
   webSearchMaxUsesHint: 'How many times one request may search before it must answer.',
+  contextTitle: 'c0ntext',
+  contextDescription: 'Context retrieval and surface-management controls.',
+  contextEndpoint: 'Engine endpoint',
+  contextEndpointHint: 'HTTP endpoint used by the c0ntext worker.',
+  contextApiKey: 'API key',
+  contextApiKeyHint: 'Engine API key (`ctx_…`); leave blank for a keyless local engine. Same value as the plugin-list card.',
+  contextProjectId: 'Project ID',
+  contextProjectIdHint: 'Registered c0ntext project identity.',
+  contextMaxSurfaceRatio: 'Eviction threshold',
+  contextMaxSurfaceRatioHint: 'Eviction begins at this fraction of the model context window.',
+  contextWindowTokens: 'Context window (tokens)',
+  contextWindowTokensHint: 'Explicit model window; leave blank to resolve it from the selected model.',
+  contextEvictorEnabled: 'Automatic eviction',
+  contextEvictorEnabledHint: 'Disable this while actively developing to keep the live conversation unchanged.',
 }
 
 /** Simplified Chinese copy. */
@@ -92,4 +109,18 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   webSearchBaseUrlHint: '留空则使用提供方默认地址。',
   webSearchMaxUses: '单次请求最多搜索次数',
   webSearchMaxUsesHint: '一次请求在必须作答前最多可以搜索多少次。',
+  contextTitle: 'c0ntext',
+  contextDescription: '上下文检索和表层管理设置。',
+  contextEndpoint: '引擎接口',
+  contextEndpointHint: 'c0ntext worker 使用的 HTTP 接口。',
+  contextApiKey: 'API 密钥',
+  contextApiKeyHint: '引擎 API 密钥（`ctx_…`）；本地免密引擎留空。与插件列表卡片中的值相同。',
+  contextProjectId: '项目 ID',
+  contextProjectIdHint: '已注册的 c0ntext 项目标识。',
+  contextMaxSurfaceRatio: '驱逐阈值',
+  contextMaxSurfaceRatioHint: '表层达到模型上下文窗口的此比例后开始驱逐。',
+  contextWindowTokens: '上下文窗口（token）',
+  contextWindowTokensHint: '显式模型窗口；留空则从当前模型解析。',
+  contextEvictorEnabled: '自动驱逐',
+  contextEvictorEnabledHint: '主动开发时可关闭，避免改写当前对话。',
 }

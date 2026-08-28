@@ -14,6 +14,8 @@ export interface PluginInventorySettingsTabInjected {
   list: () => Promise<PluginInventorySnapshot>
   /** Toggle a plugin's enabled state. */
   toggle: (entryId: string, enabled: boolean) => Promise<void>
+  /** Merge scalar config values into a plugin entry and reload it. */
+  configure: (entryId: string, patch: Record<string, string | number | boolean | null>) => Promise<void>
 }
 
 type PluginInventoryEntry = PluginInventorySnapshot['entries'][number]
@@ -62,14 +64,21 @@ function matches(entry: PluginInventoryEntry, normalizedQuery: string): boolean 
     .some(value => value.toLocaleLowerCase().includes(normalizedQuery))
 }
 
+/** Config keys the inventory details render as editable connection fields. */
+const EDITABLE_CONFIG_FIELDS = ['endpoint', 'apiKey'] as const
+
+type ConfigSaveState = 'idle' | 'saving' | 'saved' | 'error'
+
 /** Render the read-only current Loader inventory. */
-export function PluginInventorySettingsTab({ list, toggle, t }: PluginInventorySettingsTabProps): ReactNode {
+export function PluginInventorySettingsTab({ list, toggle, configure, t }: PluginInventorySettingsTabProps): ReactNode {
   const catalogId = useId()
   const [request, setRequest] = useState(0)
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState<PluginInventoryEntry['entryId'] | null>(null)
   const [state, setState] = useState<ViewState>({ status: 'loading' })
   const [toggling, setToggling] = useState<Set<PluginInventoryEntry['entryId']>>(new Set())
+  const [drafts, setDrafts] = useState<Record<string, Record<string, string>>>({})
+  const [saveState, setSaveState] = useState<ConfigSaveState>('idle')
 
   useEffect(() => {
     let current = true
@@ -99,18 +108,53 @@ export function PluginInventorySettingsTab({ list, toggle, t }: PluginInventoryS
     setRequest(value => value + 1)
   }
 
+  /** Editable config keys this entry exposes. */
+  const editableKeys = (entry: PluginInventoryEntry): readonly string[] => {
+    const config = entry.config
+    return config === undefined ? [] : EDITABLE_CONFIG_FIELDS.filter(key => key in config)
+  }
+
+  /** Current editor value: the draft when touched, otherwise the live config. */
+  const draftValue = (entry: PluginInventoryEntry, key: string): string => {
+    const draft = drafts[entry.entryId]
+    if (draft !== undefined && key in draft) return draft[key] ?? ''
+    const current = entry.config?.[key]
+    return typeof current === 'string' ? current : current === undefined || current === null ? '' : String(current)
+  }
+
+  const setDraftValue = (entryId: string, key: string, value: string): void => {
+    setDrafts(current => ({ ...current, [entryId]: { ...current[entryId], [key]: value } }))
+    setSaveState('idle')
+  }
+
+  const saveConfig = async (entry: PluginInventoryEntry): Promise<void> => {
+    const draft = drafts[entry.entryId] ?? {}
+    const patch: Record<string, string> = {}
+    for (const key of editableKeys(entry)) {
+      patch[key] = draft[key] ?? draftValue(entry, key)
+    }
+    setSaveState('saving')
+    try {
+      await configure(entry.entryId, patch)
+      setSaveState('saved')
+      setRequest(value => value + 1)
+    } catch {
+      setSaveState('error')
+    }
+  }
+
   const handleToggle = async (entry: PluginInventoryEntry): Promise<void> => {
     const newEnabled = !entry.enabled
     setToggling(prev => new Set(prev).add(entry.entryId))
     // Optimistic UI update: flip switch immediately for native responsiveness
-    setState(current => {
+    setState((current) => {
       if (current.status !== 'ready') return current
       return {
         ...current,
         snapshot: {
           ...current.snapshot,
           entries: current.snapshot.entries.map(e =>
-            e.entryId === entry.entryId ? { ...e, enabled: newEnabled } : e
+            e.entryId === entry.entryId ? { ...e, enabled: newEnabled } : e,
           ),
         },
       }
@@ -120,20 +164,20 @@ export function PluginInventorySettingsTab({ list, toggle, t }: PluginInventoryS
     } catch (err) {
       console.error('Failed to toggle plugin', entry.entryId, err)
       // Rollback to original state on failure
-      setState(current => {
+      setState((current) => {
         if (current.status !== 'ready') return current
         return {
           ...current,
           snapshot: {
             ...current.snapshot,
             entries: current.snapshot.entries.map(e =>
-              e.entryId === entry.entryId ? { ...e, enabled: !newEnabled } : e
+              e.entryId === entry.entryId ? { ...e, enabled: !newEnabled } : e,
             ),
           },
         }
       })
     } finally {
-      setToggling(prev => {
+      setToggling((prev) => {
         const next = new Set(prev)
         next.delete(entry.entryId)
         return next
@@ -193,6 +237,7 @@ export function PluginInventorySettingsTab({ list, toggle, t }: PluginInventoryS
                         aria-controls={detailId}
                         aria-label={entry.enabled ? `${title}, ${status}, ${t('enabledTag')}` : `${title}, ${t('disabledTag')}`}
                         onClick={() => {
+                          setSaveState('idle')
                           setExpanded(current => current === entry.entryId ? null : entry.entryId)
                         }}
                       >
@@ -239,6 +284,37 @@ export function PluginInventorySettingsTab({ list, toggle, t }: PluginInventoryS
                     {open ? (
                       <div className={css.cardDetails} id={detailId}>
                         <code className={css.entryValue} data-loader-entry>{entry.entryId}</code>
+                        {editableKeys(entry).length > 0 ? (
+                          <form
+                            className={css.configForm}
+                            onSubmit={(event) => {
+                              event.preventDefault()
+                              void saveConfig(entry)
+                            }}
+                          >
+                            <span className={css.configFormTitle}>{t('configuration')}</span>
+                            {editableKeys(entry).map(key => (
+                              <label key={key} className={css.configField}>
+                                <span>{key === 'endpoint' ? t('apiUrlLabel') : t('apiKeyLabel')}</span>
+                                <input
+                                  type={key === 'apiKey' ? 'password' : 'url'}
+                                  value={draftValue(entry, key)}
+                                  placeholder={key === 'endpoint' ? 'http://127.0.0.1:8090' : 'ctx_…'}
+                                  spellCheck={false}
+                                  autoComplete="off"
+                                  onChange={(event) => { setDraftValue(entry.entryId, key, event.currentTarget.value) }}
+                                />
+                              </label>
+                            ))}
+                            <div className={css.configActions}>
+                              <button type="submit" disabled={saveState === 'saving'}>
+                                {saveState === 'saving' ? t('saving') : t('save')}
+                              </button>
+                              {saveState === 'saved' ? <span className={css.configSaved}>{t('saved')}</span> : null}
+                              {saveState === 'error' ? <span className={css.configError} role="alert">{t('configError')}</span> : null}
+                            </div>
+                          </form>
+                        ) : null}
                         <dl className={css.details}>
                           <div>
                             <dt>{t('configuration')}</dt>

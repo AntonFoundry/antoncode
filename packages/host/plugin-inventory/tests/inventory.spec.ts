@@ -11,6 +11,7 @@ afterEach(async () => {
 })
 
 const activePlugin: Plugin.Function = () => {}
+const configurablePlugin: Plugin.Function = () => {}
 const pendingPlugin: Plugin.Object = {
   inject: ['neverReady'],
   apply() {},
@@ -24,6 +25,7 @@ async function harness(): Promise<{
   contexts.push(ctx)
   await ctx.plugin(Loader)
   ctx.loader.builtins.active = activePlugin
+  ctx.loader.builtins.configurable = configurablePlugin
   ctx.loader.builtins.pending = pendingPlugin
   await ctx.plugin(PluginInventoryGateway)
   const inventory = ctx.get('pluginInventory') as PluginInventoryGateway
@@ -31,7 +33,7 @@ async function harness(): Promise<{
 }
 
 describe('PluginInventoryGateway', () => {
-  it('publishes direct list and toggle methods under the pluginInventory namespace', async () => {
+  it('publishes direct list, toggle, and configure methods under the pluginInventory namespace', async () => {
     const { inventory } = await harness()
     expect(inventory.typertRemote).toMatchObject({
       serviceKey: 'pluginInventory',
@@ -40,6 +42,7 @@ describe('PluginInventoryGateway', () => {
     expect(remoteMethods(inventory)).toEqual([
       { method: 'list', invocation: { kind: 'direct' } },
       { method: 'toggle', invocation: { kind: 'direct' } },
+      { method: 'configure', invocation: { kind: 'direct' } },
     ])
   })
 
@@ -107,5 +110,25 @@ describe('PluginInventoryGateway', () => {
     ctx.loader.builtins.include = () => {}
     const includeId = await ctx.loader.create({ name: 'cordis:include' })
     await expect(inventory.toggle(includeId as never, false)).rejects.toThrow('Cannot toggle core infrastructure plugin')
+  })
+
+  it('merges scalar config via remote configure, projects scalars only, and guards protected plugins', async () => {
+    const { ctx, inventory } = await harness()
+    const entryId = await ctx.loader.create({
+      name: 'cordis:configurable',
+      config: { endpoint: 'http://127.0.0.1:8090', apiKey: 'ctx_old', requestedZones: ['goal'] },
+    })
+
+    await inventory.configure(entryId as never, { endpoint: 'http://127.0.0.1:9000', apiKey: 'ctx_new' })
+    expect(inventory.list().entries.find(entry => entry.entryId === entryId)?.config).toEqual({
+      endpoint: 'http://127.0.0.1:9000',
+      apiKey: 'ctx_new',
+    })
+
+    // Protected plugin should throw
+    ctx.loader.builtins.include = () => {}
+    const includeId = await ctx.loader.create({ name: 'cordis:include' })
+    await expect(inventory.configure(includeId as never, { endpoint: 'http://example.invalid' }))
+      .rejects.toThrow('Cannot reconfigure core infrastructure plugin')
   })
 })

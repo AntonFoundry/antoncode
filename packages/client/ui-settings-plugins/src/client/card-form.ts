@@ -145,6 +145,21 @@ export function textField(field: string): CardFieldSpec {
   }
 }
 
+/** A boolean field written from the literal drafts `true` or `false`. */
+export function booleanField(field: string): CardFieldSpec {
+  return {
+    field,
+    format: value => typeof value === 'boolean' ? String(value) : '',
+    parse: (text) => {
+      const trimmed = text.trim().toLowerCase()
+      if (trimmed === '') return { kind: 'clear' }
+      if (trimmed === 'true') return { kind: 'set', value: true }
+      if (trimmed === 'false') return { kind: 'set', value: false }
+      return undefined
+    },
+  }
+}
+
 /**
  * Stages one card's edits over one settings namespace and writes them on save.
  *

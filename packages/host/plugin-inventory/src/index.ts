@@ -6,6 +6,7 @@ import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 // Typert-generated ./typert and ./remote artifacts import Zod at runtime.
 import type {} from 'zod'
 import type {
+  ConfigScalar,
   PluginEntryId,
   PluginFiberPhase,
   PluginInventoryEntry,
@@ -46,6 +47,18 @@ const PROTECTED_PLUGINS = new Set([
   '@deepseek-ai/dsh-client-connection',
 ])
 
+/** Project the JSON-scalar subset of an entry's config for client display/edit. */
+function configScalars(config: unknown): Record<string, ConfigScalar> | undefined {
+  if (typeof config !== 'object' || config === null) return undefined
+  const scalars: Record<string, ConfigScalar> = {}
+  for (const [key, value] of Object.entries(config as Record<string, unknown>)) {
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || value === null) {
+      scalars[key] = value
+    }
+  }
+  return Object.keys(scalars).length === 0 ? undefined : scalars
+}
+
 /** Check whether a plugin is part of the core application runtime infrastructure. */
 export function isProtectedPlugin(moduleName: string): boolean {
   return PROTECTED_PLUGINS.has(moduleName)
@@ -70,12 +83,14 @@ export class PluginInventoryGateway extends TypertRemoteService {
     const entries: PluginInventoryEntry[] = []
     for (const entry of this.ctx.loader.entries()) {
       if (entry.options.group || entry.options.name === 'cordis:include' || entry.options.name === 'cordis:group') continue
+      const config = configScalars(entry.options.config)
       entries.push({
         entryId: pluginEntryId(entry.id),
         moduleName: entry.options.name,
         enabled: !entry.disabled,
         fiberPhase: entry.fiber === undefined ? null : FIBER_PHASE[entry.fiber.state],
         isProtected: isProtectedPlugin(entry.options.name),
+        ...(config === undefined ? {} : { config }),
       })
     }
     return { entries }
@@ -89,6 +104,22 @@ export class PluginInventoryGateway extends TypertRemoteService {
     }
     // Update entry in-memory directly to avoid Loader tree.write() mutations on base bundle files
     await entry.update({ disabled: !enabled })
+  }
+
+  /**
+   * Merge scalar config values into a Loader entry's config and reload it.
+   * Runtime-scoped like `toggle`: the profile patch remains the durable source.
+   * @param entryId Loader entry to reconfigure.
+   * @param patch Scalar config values to merge over the current config.
+   */
+  @Remote('configure')
+  async configure(entryId: PluginEntryId, patch: Record<string, ConfigScalar>): Promise<void> {
+    const entry = this.ctx.loader.resolve(entryId)
+    if (isProtectedPlugin(entry.options.name)) {
+      throw new Error(`Cannot reconfigure core infrastructure plugin "${entry.options.name}"`)
+    }
+    const current = configScalars(entry.options.config) ?? {}
+    await entry.update({ config: { ...current, ...patch } })
   }
 }
 

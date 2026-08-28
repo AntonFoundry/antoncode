@@ -118,6 +118,9 @@
 }
 
 .card[data-open='true'] {
+  /* An open card's config form may exceed the collapsed card's column: a
+     full `ctx_…` key must be visible while pasting, so clipping is off. */
+  overflow: visible;
   border-color: var(--dsw-alias-border-l1);
   box-shadow: var(--dsw-shadow-lv1);
 }
@@ -310,6 +313,86 @@
   grid-template-columns: 76px minmax(0, 1fr);
   gap: 6px 10px;
   margin: 8px 0 0;
+}
+
+.configForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.configFormTitle {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.configField {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  /* Every config input shares one width, so API URL and API key render the
+     same size regardless of value or input type. */
+  max-width: 340px;
+}
+
+.configField span {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.configField input {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--dsw-alias-interactive-bg-hover);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.configField input:focus {
+  outline: none;
+  border-color: var(--dsw-alias-label-primary-bluish);
+}
+
+.configActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.configActions button {
+  padding: 4px 14px;
+  border: 1px solid var(--dsw-alias-interactive-bg-hover);
+  border-radius: 6px;
+  background: var(--dsw-alias-state-business-tertiary);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.configActions button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.configSaved {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.configError {
+  color: var(--dsw-alias-label-primary-bluish);
+  font-size: 11px;
+  line-height: 16px;
 }
 
 .details div {

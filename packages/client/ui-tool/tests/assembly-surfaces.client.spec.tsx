@@ -55,15 +55,20 @@ const bashResult = (seq: number, callId: string, over?: Partial<ToolResultNode>)
   ...over,
 })
 
-/** Test-owned AppFrame role: declares and renders the conversation area and the details panel. */
-type AppRootProps = PropsRenderSlots<'conversation' | 'details'>
+/** Test-owned AppFrame role: declares and renders the conversation area, the details panel, and the sidebar memory seat. */
+type AppRootProps = PropsRenderSlots<'conversation' | 'details' | 'sidebar.memory'>
 function AppRoot({ renderSlot }: AppRootProps) {
-  return <>{renderSlot('conversation', {})}{renderSlot('details', {})}</>
+  return <>
+    {renderSlot('conversation', {})}
+    {renderSlot('details', {})}
+    {renderSlot('sidebar.memory', { wide: true, expandSidebar: () => {} })}
+  </>
 }
 
 const LAYOUT_CHILDREN = {
   'conversation': { kind: 'single', scope: 'session-maybe' },
   'details': { kind: 'single', scope: 'session' },
+  'sidebar.memory': { kind: 'list', scope: 'root' },
 } as const
 
 async function bench(nodes: ToolResultNode[]) {
@@ -103,8 +108,9 @@ describe('todo_write assembly (product registrations, no outlet twins)', () => {
     expect(row).not.toBeNull()
     expect(row!.textContent).toContain('1/3 已完成 · 实现 fixture 样本')
 
-    // The execution tree sits in the details panel's context seat, fed by the
-    // projection (expanded: header summary plus one row per node).
+    // The execution tree sits in the sidebar's memory seat (wide form), fed
+    // by the current-session projection summary (expanded: header summary
+    // plus one row per node).
     const tree = view.container.querySelector('[data-testid="todo-tree"]')
     expect(tree).not.toBeNull()
     expect(tree!.textContent).toContain('1 已完成\u2002·\u20021 进行中\u2002·\u20021 待处理')
