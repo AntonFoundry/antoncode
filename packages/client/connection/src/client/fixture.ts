@@ -2386,7 +2386,9 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
             details: { sessionId },
           })
         }
-        const title = `[FORK 1] ${source.title ?? sessionId}`
+        // SessionSummary carries no title on the wire, so the fixture names
+        // the child from the source id.
+        const title = `[FORK 1] ${sessionId}`
         const child: SessionSummary = {
           sessionId: sid(`fx-${nextSession++}`), updatedAt: Date.now(), running: false, blank: false,
           parentSessionId: sessionId,

@@ -190,7 +190,7 @@ export class TestSessions implements ISessions {
   /** Calls observed on the service-level face, newest last. */
   readonly calls: {
     method: 'open' | 'openSubagent' | 'setSubagentCatalogOpen' | 'refreshSubagents'
-      | 'clear' | 'search' | 'fork'
+      | 'clear' | 'search' | 'fork' | 'forkExcluding'
     args: unknown[]
   }[] = []
 
@@ -499,6 +499,18 @@ export class TestSessions implements ISessions {
    */
   fork(opts: { sessionId: SessionId; atSeq?: number; increaseTitle?: boolean }): Promise<SessionId> {
     this.calls.push({ method: 'fork', args: [opts] })
+    return Promise.resolve(opts.sessionId)
+  }
+
+  /**
+   * Recorded forkExcluding stub: no child materializes (benches asserting the
+   * full delete flow drive the production service; this face only proves the
+   * call).
+   * @param opts - source session id and the excluded durable message seqs.
+   * @returns the source id (no child record is created).
+   */
+  forkExcluding(opts: { sessionId: SessionId; excludeSeqs: number[] }): Promise<SessionId> {
+    this.calls.push({ method: 'forkExcluding', args: [opts] })
     return Promise.resolve(opts.sessionId)
   }
 
