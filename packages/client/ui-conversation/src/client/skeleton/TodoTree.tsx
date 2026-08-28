@@ -1,26 +1,39 @@
-// TodoTree: the c0ntext execution-tree seat in the details panel (the single
-// place session task state renders, replacing the former composer plan strip).
-// Renders the standing todo/write whole-tree snapshot — nodes nest up to three
-// levels (task → child → grandchild) with indentation; cancelled nodes stay
-// visible but struck through. No data of its own: the host-computed 'todos'
-// projection feeds it, and an empty tree renders the quiet empty-state line so
-// the c0ntext panel stays meaningful between plans. Mounted through the
-// 'conversation.details.context' slot (list posture) via its inject wrapper.
+// TodoTree: the execution-tree seat in the sidebar's memory area (the single
+// place session task state renders, replacing the former details-panel context
+// entry). Renders the standing todo/write whole-tree snapshot — nodes nest up
+// to three levels (task → child → grandchild) with indentation; cancelled
+// nodes stay visible but struck through. Flat root items that share a
+// "Prefix: " head (two or more) group under one synthetic collapsible branch
+// so model-authored flat lists still read as a tree. No data of its own: the
+// current session's `todos` projection (published reference-stable through the
+// session list summary) feeds it, and an empty tree renders the quiet
+// empty-state line so the sidebar region stays meaningful between plans.
+// Branch collapse state lives in the entry-declared store (the seat unmounts
+// on sidebar collapse, so component state would not survive those remounts).
+// Mounted through the 'sidebar.memory' slot (list posture, root scope) via its
+// inject wrapper; the collapsed rail shrinks to one expand affordance.
 
 import type { Context } from '@deepseek-ai/cordis'
 import { useId } from 'react'
-import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
+// Pulls ui-sidebar's SlotMap merge (the 'sidebar.memory' entry) into this
+// program so PropsRuntime<'sidebar.memory'> resolves; type-only by design.
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 // The domain's client-namespace pure-type outlet: one import edge delivers
 // the `todos` projection-key merge (single source, no consumer-side restated
 // declare) and the payload type. Type-only by construction — the outlet is
 // free of host value imports, so no host Context merge enters this program.
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'
-import { IconChecklistOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { GoalProjection } from '@deepseek-ai/dsh-goal/client'
+import { IconChecklistOutline14, IconTriangleRightFill14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { createTodoTreeStore } from '../stores.ts'
 import { NS } from '../locales.ts'
 import css from './TodoTree.module.css'
 
-/** Full props of a context-seat entry: session standard kit + the locale seat. */
-export type TodoTreeProps = PropsRuntime<'conversation.details.context'> & PropsLocale<'conversation'>
+/** Full props of the sidebar seat: sidebar owner share + store + locale. */
+export type TodoTreeProps = PropsRuntime<'sidebar.memory'>
+  & PropsStore<ReturnType<typeof createTodoTreeStore>>
+  & PropsLocale<'conversation'>
 
 /** Local exhaustiveness helper — client packages do not depend on `dsh-llm`. */
 /* v8 ignore next 3 -- closed-union backstop; only reached if status is forged */
@@ -31,6 +44,68 @@ function assertNever(value: never): never {
 /** Every node of the tree in depth-first order — one walk drives header counts. */
 function flat(nodes: readonly TodoItem[]): readonly TodoItem[] {
   return nodes.flatMap(node => [node, ...flat(node.children ?? [])])
+}
+
+/** Root heads eligible for grouping: short "Prefix: " heads only ("Feature A: …"). */
+const GROUP_HEAD = /^(.{1,48}?):\s+(.+)$/
+
+/**
+ * Branch rollup: any active child keeps the branch spinning; a fully settled
+ * branch reads done (cancelled when nothing completed); work still owed reads
+ * pending.
+ * @param statuses - the children's own statuses.
+ * @returns the synthetic branch status.
+ */
+function rollupStatus(statuses: readonly TodoItem['status'][]): TodoItem['status'] {
+  if (statuses.includes('in_progress')) return 'in_progress'
+  if (statuses.every(status => status === 'completed' || status === 'cancelled')) {
+    return statuses.includes('completed') ? 'completed' : 'cancelled'
+  }
+  return 'pending'
+}
+
+/**
+ * Groups flat root items that share a "Prefix: " head under one synthetic
+ * branch node — "Feature A: x" and "Feature A: y" become branch "Feature A"
+ * with the heads stripped from the leaves. Deliberately-nested nodes
+ * (children present) and prefixes hit only once pass through untouched, and
+ * grouping applies at the root level only. Original order is preserved: a
+ * branch sits where its first member sat.
+ * @param todos - the standing whole-tree snapshot (root level is grouped).
+ * @returns the display forest.
+ */
+export function groupTodos(todos: readonly TodoItem[]): readonly TodoItem[] {
+  interface Pending { at: number; stripped: TodoItem[]; original: TodoItem }
+  const forest: TodoItem[] = []
+  const pending = new Map<string, Pending>()
+  for (const node of todos) {
+    if ((node.children?.length ?? 0) > 0) { forest.push(node); continue }
+    const head = GROUP_HEAD.exec(node.content)
+    if (head === null) { forest.push(node); continue }
+    const key = head[1]
+    const rest = head[2]
+    if (key === undefined || rest === undefined) { forest.push(node); continue }
+    let entry = pending.get(key)
+    if (entry === undefined) {
+      entry = { at: forest.length, stripped: [], original: node }
+      pending.set(key, entry)
+      // Placeholder keeps the branch at its first member's position.
+      forest.push({ content: key, status: 'pending', children: [] })
+    }
+    entry.stripped.push({ ...node, content: rest })
+  }
+  for (const [title, entry] of pending) {
+    if (entry.stripped.length < 2) {
+      forest[entry.at] = entry.original
+      continue
+    }
+    forest[entry.at] = {
+      content: title,
+      status: rollupStatus(entry.stripped.map(item => item.status)),
+      children: [...entry.stripped],
+    }
+  }
+  return forest
 }
 
 /** Status glyphs share the figma 14×14 artboard; the 16×16 `.glyph` cell centers them. */
@@ -92,7 +167,8 @@ function StatusGlyph({ status }: { status: TodoItem['status'] }) {
   }
 }
 
-/** Header summary: "·"-joined per-status counts over the whole tree; zero-count segments are omitted as noise (a non-empty tree keeps at least one). */
+/** Header summary: "·"-joined per-status counts over the whole tree.
+ * Zero-count segments are omitted as noise (a non-empty tree keeps at least one). */
 export function progressLabel(todos: readonly TodoItem[], t: TodoTreeProps['t']): string {
   const nodes = flat(todos)
   const done = nodes.filter(item => item.status === 'completed').length
@@ -109,23 +185,53 @@ export function progressLabel(todos: readonly TodoItem[], t: TodoTreeProps['t'])
   ].join('\u2002·\u2002')
 }
 
-/** One nesting level of the tree; children indent under their parent. */
-function TodoNodes({ nodes, depth }: { nodes: readonly TodoItem[]; depth: number }) {
+/**
+ * One nesting level of the tree; children indent under their parent. Branch
+ * rows (nodes with children) toggle their subtree; the chevron cell mirrors
+ * the 16px glyph column so nested rows align under their branch's glyph.
+ */
+function TodoNodes({ nodes, depth, collapsed, onToggle }: {
+  nodes: readonly TodoItem[]
+  depth: number
+  collapsed: readonly string[]
+  onToggle: (id: string) => void
+}) {
   return (
     <ul className={depth === 0 ? css.list : css.nest} data-depth={depth}>
-      {nodes.map(node => (
-        <li key={node.content} data-status={node.status}>
-          <div className={css.item}>
-            <span className={css.glyph} aria-hidden><StatusGlyph status={node.status} /></span>
-            <span className={css.content}>{node.content}</span>
-          </div>
-          {(node.children?.length ?? 0) > 0 && (
-            <div className={css.branch}>
-              <TodoNodes nodes={node.children!} depth={depth + 1} />
-            </div>
-          )}
-        </li>
-      ))}
+      {nodes.map((node, index) => {
+        const children = node.children ?? []
+        const branch = children.length > 0
+        const open = branch && !collapsed.includes(node.content)
+        return (
+          <li key={`${depth}:${index}:${node.content}`} data-status={node.status}>
+            {branch ? (
+              <button
+                type="button"
+                className={css.row}
+                aria-expanded={open}
+                title={node.content}
+                onClick={() => { onToggle(node.content) }}
+              >
+                <span className={css.disclose} aria-hidden>
+                  <IconTriangleRightFill14 size={10} className={open ? css.chevronOpen : css.chevron} />
+                </span>
+                <span className={css.glyph} aria-hidden><StatusGlyph status={node.status} /></span>
+                <span className={css.content}>{node.content}</span>
+              </button>
+            ) : (
+              <div className={css.item} title={node.content}>
+                <span className={css.glyph} aria-hidden><StatusGlyph status={node.status} /></span>
+                <span className={css.content}>{node.content}</span>
+              </div>
+            )}
+            {branch && open && (
+              <div className={css.branch}>
+                <TodoNodes nodes={children} depth={depth + 1} collapsed={collapsed} onToggle={onToggle} />
+              </div>
+            )}
+          </li>
+        )
+      })}
     </ul>
   )
 }
@@ -134,12 +240,19 @@ function TodoNodes({ nodes, depth }: { nodes: readonly TodoItem[]; depth: number
  * Presentational tree body — also the test seam: plain data in, DOM out.
  * @param todos - the whole tree from the projection.
  * @param t - locale seat.
- * @param compact - omit the count header (the details panel owns its title).
+ * @param compact - omit the count header (a surrounding panel owns its title).
+ * @param goal - the session's current goal, rendered as the card's leading
+ *   section; absent or cleared goals render nothing.
+ * @param collapsed - branch titles whose subtrees stay hidden.
+ * @param onToggle - collapse toggle for a branch title.
  */
-export function TodoTreeBody({ todos, t, compact = false }: {
+export function TodoTreeBody({ todos, t, compact = false, goal, collapsed = [], onToggle = () => {} }: {
   todos: readonly TodoItem[]
   t: TodoTreeProps['t']
   compact?: boolean
+  goal?: GoalProjection | null | undefined
+  collapsed?: readonly string[]
+  onToggle?: (id: string) => void
 }) {
   return (
     <section className={css.root} data-testid="todo-tree">
@@ -150,17 +263,50 @@ export function TodoTreeBody({ todos, t, compact = false }: {
           <span className={css.progress}>{progressLabel(todos, t)}</span>
         </div>
       )}
+      {goal != null && (
+        <div className={css.goal} data-phase={goal.goal.phase} data-testid="todo-goal">
+          <div className={css.goalHead}>
+            <strong>{t('todo.goal.title')}</strong>
+            <span className={css.goalMeta}>
+              <em data-phase>{goal.goal.phase}</em>
+              <small>{t('todo.goal.round', { started: goal.roundsStarted, max: goal.goal.maxGoalRounds ?? 0 })}</small>
+            </span>
+          </div>
+          <p className={css.goalObjective}>{goal.goal.objective}</p>
+        </div>
+      )}
       {todos.length === 0
         ? <div className={css.empty} data-testid="todo-tree-empty">{t('todo.empty')}</div>
-        : <TodoNodes nodes={todos} depth={0} />}
+        : <TodoNodes nodes={groupTodos(todos)} depth={0} collapsed={collapsed} onToggle={onToggle} />}
     </section>
   )
 }
 
-/** Seat component: reads the host-computed 'todos' projection (absent or null renders the empty state). */
-export function TodoTree({ useProjection, t }: TodoTreeProps) {
-  const todos = useProjection('todos')
-  return <TodoTreeBody todos={todos ?? []} t={t} />
+/**
+ * Seat component: reads the current session's `todos` projection through the
+ * session list summary (no session or pre-first-write null renders the quiet
+ * empty state); branch collapse rides the entry-declared store; the collapsed
+ * rail renders one expand affordance instead.
+ */
+export function TodoTree({ wide, expandSidebar, useSessions, useStore, actions, t }: TodoTreeProps) {
+  const todos = useSessions(list =>
+    list.current === undefined ? undefined : list.byId[list.current]?.projectionValues?.todos)
+  const goal = useSessions(list =>
+    list.current === undefined ? undefined : list.byId[list.current]?.projectionValues?.goal)
+  const collapsed = useStore(state => state.collapsed)
+  if (!wide) {
+    return (
+      <button
+        type="button"
+        className={css.railButton}
+        aria-label={t('todo.railExpand')}
+        onClick={() => { expandSidebar() }}
+      >
+        <IconChecklistOutline14 />
+      </button>
+    )
+  }
+  return <TodoTreeBody todos={todos ?? []} t={t} goal={goal} collapsed={collapsed} onToggle={id => actions.toggle(id)} />
 }
 
 /**
@@ -171,11 +317,14 @@ export const todoTreeEntry = {
   name: 'conversation-todo-tree',
   inject: ['slots'],
   /**
-   * Register the tree into the details panel's context seat.
+   * Register the tree into the sidebar's memory area — the execution-tree
+   * seat — above any later-stacked memory registrants. The collapse store is
+   * created at apply time so its identity follows this fiber.
    * @param ctx - registrant context (disposal rides ctx.effect inside slots.register).
    */
   apply(ctx: Context): void {
-    ctx.slots.inject('conversation.details.context', () =>
-      ctx.slots.register({ name: 'conversation.details.context', id: 'todo-tree', order: 0, locale: NS }, TodoTree))
+    const store = createTodoTreeStore()
+    ctx.slots.inject('sidebar.memory', () =>
+      ctx.slots.register({ name: 'sidebar.memory', id: 'todo-tree', order: 0, locale: NS, store }, TodoTree))
   },
 }

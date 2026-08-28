@@ -1,13 +1,38 @@
-/* Todo strip in the composer context stack (Figma 1236:32276): tip surface,
-   status icons + secondary item labels. Its visible card aligns with the
-   GoalBar and the Queue panel inside their shared dock column: 12px radius,
-   36px collapsed row, 12px side padding, 14px tertiary leading glyph. */
+/* Todo tree card in the sidebar's memory area: the region stacks multiple
+   registrants, so the tree draws its own bordered card on the sidebar fill
+   (radius/margins mirror the memory neighbors). */
 
 .root {
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+  margin: 5px 2px 8px;
+  padding: 6px 10px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-specific-sidebar-fill);
+}
+
+/* Collapsed rail: one round affordance asking the shell to expand (mirrors
+   the memory neighbors' rail buttons: 36px circle, quiet until hover). */
+.railButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin: 0 0 8px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.railButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
 }
 
 .body {
@@ -145,4 +170,111 @@
   font-size: 13px;
   line-height: 20px;
   color: var(--dsw-alias-label-caption);
+}
+
+/* The session's current goal, leading the card: Superhuman-style violet is
+   the one deliberate non-neutral accent in the sidebar, marking the objective
+   as the panel's anchor. */
+.goal {
+  --goal-accent: #7a6ff0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--goal-accent);
+  border-radius: 6px;
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.goalHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.goalHead strong {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--goal-accent);
+}
+
+.goalMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.goalMeta em {
+  font-style: normal;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 16px;
+  background: color-mix(in srgb, var(--goal-accent) 16%, transparent);
+  color: var(--goal-accent);
+}
+
+.goalMeta em[data-phase='active'] {
+  background: color-mix(in srgb, var(--goal-accent) 26%, transparent);
+  color: color-mix(in srgb, var(--goal-accent) 80%, white);
+}
+
+.goalMeta small {
+  color: var(--dsw-alias-label-caption);
+}
+
+.goalObjective {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+/* Branch rows are disclosure buttons carrying the leaf row's metrics: a quiet
+   chevron cell first, then the same 16px glyph column, so nested leaves align
+   under their branch's status glyph (one level = 16px cell + 10px gap). */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.row:hover .content,
+.row:focus-visible .content {
+  color: var(--dsw-alias-label-primary);
+}
+
+.disclose {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+}
+
+.chevron {
+  color: var(--dsw-alias-label-caption);
+  transition: transform 120ms ease;
+}
+
+.chevronOpen {
+  color: var(--dsw-alias-label-secondary);
+  transform: rotate(90deg);
+  transition: transform 120ms ease;
 }

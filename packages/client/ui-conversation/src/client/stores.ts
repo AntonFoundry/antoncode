@@ -32,3 +32,33 @@ export function createChatStore(): EngineStoreHandle<ChatStoreState, ChatActions
     },
   })
 }
+
+/** Branch-collapse state of the sidebar todo tree, keyed by branch title. */
+export interface TodoTreeStoreState {
+  collapsed: string[]
+}
+
+/** Declared action shape used to give the exported factory a stable return type. */
+type TodoTreeActions = {
+  toggle: (draft: TodoTreeStoreState, id: string) => void
+}
+
+/**
+ * Declares the todo tree's branch-collapse state and write surface. The seat
+ * unmounts whenever the sidebar collapses to the rail, so the state lives in
+ * a store instead of component state to survive those remounts.
+ * @returns the store handle.
+ */
+export function createTodoTreeStore(): EngineStoreHandle<TodoTreeStoreState, TodoTreeActions> {
+  return defineStore({
+    init: (): TodoTreeStoreState => ({ collapsed: [] }),
+    persist: 'dsh.conversation.todoTree',
+    actions: {
+      toggle: (d, id: string) => {
+        const at = d.collapsed.indexOf(id)
+        if (at >= 0) d.collapsed.splice(at, 1)
+        else d.collapsed.push(id)
+      },
+    },
+  })
+}

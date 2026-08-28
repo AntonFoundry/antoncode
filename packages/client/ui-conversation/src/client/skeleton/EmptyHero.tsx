@@ -119,7 +119,7 @@ export function HeroShell({ t, children }: HeroShellProps) {
         <div className={css.headline}>
           {/* The Anton mark leads the hero as a large tile above the title. */}
           <span className={css.fishHitbox}>
-            <FishLogo size={96} className={css.fish} />
+            <FishLogo size={288} className={css.fish} />
           </span>
           <span className={css.titleRow}>
             <span className={css.headlineText}>{t('hero.headline')}</span>
