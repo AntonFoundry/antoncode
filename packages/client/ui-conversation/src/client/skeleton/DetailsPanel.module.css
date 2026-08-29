@@ -39,10 +39,10 @@
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  font-size: 14px;
+  font-size: 28px;
   font-weight: 700;
   letter-spacing: .08em;
-  line-height: 20px;
+  line-height: 34px;
 }
 
 .close {
