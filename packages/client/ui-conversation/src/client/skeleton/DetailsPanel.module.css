@@ -39,6 +39,10 @@
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  /* A selection sweep paints the highlight over gradient-clipped text and
+     the wordmark reads as a flat blue box; the brand is not content. */
+  user-select: none;
+  -webkit-user-select: none;
   font-size: 28px;
   font-weight: 700;
   letter-spacing: .08em;
