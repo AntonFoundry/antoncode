@@ -11,8 +11,8 @@
  * @module @deepseek-ai/dsh-host-frontend-static
  */
 
-import type { ServerResponse } from 'node:http'
-import { readFile } from 'node:fs/promises'
+import type { ServerResponse, IncomingMessage } from 'node:http'
+import { readFile, stat } from 'node:fs/promises'
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -56,7 +56,7 @@ const MIME: Record<string, string> = {
  */
 export async function serveStatic(
   pathname: string, res: ServerResponse, distRoot: string, distIndex: string,
-  renderIndex: () => Promise<string>,
+  renderIndex: () => Promise<string>, req?: IncomingMessage,
 ): Promise<void> {
   const target = resolve(normalize(join(distRoot, pathname)))
   // Traversal rejection: the target must be distRoot itself (`/`) or stay under
@@ -69,7 +69,8 @@ export async function serveStatic(
   }
   const serveIndex = async (): Promise<void> => {
     const body = await renderIndex()
-    res.writeHead(200, { 'content-type': MIME['.html'] })
+    // The shell references every bundle; it must never come from a stale cache.
+    res.writeHead(200, { 'content-type': MIME['.html'], 'cache-control': 'no-store' })
     res.end(body)
   }
   if (target === distRoot || target === distIndex) {
@@ -77,8 +78,23 @@ export async function serveStatic(
     return
   }
   try {
-    const body = await readFile(target)
-    res.writeHead(200, { 'content-type': MIME[extname(target)] ?? 'application/octet-stream' })
+    const [body, fileStat] = await Promise.all([readFile(target), stat(target)])
+    // Revalidate-always caching: the bundles are replaced in place on deploy,
+    // so heuristic browser caching would serve a stale shell or plugin for
+    // days. no-cache + a weak size-mtime ETag makes every request a cheap
+    // conditional fetch that picks up new bytes immediately.
+    const etag = `W/"${fileStat.size.toString(16)}-${fileStat.mtimeMs.toString(16)}"`
+    const headers: Record<string, string> = {
+      'content-type': MIME[extname(target)] ?? 'application/octet-stream',
+      'cache-control': 'no-cache',
+      etag,
+    }
+    if (req?.headers['if-none-match'] === etag) {
+      res.writeHead(304, headers)
+      res.end()
+      return
+    }
+    res.writeHead(200, headers)
     res.end(body)
   } catch {
     // Miss (ENOENT/EISDIR) falls back to index.html with 200 (SPA routing).
@@ -106,6 +122,6 @@ export function apply(ctx: Context, config: Config): void {
     }
     /* v8 ignore next -- node:http always sets url on server requests */
     const rawPath = new URL(req.url ?? '/', 'http://x').pathname
-    await serveStatic(decodeURIComponent(rawPath), res, distRoot, distIndex, renderIndex)
+    await serveStatic(decodeURIComponent(rawPath), res, distRoot, distIndex, renderIndex, req)
   }), 'frontend-static: fallback seat')
 }
