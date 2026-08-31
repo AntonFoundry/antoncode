@@ -267,7 +267,7 @@ const openWorkspaceLog: string[] = []
 function openWorkspaceStub(workspaceId: string): void { openWorkspaceLog.push(workspaceId) }
 
 /** Fire one synthetic keydown at the window (capture-phase listener target). */
-function press(key: string, mods: { ctrlKey?: boolean } = {}): void {
+function press(key: string, mods: { ctrlKey?: boolean; altKey?: boolean; code?: string } = {}): void {
   act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...mods })) })
 }
 
@@ -524,6 +524,29 @@ describe('Emacs chords (window listener)', () => {
     const input = getByLabelText('Switch workspace') as HTMLInputElement
     act(() => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
     expect(openWorkspaceLog).toEqual(['ws-1'])
+  })
+
+  it('M-x opens the extended-command palette; a filtered pick executes the command', () => {
+    const { getByLabelText, wm } = mountFrame()
+    press('x', { altKey: true, code: 'KeyX' })
+    const input = getByLabelText('M-x') as HTMLInputElement
+    expect(input).toBeTruthy()
+    // Filter to one command and run it: delete-other-windows on the focused leaf.
+    typeInput(input, 'delete-other-windows')
+    act(() => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+    // The default focus cursor is the first leaf (sidebar): single keeps it.
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR])
+  })
+
+  it('the which-key popup lists completions while a prefix is armed', () => {
+    const { container } = mountFrame()
+    expect(container.querySelector('[class*="whichKeyList"]')).toBeNull()
+    press('x', { ctrlKey: true })
+    const list = container.querySelector('[class*="whichKeyList"]')
+    expect(list).toBeTruthy()
+    expect(list!.textContent).toContain('switch buffer')
+    press('g', { ctrlKey: true })
+    expect(container.querySelector('[class*="whichKeyList"]')).toBeNull()
   })
 })
 

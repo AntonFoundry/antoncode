@@ -45,6 +45,8 @@ export type WmCommand =
   | 'winner-redo'
   /** Cancel the pending prefix or an open minibuffer (C-g / Escape). */
   | 'cancel'
+  /** Open the M-x extended-command palette over the minibuffer. */
+  | 'm-x'
 
 /** One parse outcome: arm a prefix, run a command, or nothing. */
 export type ChordResult = { prefix: 'x' | 'c' } | { command: WmCommand } | null
@@ -58,6 +60,8 @@ export interface KeyEventLike {
   key: string
   altKey?: boolean
   metaKey?: boolean
+  /** The physical key code — M-x detection survives Option-key character mapping. */
+  code?: string
 }
 
 /**
@@ -76,6 +80,12 @@ export interface KeyEventLike {
  * @returns the parse outcome.
  */
 export function parseChord(event: KeyEventLike, prefix: ArmedPrefix): ChordResult {
+  // M-x (the extended-command palette): matched on the physical code, so
+  // the Option-key character mapping (macOS Option+X types a symbol) cannot
+  // hide it. Meta is other apps'; ctrl chords run their own tables.
+  if (event.altKey === true && event.ctrlKey !== true && event.metaKey !== true && event.code === 'KeyX') {
+    return { command: 'm-x' }
+  }
   // Meta/alt-chorded keys are other apps' shortcuts; never intercept.
   if (event.metaKey || event.altKey) return null
   const key = event.key
@@ -106,4 +116,63 @@ export function parseChord(event: KeyEventLike, prefix: ArmedPrefix): ChordResul
     case 'ArrowRight': return { command: prefix === 'x' ? 'next-buffer' : 'winner-redo' }
     default: return null
   }
+}
+
+/** One entry of the M-x palette: an Emacs-style name, its command id, and its binding. */
+export interface CommandEntry {
+  /** The palette name (Emacs spelling — this is what M-x completes). */
+  name: string
+  /** The WmCommand the entry dispatches. */
+  command: WmCommand
+  /** The keybinding hint shown in the palette and which-key popup. */
+  keys: string
+}
+
+/** The extended-command registry: one row per window command (compos M-x). */
+export const COMMANDS: readonly CommandEntry[] = [
+  { name: 'execute-extended-command', command: 'm-x', keys: 'M-x' },
+  { name: 'switch-buffer', command: 'switch-buffer', keys: 'C-x b' },
+  { name: 'switch-workspace', command: 'switch-workspace', keys: 'C-x w' },
+  { name: 'find-file', command: 'find-file', keys: 'C-x C-f' },
+  { name: 'dired', command: 'dired', keys: 'C-x d' },
+  { name: 'kill-buffer', command: 'kill-buffer', keys: 'C-x k' },
+  { name: 'save-scratch', command: 'save-scratch', keys: 'C-x C-s' },
+  { name: 'split-below', command: 'split-below', keys: 'C-x 2' },
+  { name: 'split-right', command: 'split-right', keys: 'C-x 3' },
+  { name: 'delete-window', command: 'close', keys: 'C-x 0' },
+  { name: 'delete-other-windows', command: 'single', keys: 'C-x 1' },
+  { name: 'other-window', command: 'other-window', keys: 'C-x o' },
+  { name: 'previous-buffer', command: 'previous-buffer', keys: 'C-x ←' },
+  { name: 'next-buffer', command: 'next-buffer', keys: 'C-x →' },
+  { name: 'winner-undo', command: 'winner-undo', keys: 'C-c ←' },
+  { name: 'winner-redo', command: 'winner-redo', keys: 'C-c →' },
+  { name: 'reset-layout', command: 'reset-layout', keys: 'C-x l' },
+  { name: 'keyboard-quit', command: 'cancel', keys: 'C-g' },
+]
+
+/** One which-key row: the keys that complete an armed prefix, and what they do. */
+export interface PrefixHint { keys: string; label: string }
+
+/** The which-key table: completions shown while C-x / C-c is armed. */
+export const PREFIX_HINTS: Record<'x' | 'c', readonly PrefixHint[]> = {
+  x: [
+    { keys: 'C-x b', label: 'switch buffer' },
+    { keys: 'C-x w', label: 'switch workspace' },
+    { keys: 'C-x C-f', label: 'find file' },
+    { keys: 'C-x d', label: 'dired' },
+    { keys: 'C-x k', label: 'kill buffer' },
+    { keys: 'C-x C-s', label: 'save scratch' },
+    { keys: 'C-x 2', label: 'split below' },
+    { keys: 'C-x 3', label: 'split right' },
+    { keys: 'C-x 0', label: 'delete window' },
+    { keys: 'C-x 1', label: 'delete other windows' },
+    { keys: 'C-x o', label: 'other window' },
+    { keys: 'C-x ←', label: 'previous buffer' },
+    { keys: 'C-x →', label: 'next buffer' },
+    { keys: 'C-x l', label: 'reset layout' },
+  ],
+  c: [
+    { keys: 'C-c ←', label: 'winner undo' },
+    { keys: 'C-c →', label: 'winner redo' },
+  ],
 }

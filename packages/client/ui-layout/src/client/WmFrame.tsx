@@ -29,7 +29,7 @@ const SIDEBAR_SHARE = 0.18
 /** Sidebar share ceiling for dragged preferences. */
 const SIDEBAR_SHARE_MAX = 0.2
 import type { createLayoutStore, ScratchState, WmState } from './stores.ts'
-import { parseChord, type ArmedPrefix, type WmCommand } from './keymap.ts'
+import { COMMANDS, PREFIX_HINTS, parseChord, type ArmedPrefix, type WmCommand } from './keymap.ts'
 import { Minibuffer, type MinibufferCandidate } from './Minibuffer.tsx'
 import { ScratchBuffer } from './ScratchBuffer.tsx'
 import { FilesBuffer } from './FilesBuffer.tsx'
@@ -355,7 +355,7 @@ export function WmFrame({
   // Chord prefix + minibuffer prompt are frame-local runtime state (keymap.ts
   // owns the pure parsing; the armed prefix is the cross-keypress state).
   const [prefixArmed, setPrefixArmed] = useState<ArmedPrefix>(undefined)
-  const [prompt, setPrompt] = useState<'buffer' | 'workspace' | 'find-file' | 'kill-buffer' | null>(null)
+  const [prompt, setPrompt] = useState<'buffer' | 'workspace' | 'find-file' | 'kill-buffer' | 'commands' | null>(null)
   const [scratchFlushTick, setScratchFlushTick] = useState(0)
   const prefixRef = useRef(prefixArmed)
   prefixRef.current = prefixArmed
@@ -571,11 +571,21 @@ export function WmFrame({
     })
   ), [workspaceSnapshot, sessionsListSnapshot])
 
+  // M-x palette candidates: every registered command, its Emacs name, and
+  // its binding as the hint. Execution dispatches the id as a command.
+  const commandCandidates = useMemo<MinibufferCandidate[]>(() => (
+    COMMANDS.map(c => ({ id: c.command, label: c.name, hint: c.keys }))
+  ), [])
+
   const onMinibufferExecute = useCallback((id: string) => {
     // The prompt mirror still holds the prompt kind (setPrompt(null) has not
     // re-rendered yet) — dispatch on it before the strip closes.
     const kind = promptRef.current
     setPrompt(null)
+    if (kind === 'commands') {
+      runCommandRef.current(id as WmCommand)
+      return
+    }
     if (kind === 'find-file') {
       openFilesBuffer(id)
       return
@@ -627,6 +637,9 @@ export function WmFrame({
         return
       case 'switch-buffer':
         setPrompt('buffer')
+        return
+      case 'm-x':
+        setPrompt('commands')
         return
       case 'switch-workspace':
         setPrompt('workspace')
@@ -691,6 +704,10 @@ export function WmFrame({
       }
     }
   }, [cycleBuffer, listDirectory, onClose, onSplit, setFocus, setTree, writeTree])
+  // The minibuffer's execute callback precedes this declaration; the mirror
+  // lets it dispatch palette picks without a dependency cycle.
+  const runCommandRef = useRef(runCommand)
+  runCommandRef.current = runCommand
 
   // Global chord listener: capture phase, installed while mounted. Text
   // fields are never hijacked (input/textarea/contentEditable targets skip
@@ -794,19 +811,33 @@ export function WmFrame({
         <Minibuffer
           prompt={prompt === 'buffer' ? 'Switch buffer'
             : prompt === 'workspace' ? 'Switch workspace'
-              : prompt === 'find-file' ? 'Find file'
-                : 'Kill buffer'}
+              : prompt === 'commands' ? 'M-x'
+                : prompt === 'find-file' ? 'Find file'
+                  : 'Kill buffer'}
           candidates={prompt === 'buffer' ? bufferCandidates
             : prompt === 'workspace' ? workspaceCandidates
-              : prompt === 'find-file' ? []
-                : killCandidates}
+              : prompt === 'commands' ? commandCandidates
+                : prompt === 'find-file' ? []
+                  : killCandidates}
           freeEntry={prompt === 'find-file'}
           onExecute={onMinibufferExecute}
           onCancel={() => { setPrompt(null) }}
         />
       )}
       {prefixArmed !== undefined && (
-        <span className={css.prefixIndicator} aria-hidden>{prefixArmed === 'x' ? 'C-x-' : 'C-c-'}</span>
+        <div className={css.whichKey} aria-hidden>
+          <span className={css.prefixIndicator}>{
+            prefixArmed === 'x' ? 'C-x-' : 'C-c-'
+          }</span>
+          <ul className={css.whichKeyList}>
+            {PREFIX_HINTS[prefixArmed].map(h => (
+              <li key={h.keys}>
+                <span className={css.whichKeyKeys}>{h.keys}</span>
+                <span className={css.whichKeyLabel}>{h.label}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
       <div className={css.overlayLayer} data-shell-overlay>
         {renderSlot('shell.overlay', {})}

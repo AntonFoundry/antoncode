@@ -186,19 +186,52 @@
   border-bottom-color: var(--dsw-alias-border-l3);
 }
 
-/* Pending-chord indicator: the bare "C-x-" echo, parked at the tree's top
-   right corner; non-interactive by design. */
-.prefixIndicator {
+/* Pending-chord panel (which-key): the armed "C-x-" echo heads the list of
+   completions; parked at the tree's top right corner, non-interactive. */
+.whichKey {
   position: absolute;
   top: 52px;
   right: 10px;
   z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  pointer-events: none;
+  user-select: none;
+}
+.prefixIndicator {
   padding: 2px 8px;
   border-radius: 6px;
   background: var(--dsw-alias-bg-base);
   border: 1px solid var(--dsw-alias-border-l2);
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
-  pointer-events: none;
-  user-select: none;
+}
+.whichKeyList {
+  margin: 0;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  list-style: none;
+  min-width: 190px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+  border: 1px solid var(--dsw-alias-border-l2);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 18%);
+}
+.whichKeyList li {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.whichKeyKeys {
+  color: var(--dsw-alias-label-primary);
+  font-variant-numeric: tabular-nums;
+}
+.whichKeyLabel {
+  color: var(--dsw-alias-label-secondary);
 }
