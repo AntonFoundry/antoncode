@@ -35,7 +35,7 @@ import { ScratchBuffer } from './ScratchBuffer.tsx'
 import { FilesBuffer } from './FilesBuffer.tsx'
 import {
   SINGLETON_BUFFERS, SCRATCH_BUFFER_ID, WM_LEAF_SIDEBAR, bufferTitle, canClose, defaultTree,
-  dedupeSingletonBuffers, ensureBuffer, findBuffer, findLeaf, findSplit, firstLeafId,
+  dedupeSingletonBuffers, ensureBuffer, findBuffer, findLeaf, findSplit, firstLeafId, normalizeWeights,
   isSingletonBuffer, keepOnlyLeaf,
   killBuffer, leafIds, removeLeaf, scratchBuffer, setWeights, splitLeaf, swapBuffer,
   type WmBuffer, type WmDirection, type WmNode,
@@ -447,7 +447,7 @@ export function WmFrame({
     // Heal a loaded tree: duplicate singleton panes (two Context leaves from
     // an older split rule) collapse to the depth-first one. An effect, not a
     // render-body write: the store update must land after paint commitment.
-    const healed = dedupeSingletonBuffers(treeRef.current)
+    const healed = normalizeWeights(dedupeSingletonBuffers(treeRef.current))
     if (healed !== treeRef.current) setTree(healed)
     first.current = { hadSidebar: findLeaf(treeRef.current, WM_LEAF_SIDEBAR) !== undefined }
     // Once per mount: the loaded tree is the heal subject.
@@ -667,14 +667,26 @@ export function WmFrame({
     setFocus(anchor)
   }, [buffers, killBufferById, openFilesBuffer, openWorkspace, setBuffers, setFocus, writeTree])
 
-  /** Cycle the focused leaf's buffer through the registry order. */
+  /** Cycle the focused leaf's buffer through the registry order. A singleton
+    * shown in another leaf is skipped — swapping it here would duplicate the
+    * pane (the placement bug C-x arrows used to grow). */
   const cycleBuffer = useCallback((step: 1 | -1) => {
     const t = treeRef.current
     const anchor = focusRef.current
     if (anchor === undefined) return
     const leaf = findLeaf(t, anchor)
     if (leaf === undefined) return
-    const ids = buffers.map(b => b.id)
+    const shownElsewhere = new Set(
+      leafIds(t)
+        .filter(leafId => leafId !== anchor)
+        .map(leafId => findLeaf(t, leafId)?.buffer)
+        .filter((id): id is string => id !== undefined),
+    )
+    // Same registry expansion the C-x b candidates use.
+    const ids = [...SINGLETON_BUFFERS, scratchBuffer(), ...buffers.filter(b => b.kind === 'files')]
+      .map(b => b.id)
+      .filter(id => !shownElsewhere.has(id))
+    if (ids.length === 0) return
     const at = ids.indexOf(leaf.buffer)
     const nextId = ids[(at + step + ids.length) % ids.length]
     if (nextId === undefined || nextId === leaf.buffer) return

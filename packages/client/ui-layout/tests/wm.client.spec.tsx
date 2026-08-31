@@ -90,13 +90,15 @@ describe('wm tree operations', () => {
     expect(countLeaves(tree, 'details')).toBe(2)
   })
 
-  it('canClose guards the last conversation leaf only', () => {
+  it('canClose: every window closes except the last one standing', () => {
     const tree = defaultTree()
     expect(canClose(tree, WM_LEAF_SIDEBAR)).toBe(true)
     expect(canClose(tree, WM_LEAF_DETAILS)).toBe(true)
-    expect(canClose(tree, WM_LEAF_CONVERSATION)).toBe(false)
-    const twoConvs = splitLeaf(tree, WM_LEAF_CONVERSATION, 'column', 'conversation', 'conv2')
-    expect(canClose(twoConvs, WM_LEAF_CONVERSATION)).toBe(true)
+    // The conversation pane closes too when other windows remain (C-x b
+    // brings it back); only the LAST window standing is guarded.
+    expect(canClose(tree, WM_LEAF_CONVERSATION)).toBe(true)
+    const convOnly = keepOnlyLeaf(tree, WM_LEAF_CONVERSATION)
+    expect(canClose(convOnly, WM_LEAF_CONVERSATION)).toBe(false)
     expect(canClose(tree, 'absent')).toBe(false)
   })
 
@@ -321,9 +323,9 @@ describe('WmFrame render', () => {
     expect(getByTestId('sidebar-content')).toBeTruthy()
     expect(getByTestId('center-content')).toBeTruthy()
     expect(getByTestId('details-content')).toBeTruthy()
-    // Closable leaves (sidebar, details) carry close buttons; the last
-    // conversation leaf does not.
-    expect(getAllByLabelText('Close').length).toBe(2)
+    // Every pane carries a close button (the last window standing is
+    // guarded at the operation, not the button).
+    expect(getAllByLabelText('Close').length).toBe(3)
   })
 
   it('sidebar slot receives the layout-store concession owner props + brandInFrame', () => {
@@ -336,15 +338,16 @@ describe('WmFrame render', () => {
     expect(slotCalls.map(c => c.key)).toContain('shell.overlay')
   })
 
-  it('mode-line close removes a closable leaf but never the last conversation leaf', () => {
+  it('mode-line close removes any leaf with a remaining window behind it', () => {
     const { container, wm, queryByText } = mountFrame()
     const closeButtonOf = (buffer: string): HTMLButtonElement =>
       container.querySelector(`[data-buffer="${buffer}"] button[aria-label="Close"]`) as HTMLButtonElement
-    // The conversation pane renders no close button (last conversation leaf).
-    expect(container.querySelector('[data-buffer="conversation"] button[aria-label="Close"]')).toBeNull()
     act(() => { closeButtonOf('details').click() })
     expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
     expect(queryByText('Context')).toBeNull()
+    // The conversation pane closes too: chat returns through C-x b.
+    act(() => { closeButtonOf('conversation').click() })
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR])
   })
 
   it('mode-line split inserts a new pane beside the target', () => {
@@ -476,7 +479,9 @@ describe('Emacs chords (window listener)', () => {
     act(() => { wm.actions.setFocus(WM_LEAF_CONVERSATION) })
     press('x', { ctrlKey: true })
     press('0')
-    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
+    // The conversation pane closes with a window behind it; only the LAST
+    // window standing is guarded.
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR])
   })
 
   it('C-x 1 keeps only the focused leaf; C-x o cycles focus', () => {
@@ -679,12 +684,14 @@ describe('winner mode + new chords (window listener)', () => {
     press('Escape')
   })
 
-  it('C-x ←/→ cycle the focused leaf through the registry order', () => {
+  it('C-x ←/→ cycle the focused leaf, skipping singletons shown elsewhere', () => {
     const { wm } = mountFrame()
     act(() => { wm.actions.setFocus(WM_LEAF_SIDEBAR) })
     press('x', { ctrlKey: true })
-    press('ArrowRight') // next buffer → conversation
-    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('conversation')
+    // Chat and Context are on screen in other leaves: cycling must not swap
+    // them into this window (that duplicated panes — the placement bug).
+    press('ArrowRight') // next buffer → scratch (the only unshown buffer)
+    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe(SCRATCH_BUFFER_ID)
     press('x', { ctrlKey: true })
     press('ArrowLeft') // back
     expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('sidebar')

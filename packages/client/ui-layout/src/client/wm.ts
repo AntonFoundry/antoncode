@@ -219,10 +219,13 @@ export function countLeaves(node: WmNode, buffer: WmBufferKind): number {
  * @returns false only when the leaf is the only conversation leaf.
  */
 export function canClose(node: WmNode, leafId: string): boolean {
+  // The last window never closes (a tree keeps at least one leaf); every
+  // other window does — including the conversation pane (compos: C-x 0 on
+  // the chat window is allowed; C-x b brings it back).
   const leaf = findLeaf(node, leafId)
   if (leaf === undefined) return false
-  if (leaf.buffer !== 'conversation') return true
-  return countLeaves(node, 'conversation') > 1
+  const other = leafIds(node).find(id => id !== leafId)
+  return other !== undefined
 }
 
 /**
@@ -398,6 +401,25 @@ export function killBuffer(
  * @param tree - the loaded window tree.
  * @returns the deduplicated tree (same reference when nothing changed).
  */
+/**
+ * Renormalize every split's weights to sum to 1 (loaded trees can carry
+ * drifted weights from older operations; a split whose weights sum to zero
+ * or below distributes equally).
+ * @param node - the tree to normalize.
+ * @returns the normalized tree (same reference when nothing changed).
+ */
+export function normalizeWeights(node: WmNode): WmNode {
+  if (node.kind === 'leaf') return node
+  const total = node.weights.reduce((a, b) => a + b, 0)
+  const children = node.children.map(normalizeWeights)
+  const weights = total > 0
+    ? node.weights.map(w => w / total)
+    : node.weights.map(() => 1 / Math.max(node.weights.length, 1))
+  const same = node.weights.every((w, i) => w === weights[i])
+    && children.every((c, i) => c === node.children[i])
+  return same ? node : { ...node, children, weights }
+}
+
 export function dedupeSingletonBuffers(tree: WmNode): WmNode {
   const seen = new Set<string>()
   let t = tree
