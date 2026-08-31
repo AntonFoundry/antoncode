@@ -15,11 +15,95 @@
 /** Split orientation: children laid out side by side (row) or stacked (column). */
 export type WmDirection = 'row' | 'column'
 
-/** The three registered buffer slots a leaf can show. */
-export type WmBufferKind = 'sidebar' | 'conversation' | 'details'
+/** The buffer kinds the registry knows. */
+export type WmBufferKind = 'sidebar' | 'conversation' | 'details' | 'scratch' | 'files'
 
-/** A leaf window: shows exactly one buffer slot. */
-export interface WmLeaf { kind: 'leaf'; id: string; buffer: WmBufferKind }
+/**
+ * One registry entry. `path` is present only on `files` buffers (the
+ * directory currently listed; navigation replaces it in place). The three
+ * shell kinds are singletons — exactly one buffer of each exists, always,
+ * and they cannot be killed.
+ */
+export interface WmBuffer { id: string; kind: WmBufferKind; path?: string }
+
+/** Stable ids of the three singleton buffers (their ids ARE their kind names). */
+export const SINGLETON_BUFFER_IDS: readonly string[] = ['sidebar', 'conversation', 'details']
+
+/** The scratch buffer's fixed id (compos's *scratch*). */
+export const SCRATCH_BUFFER_ID = 'buffer:scratch'
+
+/** The three singleton registry entries, in shell order. */
+export const SINGLETON_BUFFERS: readonly WmBuffer[] = [
+  { id: 'sidebar', kind: 'sidebar' },
+  { id: 'conversation', kind: 'conversation' },
+  { id: 'details', kind: 'details' },
+]
+
+/** Fresh scratch registry entry. */
+export function scratchBuffer(): WmBuffer {
+  return { id: SCRATCH_BUFFER_ID, kind: 'scratch' }
+}
+
+/**
+ * Whether a buffer id is one of the unhittable singletons.
+ * @param id - buffer id.
+ * @returns true for sidebar/conversation/details.
+ */
+export function isSingletonBuffer(id: string): boolean {
+  return SINGLETON_BUFFER_IDS.includes(id)
+}
+
+/**
+ * Display title of a buffer (mode lines, minibuffer candidate lists).
+ * @param buffer - registry entry.
+ * @returns Workspace / Chat / Context / *scratch* / `Dired: <path>`.
+ */
+export function bufferTitle(buffer: WmBuffer): string {
+  switch (buffer.kind) {
+    case 'sidebar': return 'Workspace'
+    case 'conversation': return 'Chat'
+    case 'details': return 'Context'
+    case 'scratch': return '*scratch*'
+    case 'files': return `Dired: ${buffer.path ?? '?'}`
+  }
+}
+
+/**
+ * Seed/repair a registry: the three singletons always exist (persisted state
+ * from before the registry, or a hand-edited one, heals to this shape).
+ * @param buffers - the stored registry (possibly undefined from an old snapshot).
+ * @returns the registry with every singleton present, original order preserved.
+ */
+export function ensureSingletons(buffers: readonly WmBuffer[] | undefined): WmBuffer[] {
+  const list = buffers === undefined ? [] : [...buffers]
+  for (const singleton of SINGLETON_BUFFERS) {
+    if (!list.some(b => b.id === singleton.id)) list.push({ ...singleton })
+  }
+  return list
+}
+
+/**
+ * Add a buffer to the registry when absent (open-on-demand).
+ * @param buffers - registry.
+ * @param buffer - entry to ensure.
+ * @returns the registry containing `buffer`.
+ */
+export function ensureBuffer(buffers: readonly WmBuffer[], buffer: WmBuffer): WmBuffer[] {
+  return buffers.some(b => b.id === buffer.id) ? [...buffers] : [...buffers, { ...buffer }]
+}
+
+/**
+ * Look one registry entry up by id.
+ * @param buffers - registry.
+ * @param id - buffer id.
+ * @returns the entry, or undefined.
+ */
+export function findBuffer(buffers: readonly WmBuffer[], id: string): WmBuffer | undefined {
+  return buffers.find(b => b.id === id)
+}
+
+/** A leaf window: shows exactly one buffer (by registry id). */
+export interface WmLeaf { kind: 'leaf'; id: string; buffer: string }
 
 /**
  * A split window: children laid out along `dir`, sized by `weights` —
@@ -191,13 +275,13 @@ export function removeLeaf(node: WmNode, leafId: string): WmNode {
  * @param node - tree to transform.
  * @param leafId - leaf to split.
  * @param dir - orientation of the new split.
- * @param newBuffer - buffer the new leaf shows.
+ * @param newBuffer - buffer id the new leaf shows (must exist in the registry).
  * @param newLeafId - id of the new leaf.
  * @param position - whether the new leaf lands after (default) or before the old leaf.
  * @returns the transformed tree (unchanged when `leafId` is absent).
  */
 export function splitLeaf(
-  node: WmNode, leafId: string, dir: WmDirection, newBuffer: WmBufferKind, newLeafId: string,
+  node: WmNode, leafId: string, dir: WmDirection, newBuffer: string, newLeafId: string,
   position: 'after' | 'before' = 'after',
 ): WmNode {
   const map = (n: WmNode): WmNode => {
@@ -221,15 +305,72 @@ export function splitLeaf(
  * Swap the buffer a leaf shows.
  * @param node - tree to transform.
  * @param leafId - leaf to retarget.
- * @param buffer - new buffer kind.
+ * @param bufferId - new buffer id (must exist in the registry).
  * @returns the transformed tree (unchanged when `leafId` is absent).
  */
-export function setBuffer(node: WmNode, leafId: string, buffer: WmBufferKind): WmNode {
+export function setBuffer(node: WmNode, leafId: string, bufferId: string): WmNode {
   const map = (n: WmNode): WmNode => {
-    if (n.kind === 'leaf') return n.id === leafId ? { ...n, buffer } : n
+    if (n.kind === 'leaf') return n.id === leafId ? { ...n, buffer: bufferId } : n
     return { ...n, children: n.children.map(map) }
   }
   return map(node)
+}
+
+/**
+ * Swap the buffer a leaf shows (the registry-era name for {@link setBuffer}).
+ * @param node - tree to transform.
+ * @param leafId - leaf to retarget.
+ * @param bufferId - new buffer id.
+ * @returns the transformed tree (unchanged when `leafId` is absent).
+ */
+export function swapBuffer(node: WmNode, leafId: string, bufferId: string): WmNode {
+  return setBuffer(node, leafId, bufferId)
+}
+
+/**
+ * Open a buffer in a NEW window: split the anchor leaf along `dir` and show
+ * the buffer in the new leaf (focused-style split, splitLeaf semantics with
+ * the new leaf showing `bufferId`).
+ * @param node - tree to transform.
+ * @param anchorLeafId - leaf to split.
+ * @param dir - orientation of the new split.
+ * @param bufferId - buffer the new leaf shows.
+ * @param newLeafId - id of the new leaf.
+ * @param position - whether the new leaf lands after (default) or before the anchor.
+ * @returns the anchor's tree with the new window (unchanged when the anchor is absent).
+ */
+export function openBuffer(
+  node: WmNode, anchorLeafId: string, dir: WmDirection, bufferId: string, newLeafId: string,
+  position: 'after' | 'before' = 'after',
+): WmNode {
+  return splitLeaf(node, anchorLeafId, dir, bufferId, newLeafId, position)
+}
+
+/**
+ * Kill a buffer: remove it from the registry and swap every leaf showing it
+ * to the singleton scratch buffer (created on demand). Killing one of the
+ * three singletons is refused — the shell always keeps them.
+ * @param state - registry + tree pair.
+ * @param bufferId - buffer to kill.
+ * @returns the state with the buffer gone (same reference when refused or absent).
+ */
+export function killBuffer(
+  state: { buffers: readonly WmBuffer[]; tree: WmNode },
+  bufferId: string,
+): { buffers: WmBuffer[]; tree: WmNode } {
+  const buffer = findBuffer(state.buffers, bufferId)
+  if (buffer === undefined || isSingletonBuffer(bufferId)) {
+    return { buffers: [...state.buffers], tree: state.tree }
+  }
+  const buffers = ensureBuffer(
+    state.buffers.filter(b => b.id !== bufferId),
+    scratchBuffer(),
+  )
+  const map = (n: WmNode): WmNode => {
+    if (n.kind === 'leaf') return n.buffer === bufferId ? { ...n, buffer: SCRATCH_BUFFER_ID } : n
+    return { ...n, children: n.children.map(map) }
+  }
+  return { buffers, tree: map(state.tree) }
 }
 
 /**

@@ -1,31 +1,43 @@
 /**
  * Emacs-style window-manager frame, registered into the built-in 'root' slot
  * (the web shell renders only 'root'). Renders the persisted window tree
- * (wm.ts) as nested flex splits: each leaf is a pane with a slim mode line
- * (buffer name left; split-below / split-right / close buttons right) above
- * its buffer slot, and each sibling pair carries a draggable sash whose
- * pointer drag rewrites the parent split's weights (children min sizes clamp
- * in px, converted through the split's measured size). Chords (keymap.ts)
- * and pane pointerdowns drive the focused leaf; C-x b / C-x w open the
- * minibuffer (Minibuffer.tsx). The frame keeps the phase-1 ports: the
- * session-switch details close, the narrow-viewport sidebar auto-remove
- * (restore only when the loaded tree had it), and the frame-wide
- * 'shell.overlay' floating layer. A fixed brand strip above the tree keeps
- * the Anton brand + sidebar toggle alive even with the workspace leaf
- * closed. Pure component: everything arrives through the four shares.
+ * (wm.ts) as nested flex splits: each leaf shows one REGISTRY buffer (mode
+ * line title: Workspace / Chat / Context / *scratch* / `Dired: <path>`);
+ * sibling pairs carry draggable sashes whose pointer drag rewrites the parent
+ * split's weights. Chords (keymap.ts) and pane pointerdowns drive the focused
+ * leaf; the minibuffer (Minibuffer.tsx) serves switch-buffer, find-file,
+ * kill-buffer, and switch-workspace. Winner mode (C-c ←/→) undoes/redoes
+ * structural layout changes — the layout history lives in frame refs (the
+ * engine persists whole store snapshots, so runtime-only history cannot ride
+ * the store without resurrecting stale layouts across reloads); sash weight
+ * drags deliberately skip history. Scratch (*scratch*, ScratchBuffer) and
+ * dired-lite files buffers (FilesBuffer) render in-leaf. The frame keeps the
+ * earlier ports: the session-switch details close, the narrow-viewport
+ * sidebar auto-remove, and the 'shell.overlay' layer. Pure component:
+ * everything arrives through the four shares.
  */
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { PropsRenderSlots, PropsRuntime, PropsStore, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
+import type { DirectoryListing } from '@deepseek-ai/dsh-api-remotes/client'
 import { BrandWordmark, IconCloseOutline16, IconPanelLeftOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SidebarOwnerProps } from './index.ts'
-import { clampWidth, SIDEBAR_MAX, SIDEBAR_MIN } from './columns.ts'
-import type { createLayoutStore, WmState } from './stores.ts'
-import { parseChord, type WmCommand } from './keymap.ts'
+import { clampWidth, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN } from './columns.ts'
+
+/** Untouched-preference sidebar share of the frame width (committed baseline). */
+const SIDEBAR_SHARE = 0.18
+/** Sidebar share ceiling for dragged preferences. */
+const SIDEBAR_SHARE_MAX = 0.2
+import type { createLayoutStore, ScratchState, WmState } from './stores.ts'
+import { parseChord, type ArmedPrefix, type WmCommand } from './keymap.ts'
 import { Minibuffer, type MinibufferCandidate } from './Minibuffer.tsx'
+import { ScratchBuffer } from './ScratchBuffer.tsx'
+import { FilesBuffer } from './FilesBuffer.tsx'
 import {
-  WM_LEAF_SIDEBAR, canClose, findLeaf, findSplit, firstLeafId, keepOnlyLeaf, leafIds, removeLeaf,
-  setWeights, splitLeaf, type WmBufferKind, type WmDirection, type WmNode,
+  SINGLETON_BUFFERS, SCRATCH_BUFFER_ID, WM_LEAF_SIDEBAR, bufferTitle, canClose, defaultTree,
+  ensureBuffer, findBuffer, findLeaf, findSplit, firstLeafId, isSingletonBuffer, keepOnlyLeaf,
+  killBuffer, leafIds, removeLeaf, scratchBuffer, setWeights, splitLeaf, swapBuffer,
+  type WmBuffer, type WmDirection, type WmNode,
 } from './wm.ts'
 import css from './WmFrame.module.css'
 
@@ -37,30 +49,38 @@ const SIDEBAR_PANE_MIN = 200
 /** Minimum pane width for non-sidebar panes. */
 const PANE_MIN = 240
 
-/** Mode-line buffer titles. */
-const BUFFER_TITLES: Record<WmBufferKind, string> = {
-  sidebar: 'Workspace',
-  conversation: 'Chat',
-  details: 'Context',
-}
+/** Winner history cap (window layouts). */
+const HISTORY_CAP = 50
 
 /**
- * Injected share: the renderer-bound wm selector hook, its write callbacks,
- * and the workspace-open resolver (apply closure over ctx.workspaces /
- * ctx.sessions — components never see ctx).
+ * Injected share: the renderer-bound wm + scratch selector hooks, their write
+ * callbacks, and the host/workspace resolvers (apply closures over
+ * ctx.workspaces / ctx.sessions — components never see ctx).
  */
 export interface WmFrameInjected {
   /** Selector hook over the wm store snapshot (bound from the inject hooks compartment). */
   useWm: SnapshotSelectorHook<WmState>
+  /** Selector hook over the scratch-text store (bound from the inject hooks compartment). */
+  useScratch: SnapshotSelectorHook<ScratchState>
   /** Write a transformed tree. */
   setTree: (tree: WmNode) => void
   /** Move the focus cursor (undefined = first leaf). */
   setFocus: (leafId: string | undefined) => void
+  /** Write the buffer registry. */
+  setBuffers: (buffers: WmBuffer[]) => void
+  /** Heal a pre-registry persisted snapshot (seed the singleton buffers). */
+  reconcileBuffers: () => void
+  /** Persist the *scratch* text. */
+  writeScratch: (text: string) => void
   /**
    * Open a workspace's most recently updated session; a workspace with no
    * resolvable session falls back to the New Session flow for it.
    */
   openWorkspace: (workspaceId: string) => void
+  /** List one directory level (absent path = host home). */
+  listDirectory: (path?: string, signal?: AbortSignal) => Promise<DirectoryListing>
+  /** Open a path with the host OS default application. */
+  openPath: (path: string) => Promise<void>
 }
 
 /** Full composed props: runtime share + child-slot render share + store share + injected wm face. */
@@ -70,12 +90,14 @@ export type WmFrameProps =
   & PropsStore<ReturnType<typeof createLayoutStore>>
   & WmFrameInjected
 
-/** Fresh split-leaf id: page-local counter + random suffix survives tree persistence. */
-let leafSeq = 0
-function freshLeafId(): string {
-  leafSeq += 1
-  return `wm:leaf:${leafSeq}:${Math.random().toString(36).slice(2, 8)}`
+/** Fresh node id (leaves and files buffers): page counter + random suffix. */
+let nodeSeq = 0
+function freshId(prefix: string): string {
+  nodeSeq += 1
+  return `${prefix}:${nodeSeq}:${Math.random().toString(36).slice(2, 8)}`
 }
+const freshLeafId = (): string => freshId('wm:leaf')
+const freshFilesBuffer = (): WmBuffer => ({ id: freshId('buffer:files'), kind: 'files' })
 
 /** Minimum px size of one child subtree of a split (spec: sidebar 200, rest 240). */
 function minPxOf(node: WmNode): number {
@@ -158,12 +180,30 @@ function Sash(props: {
   )
 }
 
+/** Scratch body share (the store-backed text + flush tick). */
+interface ScratchBufferShared {
+  text: string
+  onWrite: (text: string) => void
+  flushTick: number
+}
+
+/** Files body share (host listing face + registry navigation/kill). */
+interface FilesBufferShared {
+  listDirectory: (path?: string, signal?: AbortSignal) => Promise<DirectoryListing>
+  openPath: (path: string) => Promise<void>
+  onNavigate: (bufferId: string, path: string | undefined) => void
+  onKill: (bufferId: string) => void
+}
+
 /** Props threaded through the recursive render. */
 interface NodeRenderProps {
   tree: WmNode
   focusedId: string | undefined
+  buffers: readonly WmBuffer[]
   renderSlot: WmFrameProps['renderSlot']
   sidebarOwner: SidebarOwnerProps & { brandInFrame: true }
+  scratch: ScratchBufferShared
+  files: FilesBufferShared
   onFocus: (leafId: string) => void
   onSplit: (leafId: string, dir: WmDirection) => void
   onClose: (leafId: string) => void
@@ -175,20 +215,39 @@ interface NodeRenderProps {
 interface SashDragBase { size: number; index: number; w0: number; w1: number; delta: number }
 
 /**
- * Render one leaf: the pane (mode line + buffer slot). Owner props mirror the
- * AppFrame render site — sidebar receives the layout store's live column
- * state, conversation and details render empty shares. A pointerdown anywhere
- * in the pane moves the focus cursor; the focused pane's mode line highlights.
+ * Render one leaf: the pane (mode line + buffer body). The registry entry
+ * decides the body: the three shell slots render at the frame's render site
+ * (sidebar receives the layout store's live column state), scratch and files
+ * render their own bodies. A pointerdown anywhere in the pane moves the focus
+ * cursor; the focused pane's mode line highlights.
  */
 function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf' }> }) {
-  const { node, tree, focusedId, renderSlot, sidebarOwner, onFocus, onSplit, onClose } = props
-  const owner = node.buffer === 'sidebar' ? sidebarOwner : {}
+  const { node, tree, focusedId, buffers, renderSlot, sidebarOwner, scratch, files, onFocus, onSplit, onClose } = props
+  const buffer = findBuffer(buffers, node.buffer)
+  // A leaf referencing a registry gap falls back by id so a hand-edited or
+  // partially migrated snapshot still renders the shell.
+  const bufferKind = buffer?.kind ?? (isSingletonBuffer(node.buffer) ? node.buffer : 'scratch')
+  const owner = bufferKind === 'sidebar' ? sidebarOwner : {}
   const closeable = canClose(tree, node.id)
   const focused = focusedId === node.id
+  const body = bufferKind === 'scratch'
+    ? <ScratchBuffer text={scratch.text} onWrite={scratch.onWrite} flushTick={scratch.flushTick} />
+    : bufferKind === 'files'
+      ? (
+        <FilesBuffer
+          path={buffer?.path}
+          listDirectory={files.listDirectory}
+          openPath={files.openPath}
+          onNavigate={(target) => { files.onNavigate(node.buffer, target) }}
+          onKill={() => { files.onKill(node.buffer) }}
+        />
+      )
+      : renderSlot(bufferKind as 'sidebar' | 'conversation' | 'details', owner)
+  const title = buffer !== undefined ? bufferTitle(buffer) : '(unnamed)'
   return (
-    <div className={css.pane} data-buffer={node.buffer} data-focused={focused || undefined} onPointerDown={() => { onFocus(node.id) }}>
+    <div className={css.pane} data-buffer={bufferKind} data-focused={focused || undefined} onPointerDown={() => { onFocus(node.id) }}>
       <div className={css.modeLine}>
-        <span className={css.bufferName}>{BUFFER_TITLES[node.buffer]}</span>
+        <span className={css.bufferName}>{title}</span>
         <span className={css.modeActions}>
           <button type="button" className={css.modeButton} aria-label="Split below" title="Split below (C-x 2)" onClick={() => { onSplit(node.id, 'column') }}>
             <SplitBelowIcon />
@@ -203,7 +262,7 @@ function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf
           )}
         </span>
       </div>
-      <div className={css.paneBody}>{renderSlot(node.buffer, owner)}</div>
+      <div className={css.paneBody}>{body}</div>
     </div>
   )
 }
@@ -272,24 +331,44 @@ export function WmFrame({
   useWorkspaces,
   renderSlot,
   useWm,
+  useScratch,
   setTree,
   setFocus,
+  setBuffers,
+  reconcileBuffers,
+  writeScratch,
   openWorkspace,
+  listDirectory,
+  openPath,
 }: WmFrameProps) {
   const panels = useStore(s => s)
-  const tree = useWm(s => s.tree)
-  const focusedLeafId = useWm(s => s.focusedLeafId)
+  const wmSnapshot = useWm(s => s)
+  const tree = wmSnapshot.tree
+  // Pre-registry persisted snapshots carry no buffers array: normalize reads
+  // until the mount reconcile heals the persisted copy.
+  const buffers = useMemo<WmBuffer[]>(() => wmSnapshot.buffers ?? [...SINGLETON_BUFFERS], [wmSnapshot.buffers])
+  const focusedLeafId = wmSnapshot.focusedLeafId
+  const scratchText = useScratch(s => s.text)
   const frameRef = useRef<HTMLDivElement | null>(null)
   const [viewport, setViewport] = useState(() => window.innerWidth)
   const [dragging, setDragging] = useState(false)
   // Chord prefix + minibuffer prompt are frame-local runtime state (keymap.ts
-  // owns the pure parsing; the armed flag is the cross-keypress state here).
-  const [prefixArmed, setPrefixArmed] = useState(false)
-  const [prompt, setPrompt] = useState<'buffer' | 'workspace' | null>(null)
+  // owns the pure parsing; the armed prefix is the cross-keypress state).
+  const [prefixArmed, setPrefixArmed] = useState<ArmedPrefix>(undefined)
+  const [prompt, setPrompt] = useState<'buffer' | 'workspace' | 'find-file' | 'kill-buffer' | null>(null)
+  const [scratchFlushTick, setScratchFlushTick] = useState(0)
   const prefixRef = useRef(prefixArmed)
   prefixRef.current = prefixArmed
   const promptRef = useRef(prompt)
   promptRef.current = prompt
+
+  // Heal a pre-registry persisted snapshot once per instance.
+  useEffect(() => { reconcileBuffers() }, [reconcileBuffers])
+
+  // Winner mode history: frame-local refs (runtime only). Sash weight drags
+  // skip history — they are geometry tweaks, not layout changes.
+  const historyRef = useRef<WmNode[]>([])
+  const futureRef = useRef<WmNode[]>([])
 
   // Normalize the focus cursor: undefined or a stale (removed) leaf id falls
   // back to the first leaf. Effective focus never renders undefined on a
@@ -306,6 +385,17 @@ export function WmFrame({
   const treeRef = useRef(tree)
   treeRef.current = tree
 
+  /** Structural tree write: pushes the prior layout onto the winner history. */
+  const writeTree = useCallback((next: WmNode) => {
+    historyRef.current.push(treeRef.current)
+    if (historyRef.current.length > HISTORY_CAP) historyRef.current.shift()
+    futureRef.current = []
+    setTree(next)
+  }, [setTree])
+
+  /** Weight-only write (sash drag): no winner-history entry. */
+  const writeWeights = useCallback((next: WmNode) => { setTree(next) }, [setTree])
+
   const detailsSession = useSessions((s) => {
     const current = s.current
     return current !== undefined && s.byId[current]?.blank === false ? current : undefined
@@ -318,10 +408,10 @@ export function WmFrame({
     if (detailsSession === undefined) return
     if (lastSession.current !== undefined && lastSession.current !== detailsSession) {
       const t = treeRef.current
-      if (findLeaf(t, 'details') !== undefined) setTree(removeLeaf(t, 'details'))
+      if (findLeaf(t, 'details') !== undefined) writeTree(removeLeaf(t, 'details'))
     }
     lastSession.current = detailsSession
-  }, [detailsSession, setTree])
+  }, [detailsSession, writeTree])
 
   // Narrow viewports drop the sidebar leaf entirely (simplified port of the
   // AppFrame auto-collapse); re-widening restores it ONLY when the tree this
@@ -334,13 +424,13 @@ export function WmFrame({
     const mounted = first.current
     const has = findLeaf(t, WM_LEAF_SIDEBAR) !== undefined
     if (viewport < SIDEBAR_NARROW && has) {
-      setTree(removeLeaf(t, WM_LEAF_SIDEBAR))
+      writeTree(removeLeaf(t, WM_LEAF_SIDEBAR))
     } else if (viewport >= SIDEBAR_NARROW && !has && mounted?.hadSidebar === true) {
       const anchor = firstLeafId(t)
-      if (anchor !== undefined) setTree(splitLeaf(t, anchor, 'row', 'sidebar', WM_LEAF_SIDEBAR, 'before'))
+      if (anchor !== undefined) writeTree(splitLeaf(t, anchor, 'row', 'sidebar', WM_LEAF_SIDEBAR, 'before'))
     }
     // Runs on viewport transitions; tree is read through the mirror.
-  }, [viewport, setTree])
+  }, [viewport, writeTree])
 
   // Track the frame's own box (not the window): rAF-throttled ResizeObserver.
   useEffect(() => {
@@ -362,39 +452,68 @@ export function WmFrame({
     }
   }, [])
 
+  /** Registry write for a files buffer's navigate-in-place. */
+  const navigateBuffer = useCallback((bufferId: string, target: string | undefined) => {
+    setBuffers(buffers.map((b) => {
+      if (b.id !== bufferId) return b
+      const updated: WmBuffer = { id: b.id, kind: b.kind }
+      return target === undefined ? updated : { ...updated, path: target }
+    }))
+  }, [buffers, setBuffers])
+
+  /** Kill a buffer through the registry op and publish both halves. */
+  const killBufferById = useCallback((bufferId: string) => {
+    const result = killBuffer({ buffers, tree: treeRef.current }, bufferId)
+    setBuffers(result.buffers)
+    setTree(result.tree)
+  }, [buffers, setBuffers, setTree])
+
+  /** Open a files buffer beside the focused leaf (one listing per buffer). */
+  const openFilesBuffer = useCallback((target: string | undefined) => {
+    const t = treeRef.current
+    const anchor = focusRef.current ?? firstLeafId(t)
+    if (anchor === undefined) return
+    const fresh = freshFilesBuffer()
+    if (target !== undefined) fresh.path = target
+    setBuffers(ensureBuffer(buffers, fresh))
+    const leafId = freshLeafId()
+    writeTree(splitLeaf(t, anchor, 'row', fresh.id, leafId))
+    setFocus(leafId)
+  }, [buffers, setBuffers, setFocus, writeTree])
+
   const onSplit = useCallback((leafId: string, dir: WmDirection) => {
     const t = treeRef.current
     const leaf = findLeaf(t, leafId)
     if (leaf === undefined) return
     // A conversation leaf splits into a details pane: the conversation slot
     // is the single session surface, so it is never duplicated.
-    const newBuffer: WmBufferKind = leaf.buffer === 'conversation' ? 'details' : leaf.buffer
-    setTree(splitLeaf(t, leafId, dir, newBuffer, freshLeafId()))
-  }, [setTree])
+    const newBuffer = leaf.buffer === 'conversation' ? 'details' : leaf.buffer
+    writeTree(splitLeaf(t, leafId, dir, newBuffer, freshLeafId()))
+  }, [writeTree])
 
   const onClose = useCallback((leafId: string) => {
     const t = treeRef.current
-    if (canClose(t, leafId)) setTree(removeLeaf(t, leafId))
-  }, [setTree])
+    if (canClose(t, leafId)) writeTree(removeLeaf(t, leafId))
+  }, [writeTree])
 
   const onSash = useCallback((splitId: string, base: SashDragBase) => {
     const t = treeRef.current
     const split = findSplit(t, splitId)
     if (split === undefined || base.size <= 0) return
-    const first = split.children[base.index]
-    const second = split.children[base.index + 1]
-    if (first === undefined || second === undefined) return
+    const left = split.children[base.index]
+    const right = split.children[base.index + 1]
+    if (left === undefined || right === undefined) return
     const total = base.w0 + base.w1
-    const min0 = minPxOf(first) / base.size
-    const min1 = minPxOf(second) / base.size
+    const min0 = minPxOf(left) / base.size
+    const min1 = minPxOf(right) / base.size
     // Absolute from the frozen base: the pointerup flush re-derives the same
     // weights instead of compounding the delta.
     const next0 = Math.min(Math.max(base.w0 + base.delta / base.size, min0), total - min1)
     const next = split.weights.slice()
     next[base.index] = next0
     next[base.index + 1] = total - next0
-    setTree(setWeights(t, splitId, next))
-  }, [setTree])
+    writeWeights(setWeights(t, splitId, next))
+  }, [writeWeights])
 
   // Brand-strip toggle: the same transition ctx.layout.toggleSidebar() runs
   // (remove the sidebar leaf, or re-attach it left of the leftmost leaf);
@@ -403,26 +522,41 @@ export function WmFrame({
   const onBrandToggle = useCallback(() => {
     const t = treeRef.current
     if (findLeaf(t, WM_LEAF_SIDEBAR) !== undefined) {
-      setTree(removeLeaf(t, WM_LEAF_SIDEBAR))
+      writeTree(removeLeaf(t, WM_LEAF_SIDEBAR))
       return
     }
     const anchor = firstLeafId(t)
-    if (anchor !== undefined) setTree(splitLeaf(t, anchor, 'row', 'sidebar', WM_LEAF_SIDEBAR, 'before'))
-  }, [setTree])
+    if (anchor !== undefined) writeTree(splitLeaf(t, anchor, 'row', 'sidebar', WM_LEAF_SIDEBAR, 'before'))
+  }, [writeTree])
 
   // Feed snapshots for the workspace candidates (both are standard seats).
   const workspaceSnapshot = useWorkspaces(s => s)
   const sessionsListSnapshot = useSessions(s => s)
 
-  // Switch-buffer candidates: every buffer kind; an open one focuses its
-  // first leaf, a closed one splits into the focused leaf.
+  // Switch-buffer candidates: the three singletons + scratch + every files
+  // buffer in the registry; open buffers hint "open", others "new window".
   const bufferCandidates = useMemo<MinibufferCandidate[]>(() => {
-    const order: WmBufferKind[] = ['sidebar', 'conversation', 'details']
-    return order.map((buffer) => {
-      const open = leafIds(tree).some(id => findLeaf(tree, id)?.buffer === buffer)
-      return { id: `buffer:${buffer}`, label: BUFFER_TITLES[buffer], hint: open ? 'open' : 'new window' }
-    })
-  }, [tree])
+    const openIds = new Set(leafIds(tree).map(id => findLeaf(tree, id)?.buffer))
+    const registry = [...SINGLETON_BUFFERS, scratchBuffer(), ...buffers.filter(b => b.kind === 'files')]
+    return registry.map(b => ({
+      id: b.id,
+      label: bufferTitle(b),
+      hint: openIds.has(b.id) ? 'open' : 'new window',
+    }))
+  }, [tree, buffers])
+
+  // Kill-buffer candidates: buffers currently shown in a leaf, singletons
+  // excluded (they are the shell and cannot be killed — compos's q-rule
+  // applies to listings and scratch only).
+  const killCandidates = useMemo<MinibufferCandidate[]>(() => {
+    const shown = new Set(leafIds(tree).map(id => findLeaf(tree, id)?.buffer))
+    return [...shown]
+      .filter((id): id is string => id !== undefined && !isSingletonBuffer(id))
+      .map((id) => {
+        const b = findBuffer(buffers, id)
+        return { id, label: b !== undefined ? bufferTitle(b) : id }
+      })
+  }, [tree, buffers])
 
   // Switch-workspace candidates: workspace title + its most recently updated
   // session (from the sessions list summaries) as the hint.
@@ -433,64 +567,122 @@ export function WmFrame({
         .filter(session => session !== undefined)
         .sort((a, b) => b.updatedAt - a.updatedAt)[0]
       const hint = latest?.displayTitle
-      return { id: w.workspaceId, label: w.title, ...(hint === undefined ? {} : { hint }) }
+      return { id: w.workspaceId as string, label: w.title, ...(hint === undefined ? {} : { hint }) }
     })
   ), [workspaceSnapshot, sessionsListSnapshot])
 
   const onMinibufferExecute = useCallback((id: string) => {
+    // The prompt mirror still holds the prompt kind (setPrompt(null) has not
+    // re-rendered yet) — dispatch on it before the strip closes.
+    const kind = promptRef.current
     setPrompt(null)
-    if (id.startsWith('buffer:')) {
-      const buffer = id.slice('buffer:'.length) as WmBufferKind
-      const t = treeRef.current
-      const existing = leafIds(t).find(leafId => findLeaf(t, leafId)?.buffer === buffer)
-      if (existing !== undefined) {
-        setFocus(existing)
-        return
-      }
-      const anchor = focusRef.current
-      if (anchor === undefined) return
-      const newId = freshLeafId()
-      setTree(splitLeaf(t, anchor, 'row', buffer, newId))
-      setFocus(newId)
+    if (kind === 'find-file') {
+      openFilesBuffer(id)
       return
     }
-    openWorkspace(id)
-  }, [openWorkspace, setFocus, setTree])
+    if (kind === 'kill-buffer') {
+      killBufferById(id)
+      return
+    }
+    if (kind === 'workspace') {
+      openWorkspace(id)
+      return
+    }
+    const t = treeRef.current
+    const existing = leafIds(t).find(leafId => findLeaf(t, leafId)?.buffer === id)
+    if (existing !== undefined) {
+      setFocus(existing)
+      return
+    }
+    const anchor = focusRef.current
+    if (anchor === undefined) return
+    // Scratch opens on demand (compos: the scratch buffer exists once you ask
+    // for it); a fresh install never shows it unprompted.
+    if (id === SCRATCH_BUFFER_ID) setBuffers(ensureBuffer(buffers, scratchBuffer()))
+    const newId = freshLeafId()
+    writeTree(splitLeaf(t, anchor, 'row', id, newId))
+    setFocus(newId)
+  }, [buffers, killBufferById, openFilesBuffer, openWorkspace, setBuffers, setFocus, writeTree])
 
-  // The chord command table, acting on the focused leaf.
+  /** Cycle the focused leaf's buffer through the registry order. */
+  const cycleBuffer = useCallback((step: 1 | -1) => {
+    const t = treeRef.current
+    const anchor = focusRef.current
+    if (anchor === undefined) return
+    const leaf = findLeaf(t, anchor)
+    if (leaf === undefined) return
+    const ids = buffers.map(b => b.id)
+    const at = ids.indexOf(leaf.buffer)
+    const nextId = ids[(at + step + ids.length) % ids.length]
+    if (nextId === undefined || nextId === leaf.buffer) return
+    writeTree(swapBuffer(t, anchor, nextId))
+  }, [buffers, writeTree])
+
+  // The chord command tables, acting on the focused leaf.
   const runCommand = useCallback((command: WmCommand) => {
+    setPrefixArmed(undefined)
     switch (command) {
       case 'cancel':
-        setPrefixArmed(false)
         setPrompt(null)
         return
       case 'switch-buffer':
-        setPrefixArmed(false)
         setPrompt('buffer')
         return
       case 'switch-workspace':
-        setPrefixArmed(false)
         setPrompt('workspace')
+        return
+      case 'find-file':
+        setPrompt('find-file')
+        return
+      case 'kill-buffer':
+        setPrompt('kill-buffer')
+        return
+      case 'dired': {
+        // The host home directory: list without a path, adopt the answered path.
+        void listDirectory(undefined).then((listing) => { openFilesBuffer(listing.path) })
+        return
+      }
+      case 'save-scratch':
+        setScratchFlushTick(tick => tick + 1)
+        return
+      case 'reset-layout':
+        writeTree(defaultTree())
+        return
+      case 'winner-undo': {
+        const prev = historyRef.current.pop()
+        if (prev === undefined) return
+        futureRef.current.push(treeRef.current)
+        setTree(prev)
+        return
+      }
+      case 'winner-redo': {
+        const next = futureRef.current.pop()
+        if (next === undefined) return
+        historyRef.current.push(treeRef.current)
+        setTree(next)
+        return
+      }
+      case 'previous-buffer':
+        cycleBuffer(-1)
+        return
+      case 'next-buffer':
+        cycleBuffer(1)
         return
       case 'split-below':
       case 'split-right': {
-        setPrefixArmed(false)
         const id = focusRef.current
         if (id !== undefined) onSplit(id, command === 'split-below' ? 'column' : 'row')
         return
       }
       case 'close':
-        setPrefixArmed(false)
         if (focusRef.current !== undefined) onClose(focusRef.current)
         return
       case 'single': {
-        setPrefixArmed(false)
         const id = focusRef.current
-        if (id !== undefined) setTree(keepOnlyLeaf(treeRef.current, id))
+        if (id !== undefined) writeTree(keepOnlyLeaf(treeRef.current, id))
         return
       }
       case 'other-window': {
-        setPrefixArmed(false)
         const ids = leafIds(treeRef.current)
         const current = ids.indexOf(focusRef.current ?? '')
         const next = ids[(current + 1) % Math.max(ids.length, 1)]
@@ -498,7 +690,7 @@ export function WmFrame({
         return
       }
     }
-  }, [onClose, onSplit, setFocus, setTree])
+  }, [cycleBuffer, listDirectory, onClose, onSplit, setFocus, setTree, writeTree])
 
   // Global chord listener: capture phase, installed while mounted. Text
   // fields are never hijacked (input/textarea/contentEditable targets skip
@@ -519,12 +711,12 @@ export function WmFrame({
       const result = parseChord(e, prefixRef.current)
       if (result === null) {
         // An unbound key while armed kills the pending chord.
-        if (prefixRef.current) setPrefixArmed(false)
+        if (prefixRef.current !== undefined) setPrefixArmed(undefined)
         return
       }
       e.preventDefault()
       if ('prefix' in result) {
-        setPrefixArmed(true)
+        setPrefixArmed(result.prefix)
         return
       }
       runCommand(result.command)
@@ -534,18 +726,46 @@ export function WmFrame({
   }, [runCommand])
 
   // The sidebar leaf's owner props keep the layout store's concession state:
-  // a 0 preference renders the collapsed rail at its contract width.
+  // a 0 preference renders the collapsed rail at its contract width. The open
+  // column is viewport-proportional: an untouched preference takes 18% of the
+  // frame; a dragged preference (any other store value) is honored in px but
+  // re-clamped into [SIDEBAR_MIN, 20% of the frame], so the column never
+  // exceeds a fifth of the window and the buffer area keeps the rest.
+  const shareTarget = clampWidth(
+    Math.round(viewport * SIDEBAR_SHARE),
+    SIDEBAR_MIN,
+    Math.max(SIDEBAR_MIN, Math.round(viewport * SIDEBAR_SHARE_MAX)),
+  )
   const sidebarOwner: SidebarOwnerProps & { brandInFrame: true } = {
     collapsed: panels.sidebar === 0,
-    width: panels.sidebar === 0 ? 56 : clampWidth(panels.sidebar, SIDEBAR_MIN, SIDEBAR_MAX),
+    width:
+      panels.sidebar === 0
+        ? 56
+        : panels.sidebar === SIDEBAR_DEFAULT
+          ? shareTarget
+          : Math.min(clampWidth(panels.sidebar, SIDEBAR_MIN, SIDEBAR_MAX), shareTarget),
     brandInFrame: true,
   }
 
+  const filesShared: FilesBufferShared = {
+    listDirectory,
+    openPath,
+    onNavigate: navigateBuffer,
+    onKill: killBufferById,
+  }
+  const scratchShared: ScratchBufferShared = {
+    text: scratchText,
+    onWrite: writeScratch,
+    flushTick: scratchFlushTick,
+  }
   const renderProps: NodeRenderProps = {
     tree,
     focusedId,
+    buffers,
     renderSlot,
     sidebarOwner,
+    scratch: scratchShared,
+    files: filesShared,
     onFocus: setFocus,
     onSplit,
     onClose,
@@ -572,13 +792,22 @@ export function WmFrame({
       </div>
       {prompt !== null && (
         <Minibuffer
-          prompt={prompt === 'buffer' ? 'Switch buffer' : 'Switch workspace'}
-          candidates={prompt === 'buffer' ? bufferCandidates : workspaceCandidates}
+          prompt={prompt === 'buffer' ? 'Switch buffer'
+            : prompt === 'workspace' ? 'Switch workspace'
+              : prompt === 'find-file' ? 'Find file'
+                : 'Kill buffer'}
+          candidates={prompt === 'buffer' ? bufferCandidates
+            : prompt === 'workspace' ? workspaceCandidates
+              : prompt === 'find-file' ? []
+                : killCandidates}
+          freeEntry={prompt === 'find-file'}
           onExecute={onMinibufferExecute}
           onCancel={() => { setPrompt(null) }}
         />
       )}
-      {prefixArmed && <span className={css.prefixIndicator} aria-hidden>C-x-</span>}
+      {prefixArmed !== undefined && (
+        <span className={css.prefixIndicator} aria-hidden>{prefixArmed === 'x' ? 'C-x-' : 'C-c-'}</span>
+      )}
       <div className={css.overlayLayer} data-shell-overlay>
         {renderSlot('shell.overlay', {})}
       </div>

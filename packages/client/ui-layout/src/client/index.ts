@@ -13,7 +13,7 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { PanelActions } from './service.ts'
 import { WmFrame } from './WmFrame.tsx'
-import { createLayoutStore, createWmStore } from './stores.ts'
+import { createLayoutStore, createScratchStore, createWmStore } from './stores.ts'
 import { LayoutController } from './service.ts'
 import { ThemePresenter } from './theme-presenter.ts'
 
@@ -125,6 +125,7 @@ export const inject = ['slots', 'theme', 'workspaces', 'sessions']
 export function apply(ctx: ClientContext): void {
   const layout = new LayoutController()
   const wmStore = createWmStore()
+  const scratchStore = createScratchStore()
   ctx.effect(() => {
     const disposeService = ctx.reflect.provide('layout', layout)
     const disposeRegistration = ctx.slots.register({
@@ -147,10 +148,14 @@ export function apply(ctx: ClientContext): void {
         layout.attachPanels(actions)
         const wm = wmStore.create()
         layout.attachWm(wm)
+        const scratch = scratchStore.create()
         return {
-          hooks: { wm },
+          hooks: { wm, scratch },
           setTree: (tree: Parameters<typeof wm.actions.setTree>[0]) => { wm.actions.setTree(tree) },
           setFocus: (leafId: string | undefined) => { wm.actions.setFocus(leafId) },
+          setBuffers: (buffers: Parameters<typeof wm.actions.setBuffers>[0]) => { wm.actions.setBuffers(buffers) },
+          reconcileBuffers: () => { wm.actions.reconcile() },
+          writeScratch: (text: string) => { scratch.actions.setText(text) },
           openWorkspace: (workspaceId: string) => {
             const view = ctx.workspaces.list.getSnapshot().items.find(w => w.workspaceId === workspaceId)
             const list = ctx.sessions.list.getSnapshot()
@@ -161,6 +166,10 @@ export function apply(ctx: ClientContext): void {
             if (latest !== undefined) ctx.sessions.open(latest.id)
             else ctx.workspaces.startSession(view?.workspaceId)
           },
+          // The dired faces route through the workspaces service (the browse
+          // capability's client seam — ctx has no direct 'host' service).
+          listDirectory: (path?: string, signal?: AbortSignal) => ctx.workspaces.listDirectory(path, signal),
+          openPath: (path: string) => ctx.workspaces.openPath(path),
         }
       },
     }, WmFrame)

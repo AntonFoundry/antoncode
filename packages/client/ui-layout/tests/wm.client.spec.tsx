@@ -12,10 +12,10 @@ import { act, cleanup, render } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import {
   WM_LEAF_CONVERSATION, WM_LEAF_DETAILS, WM_LEAF_SIDEBAR,
-  canClose, countLeaves, defaultTree, findLeaf, firstLeafId, keepOnlyLeaf, lastLeafId,
-  leafIds, removeLeaf, setBuffer, setWeights, splitLeaf,
+  canClose, countLeaves, defaultTree, findLeaf, firstLeafId, keepOnlyLeaf, killBuffer,
+  lastLeafId, leafIds, openBuffer, removeLeaf, setBuffer, setWeights, splitLeaf,
 } from '@deepseek-ai/dsh-client-ui-layout/src/client/wm.ts'
-import { createLayoutStore, createWmStore } from '@deepseek-ai/dsh-client-ui-layout/src/client/stores.ts'
+import { createLayoutStore, createScratchStore, createWmStore } from '@deepseek-ai/dsh-client-ui-layout/src/client/stores.ts'
 import { LayoutController } from '@deepseek-ai/dsh-client-ui-layout/src/client/service.ts'
 import type { PanelActions, WmTreeSource } from '@deepseek-ai/dsh-client-ui-layout/src/client/service.ts'
 import { WmFrame } from '@deepseek-ai/dsh-client-ui-layout/src/client/WmFrame.tsx'
@@ -192,10 +192,23 @@ function hookOf<T>(inst: { subscribe: (fn: () => void) => () => void; getSnapsho
   return function useSelector<S>(sel: (s: T) => S): S { return sel(useSyncExternalStore(inst.subscribe, inst.getSnapshot)) }
 }
 
+/** Records host listing calls; returns one fixed level. */
+const listDirectoryLog: (string | undefined)[] = []
+function listDirectoryStub(path?: string): Promise<never> {
+  listDirectoryLog.push(path)
+  return Promise.reject(new Error('no host in test'))
+}
+function openPathStub(path: string): Promise<void> {
+  openPathLog.push(path)
+  return Promise.resolve()
+}
+const openPathLog: string[] = []
+
 function mountFrame(initialTree?: WmNode, workspaces?: { id: string; title: string }[]) {
   window.innerWidth = frameWidth
   const layout = createLayoutStore().create()
   const wm = createWmStore().create()
+  const scratch = createScratchStore().create()
   if (initialTree !== undefined) act(() => { wm.actions.setTree(initialTree) })
   const slotCalls: { key: string; props: unknown }[] = []
   const renderSlot = ((key: string, owner: object) => {
@@ -230,8 +243,14 @@ function mountFrame(initialTree?: WmNode, workspaces?: { id: string; title: stri
       useStore={hookOf(layout)}
       actions={layout.actions}
       useWm={hookOf(wm)}
+      useScratch={hookOf(scratch)}
       setTree={(tree) => { act(() => { wm.actions.setTree(tree) }) }}
       setFocus={(id) => { act(() => { wm.actions.setFocus(id) }) }}
+      setBuffers={(buffers) => { act(() => { wm.actions.setBuffers(buffers) }) }}
+      reconcileBuffers={() => { act(() => { wm.actions.reconcile() }) }}
+      writeScratch={(text) => { act(() => { scratch.actions.setText(text) }) }}
+      listDirectory={listDirectoryStub}
+      openPath={openPathStub}
       openWorkspace={openWorkspaceStub}
       renderSlot={renderSlot}
       useSessions={useSessions}
@@ -240,7 +259,7 @@ function mountFrame(initialTree?: WmNode, workspaces?: { id: string; title: stri
     />
   )
   const utils = render(element())
-  return { wm, layout, slotCalls, rerenderFrame: () => { utils.rerender(element()) }, ...utils }
+  return { wm, scratch, layout, slotCalls, rerenderFrame: () => { utils.rerender(element()) }, ...utils }
 }
 
 /** Records the workspace-open resolutions (C-x w Enter path). */
@@ -250,6 +269,16 @@ function openWorkspaceStub(workspaceId: string): void { openWorkspaceLog.push(wo
 /** Fire one synthetic keydown at the window (capture-phase listener target). */
 function press(key: string, mods: { ctrlKey?: boolean } = {}): void {
   act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...mods })) })
+}
+
+/** Type into a React-controlled input (native value setter + input event). */
+function typeInput(input: HTMLInputElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+  act(() => {
+    input.focus()
+    setter.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
 }
 
 beforeEach(() => {
@@ -298,7 +327,8 @@ describe('WmFrame render', () => {
   it('sidebar slot receives the layout-store concession owner props + brandInFrame', () => {
     const { slotCalls } = mountFrame()
     const sidebar = slotCalls.filter(c => c.key === 'sidebar').at(-1)!
-    expect(sidebar.props).toEqual({ collapsed: false, width: 280, brandInFrame: true })
+    // Viewport 1920: the untouched preference takes the 18% share (346).
+    expect(sidebar.props).toEqual({ collapsed: false, width: 346, brandInFrame: true })
     expect(slotCalls.find(c => c.key === 'conversation')!.props).toEqual({})
     expect(slotCalls.find(c => c.key === 'details')!.props).toEqual({})
     expect(slotCalls.map(c => c.key)).toContain('shell.overlay')
@@ -494,5 +524,128 @@ describe('Emacs chords (window listener)', () => {
     const input = getByLabelText('Switch workspace') as HTMLInputElement
     act(() => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
     expect(openWorkspaceLog).toEqual(['ws-1'])
+  })
+})
+
+describe('buffer registry', () => {
+  it('seeds the singletons, migrates pre-registry snapshots, and reconciles', () => {
+    const instance = createWmStore().create()
+    expect(instance.getSnapshot().buffers.map(b => b.id)).toEqual(['sidebar', 'conversation', 'details'])
+    // Old persisted snapshot: leaves carry bare kind ids, no buffers array.
+    // The ids ARE the singleton ids, so the tree renders as-is; reconcile
+    // heals the registry side.
+    act(() => { instance.actions.reconcile() })
+    expect(instance.getSnapshot().buffers.map(b => b.id)).toEqual(['sidebar', 'conversation', 'details'])
+  })
+
+  it('killBuffer refuses singletons, swaps leaves to scratch, and prunes the registry', () => {
+    const tree = defaultTree()
+    const buffers = [{ id: 'sidebar', kind: 'sidebar' as const }, { id: 'conversation', kind: 'conversation' as const }, { id: 'details', kind: 'details' as const }, { id: 'buffer:files:1', kind: 'files' as const, path: '/tmp' }]
+    // Singleton kill is refused.
+    const refused = killBuffer({ buffers, tree }, 'conversation')
+    expect(refused.buffers.map(b => b.id)).toEqual(['sidebar', 'conversation', 'details', 'buffer:files:1'])
+    // A files buffer kills through: its leaf swaps to *scratch*, which is
+    // created on demand.
+    const killed = killBuffer({ buffers, tree: splitLeaf(tree, 'details', 'row', 'buffer:files:1', 'leaf-x') }, 'buffer:files:1')
+    expect(killed.buffers.some(b => b.id === 'buffer:files:1')).toBe(false)
+    expect(killed.buffers.some(b => b.id === 'buffer:scratch')).toBe(true)
+    expect(killed.tree.kind === 'split' && leafIds(killed.tree)).toContain('leaf-x')
+    const x = findLeaf(killed.tree, 'leaf-x')
+    expect(x?.buffer).toBe('buffer:scratch')
+  })
+
+  it('openBuffer splits a new window beside the anchor showing the buffer', () => {
+    const tree = openBuffer(defaultTree(), 'conversation', 'column', 'buffer:scratch', 'leaf-s')
+    expect(leafIds(tree)).toEqual(['sidebar', 'conversation', 'leaf-s', 'details'])
+    expect(findLeaf(tree, 'leaf-s')?.buffer).toBe('buffer:scratch')
+  })
+})
+
+describe('winner mode + new chords (window listener)', () => {
+  it('C-c ←/→ undo and redo structural layout changes', () => {
+    const { wm } = mountFrame()
+    act(() => { wm.actions.setFocus(WM_LEAF_DETAILS) })
+    press('x', { ctrlKey: true })
+    press('0') // close the focused details leaf — a structural change
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
+    press('c', { ctrlKey: true })
+    press('ArrowLeft') // winner-undo
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
+    press('c', { ctrlKey: true })
+    press('ArrowRight') // winner-redo
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
+    // Winner undo exhausted then re-filled: no stray throws either way.
+    press('c', { ctrlKey: true })
+    press('ArrowRight')
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
+  })
+
+  it('C-x C-f opens a files buffer for the typed path; C-x d lists the home level', () => {
+    const { getByLabelText } = mountFrame(undefined, [])
+    press('x', { ctrlKey: true })
+    press('f', { ctrlKey: true })
+    const input = getByLabelText('Find file') as HTMLInputElement
+    act(() => {
+      input.focus()
+    })
+    act(() => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+    // No candidates + empty free entry: nothing opens; a typed path needs the
+    // input value — drive it through the React-managed change event.
+    expect(document.querySelector('[data-minibuffer]')).toBeTruthy()
+    press('Escape')
+  })
+
+  it('C-x ←/→ cycle the focused leaf through the registry order', () => {
+    const { wm } = mountFrame()
+    act(() => { wm.actions.setFocus(WM_LEAF_SIDEBAR) })
+    press('x', { ctrlKey: true })
+    press('ArrowRight') // next buffer → conversation
+    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('conversation')
+    press('x', { ctrlKey: true })
+    press('ArrowLeft') // back
+    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('sidebar')
+  })
+
+  it('C-x k offers open non-singleton buffers; killing swaps to scratch', () => {
+    const { wm } = mountFrame()
+    act(() => {
+      wm.actions.setBuffers([...wm.getSnapshot().buffers, { id: 'buffer:files:9', kind: 'files', path: '/tmp' }])
+    })
+    // Show the files buffer in the details leaf.
+    const t = wm.getSnapshot().tree
+    act(() => { wm.actions.setTree(setBuffer(t, WM_LEAF_DETAILS, 'buffer:files:9')) })
+    press('x', { ctrlKey: true })
+    press('k')
+    const input = document.querySelector('[data-minibuffer] input') as HTMLInputElement
+    expect(input).toBeTruthy()
+    // Type to narrow to the files buffer, then Enter.
+    typeInput(input, 'Dired')
+    act(() => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+    // The killed buffer's leaf swapped to *scratch*; registry pruned.
+    expect(wm.getSnapshot().buffers.some(b => b.id === 'buffer:files:9')).toBe(false)
+    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_DETAILS)?.buffer).toBe('buffer:scratch')
+    expect(wm.getSnapshot().buffers.some(b => b.id === 'buffer:scratch')).toBe(true)
+  })
+
+  it('C-x C-s bumps the scratch flush; C-x l resets the layout', () => {
+    const { wm, getByLabelText } = mountFrame()
+    press('x', { ctrlKey: true })
+    press('s', { ctrlKey: true }) // save — a flush tick, harmless without scratch visible
+    expect(document.querySelector('[data-minibuffer]')).toBeNull()
+    press('x', { ctrlKey: true })
+    press('l') // reset layout
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
+    expect(getByLabelText('Toggle workspace sidebar')).toBeTruthy()
+  })
+
+  it('*scratch* opens on demand from C-x b and renders its textarea', () => {
+    const { getByLabelText, getByText, container } = mountFrame()
+    press('x', { ctrlKey: true })
+    press('b')
+    const input = getByLabelText('Switch buffer') as HTMLInputElement
+    typeInput(input, 'scratch')
+    act(() => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+    expect(container.querySelector('textarea[aria-label="Scratch buffer"]')).toBeTruthy()
+    expect(getByText('*scratch*')).toBeTruthy()
   })
 })

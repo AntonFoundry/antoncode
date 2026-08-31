@@ -12,7 +12,10 @@ import {
   clampWidth, DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN,
   SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN,
 } from './columns.ts'
-import { defaultTree, type WmNode } from './wm.ts'
+import { SINGLETON_BUFFERS as SINGLETONS } from './wm.ts'
+import {
+  defaultTree, ensureSingletons, type WmBuffer, type WmNode,
+} from './wm.ts'
 
 /**
  * Layout store state: panel width preferences in px (0 = closed), plus the
@@ -77,7 +80,12 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
  * cursor. Weights, splits and buffers change together through tree transforms
  * (wm.ts); focus is a leaf-id cursor, undefined meaning "first leaf".
  */
-export type WmState = { tree: WmNode; focusedLeafId: string | undefined }
+export type WmState = {
+  tree: WmNode
+  focusedLeafId: string | undefined
+  /** The buffer registry: singletons always present; scratch/files added on demand. */
+  buffers: WmBuffer[]
+}
 
 /**
  * Annotation twin of the wm actions literal (declared return type).
@@ -85,6 +93,9 @@ export type WmState = { tree: WmNode; focusedLeafId: string | undefined }
 export type WmActions = {
   setTree: (draft: WmState, tree: WmNode) => void
   setFocus: (draft: WmState, leafId: string | undefined) => void
+  setBuffers: (draft: WmState, buffers: WmBuffer[]) => void
+  /** Heal a pre-registry persisted snapshot: seed the singleton buffers. */
+  reconcile: (draft: WmState) => void
 }
 
 /**
@@ -100,11 +111,39 @@ export function createWmStore(): EngineStoreHandle<WmState, WmActions> {
     // focusedLeafId is a runtime cursor: undefined seeds "first leaf of the
     // loaded tree" (WmFrame normalizes), and stale persisted values are
     // normalized away the same way.
-    init: (): WmState => ({ tree: defaultTree(), focusedLeafId: undefined }),
+    init: (): WmState => ({ tree: defaultTree(), focusedLeafId: undefined, buffers: [...SINGLETONS] }),
     actions: {
       setTree: (d, tree: WmNode) => { d.tree = tree },
       setFocus: (d, leafId: string | undefined) => { d.focusedLeafId = leafId },
+      setBuffers: (d, buffers: WmBuffer[]) => { d.buffers = buffers },
+      reconcile: (d) => { d.buffers = ensureSingletons(d.buffers) },
     },
     persist: 'dsh.layout.wm',
+  })
+}
+
+/**
+ * Scratch store state: the *scratch* buffer's editable text.
+ */
+export type ScratchState = { text: string }
+
+/**
+ * Annotation twin of the scratch actions literal (declared return type).
+ */
+export type ScratchActions = { setText: (draft: ScratchState, text: string) => void }
+
+/**
+ * Create the scratch-text store handle: persisted at `dsh.wm.scratch`
+ * (whole-value JSON). Components debounce their writes; the store itself
+ * writes on every update.
+ * @returns the store handle.
+ */
+export function createScratchStore(): EngineStoreHandle<ScratchState, ScratchActions> {
+  return defineStore({
+    init: (): ScratchState => ({ text: '' }),
+    actions: {
+      setText: (d, text: string) => { d.text = text },
+    },
+    persist: 'dsh.wm.scratch',
   })
 }
