@@ -6,11 +6,12 @@
 import { describe, expect, it } from 'vitest'
 import { parseChord } from '../src/client/keymap.ts'
 
-const ev = (key: string, mods: Partial<{ ctrl: boolean; alt: boolean; meta: boolean }> = {}) => ({
+const ev = (key: string, mods: Partial<{ ctrl: boolean; alt: boolean; meta: boolean; code: string }> = {}) => ({
   key,
   ctrlKey: mods.ctrl ?? false,
   altKey: mods.alt ?? false,
   metaKey: mods.meta ?? false,
+  ...(mods.code === undefined ? {} : { code: mods.code }),
 })
 
 describe('parseChord', () => {
@@ -80,3 +81,19 @@ describe('parseChord', () => {
 function x0(): 'x' {
   return 'x'
 }
+
+describe('M-x — Alt+KeyX physical-code intercept', () => {
+  it('dispatches m-x regardless of the Option-key mapped character', () => {
+    expect(parseChord(ev('¬', { alt: true, code: 'KeyX' }), undefined)).toEqual({ command: 'm-x' })
+    expect(parseChord(ev('x', { alt: true, code: 'KeyX' }), undefined)).toEqual({ command: 'm-x' })
+  })
+
+  it('never fires with meta or ctrl held — those are other tables', () => {
+    expect(parseChord(ev('x', { alt: true, meta: true, code: 'KeyX' }), undefined)).toBeNull()
+    expect(parseChord(ev('x', { ctrl: true, code: 'KeyX' }), undefined)).toEqual({ prefix: 'x' })
+  })
+
+  it('does not fire for other Alt chords', () => {
+    expect(parseChord(ev('f', { alt: true, code: 'KeyF' }), undefined)).toBeNull()
+  })
+})
