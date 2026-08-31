@@ -50,7 +50,6 @@ export function ScratchBuffer({ text, onWrite, flushTick }: ScratchBufferProps) 
   useEffect(() => {
     if (flushTick > 0) flush()
     // flush reads only refs; the tick is the trigger.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flushTick])
 
   return (
