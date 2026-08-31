@@ -154,6 +154,7 @@ export function apply(ctx: ClientContext): void {
           setTree: (tree: Parameters<typeof wm.actions.setTree>[0]) => { wm.actions.setTree(tree) },
           setFocus: (leafId: string | undefined) => { wm.actions.setFocus(leafId) },
           setBuffers: (buffers: Parameters<typeof wm.actions.setBuffers>[0]) => { wm.actions.setBuffers(buffers) },
+          setSidebarWidth: (px: number) => { actions.setSidebar(px) },
           reconcileBuffers: () => { wm.actions.reconcile() },
           writeScratch: (text: string) => { scratch.actions.setText(text) },
           openWorkspace: (workspaceId: string) => {

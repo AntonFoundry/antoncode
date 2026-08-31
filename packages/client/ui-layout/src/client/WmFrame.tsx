@@ -214,7 +214,15 @@ interface NodeRenderProps {
 }
 
 /** Frozen gesture base for one sash drag (adjacent weights + split size). */
-interface SashDragBase { size: number; index: number; w0: number; w1: number; delta: number }
+interface SashDragBase {
+  size: number
+  index: number
+  w0: number
+  w1: number
+  delta: number
+  /** When the boundary touches the sidebar leaf: its side (index) and px width. */
+  sidebar: { index: number; width: number } | null
+}
 
 /**
  * Render one leaf: the pane (mode line + buffer body). The registry entry
@@ -296,12 +304,20 @@ function NodeView(props: NodeRenderProps & { node: WmNode }) {
                 // weights at drag start, so deltas never compound (the
                 // DragHandle base-width pattern).
                 const el = splitRef.current
+                const side = child.kind === 'leaf' && child.buffer === 'sidebar'
+                  ? { index: i, width: props.sidebarOwner.width }
+                  : undefined
+                const sidePrev = i > 0 && node.children[i - 1]?.kind === 'leaf'
+                  && (node.children[i - 1] as Extract<WmNode, { kind: 'leaf' }>).buffer === 'sidebar'
+                  ? { index: i - 1, width: props.sidebarOwner.width }
+                  : undefined
                 dragBase.current = {
                   size: el === null ? 0 : node.dir === 'row' ? el.clientWidth : el.clientHeight,
                   index: i - 1,
                   w0: node.weights[i - 1] ?? 0,
                   w1: node.weights[i] ?? 0,
                   delta: 0,
+                  sidebar: node.dir === 'row' ? (side ?? sidePrev) : null,
                 }
               }}
               onDelta={(delta) => {
@@ -312,7 +328,11 @@ function NodeView(props: NodeRenderProps & { node: WmNode }) {
           )}
           <div
             className={css.paneWrapper}
-            style={{ display: 'flex', flexDirection: 'column', flex: `${node.weights[i] ?? 1} 1 0%` }}
+            style={child.kind === 'leaf' && child.buffer === 'sidebar'
+              ? // The sidebar pane IS the sidebar: pinned to the column width,
+            // so the divider sits exactly on the sidebar's edge.
+              { display: 'flex', flexDirection: 'column', flex: `0 0 ${props.sidebarOwner.width}px` }
+              : { display: 'flex', flexDirection: 'column', flex: `${node.weights[i] ?? 1} 1 0%` }}
           >
             <NodeView {...props} node={child} />
           </div>
@@ -336,6 +356,7 @@ export function WmFrame({
   useScratch,
   setTree,
   setFocus,
+  setSidebarWidth,
   setBuffers,
   reconcileBuffers,
   writeScratch,
@@ -422,13 +443,16 @@ export function WmFrame({
   // page loaded with had it — a persisted tree without the sidebar stays
   // closed (the user closed it).
   const first = useRef<{ hadSidebar: boolean } | null>(null)
-  if (first.current === null) {
+  useLayoutEffect(() => {
     // Heal a loaded tree: duplicate singleton panes (two Context leaves from
-    // an older split rule) collapse to the depth-first one.
-    const healed = dedupeSingletonBuffers(tree)
-    if (healed !== tree) setTree(healed)
-    first.current = { hadSidebar: findLeaf(tree, WM_LEAF_SIDEBAR) !== undefined }
-  }
+    // an older split rule) collapse to the depth-first one. An effect, not a
+    // render-body write: the store update must land after paint commitment.
+    const healed = dedupeSingletonBuffers(treeRef.current)
+    if (healed !== treeRef.current) setTree(healed)
+    first.current = { hadSidebar: findLeaf(treeRef.current, WM_LEAF_SIDEBAR) !== undefined }
+    // Once per mount: the loaded tree is the heal subject.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   useEffect(() => {
     const t = treeRef.current
     const mounted = first.current
@@ -512,6 +536,14 @@ export function WmFrame({
   }, [writeTree])
 
   const onSash = useCallback((splitId: string, base: SashDragBase) => {
+    // A boundary touching the sidebar leaf resizes the width preference (the
+    // pane is pinned to it), not the split weights.
+    if (base.sidebar !== null && base.size > 0) {
+      const grown = base.sidebar.index === base.index
+      const next = base.sidebar.width + (grown ? base.delta : -base.delta)
+      setSidebarWidth(clampWidth(Math.round(next), SIDEBAR_MIN, SIDEBAR_MAX))
+      return
+    }
     const t = treeRef.current
     const split = findSplit(t, splitId)
     if (split === undefined || base.size <= 0) return
@@ -528,7 +560,7 @@ export function WmFrame({
     next[base.index] = next0
     next[base.index + 1] = total - next0
     writeWeights(setWeights(t, splitId, next))
-  }, [writeWeights])
+  }, [setSidebarWidth])
 
   // Brand-strip toggle: the same transition ctx.layout.toggleSidebar() runs
   // (remove the sidebar leaf, or re-attach it left of the leftmost leaf);
@@ -622,17 +654,17 @@ export function WmFrame({
     const t = treeRef.current
     const existing = leafIds(t).find(leafId => findLeaf(t, leafId)?.buffer === id)
     if (existing !== undefined) {
+      // The buffer is on screen: jump to its window (the C-x arrows' jump).
       setFocus(existing)
       return
     }
+    // Emacs C-x b: the CURRENT window switches to the buffer — never a split.
     const anchor = focusRef.current
     if (anchor === undefined) return
-    // Scratch opens on demand (compos: the scratch buffer exists once you ask
-    // for it); a fresh install never shows it unprompted.
+    // Scratch exists once you ask for it (compos: on-demand scratch).
     if (id === SCRATCH_BUFFER_ID) setBuffers(ensureBuffer(buffers, scratchBuffer()))
-    const newId = freshLeafId()
-    writeTree(splitLeaf(t, anchor, 'row', id, newId))
-    setFocus(newId)
+    writeTree(swapBuffer(t, anchor, id))
+    setFocus(anchor)
   }, [buffers, killBufferById, openFilesBuffer, openWorkspace, setBuffers, setFocus, writeTree])
 
   /** Cycle the focused leaf's buffer through the registry order. */
