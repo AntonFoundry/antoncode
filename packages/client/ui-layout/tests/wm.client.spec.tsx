@@ -13,6 +13,7 @@ import { useSyncExternalStore } from 'react'
 import {
   WM_LEAF_CONVERSATION, WM_LEAF_DETAILS, WM_LEAF_SIDEBAR,
   canClose, countLeaves, defaultTree, dedupeSingletonBuffers, findLeaf, firstLeafId, keepOnlyLeaf, killBuffer,
+  SCRATCH_BUFFER_ID,
   lastLeafId, leafIds, openBuffer, removeLeaf, setBuffer, setWeights, splitLeaf,
 } from '@deepseek-ai/dsh-client-ui-layout/src/client/wm.ts'
 import { createLayoutStore, createScratchStore, createWmStore } from '@deepseek-ai/dsh-client-ui-layout/src/client/stores.ts'
@@ -247,6 +248,7 @@ function mountFrame(initialTree?: WmNode, workspaces?: { id: string; title: stri
       setTree={(tree) => { act(() => { wm.actions.setTree(tree) }) }}
       setFocus={(id) => { act(() => { wm.actions.setFocus(id) }) }}
       setBuffers={(buffers) => { act(() => { wm.actions.setBuffers(buffers) }) }}
+      setSidebarWidth={(px) => { act(() => { layout.actions.setSidebar(px) }) }}
       reconcileBuffers={() => { act(() => { wm.actions.reconcile() }) }}
       writeScratch={(text) => { act(() => { scratch.actions.setText(text) }) }}
       listDirectory={listDirectoryStub}
@@ -362,21 +364,23 @@ describe('WmFrame render', () => {
     expect(firstLeafId(wm.getSnapshot().tree)).toBe(WM_LEAF_SIDEBAR)
   })
 
-  it('sash drag rewrites the parent split weights with px clamps', () => {
-    const { container, wm } = mountFrame()
-    const sash = container.querySelector('[class*="sash"]') as HTMLElement
-    expect(sash).toBeTruthy()
+  it('sash drag on the sidebar boundary writes the width preference; inner sashes rewrite weights', () => {
+    const { container, wm, layout } = mountFrame()
+    // The first sash bounds the sidebar leaf: its drag resizes the sidebar
+    // width preference (the pane is pinned to that px width), weights stand.
+    const sidebarSash = container.querySelector('[class*="sash"]') as HTMLElement
     const down = new PointerEvent('pointerdown', { pointerId: 1, clientX: 580, bubbles: true })
     const move = new PointerEvent('pointermove', { pointerId: 1, clientX: 680, bubbles: true })
     const up = new PointerEvent('pointerup', { pointerId: 1, clientX: 680, bubbles: true })
-    act(() => { sash.dispatchEvent(down) })
-    act(() => { sash.dispatchEvent(move); vi.advanceTimersByTime(20) })
-    act(() => { sash.dispatchEvent(up) })
+    act(() => { sidebarSash.dispatchEvent(down) })
+    act(() => { sidebarSash.dispatchEvent(move); vi.advanceTimersByTime(20) })
+    act(() => { sidebarSash.dispatchEvent(up) })
     const tree = wm.getSnapshot().tree
     expect(tree.kind).toBe('split')
     if (tree.kind !== 'split') return
-    // +100px of 1920 moved to the first child, within the 200px sidebar min.
-    expect(tree.weights[0]).toBeCloseTo(280 / 920 + 100 / 1920, 5)
+    expect(tree.weights[0]).toBeCloseTo(280 / 920, 5)
+    // +100px on the sidebar (346 at this viewport) clamps at the 420 max.
+    expect(layout.getSnapshot().sidebar).toBe(420)
   })
 
   it('switching between real sessions removes the details leaf', () => {
@@ -502,6 +506,20 @@ describe('Emacs chords (window listener)', () => {
     act(() => { prompt.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })) })
     act(() => { prompt.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
     expect(wm.getSnapshot().focusedLeafId).toBe(WM_LEAF_CONVERSATION)
+  })
+
+  it('C-x b to an unshown buffer swaps the focused window (Emacs: never a split)', () => {
+    const { getByLabelText, wm, scratch } = mountFrame()
+    const before = leafIds(wm.getSnapshot().tree)
+    press('x', { ctrlKey: true })
+    press('b')
+    const input = getByLabelText('Switch buffer') as HTMLInputElement
+    typeInput(input, 'scratch')
+    act(() => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+    // The focused leaf (sidebar, the first) now shows scratch; no new leaf.
+    expect(leafIds(wm.getSnapshot().tree)).toEqual(before)
+    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe(SCRATCH_BUFFER_ID)
+    expect(scratch.getSnapshot().text).toEqual('')
   })
 
   it('Escape cancels the prompt; typing in an input never reaches the parser', () => {
