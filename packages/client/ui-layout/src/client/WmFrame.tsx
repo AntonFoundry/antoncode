@@ -451,7 +451,6 @@ export function WmFrame({
     if (healed !== treeRef.current) setTree(healed)
     first.current = { hadSidebar: findLeaf(treeRef.current, WM_LEAF_SIDEBAR) !== undefined }
     // Once per mount: the loaded tree is the heal subject.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   useEffect(() => {
     const t = treeRef.current
@@ -709,6 +708,20 @@ export function WmFrame({
       case 'm-x':
         setPrompt('commands')
         return
+      case 'dump-layout': {
+        // Diagnostics: the persisted tree, pretty-printed into *scratch* and
+        // swapped into the focused window so the shape is readable in-app.
+        const dump = JSON.stringify(treeRef.current, null, 2)
+        writeScratch(dump)
+        setBuffers(ensureBuffer(buffers, scratchBuffer()))
+        const anchor = focusRef.current ?? firstLeafId(treeRef.current)
+        if (anchor !== undefined) {
+          writeTree(swapBuffer(treeRef.current, anchor, SCRATCH_BUFFER_ID))
+          setFocus(anchor)
+        }
+        void navigator.clipboard?.writeText?.(dump).catch(() => {})
+        return
+      }
       case 'restart-app': {
         // Fire → wait → reload (bridge.ts). The banner marks the waiting
         // mode; the reload replaces the whole page when the host answers.
@@ -781,7 +794,7 @@ export function WmFrame({
         return
       }
     }
-  }, [cycleBuffer, listDirectory, onClose, onSplit, setFocus, setTree, writeTree])
+  }, [buffers, cycleBuffer, listDirectory, onClose, onSplit, setBuffers, setFocus, setTree, writeScratch, writeTree])
   // The minibuffer's execute callback precedes this declaration; the mirror
   // lets it dispatch palette picks without a dependency cycle.
   const runCommandRef = useRef(runCommand)
