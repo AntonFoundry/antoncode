@@ -1,7 +1,7 @@
 /** Pure dired-lite helpers: sort cycle/order, dotfile filter, parent paths. */
 import { describe, expect, it } from 'vitest'
 import {
-  filterDired, nextDiredSort, parentOf, sortDired, type DiredEntry,
+  diredBack, diredForward, filterDired, freshDiredHistory, nextDiredSort, parentOf, pushDiredLevel, sortDired, type DiredEntry,
 } from '../src/client/dired.ts'
 
 const row = (name: string, extra: Partial<DiredEntry> = {}): DiredEntry => ({
@@ -49,5 +49,39 @@ describe('dired helpers', () => {
     expect(parentOf('/')).toBeUndefined()
     expect(parentOf('')).toBeUndefined()
     expect(parentOf('/home/user/')).toBe('/home')
+  })
+})
+
+describe('dired history', () => {
+  it('push records levels and drops the forward stack (no branching)', () => {
+    let h = freshDiredHistory(undefined)
+    h = pushDiredLevel(h, '/home')
+    h = pushDiredLevel(h, '/home/src')
+    h = pushDiredLevel(h, '/home/src/packages')
+    expect(h.levels).toEqual([undefined, '/home', '/home/src', '/home/src/packages'])
+    expect(h.index).toBe(3)
+    // Back twice, then a new branch: the forward levels are gone.
+    h = diredBack(h)!
+    h = diredBack(h)!
+    h = pushDiredLevel(h, '/etc')
+    expect(h.levels).toEqual([undefined, '/home', '/etc'])
+    expect(h.index).toBe(2)
+  })
+
+  it('back/forward return null at the ends and never mutate', () => {
+    const h = freshDiredHistory('/')
+    expect(diredBack(h)).toBeNull()
+    expect(diredForward(h)).toBeNull()
+    const two = pushDiredLevel(h, '/tmp')
+    // Back keeps the forward levels (that is what forward walks).
+    expect(diredBack(two)).toEqual({ levels: ['/', '/tmp'], index: 0 })
+    expect(diredForward(diredBack(two)!)).toEqual({ levels: ['/', '/tmp'], index: 1 })
+    // Input untouched.
+    expect(two.index).toBe(1)
+  })
+
+  it('re-navigating to the level on screen is a no-op (same reference)', () => {
+    const h = pushDiredLevel(freshDiredHistory(undefined), '/home')
+    expect(pushDiredLevel(h, '/home')).toBe(h)
   })
 })

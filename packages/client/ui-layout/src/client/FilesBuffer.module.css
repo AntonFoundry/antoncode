@@ -109,3 +109,33 @@
   color: var(--dsw-alias-label-secondary);
   font-size: 11px;
 }
+
+/* The navigation toolbar: back / forward / up / home / refresh, one slim
+   row above the crumbs. */
+.toolbar {
+  display: flex;
+  gap: 4px;
+  padding: 2px 0 6px;
+}
+.toolButton {
+  cursor: pointer;
+  width: 26px;
+  height: 24px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.toolButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+.toolButton:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
