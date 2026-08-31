@@ -11,7 +11,7 @@
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import type { createLayoutStore } from './stores.ts'
 import {
-  WM_LEAF_DETAILS, WM_LEAF_SIDEBAR, firstLeafId, findLeaf, lastLeafId,
+  SIDEBAR_REATTACH_WEIGHT, WM_LEAF_DETAILS, WM_LEAF_SIDEBAR, firstLeafId, findLeaf, lastLeafId,
   removeLeaf, splitLeaf, type WmNode,
 } from './wm.ts'
 
@@ -83,7 +83,10 @@ export class LayoutController implements ILayout {
         this.#write(t => removeLeaf(t, WM_LEAF_SIDEBAR))
       } else {
         const anchor = firstLeafId(tree)
-        if (anchor !== undefined) this.#write(t => splitLeaf(t, anchor, 'row', 'sidebar', WM_LEAF_SIDEBAR, 'before'))
+        // The re-attached sidebar takes its preferred share, not half the anchor.
+        if (anchor !== undefined) {
+          this.#write(t => splitLeaf(t, anchor, 'row', 'sidebar', WM_LEAF_SIDEBAR, 'before', [SIDEBAR_REATTACH_WEIGHT, 1 - SIDEBAR_REATTACH_WEIGHT]))
+        }
       }
       return
     }

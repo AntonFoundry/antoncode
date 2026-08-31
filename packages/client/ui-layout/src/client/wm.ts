@@ -423,11 +423,17 @@ export function killBuffer(
 export function normalizeTree(node: WmNode): WmNode {
   if (node.kind === 'leaf') return node
   const total = node.weights.reduce((a, b) => a + b, 0)
-  const children = node.children.map(normalizeWeights)
+  const children = node.children.map(normalizeTree)
   const weights = total > 0
     ? node.weights.map(w => w / total)
     : node.weights.map(() => 1 / Math.max(node.weights.length, 1))
-  const same = node.weights.every((w, i) => w === weights[i])
+  // Float tolerance: a split whose stored weights are already 1 up to IEEE
+  // noise (e.g. 1/641 + 640/641) keeps its reference — rescaling that noise
+  // buys nothing and would break the no-op contract.
+  const same = node.weights.every((w, i) => {
+    const target = weights[i]
+    return target !== undefined && Math.abs(w - target) <= 1e-12
+  })
     && children.every((c, i) => c === node.children[i])
   return same ? node : { ...node, children, weights }
 }
