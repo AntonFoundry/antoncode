@@ -44,6 +44,7 @@ const SCROLLBAR_LINGER_MS = 2000
 export function SidebarRoot({
   collapsed,
   width,
+  brandInFrame,
   startSession,
   toggleSidebar,
   t,
@@ -159,7 +160,6 @@ export function SidebarRoot({
     handle.addEventListener('pointerdown', onDown)
     return () => { handle.removeEventListener('pointerdown', onDown) }
     // clampMemoryHeight is a pure closure over window geometry; excluded.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wide, collapsed])
 
   return (
@@ -176,34 +176,39 @@ export function SidebarRoot({
       }}
       onPointerLeave={() => { armLinger() }}
     >
-      <div className={css.logoRow}>
-        {/* Expanded, the wordmark doubles as a New Session shortcut; the
-            collapsed rail's logo is the expand toggle below instead. */}
-        {wide && (
-          <button
-            type="button"
-            className={clsx(css.brand, css.wide)}
-            aria-label={t('session.new.label')}
-            onClick={() => { startSession() }}
-          >
-            <BrandWordmark />
-          </button>
-        )}
-        {/* Rail resting state is the whale mark; hovering swaps in the panel
-            icon (the expand affordance, figma sidebar-hover flow). */}
-        <Tooltip label={collapsed ? t('toggle.open') : t('toggle.collapse')} delayMs={500}>
-          <button
-            type="button"
-            className={clsx(css.iconButton, css.toggle)}
-            aria-label={collapsed ? t('toggle.open') : t('toggle.collapse')}
-            onClick={() => { toggleSidebar() }}
-          >
-            {!wide && <FishLogo className={css.railFish} size={24} />}
-            {/* Rail icons render at 18 (figma rail spec); expanded keeps the glyph-native sizes. */}
-            <IconPanelLeftOutline16 className={css.panelIcon} size={wide ? 16 : 18} />
-          </button>
-        </Tooltip>
-      </div>
+      {/* The frame's brand strip replaces this row when it renders the brand
+          (owner prop brandInFrame): the logo + sidebar toggle then live in
+          the frame's fixed top strip, above the whole window tree. */}
+      {!brandInFrame && (
+        <div className={css.logoRow}>
+          {/* Expanded, the wordmark doubles as a New Session shortcut; the
+              collapsed rail's logo is the expand toggle below instead. */}
+          {wide && (
+            <button
+              type="button"
+              className={clsx(css.brand, css.wide)}
+              aria-label={t('session.new.label')}
+              onClick={() => { startSession() }}
+            >
+              <BrandWordmark />
+            </button>
+          )}
+          {/* Rail resting state is the whale mark; hovering swaps in the panel
+              icon (the expand affordance, figma sidebar-hover flow). */}
+          <Tooltip label={collapsed ? t('toggle.open') : t('toggle.collapse')} delayMs={500}>
+            <button
+              type="button"
+              className={clsx(css.iconButton, css.toggle)}
+              aria-label={collapsed ? t('toggle.open') : t('toggle.collapse')}
+              onClick={() => { toggleSidebar() }}
+            >
+              {!wide && <FishLogo className={css.railFish} size={24} />}
+              {/* Rail icons render at 18 (figma rail spec); expanded keeps the glyph-native sizes. */}
+              <IconPanelLeftOutline16 className={css.panelIcon} size={wide ? 16 : 18} />
+            </button>
+          </Tooltip>
+        </div>
+      )}
 
       {/* Expanded, the button carries its own label — tooltip only on the rail. */}
       <Tooltip label={t('session.new.label')} delayMs={500} disabled={wide}>

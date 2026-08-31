@@ -1,17 +1,19 @@
 /**
- * Layout plugin, browser half: one register() call contributes AppFrame into
- * the runtime's built-in 'root' slot and, in the same breath, declares the
- * four child slots (declaration = exclusive render authority), seats the
- * layout store (panel geometry), and wires the panel-action service face.
- * ctx.layout is the cross-plugin panel-action contract; navigation state lives
- * with the runtime sessions service. A second effect seats the theme
- * presenter, which projects ctx.theme snapshots onto document.body.
+ * Layout plugin, browser half: one register() call contributes WmFrame (the
+ * Emacs-style window-manager frame) into the runtime's built-in 'root' slot
+ * and, in the same breath, declares the four child slots (declaration =
+ * exclusive render authority), seats the layout store (panel geometry) and
+ * the wm store (persisted window tree, `dsh.layout.wm`), and wires the
+ * panel-action service face plus the frame's wm hooks source. ctx.layout is
+ * the cross-plugin panel-action contract; navigation state lives with the
+ * runtime sessions service. A second effect seats the theme presenter, which
+ * projects ctx.theme snapshots onto document.body.
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { PanelActions } from './service.ts'
-import { AppFrame } from './AppFrame.tsx'
-import { createLayoutStore } from './stores.ts'
+import { WmFrame } from './WmFrame.tsx'
+import { createLayoutStore, createWmStore } from './stores.ts'
 import { LayoutController } from './service.ts'
 import { ThemePresenter } from './theme-presenter.ts'
 
@@ -45,6 +47,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      *
      * The occupant receives the frame's live column state (collapsed, width)
      * and is expected to render the compact control rail while collapsed.
+     * When the frame renders the brand strip it passes `brandInFrame: true`,
+     * and the shell skips its own logo row (the frame owns the brand).
      */
     'sidebar': { kind: 'single'; scope: 'root'; owner: SidebarOwnerProps }
     /**
@@ -96,6 +100,11 @@ export interface SidebarOwnerProps {
   collapsed: boolean
   /** Rendered column width in px (SIDEBAR_COLLAPSED when collapsed). */
   width: number
+  /**
+   * True when the frame renders the brand strip: the shell skips its own
+   * logo row (brand + toggle live in the frame's strip instead).
+   */
+  brandInFrame?: boolean
 }
 
 /** Conversation owner share: business state and actions belong to the registrant. */
@@ -105,16 +114,17 @@ export interface ConvOwnerProps {}
 export interface DetailsOwnerProps {}
 
 /** Required services (cordis fiber inject — the loader passes all module exports as an object plugin). */
-export const inject = ['slots', 'theme']
+export const inject = ['slots', 'theme', 'workspaces', 'sessions']
 
 /**
- * Client plugin body: provide ctx.layout, then one register() call — AppFrame
+ * Client plugin body: provide ctx.layout, then one register() call — WmFrame
  * into 'root' with the four child-slot declarations, the layout store seat,
  * and the inject hook that hands the store's bound actions to the service.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
   const layout = new LayoutController()
+  const wmStore = createWmStore()
   ctx.effect(() => {
     const disposeService = ctx.reflect.provide('layout', layout)
     const disposeRegistration = ctx.slots.register({
@@ -126,15 +136,34 @@ export function apply(ctx: ClientContext): void {
         'shell.overlay': { kind: 'list', scope: 'root' },
       },
       // Exclusive store: the factory itself — the framework instantiates per
-      // entry and delivers useStore/actions to AppFrame as standard props.
+      // entry and delivers useStore/actions to WmFrame as standard props.
       store: createLayoutStore,
-      // The hook's only side effect connects the root store to ctx.layout;
-      // conversation business actions belong to their registrants.
+      // The hook connects the root store (panel state) and the wm store
+      // (window tree + focus) to the service face and the frame: panel
+      // actions to ctx.layout, the wm instance as the registrant-private
+      // hooks source (bound to `useWm`), its write callbacks, and the
+      // workspace-open resolver over ctx.workspaces/ctx.sessions.
       inject: (actions: PanelActions) => {
         layout.attachPanels(actions)
-        return {}
+        const wm = wmStore.create()
+        layout.attachWm(wm)
+        return {
+          hooks: { wm },
+          setTree: (tree: Parameters<typeof wm.actions.setTree>[0]) => { wm.actions.setTree(tree) },
+          setFocus: (leafId: string | undefined) => { wm.actions.setFocus(leafId) },
+          openWorkspace: (workspaceId: string) => {
+            const view = ctx.workspaces.list.getSnapshot().items.find(w => w.workspaceId === workspaceId)
+            const list = ctx.sessions.list.getSnapshot()
+            const latest = view?.sessionIds
+              .map(id => list.byId[id])
+              .filter(session => session !== undefined)
+              .sort((a, b) => b.updatedAt - a.updatedAt)[0]
+            if (latest !== undefined) ctx.sessions.open(latest.id)
+            else ctx.workspaces.startSession(view?.workspaceId)
+          },
+        }
       },
-    }, AppFrame)
+    }, WmFrame)
     return () => {
       disposeRegistration()
       // provide()'s disposer settles asynchronously; teardown is synchronous fire-and-forget.
