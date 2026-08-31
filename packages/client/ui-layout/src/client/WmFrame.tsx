@@ -35,10 +35,12 @@ import { ScratchBuffer } from './ScratchBuffer.tsx'
 import { FilesBuffer } from './FilesBuffer.tsx'
 import {
   SINGLETON_BUFFERS, SCRATCH_BUFFER_ID, WM_LEAF_SIDEBAR, bufferTitle, canClose, defaultTree,
-  ensureBuffer, findBuffer, findLeaf, findSplit, firstLeafId, isSingletonBuffer, keepOnlyLeaf,
+  dedupeSingletonBuffers, ensureBuffer, findBuffer, findLeaf, findSplit, firstLeafId,
+  isSingletonBuffer, keepOnlyLeaf,
   killBuffer, leafIds, removeLeaf, scratchBuffer, setWeights, splitLeaf, swapBuffer,
   type WmBuffer, type WmDirection, type WmNode,
 } from './wm.ts'
+import { requestHarnessRestart, waitAndReload } from './bridge.ts'
 import css from './WmFrame.module.css'
 
 /** Viewport width below which the sidebar leaf auto-removes. */
@@ -356,6 +358,8 @@ export function WmFrame({
   // owns the pure parsing; the armed prefix is the cross-keypress state).
   const [prefixArmed, setPrefixArmed] = useState<ArmedPrefix>(undefined)
   const [prompt, setPrompt] = useState<'buffer' | 'workspace' | 'find-file' | 'kill-buffer' | 'commands' | null>(null)
+  // Restart-in-progress banner: shown while the poll waits for the host.
+  const [restarting, setRestarting] = useState(false)
   const [scratchFlushTick, setScratchFlushTick] = useState(0)
   const prefixRef = useRef(prefixArmed)
   prefixRef.current = prefixArmed
@@ -418,7 +422,13 @@ export function WmFrame({
   // page loaded with had it — a persisted tree without the sidebar stays
   // closed (the user closed it).
   const first = useRef<{ hadSidebar: boolean } | null>(null)
-  if (first.current === null) first.current = { hadSidebar: findLeaf(tree, WM_LEAF_SIDEBAR) !== undefined }
+  if (first.current === null) {
+    // Heal a loaded tree: duplicate singleton panes (two Context leaves from
+    // an older split rule) collapse to the depth-first one.
+    const healed = dedupeSingletonBuffers(tree)
+    if (healed !== tree) setTree(healed)
+    first.current = { hadSidebar: findLeaf(tree, WM_LEAF_SIDEBAR) !== undefined }
+  }
   useEffect(() => {
     const t = treeRef.current
     const mounted = first.current
@@ -486,10 +496,15 @@ export function WmFrame({
     const leaf = findLeaf(t, leafId)
     if (leaf === undefined) return
     // A conversation leaf splits into a details pane: the conversation slot
-    // is the single session surface, so it is never duplicated.
+    // is the single session surface, so it is never duplicated — and a
+    // details pane already on screen is focused instead of duplicated.
     const newBuffer = leaf.buffer === 'conversation' ? 'details' : leaf.buffer
+    if (newBuffer === 'details') {
+      const existing = leafIds(t).find(leafId => findLeaf(t, leafId)?.buffer === 'details')
+      if (existing !== undefined) { setFocus(existing); return }
+    }
     writeTree(splitLeaf(t, leafId, dir, newBuffer, freshLeafId()))
-  }, [writeTree])
+  }, [setFocus, writeTree])
 
   const onClose = useCallback((leafId: string) => {
     const t = treeRef.current
@@ -545,18 +560,24 @@ export function WmFrame({
     }))
   }, [tree, buffers])
 
-  // Kill-buffer candidates: buffers currently shown in a leaf, singletons
-  // excluded (they are the shell and cannot be killed — compos's q-rule
-  // applies to listings and scratch only).
+  // Kill-buffer candidates (compos C-x k): the focused leaf's buffer leads
+  // the list — Enter with an empty query kills it — then every other buffer
+  // a leaf shows. Killing a singleton re-homes its leaves (killBuffer).
   const killCandidates = useMemo<MinibufferCandidate[]>(() => {
-    const shown = new Set(leafIds(tree).map(id => findLeaf(tree, id)?.buffer))
-    return [...shown]
-      .filter((id): id is string => id !== undefined && !isSingletonBuffer(id))
-      .map((id) => {
-        const b = findBuffer(buffers, id)
-        return { id, label: b !== undefined ? bufferTitle(b) : id }
-      })
-  }, [tree, buffers])
+    const focused = findLeaf(tree, focusedId)?.buffer
+    const shown: string[] = []
+    for (const id of leafIds(tree).map(leafId => findLeaf(tree, leafId)?.buffer)) {
+      if (id !== undefined && !shown.includes(id)) shown.push(id)
+    }
+    const ordered = [
+      ...(focused !== undefined ? [focused] : []),
+      ...shown.filter(id => id !== focused),
+    ]
+    return ordered.map((id) => {
+      const b = findBuffer(buffers, id)
+      return { id, label: b !== undefined ? bufferTitle(b) : id, hint: id === focused ? 'current' : undefined }
+    })
+  }, [tree, buffers, focusedId])
 
   // Switch-workspace candidates: workspace title + its most recently updated
   // session (from the sessions list summaries) as the hint.
@@ -634,6 +655,9 @@ export function WmFrame({
     switch (command) {
       case 'cancel':
         setPrompt(null)
+        restartAbortRef.current?.abort()
+        restartAbortRef.current = null
+        setRestarting(false)
         return
       case 'switch-buffer':
         setPrompt('buffer')
@@ -641,6 +665,16 @@ export function WmFrame({
       case 'm-x':
         setPrompt('commands')
         return
+      case 'restart-app': {
+        // Fire → wait → reload (bridge.ts). The banner marks the waiting
+        // mode; the reload replaces the whole page when the host answers.
+        setRestarting(true)
+        requestHarnessRestart()
+        const controller = new AbortController()
+        restartAbortRef.current = controller
+        void waitAndReload(controller.signal).then(() => setRestarting(false))
+        return
+      }
       case 'switch-workspace':
         setPrompt('workspace')
         return
@@ -708,6 +742,8 @@ export function WmFrame({
   // lets it dispatch palette picks without a dependency cycle.
   const runCommandRef = useRef(runCommand)
   runCommandRef.current = runCommand
+  // An open restart wait aborts when the user cancels (C-g): the page stays.
+  const restartAbortRef = useRef<AbortController | null>(null)
 
   // Global chord listener: capture phase, installed while mounted. Text
   // fields are never hijacked (input/textarea/contentEditable targets skip
@@ -823,6 +859,11 @@ export function WmFrame({
           onExecute={onMinibufferExecute}
           onCancel={() => { setPrompt(null) }}
         />
+      )}
+      {restarting && (
+        <div className={css.whichKey} aria-hidden>
+          <span className={css.prefixIndicator}>Restarting — waiting for the host…</span>
+        </div>
       )}
       {prefixArmed !== undefined && (
         <div className={css.whichKey} aria-hidden>

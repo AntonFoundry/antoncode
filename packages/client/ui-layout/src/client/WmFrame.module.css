@@ -186,6 +186,17 @@
   border-bottom-color: var(--dsw-alias-border-l3);
 }
 
+/* The selection ring: the focused buffer carries a brand-accent inset
+   outline — "current buffer" made visible, so C-x k's default target is
+   never a guess. */
+.pane[data-focused] {
+  box-shadow: inset 0 0 0 1.5px var(--dsw-alias-brand-primary);
+}
+.pane[data-focused] .bufferName {
+  color: var(--dsw-alias-brand-primary);
+  font-weight: 600;
+}
+
 /* Pending-chord panel (which-key): the armed "C-x-" echo heads the list of
    completions; parked at the tree's top right corner, non-interactive. */
 .whichKey {

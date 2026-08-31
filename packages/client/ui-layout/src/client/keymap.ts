@@ -47,6 +47,8 @@ export type WmCommand =
   | 'cancel'
   /** Open the M-x extended-command palette over the minibuffer. */
   | 'm-x'
+  /** Restart the harness behind the app, then reload the page when it answers. */
+  | 'restart-app'
 
 /** One parse outcome: arm a prefix, run a command, or nothing. */
 export type ChordResult = { prefix: 'x' | 'c' } | { command: WmCommand } | null
@@ -148,6 +150,7 @@ export const COMMANDS: readonly CommandEntry[] = [
   { name: 'winner-redo', command: 'winner-redo', keys: 'C-c →' },
   { name: 'reset-layout', command: 'reset-layout', keys: 'C-x l' },
   { name: 'keyboard-quit', command: 'cancel', keys: 'C-g' },
+  { name: 'restart-app', command: 'restart-app', keys: 'M-x' },
 ]
 
 /** One which-key row: the keys that complete an armed prefix, and what they do. */
