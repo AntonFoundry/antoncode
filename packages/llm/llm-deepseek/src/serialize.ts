@@ -7,7 +7,7 @@
  * @module dsh-llm-deepseek/serialize
  */
 
-import { contentHasImage, LlmError } from '@deepseek-ai/dsh-llm'
+import { LlmError, withoutImageBlocks } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import type { WireMessage, WireRequest, WireTool } from './types.ts'
 
@@ -60,11 +60,9 @@ function flattenText(blocks: ContentBlock[]): string {
     .join('')
 }
 
-/** Reject core image content before any text-flattening path can silently erase it. */
-function assertTextOnly(blocks: readonly ContentBlock[]): void {
-  if (contentHasImage(blocks)) {
-    throw new LlmError('The DeepSeek chat-completions adapter does not support image content.', 'UNSUPPORTED_CONTENT')
-  }
+/** Swap image blocks for the omitted placeholder: this adapter cannot carry image content. */
+function textOnly(blocks: readonly ContentBlock[]): ContentBlock[] {
+  return withoutImageBlocks(blocks)
 }
 
 /** Serialize one assistant message (text + reasoning + tool calls). */
@@ -111,8 +109,8 @@ function serializeAssistant(message: Message): WireMessage {
  */
 export function serializeMessages(messages: Message[]): WireMessage[] {
   const wire: WireMessage[] = []
-  for (const message of messages) {
-    assertTextOnly(message.content)
+  for (const source of messages) {
+    const message: Message = { ...source, content: textOnly(source.content) }
     if (message.role === 'system') {
       wire.push({ role: 'system', content: flattenText(message.content) })
       continue

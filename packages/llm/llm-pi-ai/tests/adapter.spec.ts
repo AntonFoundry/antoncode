@@ -765,12 +765,15 @@ describe('provider profile lifecycle', () => {
     expect(new LlmError('x', 'X')).toBeInstanceOf(Error)
   })
 
-  it('rejects unsupported or unresolved image input before provider I/O', async () => {
+  it('omits unsupported or unresolved image input gracefully instead of failing', async () => {
     const adapter = adapterOf({ openai: {}, deepseek: {} })
     const drain = async (options: Parameters<PiAiAdapter['stream']>[0]): Promise<void> => {
       for await (const _chunk of adapter.stream(options)) { /* drain */ }
     }
 
+    // A model without image input, an unresolvable attachment, and a nested
+    // tool-result image all degrade to the omitted placeholder: the step
+    // completes text-only instead of failing.
     await expect(drain({
       provider: 'deepseek',
       model: 'deepseek-v4-flash',
@@ -778,7 +781,7 @@ describe('provider profile lifecycle', () => {
         content: [{ type: 'image', attachment: IMAGE_REF }],
         source: { kind: 'plugin', plugin: 'test' },
       })],
-    })).rejects.toMatchObject({ code: 'UNSUPPORTED_CONTENT' })
+    })).resolves.toBeUndefined()
     await expect(drain({
       provider: 'openai',
       model: 'gpt-4.1',
@@ -786,7 +789,7 @@ describe('provider profile lifecycle', () => {
         content: [{ type: 'image', attachment: IMAGE_REF }],
         source: { kind: 'plugin', plugin: 'test' },
       })],
-    })).rejects.toMatchObject({ code: 'UNSUPPORTED_CONTENT' })
+    })).resolves.toBeUndefined()
     await expect(drain({
       provider: 'openai',
       model: 'gpt-4.1',
@@ -802,7 +805,7 @@ describe('provider profile lifecycle', () => {
         }],
         source: { kind: 'plugin', plugin: 'test' },
       })],
-    })).rejects.toMatchObject({ code: 'UNSUPPORTED_CONTENT' })
+    })).resolves.toBeUndefined()
   })
 
   it('validates profiles at the shared resolver boundary', () => {

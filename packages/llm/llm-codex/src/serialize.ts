@@ -11,7 +11,7 @@
  * @module dsh-llm-codex/serialize
  */
 
-import { contentHasImage, LlmError } from '@deepseek-ai/dsh-llm'
+import { contentHasImage, LlmError, withoutImageBlocks } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { WireContentPart, WireInputItem, WireRequest, WireTool } from './types.ts'
@@ -55,12 +55,10 @@ function flattenText(blocks: ContentBlock[]): string {
     .join('')
 }
 
-/** Reject images only when no durable attachment reader was supplied. */
-function requireAttachments(blocks: readonly ContentBlock[], attachments: AttachmentStore | undefined): void {
-  if (contentHasImage(blocks)) {
-    if (attachments !== undefined) return
-    throw new LlmError('OpenAI Codex image input requires the Harness attachment service.', 'UNSUPPORTED_CONTENT')
-  }
+/** Swap images for the omitted placeholder when no durable attachment reader can carry them. */
+function withoutUnresolvableImages(blocks: readonly ContentBlock[], attachments: AttachmentStore | undefined): ContentBlock[] {
+  if (attachments !== undefined || !contentHasImage(blocks)) return [...blocks]
+  return withoutImageBlocks(blocks)
 }
 
 /** Resolve text and image blocks into the Responses user-content vocabulary. */
@@ -101,13 +99,12 @@ export async function serializeInput(
   const items: WireInputItem[] = []
   for (const message of messages) {
     if (message.role === 'system') {
-      // The Responses `instructions` field is text-only; never discard an
-      // in-history system image merely because it cannot be represented.
-      requireAttachments(message.content, undefined)
+      // The Responses `instructions` field is text-only; an in-history system
+      // image cannot be represented and degrades to the omitted placeholder.
       continue
     }
     if (message.role === 'assistant') {
-      requireAttachments(message.content, undefined)
+      withoutUnresolvableImages(message.content, undefined)
       const text = flattenText(message.content)
       const toolCalls = message.content.filter(block => block.type === 'tool-call')
       // A tool-call-only turn sends no message item; visible text becomes one.
@@ -131,11 +128,11 @@ export async function serializeInput(
     // user role: tool results ride in user messages in the harness
     // vocabulary, but the Responses API wants function_call_output items.
     const toolResults = message.content.filter(block => block.type === 'tool-result')
-    requireAttachments(message.content, attachments)
-    const directText = flattenText(message.content)
+    const userBlocks = withoutUnresolvableImages(message.content, attachments)
+    const directText = flattenText(userBlocks)
     const direct = attachments === undefined
       ? directText.length === 0 ? [] : [{ type: 'input_text', text: directText } satisfies WireContentPart]
-      : await userContent(message.content, attachments)
+      : await userContent(userBlocks, attachments)
     if (direct.length > 0 || toolResults.length === 0) {
       items.push({
         type: 'message',
@@ -144,18 +141,18 @@ export async function serializeInput(
       })
     }
     for (const result of toolResults) {
-      requireAttachments(result.content, attachments)
+      const resultBlocks = withoutUnresolvableImages(result.content, attachments)
       items.push({
         type: 'function_call_output',
         call_id: result.toolCallId,
         // Empty tool output still needs SOME content on the wire.
-        output: flattenText(result.content) || '(no output)',
+        output: flattenText(resultBlocks) || '(no output)',
       })
       // Function output is text-only on this wire. Preserve any image produced
       // by a tool as the immediately following user image turn instead of
       // silently dropping it from history.
       if (attachments !== undefined) {
-        const images = await userContent(result.content, attachments, false)
+        const images = await userContent(resultBlocks, attachments, false)
         if (images.length > 0) items.push({ type: 'message', role: 'user', content: images })
       }
     }

@@ -133,8 +133,8 @@ describe('serializeMessages', () => {
     expect(wire).toEqual([{ role: 'user', content: 'see chart' }])
   })
 
-  it('rejects image blocks instead of silently flattening them away', () => {
-    expect(() => serializeMessages([createUserMessage({
+  it('omits image blocks with a placeholder instead of silently flattening them away', () => {
+    const wire = serializeMessages([createUserMessage({
       content: [{
         type: 'image',
         attachment: {
@@ -143,7 +143,9 @@ describe('serializeMessages', () => {
         },
       }],
       source: { kind: 'plugin', plugin: 'test' },
-    })])).toThrow(expect.objectContaining({ code: 'UNSUPPORTED_CONTENT' }))
+    })])
+    expect(wire).toHaveLength(1)
+    expect(String(wire[0]?.content)).toContain('image omitted')
   })
 
   it('emits an empty user message rather than dropping block-less messages', () => {
