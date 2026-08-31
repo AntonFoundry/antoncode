@@ -12,7 +12,7 @@ import { act, cleanup, render } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import {
   WM_LEAF_CONVERSATION, WM_LEAF_DETAILS, WM_LEAF_SIDEBAR,
-  canClose, countLeaves, defaultTree, findLeaf, firstLeafId, keepOnlyLeaf, killBuffer,
+  canClose, countLeaves, defaultTree, dedupeSingletonBuffers, findLeaf, firstLeafId, keepOnlyLeaf, killBuffer,
   lastLeafId, leafIds, openBuffer, removeLeaf, setBuffer, setWeights, splitLeaf,
 } from '@deepseek-ai/dsh-client-ui-layout/src/client/wm.ts'
 import { createLayoutStore, createScratchStore, createWmStore } from '@deepseek-ai/dsh-client-ui-layout/src/client/stores.ts'
@@ -446,7 +446,7 @@ describe('focused leaf + commands', () => {
 })
 
 describe('Emacs chords (window listener)', () => {
-  it('C-x 2 / C-x 3 split the focused leaf', () => {
+  it('C-x 2 / C-x 3 split the focused leaf; the details pane is never duplicated', () => {
     const { wm } = mountFrame()
     act(() => { wm.actions.setFocus(WM_LEAF_CONVERSATION) })
     press('x', { ctrlKey: true })
@@ -454,11 +454,13 @@ describe('Emacs chords (window listener)', () => {
     // Conversation splits into a details pane (the single session surface is
     // never duplicated).
     const buffers = (t: WmNode): string[] => (t.kind === 'leaf' ? [t.buffer] : t.children.flatMap(buffers))
-    expect(buffers(wm.getSnapshot().tree)).toEqual(['sidebar', 'conversation', 'details', 'details'])
+    expect(buffers(wm.getSnapshot().tree)).toEqual(['sidebar', 'conversation', 'details'])
+    // A second split request focuses the existing details pane — a second
+    // Context leaf is the historical bug this guard exists for.
     press('x', { ctrlKey: true })
     press('3')
-    const ids = leafIds(wm.getSnapshot().tree)
-    expect(ids).toHaveLength(5)
+    expect(buffers(wm.getSnapshot().tree)).toEqual(['sidebar', 'conversation', 'details'])
+    expect(wm.getSnapshot().focusedLeafId).toBe(WM_LEAF_DETAILS)
   })
 
   it('C-x 0 closes the focused leaf but never the last conversation leaf', () => {
@@ -538,6 +540,37 @@ describe('Emacs chords (window listener)', () => {
     expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR])
   })
 
+  it('C-x k kills the focused buffer without typing — current leads the list', () => {
+    const { getByLabelText, wm } = mountFrame()
+    // The default focus cursor is the first leaf (sidebar): Enter on the
+    // untyped prompt must kill THAT buffer, not wait for a name.
+    press('x', { ctrlKey: true })
+    press('k')
+    const input = getByLabelText('Kill buffer') as HTMLInputElement
+    expect(input).toBeTruthy()
+    act(() => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+    // Killing the singleton sidebar closes its leaf (a conversation remains).
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
+  })
+
+  it('M-x restart-app posts the bridge restart and shows the waiting banner', () => {
+    const calls: string[] = []
+    vi.stubGlobal('fetch', (input: string | URL, init?: { method?: string }) => {
+      calls.push(`${init?.method ?? 'GET'} ${String(input)}`)
+      return Promise.reject(new TypeError('host down'))
+    })
+    const { getByLabelText, container } = mountFrame()
+    press('x', { altKey: true, code: 'KeyX' })
+    const input = getByLabelText('M-x') as HTMLInputElement
+    typeInput(input, 'restart-app')
+    act(() => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+    expect(calls).toContain('POST /bridge/api/harness/restart')
+    expect(container.textContent).toContain('Restarting')
+    // C-g aborts the wait; the banner clears.
+    press('g', { ctrlKey: true })
+    expect(container.textContent).not.toContain('Restarting')
+  })
+
   it('the which-key popup lists completions while a prefix is armed', () => {
     const { container } = mountFrame()
     expect(container.querySelector('[class*="whichKeyList"]')).toBeNull()
@@ -547,6 +580,16 @@ describe('Emacs chords (window listener)', () => {
     expect(list!.textContent).toContain('switch buffer')
     press('g', { ctrlKey: true })
     expect(container.querySelector('[class*="whichKeyList"]')).toBeNull()
+  })
+})
+
+describe('singleton dedupe', () => {
+  it('a loaded tree with two details leaves collapses to the first one', () => {
+    const doubled = splitLeaf(defaultTree(), WM_LEAF_DETAILS, 'column', 'details', 'wm:leaf:dup')
+    const shipped = defaultTree()
+    expect(leafIds(dedupeSingletonBuffers(doubled))).toEqual(leafIds(shipped))
+    // No duplicates: the call is a no-op returning the same reference.
+    expect(dedupeSingletonBuffers(shipped)).toBe(shipped)
   })
 })
 

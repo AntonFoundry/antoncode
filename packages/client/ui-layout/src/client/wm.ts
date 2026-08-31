@@ -359,8 +359,25 @@ export function killBuffer(
   bufferId: string,
 ): { buffers: WmBuffer[]; tree: WmNode } {
   const buffer = findBuffer(state.buffers, bufferId)
-  if (buffer === undefined || isSingletonBuffer(bufferId)) {
-    return { buffers: [...state.buffers], tree: state.tree }
+  if (buffer === undefined) return { buffers: [...state.buffers], tree: state.tree }
+  // Singleton kills re-home their leaves instead of dropping the buffer: the
+  // shell always keeps one of each registered (compos: the buffer survives,
+  // the window shows something else).
+  if (isSingletonBuffer(bufferId)) {
+    if (bufferId === 'conversation') return { buffers: [...state.buffers], tree: state.tree }
+    if (bufferId === 'details') {
+      const map = (n: WmNode): WmNode => {
+        if (n.kind === 'leaf') return n.buffer === 'details' ? { ...n, buffer: 'conversation' } : n
+        return { ...n, children: n.children.map(map) }
+      }
+      return { buffers: [...state.buffers], tree: map(state.tree) }
+    }
+    // sidebar: kill = close the workspace leaf (the brand strip restores it).
+    const sidebarLeaf = leafIds(state.tree).find(id => findLeaf(state.tree, id)?.buffer === 'sidebar')
+    if (sidebarLeaf === undefined || !canClose(state.tree, sidebarLeaf)) {
+      return { buffers: [...state.buffers], tree: state.tree }
+    }
+    return { buffers: [...state.buffers], tree: removeLeaf(state.tree, sidebarLeaf) }
   }
   const buffers = ensureBuffer(
     state.buffers.filter(b => b.id !== bufferId),
@@ -371,6 +388,26 @@ export function killBuffer(
     return { ...n, children: n.children.map(map) }
   }
   return { buffers, tree: map(state.tree) }
+}
+
+/**
+ * Drop duplicate singleton leaves from a loaded tree (a persisted tree can
+ * carry two details panes from an older split rule). The first leaf in depth
+ * order wins; every later leaf showing the same singleton is removed, and a
+ * split reduced to one child collapses.
+ * @param tree - the loaded window tree.
+ * @returns the deduplicated tree (same reference when nothing changed).
+ */
+export function dedupeSingletonBuffers(tree: WmNode): WmNode {
+  const seen = new Set<string>()
+  let t = tree
+  for (const leafId of leafIds(t)) {
+    const node = findLeaf(t, leafId)
+    if (node === undefined || !isSingletonBuffer(node.buffer)) continue
+    if (seen.has(node.buffer)) t = removeLeaf(t, leafId)
+    else seen.add(node.buffer)
+  }
+  return t
 }
 
 /**
