@@ -49,6 +49,8 @@ export type WmCommand =
   | 'm-x'
   /** Restart the harness behind the app, then reload the page when it answers. */
   | 'restart-app'
+  /** Dump the window tree JSON into *scratch* (layout diagnostics). */
+  | 'dump-layout'
 
 /** One parse outcome: arm a prefix, run a command, or nothing. */
 export type ChordResult = { prefix: 'x' | 'c' } | { command: WmCommand } | null
@@ -151,6 +153,7 @@ export const COMMANDS: readonly CommandEntry[] = [
   { name: 'reset-layout', command: 'reset-layout', keys: 'C-x l' },
   { name: 'keyboard-quit', command: 'cancel', keys: 'C-g' },
   { name: 'restart-app', command: 'restart-app', keys: 'M-x' },
+  { name: 'dump-layout', command: 'dump-layout', keys: 'M-x' },
 ]
 
 /** One which-key row: the keys that complete an armed prefix, and what they do. */
