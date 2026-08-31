@@ -56,7 +56,10 @@
   display: flex;
   min-width: 0;
   min-height: 0;
-  flex: 1;
+  /* Fill guarantee chain, link 1: a split fills its parent slot along the
+     main axis (basis 0, grow 1) and stretches across it. */
+  flex: 1 1 0%;
+  align-items: stretch;
 }
 
 /* Pane: one leaf window — mode line above the slot body. */
@@ -67,7 +70,10 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  flex: 1;
+  /* Fill guarantee chain, link 3: the pane fills its weight wrapper with a
+     zero basis, so content size never sets the pane size. */
+  flex: 1 1 0%;
+  width: 100%;
 }
 
 /* Slim mode line: buffer name left, window commands right (Emacs echo of
@@ -121,7 +127,9 @@
 
 .paneBody {
   position: relative;
-  flex: 1;
+  /* Fill guarantee chain, link 4: the buffer body fills the pane below the
+     mode line (basis 0). */
+  flex: 1 1 0%;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -177,8 +185,12 @@
 
 /* Weight wrapper around each recursive child: the flex-grow carrier. */
 .paneWrapper {
+  /* Fill guarantee chain, link 2: the weight wrapper carries flex-grow from
+     the split's weights (inline style); these floors keep content from
+     inflating it. */
   min-width: 0;
   min-height: 0;
+  align-self: stretch;
 }
 
 /* The focused pane's mode line: brighter title and a stronger rule so the

@@ -14,7 +14,7 @@ import {
   WM_LEAF_CONVERSATION, WM_LEAF_DETAILS, WM_LEAF_SIDEBAR,
   canClose, countLeaves, defaultTree, dedupeSingletonBuffers, findLeaf, firstLeafId, keepOnlyLeaf, killBuffer,
   SCRATCH_BUFFER_ID,
-  lastLeafId, leafIds, openBuffer, removeLeaf, setBuffer, setWeights, splitLeaf,
+  lastLeafId, leafIds, normalizeTree, openBuffer, removeLeaf, setBuffer, setWeights, splitLeaf,
 } from '@deepseek-ai/dsh-client-ui-layout/src/client/wm.ts'
 import { createLayoutStore, createScratchStore, createWmStore } from '@deepseek-ai/dsh-client-ui-layout/src/client/stores.ts'
 import { LayoutController } from '@deepseek-ai/dsh-client-ui-layout/src/client/service.ts'
@@ -744,5 +744,121 @@ describe('winner mode + new chords (window listener)', () => {
     act(() => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
     expect(container.querySelector('textarea[aria-label="Scratch buffer"]')).toBeTruthy()
     expect(getByText('*scratch*')).toBeTruthy()
+  })
+})
+
+describe('weight-normalization regression (pane placement bug)', () => {
+
+  /** Find a split by id anywhere in the tree (root included). */
+  const findSplitById = (n: WmNode, id: string): WmNode | undefined => {
+    if (n.kind === 'split') {
+      if (n.id === id) return n
+      for (const c of n.children) {
+        const hit = findSplitById(c, id)
+        if (hit !== undefined) return hit
+      }
+    }
+    return undefined
+  }
+
+  /** Every split's weights must sum to 1. */
+  const sumsHold = (n: WmNode): boolean =>
+    n.kind === 'leaf' || (
+      Math.abs(n.weights.reduce((a, b) => a + b, 0) - 1) < 1e-9
+      && n.children.every(sumsHold)
+    )
+
+  it('the user sequence keeps the conversation leaf dominant with unit-weight splits', () => {
+    // The reported session: default tree → close Context → close the sidebar
+    // leaf → re-attach the sidebar. The conversation leaf must stay dominant
+    // and every split must hold the sum-1 invariant.
+    let tree = removeLeaf(defaultTree(), WM_LEAF_DETAILS)
+    tree = removeLeaf(tree, WM_LEAF_SIDEBAR)
+    tree = splitLeaf(tree, WM_LEAF_CONVERSATION, 'row', 'sidebar', WM_LEAF_SIDEBAR, 'before', [0.18, 0.82])
+    expect(sumsHold(tree)).toBe(true)
+    // The re-split carries the sidebar at its preferred share; the
+    // conversation anchor keeps the dominant 0.82.
+    const resplit = findSplitById(tree, `wm:split:${WM_LEAF_SIDEBAR}`)
+    expect(resplit).toBeDefined()
+    if (resplit?.kind !== 'split') return
+    expect(resplit.weights[0]).toBeCloseTo(0.18, 9)
+    expect(resplit.weights[1]).toBeCloseTo(0.82, 9)
+    expect(resplit.weights[1]).toBeGreaterThan(0.5)
+  })
+
+  it('collapsing a details-dominant split gives the survivor the whole slot', () => {
+    // The direct root cause: removeLeaf(details) on the default tree must NOT
+    // hand the conversation the inner split's tiny 1/641 share.
+    const tree = removeLeaf(defaultTree(), WM_LEAF_DETAILS)
+    expect(tree.kind).toBe('split')
+    if (tree.kind !== 'split') return
+    expect(sumsHold(tree)).toBe(true)
+    // The conversation leaf inherits the collapsed split's whole slot (0.8),
+    // not its own tiny pre-collapse share — the direct root cause of the
+    // dead-space bug.
+    expect(tree.weights[0]).toBeCloseTo(0.2, 9)
+    expect(tree.weights[1]).toBeCloseTo(0.8, 9)
+  })
+
+  it('normalizeTree rescales drifted splits, equalizes zero totals, and is reference-stable', () => {
+    const drifted: WmNode = {
+      kind: 'split',
+      id: 's',
+      dir: 'row',
+      children: [
+        { kind: 'leaf', id: 'a', buffer: 'sidebar' },
+        { kind: 'leaf', id: 'b', buffer: 'conversation' },
+      ],
+      weights: [0.3, 0.3],
+    }
+    const fixed = normalizeTree(drifted)
+    expect(fixed.kind === 'split' && fixed.weights).toEqual([0.5, 0.5])
+    // Already normalized: same reference.
+    const unit = defaultTree()
+    expect(normalizeTree(unit)).toBe(unit)
+    expect(normalizeTree(fixed)).toBe(fixed)
+    // Zero total distributes equally.
+    const zero: WmNode = { ...drifted, weights: [0, 0] }
+    const equalized = normalizeTree(zero)
+    expect(equalized.kind === 'split' && equalized.weights).toEqual([0.5, 0.5])
+    // Nested splits normalize recursively.
+    const nested: WmNode = { ...drifted, children: [drifted, { ...drifted, weights: [1, 1] }], weights: [1, 1] }
+    expect(sumsHold(normalizeTree(nested))).toBe(true)
+  })
+
+  it('the mount heal repairs a persisted tree whose weights sum to 0.6', () => {
+    const corrupted: WmNode = {
+      kind: 'split',
+      id: 'wm:root',
+      dir: 'row',
+      children: [
+        { kind: 'leaf', id: WM_LEAF_SIDEBAR, buffer: 'sidebar' },
+        { kind: 'leaf', id: WM_LEAF_CONVERSATION, buffer: 'conversation' },
+      ],
+      weights: [0.36, 0.24],
+    }
+    const { wm } = mountFrame(corrupted, [])
+    act(() => { wm.actions.reconcile() })
+    const healed = wm.getSnapshot().tree
+    expect(sumsHold(healed)).toBe(true)
+    expect(healed.kind === 'split' && healed.weights[0]).toBeCloseTo(0.6, 6)
+    expect(healed.kind === 'split' && healed.weights[1]).toBeCloseTo(0.4, 6)
+  })
+
+  it('sidebar re-attach takes its preferred share, not half the anchor', () => {
+    const tree = splitLeaf(
+      removeLeaf(defaultTree(), WM_LEAF_DETAILS),
+      WM_LEAF_CONVERSATION, 'row', 'sidebar', WM_LEAF_SIDEBAR, 'before',
+      [0.18, 0.82],
+    )
+    expect(sumsHold(tree)).toBe(true)
+    // The split REPLACES the anchor leaf, so the new split is the tree (or
+    // nested one level, when the anchor's parent survives) — find it.
+    const resplit = findSplitById(tree, `wm:split:${WM_LEAF_SIDEBAR}`)
+    expect(resplit).toBeDefined()
+    if (resplit?.kind !== 'split') return
+    expect(resplit.weights[0]).toBeGreaterThanOrEqual(0.17)
+    expect(resplit.weights[0]).toBeLessThanOrEqual(0.19)
+    expect(resplit.weights[1]).toBeCloseTo(0.82, 9)
   })
 })

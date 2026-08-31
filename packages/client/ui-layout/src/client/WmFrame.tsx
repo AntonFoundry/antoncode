@@ -35,7 +35,8 @@ import { ScratchBuffer } from './ScratchBuffer.tsx'
 import { FilesBuffer } from './FilesBuffer.tsx'
 import {
   SINGLETON_BUFFERS, SCRATCH_BUFFER_ID, WM_LEAF_DETAILS, WM_LEAF_SIDEBAR, bufferTitle, canClose, defaultTree,
-  dedupeSingletonBuffers, ensureBuffer, findBuffer, findLeaf, findSplit, firstLeafId, normalizeWeights,
+  dedupeSingletonBuffers, ensureBuffer, findBuffer, findLeaf, findSplit, firstLeafId, normalizeTree,
+  SIDEBAR_REATTACH_WEIGHT,
   isSingletonBuffer, keepOnlyLeaf,
   killBuffer, leafIds, removeLeaf, scratchBuffer, setWeights, splitLeaf, swapBuffer,
   type WmBuffer, type WmDirection, type WmNode,
@@ -72,6 +73,8 @@ export interface WmFrameInjected {
   setBuffers: (buffers: WmBuffer[]) => void
   /** Heal a pre-registry persisted snapshot (seed the singleton buffers). */
   reconcileBuffers: () => void
+  /** Write the sidebar width preference (px) — the pinned sidebar pane resizes through it. */
+  setSidebarWidth: (px: number) => void
   /** Persist the *scratch* text. */
   writeScratch: (text: string) => void
   /**
@@ -295,7 +298,7 @@ function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf
 function NodeView(props: NodeRenderProps & { node: WmNode }) {
   const { node } = props
   const splitRef = useRef<HTMLDivElement | null>(null)
-  const dragBase = useRef<SashDragBase>({ size: 0, index: 0, w0: 0, w1: 0, delta: 0 })
+  const dragBase = useRef<SashDragBase>({ size: 0, index: 0, w0: 0, w1: 0, delta: 0, sidebar: null })
   if (node.kind === 'leaf') return <LeafPane {...props} node={node} />
   return (
     <div
@@ -327,7 +330,7 @@ function NodeView(props: NodeRenderProps & { node: WmNode }) {
                   w0: node.weights[i - 1] ?? 0,
                   w1: node.weights[i] ?? 0,
                   delta: 0,
-                  sidebar: node.dir === 'row' ? (side ?? sidePrev) : null,
+                  sidebar: node.dir === 'row' ? (side ?? sidePrev ?? null) : null,
                 }
               }}
               onDelta={(delta) => {
@@ -457,7 +460,7 @@ export function WmFrame({
     // Heal a loaded tree: duplicate singleton panes (two Context leaves from
     // an older split rule) collapse to the depth-first one. An effect, not a
     // render-body write: the store update must land after paint commitment.
-    let healed = normalizeWeights(dedupeSingletonBuffers(treeRef.current))
+    let healed = normalizeTree(dedupeSingletonBuffers(treeRef.current))
     // Context always starts closed: the header toggle opens it on demand, so
     // a fresh load never resumes with a split the user did not ask for.
     const detailsLeaf = findLeaf(healed, WM_LEAF_DETAILS)
@@ -474,7 +477,11 @@ export function WmFrame({
       writeTree(removeLeaf(t, WM_LEAF_SIDEBAR))
     } else if (viewport >= SIDEBAR_NARROW && !has && mounted?.hadSidebar === true) {
       const anchor = firstLeafId(t)
-      if (anchor !== undefined) writeTree(splitLeaf(t, anchor, 'row', 'sidebar', WM_LEAF_SIDEBAR, 'before'))
+      if (anchor !== undefined) {
+        // The re-attached sidebar takes its preferred share, not half the
+        // anchor (normalizeTree guarantees the sum).
+        writeTree(splitLeaf(t, anchor, 'row', 'sidebar', WM_LEAF_SIDEBAR, 'before', [SIDEBAR_REATTACH_WEIGHT, 1 - SIDEBAR_REATTACH_WEIGHT]))
+      }
     }
     // Runs on viewport transitions; tree is read through the mirror.
   }, [viewport, writeTree])
@@ -625,7 +632,7 @@ export function WmFrame({
   // the list — Enter with an empty query kills it — then every other buffer
   // a leaf shows. Killing a singleton re-homes its leaves (killBuffer).
   const killCandidates = useMemo<MinibufferCandidate[]>(() => {
-    const focused = findLeaf(tree, focusedId)?.buffer
+    const focused = focusedId === undefined ? undefined : findLeaf(tree, focusedId)?.buffer
     const shown: string[] = []
     for (const id of leafIds(tree).map(leafId => findLeaf(tree, leafId)?.buffer)) {
       if (id !== undefined && !shown.includes(id)) shown.push(id)
@@ -636,7 +643,9 @@ export function WmFrame({
     ]
     return ordered.map((id) => {
       const b = findBuffer(buffers, id)
-      return { id, label: b !== undefined ? bufferTitle(b) : id, hint: id === focused ? 'current' : undefined }
+      const label = b !== undefined ? bufferTitle(b) : id
+      const hint = id === focused ? 'current' : undefined
+      return { id, label, ...(hint === undefined ? {} : { hint }) }
     })
   }, [tree, buffers, focusedId])
 
