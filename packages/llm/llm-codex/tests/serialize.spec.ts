@@ -60,7 +60,7 @@ describe('serializeInput', () => {
     expect(items).toEqual([{ type: 'function_call_output', call_id: 'call-1', output: 'Sunny 22C' }])
   })
 
-  it('requires durable attachment storage when image input is present', async () => {
+  it('omits unresolvable image input with the placeholder text', async () => {
     const message: Message = createUserMessage({
       content: [{
         type: 'image',
@@ -68,7 +68,8 @@ describe('serializeInput', () => {
       }],
       source: { kind: 'plugin', plugin: 'test' },
     })
-    await expect(serializeInput([message])).rejects.toThrow(/attachment service/)
+    const items = await serializeInput([message])
+    expect(JSON.stringify(items)).toContain('image omitted')
   })
 
   it('resolves durable user images into Responses input_image data', async () => {

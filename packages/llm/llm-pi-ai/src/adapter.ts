@@ -34,6 +34,7 @@ import type {
 import {
   attributionHeaders,
   contentHasImage,
+  withoutImageBlocks,
   LlmAdapter,
   LlmError,
   ReasoningEffortId,
@@ -299,71 +300,98 @@ export class PiAiAdapter extends LlmAdapter {
     )
     const apiKey = await this.config.resolveApiKey(options.provider, profile)
 
-    const consumer = new AbortController()
-    const upstream = options.signal === undefined
-      ? consumer.signal
-      : AbortSignal.any([options.signal, consumer.signal])
     const streamIdleTimeoutMs = profile.streamIdleTimeoutMs
-    using watchdog = idleWatchdog(upstream, streamIdleTimeoutMs, 'LLM_STREAM_IDLE_TIMEOUT')
-
-    try {
-      const containsImage = options.messages.some(message => contentHasImage(message.content))
+    // Image-rejection handling: when the target model cannot accept images —
+    // by capability metadata or by a provider rejection at request time — the
+    // request retries once with image blocks replaced by an omitted
+    // placeholder instead of failing the step.
+    let stripImages = false
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const consumer = new AbortController()
+      const upstream = options.signal === undefined
+        ? consumer.signal
+        : AbortSignal.any([options.signal, consumer.signal])
+      using watchdog = idleWatchdog(upstream, streamIdleTimeoutMs, 'LLM_STREAM_IDLE_TIMEOUT')
+      const messages = stripImages
+        ? options.messages.map(message => ({ ...message, content: withoutImageBlocks(message.content) }))
+        : options.messages
+      const containsImage = messages.some(message => contentHasImage(message.content))
       if (containsImage && !model.input.includes('image')) {
-        throw new LlmError(`pi-ai model "${model.id}" does not support image input`, 'UNSUPPORTED_CONTENT')
+        stripImages = true
+        continue
       }
       const attachments = containsImage ? this.config.resolveAttachments?.() : undefined
       if (containsImage && attachments === undefined) {
-        throw new LlmError('pi-ai image input requires the durable attachment service', 'UNSUPPORTED_CONTENT')
+        stripImages = true
+        continue
       }
-      const onReplayDegrade = (reason: string): void => {
-        this.config.onReplayDegrade?.({ provider: options.provider, model: options.model, reason })
-      }
-      const context = attachments === undefined
-        ? toPiContext(options, undefined, onReplayDegrade)
-        : await toPiContext(options, attachments, onReplayDegrade)
-      const events = snapshot.models.streamSimple(model, context, {
-        ...profileOptions(profile, reasoning, apiKey),
-        ...options.temperature === undefined ? {} : { temperature: options.temperature },
-        ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
-        ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
-        signal: watchdog.signal,
-        // Profile headers are deployment-owned; attribution names are
-        // Harness-owned and therefore win collisions.
-        headers: requestHeaders(profile.headers),
-      })
-      const iterator = toStreamChunks(events, model.contextWindow)[Symbol.asyncIterator]()
-      let exhausted = false
       try {
-        while (true) {
-          const result = await watchdog.next(iterator)
-          const timeout = timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT')
-          if (timeout !== undefined) throw timeout
-          if (result.done) {
-            exhausted = true
-            return
-          }
-          yield result.value
+        const onReplayDegrade = (reason: string): void => {
+          this.config.onReplayDegrade?.({ provider: options.provider, model: options.model, reason })
         }
-      } finally {
-        if (!exhausted) {
-          consumer.abort('pi-ai stream consumer stopped')
-          try {
-            await iterator.return(undefined)
-          } catch (_abortedSdkTeardown) {
+        const request = { ...options, messages }
+        const context = attachments === undefined
+          ? toPiContext(request, undefined, onReplayDegrade)
+          : await toPiContext(request, attachments, onReplayDegrade)
+        const events = snapshot.models.streamSimple(model, context, {
+          ...profileOptions(profile, reasoning, apiKey),
+          ...options.temperature === undefined ? {} : { temperature: options.temperature },
+          ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
+          ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
+          signal: watchdog.signal,
+          // Profile headers are deployment-owned; attribution names are
+          // Harness-owned and therefore win collisions.
+          headers: requestHeaders(profile.headers),
+        })
+        const iterator = toStreamChunks(events, model.contextWindow)[Symbol.asyncIterator]()
+        let exhausted = false
+        try {
+          while (true) {
+            const result = await watchdog.next(iterator)
+            const timeout = timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT')
+            if (timeout !== undefined) throw timeout
+            if (result.done) {
+              exhausted = true
+              return
+            }
+            yield result.value
+          }
+        } finally {
+          if (!exhausted) {
+            consumer.abort('pi-ai stream consumer stopped')
+            try {
+              await iterator.return(undefined)
+            } catch (_abortedSdkTeardown) {
             // The stable signal already owns SDK termination; return-time abort cannot add an outcome.
+            }
           }
         }
+      } catch (error: unknown) {
+        if (timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT') !== undefined) {
+          throw new LlmError(`pi-ai stream idle timeout after ${streamIdleTimeoutMs}ms`, 'TIMEOUT', { cause: error })
+        }
+        if (options.signal?.aborted) {
+          throw new LlmError('pi-ai request aborted by caller', 'ABORTED', { cause: error })
+        }
+        if (attempt === 1 && containsImage && looksLikeImageRejection(error)) {
+          stripImages = true
+          continue
+        }
+        throw error
+      } finally {
+        consumer.abort('pi-ai stream consumer stopped')
       }
-    } catch (error: unknown) {
-      if (timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT') !== undefined) {
-        throw new LlmError(`pi-ai stream idle timeout after ${streamIdleTimeoutMs}ms`, 'TIMEOUT', { cause: error })
-      }
-      if (options.signal?.aborted) {
-        throw new LlmError('pi-ai request aborted by caller', 'ABORTED', { cause: error })
-      }
-      throw error
-    } finally {
-      consumer.abort('pi-ai stream consumer stopped')
     }
+    throw new LlmError('pi-ai request exhausted its image-retry attempts', 'UNKNOWN')
   }
+}
+
+/**
+ * Provider rejections that name image input — the trigger for the one-shot
+ * stripped retry. Abort and timeout outcomes are never image rejections.
+ */
+function looksLikeImageRejection(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /image|multimodal|vision|unsupported content|invalid content/i.test(message)
+    && !/aborted|timeout/i.test(message)
 }
