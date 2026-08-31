@@ -71,10 +71,14 @@ describe('ui-layout client apply', () => {
       setSidebar: vi.fn(), setDetails: vi.fn(), toggleSidebar: vi.fn(), setNarrow: vi.fn(), openDetails: vi.fn(), closeDetails: vi.fn(),
     }
     const injected = (slots.entries('root')[0]!.inject as (actions: never) => object)(actions as never)
-    // The injected face: the wm hooks source (bound to useWm), the write
-    // callbacks, and the workspace-open resolver.
-    expect(Object.keys(injected).sort()).toEqual(['hooks', 'openWorkspace', 'setFocus', 'setTree'])
-    expect((injected as { hooks: { wm: unknown } }).hooks.wm).toHaveProperty('getSnapshot')
+    // The injected face: the wm + scratch hooks sources, the write callbacks,
+    // and the workspace/host resolvers.
+    expect(Object.keys(injected).sort()).toEqual([
+      'hooks', 'listDirectory', 'openPath', 'openWorkspace',
+      'reconcileBuffers', 'setBuffers', 'setFocus', 'setTree', 'writeScratch',
+    ])
+    expect((injected as { hooks: { wm: unknown; scratch: unknown } }).hooks.wm).toHaveProperty('getSnapshot')
+    expect((injected as { hooks: { scratch: unknown } }).hooks.scratch).toHaveProperty('getSnapshot')
     const layout = ctx.get('layout') as LayoutController
     // With the wm face attached, toggleSidebar is a tree operation, not a
     // panel-action forward.

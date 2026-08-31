@@ -23,14 +23,16 @@ const MAX_VISIBLE = 8
 
 /** Minibuffer props: prompt label, resolved candidates, and the two outcomes. */
 export interface MinibufferProps {
-  /** Prompt line label, e.g. "Switch buffer" or "Switch workspace". */
+  /** Prompt line label, e.g. "Switch buffer" or "Find file". */
   prompt: string
   /** Candidate rows (unfiltered); WmFrame resolves them per prompt kind. */
   candidates: MinibufferCandidate[]
-  /** Execute the candidate with this id. */
+  /** Execute the candidate with this id — or the raw query in free-entry mode. */
   onExecute: (id: string) => void
   /** Cancel the prompt (Esc / C-g). */
   onCancel: () => void
+  /** Free-entry mode (C-x C-f): Enter submits the typed text even with no candidates. */
+  freeEntry?: boolean
 }
 
 /**
@@ -38,7 +40,7 @@ export interface MinibufferProps {
  * @param props - prompt, candidates, execute/cancel callbacks.
  * @returns the strip element, or null when there is nothing to prompt for.
  */
-export function Minibuffer({ prompt, candidates, onExecute, onCancel }: MinibufferProps) {
+export function Minibuffer({ prompt, candidates, onExecute, onCancel, freeEntry }: MinibufferProps) {
   const [query, setQuery] = useState('')
   const [index, setIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -74,6 +76,7 @@ export function Minibuffer({ prompt, candidates, onExecute, onCancel }: Minibuff
       e.preventDefault()
       const hit = filtered[clamped]
       if (hit !== undefined) onExecute(hit.id)
+      else if (freeEntry && query.trim() !== '') onExecute(query.trim())
     }
   }
 
