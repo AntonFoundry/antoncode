@@ -26,19 +26,22 @@ import type {
   SessionId, SessionListState, WorkspaceListState,
 } from '@deepseek-ai/dsh-client-runtime/client'
 
+/** The legacy three-pane shape (sidebar | conversation | details) for tests
+  * that exercise details flows; defaultTree no longer ships Context open. */
+function shipped3(): WmNode {
+  return splitLeaf(defaultTree(), WM_LEAF_CONVERSATION, 'row', WM_LEAF_DETAILS, WM_LEAF_DETAILS)
+}
+
 describe('wm tree operations', () => {
-  it('defaultTree reproduces the shipped layout: sidebar | (conversation | details)', () => {
+  it('defaultTree ships workspace | chat, Context closed', () => {
     const tree = defaultTree()
     expect(tree.kind).toBe('split')
-    expect(leafIds(tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
+    expect(leafIds(tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
     if (tree.kind !== 'split') return
     expect(tree.dir).toBe('row')
     expect(tree.weights.length).toBe(tree.children.length)
-    const main = tree.children[1]
-    expect(main?.kind).toBe('split')
-    if (main?.kind !== 'split') return
-    expect(main.children.map(c => (c.kind === 'leaf' ? c.buffer : '')))
-      .toEqual(['conversation', 'details'])
+    // No details leaf: a fresh load never opens with a Context split.
+    expect(leafIds(tree).includes(WM_LEAF_DETAILS)).toBe(false)
   })
 
   it('weights are fractional', () => {
@@ -49,7 +52,7 @@ describe('wm tree operations', () => {
   })
 
   it('removeLeaf prunes the leaf and collapses single-child splits', () => {
-    const tree = defaultTree()
+    const tree = shipped3()
     const withoutDetails = removeLeaf(tree, WM_LEAF_DETAILS)
     // The inner split collapses to the conversation leaf.
     expect(leafIds(withoutDetails)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
@@ -62,7 +65,7 @@ describe('wm tree operations', () => {
   })
 
   it('removeLeaf renormalizes the surviving sibling weights', () => {
-    const tree = defaultTree()
+    const tree = shipped3()
     const outer = removeLeaf(tree, WM_LEAF_SIDEBAR)
     expect(outer.kind).toBe('split')
     if (outer.kind !== 'split') return
@@ -70,13 +73,13 @@ describe('wm tree operations', () => {
   })
 
   it('splitLeaf inserts the new buffer beside the target with equal weights', () => {
-    const tree = splitLeaf(defaultTree(), WM_LEAF_CONVERSATION, 'column', 'details', 'extra')
+    const tree = splitLeaf(shipped3(), WM_LEAF_CONVERSATION, 'column', 'details', 'extra')
     expect(leafIds(tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION, 'extra', WM_LEAF_DETAILS])
     const split = splitLeaf(tree, WM_LEAF_CONVERSATION, 'row', 'details', 'extra2')
     expect(findLeaf(split, 'extra2')).toBeDefined()
     // 'before' lands the new leaf at the anchor's edge (sidebar re-attach).
     const before = splitLeaf(defaultTree(), WM_LEAF_CONVERSATION, 'row', 'sidebar', 'sb', 'before')
-    expect(leafIds(before)).toEqual([WM_LEAF_SIDEBAR, 'sb', WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
+    expect(leafIds(before)).toEqual([WM_LEAF_SIDEBAR, 'sb', WM_LEAF_CONVERSATION])
   })
 
   it('splitting an unknown leaf is a no-op', () => {
@@ -85,13 +88,13 @@ describe('wm tree operations', () => {
   })
 
   it('setBuffer swaps the buffer shown in a leaf', () => {
-    const tree = setBuffer(defaultTree(), WM_LEAF_SIDEBAR, 'details')
+    const tree = setBuffer(shipped3(), WM_LEAF_SIDEBAR, 'details')
     expect(findLeaf(tree, WM_LEAF_SIDEBAR)?.buffer).toBe('details')
     expect(countLeaves(tree, 'details')).toBe(2)
   })
 
   it('canClose: every window closes except the last one standing', () => {
-    const tree = defaultTree()
+    const tree = shipped3()
     expect(canClose(tree, WM_LEAF_SIDEBAR)).toBe(true)
     expect(canClose(tree, WM_LEAF_DETAILS)).toBe(true)
     // The conversation pane closes too when other windows remain (C-x b
@@ -103,7 +106,7 @@ describe('wm tree operations', () => {
   })
 
   it('setWeights writes a split\'s weights and firstLeafId/lastLeafId walk the depth order', () => {
-    const tree = defaultTree()
+    const tree = shipped3()
     expect(firstLeafId(tree)).toBe(WM_LEAF_SIDEBAR)
     expect(lastLeafId(tree)).toBe(WM_LEAF_DETAILS)
     const reweighted = setWeights(tree, 'wm:root', [0.5, 0.5])
@@ -116,17 +119,15 @@ describe('wm tree operations', () => {
 describe('wm store', () => {
   it('seeds the default tree and persists under dsh.layout.wm', () => {
     const instance = createWmStore().create()
-    expect(leafIds(instance.getSnapshot().tree)).toEqual([
-      WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION, WM_LEAF_DETAILS,
-    ])
-    act(() => { instance.actions.setTree(removeLeaf(instance.getSnapshot().tree, WM_LEAF_SIDEBAR)) })
-    expect(leafIds(instance.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
+    expect(leafIds(instance.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
+    act(() => { instance.actions.setTree(shipped3()) })
+    expect(leafIds(instance.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
     // The whole value persists to the declared key.
     const stored = JSON.parse(window.localStorage.getItem('dsh.layout.wm')!) as { tree: WmNode }
-    expect(leafIds(stored.tree)).toEqual([WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
+    expect(leafIds(stored.tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
     // A fresh instance rehydrates the persisted tree.
     const second = createWmStore().create()
-    expect(leafIds(second.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
+    expect(leafIds(second.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
   })
 })
 
@@ -149,9 +150,9 @@ describe('LayoutController wm paths', () => {
   it('toggleSidebar removes and re-attaches the sidebar leaf at the tree edge', () => {
     const { service, panels, wm } = wired()
     service.toggleSidebar()
-    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION])
     service.toggleSidebar()
-    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
     expect(firstLeafId(wm.getSnapshot().tree)).toBe(WM_LEAF_SIDEBAR)
     // The wm path never forwards to the panel actions.
     expect(panels.toggleSidebar).not.toHaveBeenCalled()
@@ -159,16 +160,16 @@ describe('LayoutController wm paths', () => {
 
   it('openDetails is a no-op when open; closeDetails removes the leaf', () => {
     const { service, wm } = wired()
-    const before = leafIds(wm.getSnapshot().tree)
-    service.openDetails()
-    expect(leafIds(wm.getSnapshot().tree)).toEqual(before)
-    service.closeDetails()
-    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
+    // Default: Context closed. closeDetails is a no-op; openDetails pops it.
     service.closeDetails()
     expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
     service.openDetails()
     expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
     expect(lastLeafId(wm.getSnapshot().tree)).toBe(WM_LEAF_DETAILS)
+    service.openDetails()
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
+    service.closeDetails()
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
   })
 })
 
@@ -316,16 +317,17 @@ afterEach(() => {
 
 describe('WmFrame render', () => {
   it('renders a mode line per leaf with the buffer titles and slot contents', () => {
-    const { getByText, getByTestId, getAllByLabelText } = mountFrame()
+    const { getByText, getByTestId, getAllByLabelText, queryByText, queryByTestId } = mountFrame()
     expect(getByText('Workspace')).toBeTruthy()
     expect(getByText('Chat')).toBeTruthy()
-    expect(getByText('Context')).toBeTruthy()
+    // Context stays closed on a fresh load (the header toggle opens it).
+    expect(queryByText('Context')).toBeNull()
     expect(getByTestId('sidebar-content')).toBeTruthy()
     expect(getByTestId('center-content')).toBeTruthy()
-    expect(getByTestId('details-content')).toBeTruthy()
+    expect(queryByTestId('details-content')).toBeNull()
     // Every pane carries a close button (the last window standing is
     // guarded at the operation, not the button).
-    expect(getAllByLabelText('Close').length).toBe(3)
+    expect(getAllByLabelText('Close').length).toBe(2)
   })
 
   it('sidebar slot receives the layout-store concession owner props + brandInFrame', () => {
@@ -334,7 +336,6 @@ describe('WmFrame render', () => {
     // Viewport 1920: the untouched preference takes the 18% share (346).
     expect(sidebar.props).toEqual({ collapsed: false, width: 346, brandInFrame: true })
     expect(slotCalls.find(c => c.key === 'conversation')!.props).toEqual({})
-    expect(slotCalls.find(c => c.key === 'details')!.props).toEqual({})
     expect(slotCalls.map(c => c.key)).toContain('shell.overlay')
   })
 
@@ -342,27 +343,26 @@ describe('WmFrame render', () => {
     const { container, wm, queryByText } = mountFrame()
     const closeButtonOf = (buffer: string): HTMLButtonElement =>
       container.querySelector(`[data-buffer="${buffer}"] button[aria-label="Close"]`) as HTMLButtonElement
-    act(() => { closeButtonOf('details').click() })
-    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
-    expect(queryByText('Context')).toBeNull()
     // The conversation pane closes too: chat returns through C-x b.
     act(() => { closeButtonOf('conversation').click() })
     expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR])
+    expect(queryByText('Chat')).toBeNull()
   })
 
   it('mode-line split inserts a new pane beside the target', () => {
-    const { getAllByLabelText, wm } = mountFrame()
-    act(() => { getAllByLabelText('Split right')[0]!.click() })
-    const buffers = (t: WmNode): string[] =>
-      t.kind === 'leaf' ? [t.buffer] : t.children.flatMap(buffers)
-    expect(buffers(wm.getSnapshot().tree)).toEqual(['sidebar', 'sidebar', 'conversation', 'details'])
-    expect(leafIds(wm.getSnapshot().tree)).toHaveLength(4)
+    const { container, getByText, wm } = mountFrame()
+    // The conversation pane's Split right opens the Context pane beside it
+    // (the singleton is focused, not duplicated).
+    const convSplit = container.querySelector('[data-buffer="conversation"] button[aria-label="Split right"]') as HTMLButtonElement
+    act(() => { convSplit.click() })
+    expect(leafIds(wm.getSnapshot().tree)).toHaveLength(3)
+    expect(getByText('Context')).toBeTruthy()
   })
 
   it('brand-strip toggle removes and re-attaches the sidebar leaf', () => {
     const { getByLabelText, wm } = mountFrame()
     act(() => { getByLabelText('Toggle workspace sidebar').click() })
-    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION])
     act(() => { getByLabelText('Toggle workspace sidebar').click() })
     expect(firstLeafId(wm.getSnapshot().tree)).toBe(WM_LEAF_SIDEBAR)
   })
@@ -381,13 +381,16 @@ describe('WmFrame render', () => {
     const tree = wm.getSnapshot().tree
     expect(tree.kind).toBe('split')
     if (tree.kind !== 'split') return
-    expect(tree.weights[0]).toBeCloseTo(280 / 920, 5)
+    expect(tree.weights[0]).toBeCloseTo(0.2, 5)
     // +100px on the sidebar (346 at this viewport) clamps at the 420 max.
     expect(layout.getSnapshot().sidebar).toBe(420)
   })
 
   it('switching between real sessions removes the details leaf', () => {
     const { rerenderFrame, wm, queryByTestId } = mountFrame()
+    // Context open (via the toggle path's tree transform), then a real
+    // session switch takes it back down.
+    act(() => { wm.actions.setTree(shipped3()) })
     selectedSession.current = 's-next' as SessionId
     act(() => { rerenderFrame() })
     expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
@@ -396,6 +399,7 @@ describe('WmFrame render', () => {
 
   it('a blank session switch does not close details', () => {
     const { rerenderFrame, wm } = mountFrame()
+    act(() => { wm.actions.setTree(shipped3()) })
     selectedSession.current = 's-blank' as SessionId
     selectedSessionBlank.current = true
     act(() => { rerenderFrame() })
@@ -407,7 +411,7 @@ describe('WmFrame narrow viewport', () => {
   it('drops the sidebar leaf below 900px and restores it on widen (persisted tree had it)', () => {
     frameWidth = 800
     const { wm } = mountFrame()
-    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION])
     frameWidth = 1920
     window.innerWidth = frameWidth
     act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
@@ -418,7 +422,7 @@ describe('WmFrame narrow viewport', () => {
     const noSidebar = removeLeaf(defaultTree(), WM_LEAF_SIDEBAR)
     frameWidth = 1920
     const { wm } = mountFrame(noSidebar)
-    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION])
   })
 })
 
@@ -435,9 +439,9 @@ describe('focused leaf + commands', () => {
   it('pane pointerdown moves the focus cursor; mode line marks the focused pane', () => {
     const { container, wm } = mountFrame()
     const panes = container.querySelectorAll('[data-buffer]')
-    act(() => { panes[2]!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })) })
-    expect(wm.getSnapshot().focusedLeafId).toBe(WM_LEAF_DETAILS)
-    expect(container.querySelector('[data-buffer="details"]')!.hasAttribute('data-focused')).toBe(true)
+    act(() => { panes[1]!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })) })
+    expect(wm.getSnapshot().focusedLeafId).toBe(WM_LEAF_CONVERSATION)
+    expect(container.querySelector('[data-buffer="conversation"]')!.hasAttribute('data-focused')).toBe(true)
     expect(container.querySelector('[data-buffer="sidebar"]')!.hasAttribute('data-focused')).toBe(false)
   })
 
@@ -467,20 +471,19 @@ describe('Emacs chords (window listener)', () => {
     press('x', { ctrlKey: true })
     press('3')
     expect(buffers(wm.getSnapshot().tree)).toEqual(['sidebar', 'conversation', 'details'])
-    expect(wm.getSnapshot().focusedLeafId).toBe(WM_LEAF_DETAILS)
+    expect(findLeaf(wm.getSnapshot().tree, wm.getSnapshot().focusedLeafId ?? '')?.buffer).toBe('details')
   })
 
-  it('C-x 0 closes the focused leaf but never the last conversation leaf', () => {
+  it('C-x 0 closes the focused leaf but never the last window standing', () => {
     const { wm } = mountFrame()
-    act(() => { wm.actions.setFocus(WM_LEAF_DETAILS) })
-    press('x', { ctrlKey: true })
-    press('0')
-    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
     act(() => { wm.actions.setFocus(WM_LEAF_CONVERSATION) })
     press('x', { ctrlKey: true })
     press('0')
-    // The conversation pane closes with a window behind it; only the LAST
-    // window standing is guarded.
+    // The conversation pane closes with a window behind it (C-x b returns it).
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR])
+    // The LAST window standing is guarded.
+    press('x', { ctrlKey: true })
+    press('0')
     expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR])
   })
 
@@ -573,7 +576,7 @@ describe('Emacs chords (window listener)', () => {
     expect(input).toBeTruthy()
     act(() => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
     // Killing the singleton sidebar closes its leaf (a conversation remains).
-    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION])
   })
 
   it('M-x restart-app posts the bridge restart and shows the waiting banner', () => {
@@ -607,8 +610,8 @@ describe('Emacs chords (window listener)', () => {
 })
 
 describe('singleton dedupe', () => {
-  it('a loaded tree with two details leaves collapses to the first one', () => {
-    const doubled = splitLeaf(defaultTree(), WM_LEAF_DETAILS, 'column', 'details', 'wm:leaf:dup')
+  it('a loaded tree with two conversation leaves collapses to the first one', () => {
+    const doubled = splitLeaf(defaultTree(), WM_LEAF_CONVERSATION, 'row', 'conversation', 'wm:leaf:dup')
     const shipped = defaultTree()
     expect(leafIds(dedupeSingletonBuffers(doubled))).toEqual(leafIds(shipped))
     // No duplicates: the call is a no-op returning the same reference.
@@ -635,7 +638,7 @@ describe('buffer registry', () => {
     expect(refused.buffers.map(b => b.id)).toEqual(['sidebar', 'conversation', 'details', 'buffer:files:1'])
     // A files buffer kills through: its leaf swaps to *scratch*, which is
     // created on demand.
-    const killed = killBuffer({ buffers, tree: splitLeaf(tree, 'details', 'row', 'buffer:files:1', 'leaf-x') }, 'buffer:files:1')
+    const killed = killBuffer({ buffers, tree: splitLeaf(tree, WM_LEAF_CONVERSATION, 'row', 'buffer:files:1', 'leaf-x') }, 'buffer:files:1')
     expect(killed.buffers.some(b => b.id === 'buffer:files:1')).toBe(false)
     expect(killed.buffers.some(b => b.id === 'buffer:scratch')).toBe(true)
     expect(killed.tree.kind === 'split' && leafIds(killed.tree)).toContain('leaf-x')
@@ -645,7 +648,7 @@ describe('buffer registry', () => {
 
   it('openBuffer splits a new window beside the anchor showing the buffer', () => {
     const tree = openBuffer(defaultTree(), 'conversation', 'column', 'buffer:scratch', 'leaf-s')
-    expect(leafIds(tree)).toEqual(['sidebar', 'conversation', 'leaf-s', 'details'])
+    expect(leafIds(tree)).toEqual(['sidebar', 'conversation', 'leaf-s'])
     expect(findLeaf(tree, 'leaf-s')?.buffer).toBe('buffer:scratch')
   })
 })
@@ -653,19 +656,19 @@ describe('buffer registry', () => {
 describe('winner mode + new chords (window listener)', () => {
   it('C-c ←/→ undo and redo structural layout changes', () => {
     const { wm } = mountFrame()
-    act(() => { wm.actions.setFocus(WM_LEAF_DETAILS) })
+    act(() => { wm.actions.setFocus(WM_LEAF_CONVERSATION) })
     press('x', { ctrlKey: true })
-    press('0') // close the focused details leaf — a structural change
-    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
+    press('3') // split-right — pops Context: a structural change
+    expect(leafIds(wm.getSnapshot().tree)).toHaveLength(3)
     press('c', { ctrlKey: true })
     press('ArrowLeft') // winner-undo
-    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
     press('c', { ctrlKey: true })
     press('ArrowRight') // winner-redo
-    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
-    // Winner undo exhausted then re-filled: no stray throws either way.
+    expect(leafIds(wm.getSnapshot().tree)).toHaveLength(3)
+    // Winner redo exhausted then undone again: no stray throws either way.
     press('c', { ctrlKey: true })
-    press('ArrowRight')
+    press('ArrowLeft')
     expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
   })
 
@@ -688,13 +691,16 @@ describe('winner mode + new chords (window listener)', () => {
     const { wm } = mountFrame()
     act(() => { wm.actions.setFocus(WM_LEAF_SIDEBAR) })
     press('x', { ctrlKey: true })
-    // Chat and Context are on screen in other leaves: cycling must not swap
-    // them into this window (that duplicated panes — the placement bug).
-    press('ArrowRight') // next buffer → scratch (the only unshown buffer)
+    // Chat is shown elsewhere: cycling skips it (that duplicated panes — the
+    // placement bug). Context is closed, so it cycles INTO this window.
+    press('ArrowRight')
+    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('details')
+    press('x', { ctrlKey: true })
+    press('ArrowRight')
     expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe(SCRATCH_BUFFER_ID)
     press('x', { ctrlKey: true })
     press('ArrowLeft') // back
-    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('sidebar')
+    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('details')
   })
 
   it('C-x k offers open non-singleton buffers; killing swaps to scratch', () => {
@@ -702,9 +708,9 @@ describe('winner mode + new chords (window listener)', () => {
     act(() => {
       wm.actions.setBuffers([...wm.getSnapshot().buffers, { id: 'buffer:files:9', kind: 'files', path: '/tmp' }])
     })
-    // Show the files buffer in the details leaf.
+    // Show the files buffer in the conversation leaf.
     const t = wm.getSnapshot().tree
-    act(() => { wm.actions.setTree(setBuffer(t, WM_LEAF_DETAILS, 'buffer:files:9')) })
+    act(() => { wm.actions.setTree(setBuffer(t, WM_LEAF_CONVERSATION, 'buffer:files:9')) })
     press('x', { ctrlKey: true })
     press('k')
     const input = document.querySelector('[data-minibuffer] input') as HTMLInputElement
@@ -714,7 +720,7 @@ describe('winner mode + new chords (window listener)', () => {
     act(() => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
     // The killed buffer's leaf swapped to *scratch*; registry pruned.
     expect(wm.getSnapshot().buffers.some(b => b.id === 'buffer:files:9')).toBe(false)
-    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_DETAILS)?.buffer).toBe('buffer:scratch')
+    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_CONVERSATION)?.buffer).toBe('buffer:scratch')
     expect(wm.getSnapshot().buffers.some(b => b.id === 'buffer:scratch')).toBe(true)
   })
 
@@ -725,7 +731,7 @@ describe('winner mode + new chords (window listener)', () => {
     expect(document.querySelector('[data-minibuffer]')).toBeNull()
     press('x', { ctrlKey: true })
     press('l') // reset layout
-    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
     expect(getByLabelText('Toggle workspace sidebar')).toBeTruthy()
   })
 

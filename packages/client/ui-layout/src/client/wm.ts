@@ -32,6 +32,13 @@ export const SINGLETON_BUFFER_IDS: readonly string[] = ['sidebar', 'conversation
 /** The scratch buffer's fixed id (compos's *scratch*). */
 export const SCRATCH_BUFFER_ID = 'buffer:scratch'
 
+/**
+ * Weight share the sidebar takes when it re-attaches (toggleSidebar, brand
+ * strip, narrow-viewport restore) — the preferred column share, not a 50/50
+ * split of the anchor.
+ */
+export const SIDEBAR_REATTACH_WEIGHT = 0.18
+
 /** The three singleton registry entries, in shell order. */
 export const SINGLETON_BUFFERS: readonly WmBuffer[] = [
   { id: 'sidebar', kind: 'sidebar' },
@@ -135,25 +142,18 @@ export const WM_LEAF_DETAILS = 'details'
  * @returns a fresh default tree (sidebar + conversation + details).
  */
 export function defaultTree(): WmNode {
+  // The shipped plan: workspace | chat. Context stays CLOSED — it pops into
+  // its own window on demand (the header's context toggle), Emacs-style, and
+  // a fresh load never opens with a split the user did not ask for.
   return {
     kind: 'split',
     id: 'wm:root',
     dir: 'row',
     children: [
       { kind: 'leaf', id: WM_LEAF_SIDEBAR, buffer: 'sidebar' },
-      {
-        kind: 'split',
-        id: 'wm:main',
-        dir: 'row',
-        children: [
-          { kind: 'leaf', id: WM_LEAF_CONVERSATION, buffer: 'conversation' },
-          { kind: 'leaf', id: WM_LEAF_DETAILS, buffer: 'details' },
-        ],
-        weights: [1 / 641, 640 / 641],
-      },
+      { kind: 'leaf', id: WM_LEAF_CONVERSATION, buffer: 'conversation' },
     ],
-    // Sidebar : (conversation + details) = 280 : 640 contract parts.
-    weights: [280 / 920, 640 / 920],
+    weights: [0.2, 0.8],
   }
 }
 
@@ -252,8 +252,14 @@ export function removeLeaf(node: WmNode, leafId: string): WmNode {
       .filter((entry): entry is { node: WmNode; weight: number } => entry !== null)
     if (kept.length === 0) return null
     if (kept.length === 1) {
+      // Collapse: the surviving child inherits the SPLIT'S whole slot in the
+      // parent (the split's total weight), not merely its own share —
+      // otherwise a survivor of a details-dominant sibling pair would
+      // inherit the tiny conversation share and render as dead space.
       const only = kept[0]
-      if (only !== undefined) return only
+      if (only !== undefined) {
+        return { node: only.node, weight: n.weights.reduce((sum, w) => sum + w, 0) }
+      }
       return null
     }
     const total = kept.reduce((sum, entry) => sum + entry.weight, 0)
@@ -267,7 +273,7 @@ export function removeLeaf(node: WmNode, leafId: string): WmNode {
       weight: total,
     }
   }
-  return prune(node)?.node ?? node
+  return normalizeTree(prune(node)?.node ?? node)
 }
 
 /**
@@ -281,11 +287,13 @@ export function removeLeaf(node: WmNode, leafId: string): WmNode {
  * @param newBuffer - buffer id the new leaf shows (must exist in the registry).
  * @param newLeafId - id of the new leaf.
  * @param position - whether the new leaf lands after (default) or before the old leaf.
+ * @param weights - optional weights aligned with the children order (default equal).
  * @returns the transformed tree (unchanged when `leafId` is absent).
  */
 export function splitLeaf(
   node: WmNode, leafId: string, dir: WmDirection, newBuffer: string, newLeafId: string,
   position: 'after' | 'before' = 'after',
+  weights?: [number, number],
 ): WmNode {
   const map = (n: WmNode): WmNode => {
     if (n.kind === 'leaf') {
@@ -296,12 +304,12 @@ export function splitLeaf(
         id: `wm:split:${newLeafId}`,
         dir,
         children: position === 'before' ? [fresh, n] : [n, fresh],
-        weights: [0.5, 0.5],
+        weights: weights ?? [0.5, 0.5],
       }
     }
     return { ...n, children: n.children.map(map) }
   }
-  return map(node)
+  return normalizeTree(map(node))
 }
 
 /**
@@ -316,7 +324,9 @@ export function setBuffer(node: WmNode, leafId: string, bufferId: string): WmNod
     if (n.kind === 'leaf') return n.id === leafId ? { ...n, buffer: bufferId } : n
     return { ...n, children: n.children.map(map) }
   }
-  return map(node)
+  // Buffer swaps never move weights; normalizeTree still guarantees the
+  // sum-1 invariant cheaply (same-reference no-op when already normalized).
+  return normalizeTree(map(node))
 }
 
 /**
@@ -373,14 +383,14 @@ export function killBuffer(
         if (n.kind === 'leaf') return n.buffer === 'details' ? { ...n, buffer: 'conversation' } : n
         return { ...n, children: n.children.map(map) }
       }
-      return { buffers: [...state.buffers], tree: map(state.tree) }
+      return { buffers: [...state.buffers], tree: normalizeTree(map(state.tree)) }
     }
     // sidebar: kill = close the workspace leaf (the brand strip restores it).
     const sidebarLeaf = leafIds(state.tree).find(id => findLeaf(state.tree, id)?.buffer === 'sidebar')
     if (sidebarLeaf === undefined || !canClose(state.tree, sidebarLeaf)) {
       return { buffers: [...state.buffers], tree: state.tree }
     }
-    return { buffers: [...state.buffers], tree: removeLeaf(state.tree, sidebarLeaf) }
+    return { buffers: [...state.buffers], tree: normalizeTree(removeLeaf(state.tree, sidebarLeaf)) }
   }
   const buffers = ensureBuffer(
     state.buffers.filter(b => b.id !== bufferId),
@@ -390,7 +400,7 @@ export function killBuffer(
     if (n.kind === 'leaf') return n.buffer === bufferId ? { ...n, buffer: SCRATCH_BUFFER_ID } : n
     return { ...n, children: n.children.map(map) }
   }
-  return { buffers, tree: map(state.tree) }
+  return { buffers, tree: normalizeTree(map(state.tree)) }
 }
 
 /**
@@ -402,13 +412,15 @@ export function killBuffer(
  * @returns the deduplicated tree (same reference when nothing changed).
  */
 /**
- * Renormalize every split's weights to sum to 1 (loaded trees can carry
- * drifted weights from older operations; a split whose weights sum to zero
- * or below distributes equally).
+ * Renormalize every split's weights to sum exactly 1, recursively (loaded
+ * trees can carry drifted weights from older operations; a split whose
+ * weights sum to zero or below distributes equally). This is the structural
+ * invariant every tree write guarantees — same reference when already
+ * normalized.
  * @param node - the tree to normalize.
  * @returns the normalized tree (same reference when nothing changed).
  */
-export function normalizeWeights(node: WmNode): WmNode {
+export function normalizeTree(node: WmNode): WmNode {
   if (node.kind === 'leaf') return node
   const total = node.weights.reduce((a, b) => a + b, 0)
   const children = node.children.map(normalizeWeights)
@@ -418,6 +430,15 @@ export function normalizeWeights(node: WmNode): WmNode {
   const same = node.weights.every((w, i) => w === weights[i])
     && children.every((c, i) => c === node.children[i])
   return same ? node : { ...node, children, weights }
+}
+
+/**
+ * Legacy alias of {@link normalizeTree} (the canonical invariant op).
+ * @param node - the tree to normalize.
+ * @returns the normalized tree.
+ */
+export function normalizeWeights(node: WmNode): WmNode {
+  return normalizeTree(node)
 }
 
 export function dedupeSingletonBuffers(tree: WmNode): WmNode {
@@ -479,8 +500,8 @@ export function lastLeafId(node: WmNode): string | undefined {
  * @returns the reduced tree (same reference when nothing else remains).
  */
 export function keepOnlyLeaf(node: WmNode, leafId: string): WmNode {
-  return leafIds(node).filter(id => id !== leafId).reduce(
+  return normalizeTree(leafIds(node).filter(id => id !== leafId).reduce(
     (tree, id) => removeLeaf(tree, id),
     node,
-  )
+  ))
 }

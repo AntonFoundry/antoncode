@@ -34,7 +34,7 @@ import { Minibuffer, type MinibufferCandidate } from './Minibuffer.tsx'
 import { ScratchBuffer } from './ScratchBuffer.tsx'
 import { FilesBuffer } from './FilesBuffer.tsx'
 import {
-  SINGLETON_BUFFERS, SCRATCH_BUFFER_ID, WM_LEAF_SIDEBAR, bufferTitle, canClose, defaultTree,
+  SINGLETON_BUFFERS, SCRATCH_BUFFER_ID, WM_LEAF_DETAILS, WM_LEAF_SIDEBAR, bufferTitle, canClose, defaultTree,
   dedupeSingletonBuffers, ensureBuffer, findBuffer, findLeaf, findSplit, firstLeafId, normalizeWeights,
   isSingletonBuffer, keepOnlyLeaf,
   killBuffer, leafIds, removeLeaf, scratchBuffer, setWeights, splitLeaf, swapBuffer,
@@ -104,6 +104,16 @@ const freshFilesBuffer = (): WmBuffer => ({ id: freshId('buffer:files'), kind: '
 /** Minimum px size of one child subtree of a split (spec: sidebar 200, rest 240). */
 function minPxOf(node: WmNode): number {
   return node.kind === 'leaf' && node.buffer === 'sidebar' ? SIDEBAR_PANE_MIN : PANE_MIN
+}
+
+/** Context toggle icon: a pane outline with the column on the RIGHT. */
+function ContextIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden>
+      <rect x="1" y="2" width="14" height="12" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <line x1="10.5" y1="2" x2="10.5" y2="14" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  )
 }
 
 /** Split-below mode-line icon: a 16x16 pane outline split by a horizontal line. */
@@ -447,7 +457,11 @@ export function WmFrame({
     // Heal a loaded tree: duplicate singleton panes (two Context leaves from
     // an older split rule) collapse to the depth-first one. An effect, not a
     // render-body write: the store update must land after paint commitment.
-    const healed = normalizeWeights(dedupeSingletonBuffers(treeRef.current))
+    let healed = normalizeWeights(dedupeSingletonBuffers(treeRef.current))
+    // Context always starts closed: the header toggle opens it on demand, so
+    // a fresh load never resumes with a split the user did not ask for.
+    const detailsLeaf = findLeaf(healed, WM_LEAF_DETAILS)
+    if (detailsLeaf !== undefined) healed = removeLeaf(healed, WM_LEAF_DETAILS)
     if (healed !== treeRef.current) setTree(healed)
     first.current = { hadSidebar: findLeaf(treeRef.current, WM_LEAF_SIDEBAR) !== undefined }
     // Once per mount: the loaded tree is the heal subject.
@@ -560,6 +574,22 @@ export function WmFrame({
     next[base.index + 1] = total - next0
     writeWeights(setWeights(t, splitId, next))
   }, [setSidebarWidth])
+
+  // Context toggle: the header's right-hand control pops Context into its
+  // own window beside the focused buffer (split-right), or takes it back.
+  const onContextToggle = useCallback(() => {
+    const t = treeRef.current
+    const existing = findLeaf(t, WM_LEAF_DETAILS)
+    if (existing !== undefined) {
+      writeTree(removeLeaf(t, WM_LEAF_DETAILS))
+      return
+    }
+    const anchor = focusRef.current ?? firstLeafId(t)
+    if (anchor === undefined) return
+    const leafId = freshLeafId()
+    writeTree(splitLeaf(t, anchor, 'row', 'details', leafId, 'after'))
+    setFocus(leafId)
+  }, [setFocus, writeTree])
 
   // Brand-strip toggle: the same transition ctx.layout.toggleSidebar() runs
   // (remove the sidebar leaf, or re-attach it left of the leftmost leaf);
@@ -895,6 +925,17 @@ export function WmFrame({
           onClick={onBrandToggle}
         >
           <IconPanelLeftOutline16 size={18} />
+        </button>
+        <button
+          type="button"
+          className={css.brandToggle}
+          aria-label="Toggle context panel"
+          title="Toggle context panel"
+          data-active={findLeaf(tree, WM_LEAF_DETAILS) !== undefined || undefined}
+          style={{ marginLeft: 'auto' }}
+          onClick={onContextToggle}
+        >
+          <ContextIcon />
         </button>
       </div>
       <div className={css.treeArea}>
