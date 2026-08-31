@@ -27,7 +27,7 @@ export async function waitAndReload(signal?: AbortSignal): Promise<void> {
   const deadline = Date.now() + RESTART_DEADLINE_MS
   while (signal?.aborted !== true && Date.now() < deadline) {
     try {
-      const res = await fetch('/bridge/api/status', { cache: 'no-store', signal })
+      const res = await fetch('/bridge/api/status', { cache: 'no-store', ...(signal === undefined ? {} : { signal }) })
       if (res.ok) {
         window.location.reload()
         return
