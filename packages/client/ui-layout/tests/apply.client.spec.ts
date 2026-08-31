@@ -30,6 +30,16 @@ async function bench() {
   // ui-theme's Appearance row binds a durable scope through these two.
   ctx.provide('remote', { $on: () => () => {} } as never)
   ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+  // The frame's inject face resolves workspaces/sessions at call time only;
+  // the plugin declaration needs the services present.
+  ctx.provide('workspaces', {
+    list: { getSnapshot: () => ({ items: [] }), subscribe: () => () => {} },
+    startSession: () => {},
+  } as never)
+  ctx.provide('sessions', {
+    list: { getSnapshot: () => ({ ids: [], byId: {}, current: undefined }), subscribe: () => () => {} },
+    open: () => {},
+  } as never)
   await ctx.plugin({ inject: themeInject, apply: themeApply }).await()
   await slotsFiber.await()
   return { ctx, slots: ctx.get('slots') as SlotRegistry }
@@ -37,10 +47,10 @@ async function bench() {
 
 describe('ui-layout client apply', () => {
   it('declares its service dependencies', () => {
-    expect(inject).toEqual(['slots', 'theme'])
+    expect(inject).toEqual(['slots', 'theme', 'workspaces', 'sessions'])
   })
 
-  it('provides ctx.layout and registers AppFrame into root with the three child declarations', async () => {
+  it('provides ctx.layout and registers WmFrame into root with the three child declarations', async () => {
     const { ctx, slots } = await bench()
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
@@ -53,18 +63,23 @@ describe('ui-layout client apply', () => {
     expect(slots.spec('details')).toEqual({ kind: 'single', scope: 'session' })
   })
 
-  it('injects no business face and attaches the layout actions', async () => {
+  it('injects the wm hooks source and attaches the panel + wm faces', async () => {
     const { ctx, slots } = await bench()
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     const actions = {
-      setSidebar: vi.fn(), setDetails: vi.fn(), toggleSidebar: vi.fn(), openDetails: vi.fn(), closeDetails: vi.fn(),
+      setSidebar: vi.fn(), setDetails: vi.fn(), toggleSidebar: vi.fn(), setNarrow: vi.fn(), openDetails: vi.fn(), closeDetails: vi.fn(),
     }
     const injected = (slots.entries('root')[0]!.inject as (actions: never) => object)(actions as never)
-    expect(injected).toEqual({})
+    // The injected face: the wm hooks source (bound to useWm), the write
+    // callbacks, and the workspace-open resolver.
+    expect(Object.keys(injected).sort()).toEqual(['hooks', 'openWorkspace', 'setFocus', 'setTree'])
+    expect((injected as { hooks: { wm: unknown } }).hooks.wm).toHaveProperty('getSnapshot')
     const layout = ctx.get('layout') as LayoutController
-    layout.toggleSidebar()
-    expect(actions.toggleSidebar).toHaveBeenCalledOnce()
+    // With the wm face attached, toggleSidebar is a tree operation, not a
+    // panel-action forward.
+    expect(() => { layout.toggleSidebar() }).not.toThrow()
+    expect(actions.toggleSidebar).not.toHaveBeenCalled()
   })
 
   it('theme presenter applies the initial snapshot, follows theme/change, and unwinds on dispose', async () => {

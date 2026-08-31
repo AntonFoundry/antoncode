@@ -12,6 +12,7 @@ import {
   clampWidth, DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN,
   SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN,
 } from './columns.ts'
+import { defaultTree, type WmNode } from './wm.ts'
 
 /**
  * Layout store state: panel width preferences in px (0 = closed), plus the
@@ -69,4 +70,41 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
     },
   })
   return handle
+}
+
+/**
+ * WM store state: the window tree the frame renders plus the runtime focus
+ * cursor. Weights, splits and buffers change together through tree transforms
+ * (wm.ts); focus is a leaf-id cursor, undefined meaning "first leaf".
+ */
+export type WmState = { tree: WmNode; focusedLeafId: string | undefined }
+
+/**
+ * Annotation twin of the wm actions literal (declared return type).
+ */
+export type WmActions = {
+  setTree: (draft: WmState, tree: WmNode) => void
+  setFocus: (draft: WmState, leafId: string | undefined) => void
+}
+
+/**
+ * Create the window-manager store handle: the persisted window tree
+ * (`dsh.layout.wm` in localStorage, whole-value JSON). Seeding is the
+ * persistence contract: with no persisted state the instance starts at
+ * `defaultTree()` (today's three-buffer layout); a persisted tree
+ * rehydrates wholesale.
+ * @returns the store handle (spec + type + identity + factory in one).
+ */
+export function createWmStore(): EngineStoreHandle<WmState, WmActions> {
+  return defineStore({
+    // focusedLeafId is a runtime cursor: undefined seeds "first leaf of the
+    // loaded tree" (WmFrame normalizes), and stale persisted values are
+    // normalized away the same way.
+    init: (): WmState => ({ tree: defaultTree(), focusedLeafId: undefined }),
+    actions: {
+      setTree: (d, tree: WmNode) => { d.tree = tree },
+      setFocus: (d, leafId: string | undefined) => { d.focusedLeafId = leafId },
+    },
+    persist: 'dsh.layout.wm',
+  })
 }

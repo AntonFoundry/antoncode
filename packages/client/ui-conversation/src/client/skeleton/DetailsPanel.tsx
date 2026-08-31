@@ -1,10 +1,11 @@
-// DetailsPanel: close button + the selected call's args and
+// DetailsPanel: the selected call's args and
 // result — args as JSON, the result raw except for a terminal-card call, whose
 // Output section is the command's terminal card. Reads the
 // selection from the shared chat
 // store (conversation writes, this panel reads — the cross-registration
 // share the store seat exists for) and derives the call material from the
-// session snapshot — no data of its own.
+// session snapshot — no data of its own. Closing is the window manager's
+// mode line (C-x 0 / the pane's close button), not a panel button.
 
 import { Fragment } from 'react'
 import { CodeBlock } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -63,7 +64,7 @@ function rawResultText(block: ToolCallBlock): string {
   return parts.join('\n')
 }
 
-export function DetailsPanel({ useSession, useSessions, sessionId, useStore, renderSlot, closeDetails, t }: DetailsPanelProps) {
+export function DetailsPanel({ useSession, useSessions, sessionId, useStore, renderSlot, t }: DetailsPanelProps) {
   const selection = useStore(s => s.selection)
   // Session workspace root: an omitted or relative terminal cwd resolves
   // against it, which the pure presenter cannot see.
@@ -84,14 +85,6 @@ export function DetailsPanel({ useSession, useSessions, sessionId, useStore, ren
             ? <span className={css.contextTitle}>c0ntext</span>
             : selection === null ? t('details.title') : material?.name ?? selection.toolName ?? t('details.title')}
         </div>
-        <button
-          type="button" className={css.close} aria-label={t('details.close')}
-          onClick={() => { closeDetails() }}
-        >
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden>
-            <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-        </button>
       </div>
       {contextMap != null && (
         <div className={selection === null ? css.contextOnly : css.contextArea}>

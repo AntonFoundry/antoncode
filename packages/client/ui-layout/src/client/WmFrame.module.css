@@ -1,0 +1,204 @@
+/* Emacs-style window-manager frame: a fixed brand strip above a recursive
+   split tree, with the shell overlay layer floating above everything. */
+
+.frame {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-base);
+}
+
+/* Brand strip: same surface tokens as the sidebar's logo row, fixed at the
+   top so the Anton brand survives closing the workspace leaf. */
+.brandRow {
+  flex: none;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  background: var(--dsw-specific-sidebar-fill);
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-primary);
+}
+
+.brandToggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.brandToggle:hover {
+  background: var(--dsw-alias-button-floating-hover);
+}
+
+/* The tree area sits under the brand strip and hosts the recursive splits. */
+.treeArea {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.split {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+}
+
+/* Pane: one leaf window — mode line above the slot body. */
+.pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  flex: 1;
+}
+
+/* Slim mode line: buffer name left, window commands right (Emacs echo of
+   the same layout). The conversation pane tints with the sidebar surface so
+   the shipped layout keeps its old column separation cues via sash borders. */
+.modeLine {
+  flex: none;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  box-sizing: border-box;
+  background: var(--dsw-alias-bg-base);
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  user-select: none;
+}
+
+.bufferName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modeActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.modeButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.modeButton:hover {
+  background: var(--dsw-alias-button-floating-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.paneBody {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Sash between sibling panes: a 1px border line with a 7px pointer hit
+   strip centered on it (negative margins keep layout at 1px). */
+.sash {
+  flex: none;
+  position: relative;
+  z-index: 2;
+  touch-action: none;
+  background: var(--dsw-alias-border-l1);
+}
+
+.sash.row {
+  width: 1px;
+  margin: 0 -3px;
+  cursor: col-resize;
+}
+
+.sash.column {
+  height: 1px;
+  margin: -3px 0;
+  cursor: row-resize;
+}
+
+.sash::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+}
+
+.sash:hover,
+.sash[data-dragging] {
+  background: var(--dsw-alias-border-l3);
+}
+
+.overlayLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.overlayLayer > * {
+  pointer-events: auto;
+}
+
+/* Weight wrapper around each recursive child: the flex-grow carrier. */
+.paneWrapper {
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The focused pane's mode line: brighter title and a stronger rule so the
+   focus cursor is visible at a glance (commands act on this leaf). */
+.pane[data-focused] .modeLine {
+  color: var(--dsw-alias-label-primary);
+  border-bottom-color: var(--dsw-alias-border-l3);
+}
+
+/* Pending-chord indicator: the bare "C-x-" echo, parked at the tree's top
+   right corner; non-interactive by design. */
+.prefixIndicator {
+  position: absolute;
+  top: 52px;
+  right: 10px;
+  z-index: 10;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-base);
+  border: 1px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  pointer-events: none;
+  user-select: none;
+}
