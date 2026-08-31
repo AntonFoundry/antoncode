@@ -1,18 +1,24 @@
 /**
- * The files buffer — dired-lite (compos's dired.scm behavior, trimmed to the
- * wire): one listing per buffer, directories-then-entries rows with clickable
- * crumbs above them. Enter/click navigates a row in place (replacing the
- * buffer's directory and refetching); the host's browse capability lists
- * enterable rows only, so a row that refuses navigation falls back to
- * opening it through `host.openPath`. Keys on the focused listing: `u` or the
- * `..` row → parent, `d` toggles dotfiles, `s` cycles the sort (shift
- * reverses), `q` kills the buffer (compos: every buffer that binds q is a
- * listing you can make again). Sorting/filtering live in dired.ts (pure).
+ * The files buffer — dired (compos's dired.scm behavior, client side): one
+ * listing per buffer with a navigation toolbar (back / forward / up / home /
+ * refresh), clickable crumbs, a selected row the keyboard drives, and
+ * Enter-to-enter. History is per buffer (dired.ts pure helpers): a new
+ * navigation drops the forward stack. Keys on the focused listing:
+ * ↑/↓ or n/p move the selection, Enter enters it, `^` or the `..` row →
+ * parent, Alt+←/→ history back/forward, `h` home, `g` refresh, `d` toggles
+ * dotfiles, `s` cycles the sort (shift reverses), `q` kills the buffer
+ * (compos: every buffer that binds q is a listing you can make again).
+ * Sorting/filtering/history live in dired.ts (pure). The wire lists
+ * enterable rows only; the host's file-reading capability (in-interface
+ * image and text buffers) lands with the read capability extension.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { DirectoryListing } from '@deepseek-ai/dsh-api-remotes/client'
-import { filterDired, nextDiredSort, parentOf, sortDired, type DiredEntry, type DiredSort } from './dired.ts'
+import {
+  diredBack, diredForward, filterDired, freshDiredHistory, nextDiredSort, parentOf,
+  pushDiredLevel, sortDired, type DiredEntry, type DiredHistory, type DiredSort,
+} from './dired.ts'
 import css from './FilesBuffer.module.css'
 
 /** Files-buffer props: the listing face (apply-closure over ctx.workspaces) + registry callbacks. */
@@ -33,19 +39,28 @@ export interface FilesBufferProps {
 const SORT_LABEL: Record<DiredSort, string> = { name: 'name', size: 'size', modified: 'modified' }
 
 /**
- * The dired-lite listing body.
+ * The dired listing body.
  * @param props - path, listing face, navigation/kill callbacks.
  * @returns the listing element tree.
  */
-export function FilesBuffer({ path, listDirectory, openPath, onNavigate, onKill }: FilesBufferProps) {
+export function FilesBuffer({ path, listDirectory, onNavigate, onKill }: FilesBufferProps) {
+  const [history, setHistory] = useState<DiredHistory>(() => freshDiredHistory(path))
   const [listing, setListing] = useState<DirectoryListing | undefined>(undefined)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | undefined>(undefined)
   const [showDotfiles, setShowDotfiles] = useState(false)
   const [sort, setSort] = useState<DiredSort>('name')
   const [reverse, setReverse] = useState(false)
+  const [selected, setSelected] = useState(0)
+  const [refreshTick, setRefreshTick] = useState(0)
 
-  // One fetch per path identity; superseded responses drop on the floor.
+  // Follow the buffer's directory when the registry moves it (C-x b focuses
+  // an existing listing, M-x find-file retargets): jump the history there.
+  useEffect(() => {
+    setHistory(h => pushDiredLevel(h, path))
+  }, [path])
+
+  // One fetch per (path, refresh) identity; superseded responses drop.
   useEffect(() => {
     const controller = new AbortController()
     setLoading(true)
@@ -55,6 +70,7 @@ export function FilesBuffer({ path, listDirectory, openPath, onNavigate, onKill 
         if (controller.signal.aborted) return
         setListing(result)
         setLoading(false)
+        setSelected(0)
       })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return
@@ -62,30 +78,83 @@ export function FilesBuffer({ path, listDirectory, openPath, onNavigate, onKill 
         setLoading(false)
       })
     return () => { controller.abort() }
-  }, [path, listDirectory])
+  }, [path, listDirectory, refreshTick])
 
   const rows = useMemo<DiredEntry[]>(() => {
     if (listing === undefined) return []
     return sortDired(filterDired(listing.entries, showDotfiles), sort, reverse)
   }, [listing, showDotfiles, sort, reverse])
 
+  /** Record one navigation (forward stack drops) and move the buffer there. */
   const go = useCallback((target: string | undefined) => {
+    setHistory(h => pushDiredLevel(h, target))
     onNavigate(target)
   }, [onNavigate])
 
+  const back = useCallback(() => {
+    setHistory((h) => {
+      const prev = diredBack(h)
+      if (prev !== null) onNavigate(prev.levels[prev.index])
+      return prev ?? h
+    })
+  }, [onNavigate])
+
+  const forward = useCallback(() => {
+    setHistory((h) => {
+      const next = diredForward(h)
+      if (next !== null) onNavigate(next.levels[next.index])
+      return next ?? h
+    })
+  }, [onNavigate])
+
+  const up = useCallback(() => {
+    go(listing?.crumbs.at(-2)?.path ?? parentOf(listing?.path ?? ''))
+  }, [go, listing])
+
   const visit = useCallback((entry: DiredEntry) => {
-    // The wire lists enterable rows; a refused navigation (a file, or an
-    // unreadable target) falls back to an OS open.
+    // The wire lists enterable rows; entering is a plain navigation (a race
+    // — the directory vanished — surfaces in the listing error state).
     go(entry.path)
-    void listDirectory(entry.path).catch(() => openPath(entry.path))
-  }, [go, listDirectory, openPath])
+  }, [go])
 
   const onKey = useCallback((e: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (e.ctrlKey || e.metaKey || e.altKey) return
+    // History chords ride Alt (browser convention); plain keys are dired's.
+    if (e.altKey && !e.ctrlKey && !e.metaKey) {
+      if (e.key === 'ArrowLeft') { e.preventDefault(); back() }
+      if (e.key === 'ArrowRight') { e.preventDefault(); forward() }
+      return
+    }
+    if (e.ctrlKey || e.metaKey) return
     switch (e.key) {
-      case 'u':
+      case 'ArrowDown':
+      case 'n':
         e.preventDefault()
-        go(listing?.crumbs.at(-2)?.path ?? parentOf(listing?.path ?? ''))
+        setSelected(i => Math.min(i + 1, rows.length - 1))
+        return
+      case 'ArrowUp':
+      case 'p':
+        e.preventDefault()
+        setSelected(i => Math.max(i - 1, 0))
+        return
+      case 'Enter': {
+        e.preventDefault()
+        const entry = rows[selected]
+        if (entry !== undefined) visit(entry)
+        return
+      }
+      case '^':
+        e.preventDefault()
+        up()
+        return
+      case 'h': {
+        e.preventDefault()
+        const home = listing?.crumbs.find(c => c.path === listing.home)?.path ?? listing?.home
+        if (home !== undefined) go(home)
+        return
+      }
+      case 'g':
+        e.preventDefault()
+        setRefreshTick(t => t + 1)
         return
       case 'd':
         e.preventDefault()
@@ -102,11 +171,19 @@ export function FilesBuffer({ path, listDirectory, openPath, onNavigate, onKill 
         return
       default: return
     }
-  }, [go, listing, onKill, sort])
+  }, [back, forward, go, listing, onKill, rows, selected, sort, up, visit])
 
   const crumbs = listing?.crumbs ?? []
+  const home = listing?.home
   return (
     <div className={css.dired} tabIndex={0} onKeyDown={onKey} aria-label={listing === undefined ? 'Dired' : `Dired: ${listing.path}`}>
+      <div className={css.toolbar}>
+        <button type="button" className={css.toolButton} aria-label="Back" title="Back (Alt+←)" disabled={history.index === 0} onClick={back}>←</button>
+        <button type="button" className={css.toolButton} aria-label="Forward" title="Forward (Alt+→)" disabled={history.index >= history.levels.length - 1} onClick={forward}>→</button>
+        <button type="button" className={css.toolButton} aria-label="Up" title="Parent (^)" onClick={() => { up() }}>↑</button>
+        <button type="button" className={css.toolButton} aria-label="Home" title="Home (h)" disabled={home === undefined || listing?.path === home} onClick={() => { if (home !== undefined) go(home) }}>⌂</button>
+        <button type="button" className={css.toolButton} aria-label="Refresh" title="Refresh (g)" onClick={() => { setRefreshTick(t => t + 1) }}>⟳</button>
+      </div>
       <div className={css.crumbs}>
         {crumbs.map((crumb, i) => (
           <span key={crumb.path} className={css.crumb}>
@@ -121,17 +198,19 @@ export function FilesBuffer({ path, listDirectory, openPath, onNavigate, onKill 
       {error !== undefined && <div className={css.status} data-error>{error}</div>}
       {!loading && error === undefined && (
         <div className={css.rows} role="list">
-          <button type="button" className={css.row} data-up onClick={() => { go(crumbs.at(-2)?.path ?? parentOf(listing?.path ?? '')) }}>
+          <button type="button" className={css.row} data-up onClick={up}>
             <span className={css.name}>..</span>
             <span className={css.meta}>parent</span>
           </button>
-          {rows.map(entry => (
+          {rows.map((entry, i) => (
             <button
               type="button"
               key={entry.path}
               role="listitem"
               className={css.row}
               data-hidden={entry.hidden || undefined}
+              data-selected={i === selected || undefined}
+              onMouseEnter={() => { setSelected(i) }}
               onClick={() => { visit(entry) }}
             >
               <span className={css.name}>{entry.name}</span>
@@ -144,7 +223,7 @@ export function FilesBuffer({ path, listDirectory, openPath, onNavigate, onKill 
         </div>
       )}
       <div className={css.hint}>
-        {`sort: ${SORT_LABEL[sort]}${reverse ? ' (reversed)' : ''} · dotfiles ${showDotfiles ? 'shown' : 'hidden'} · q kills`}
+        {`${history.index + 1}/${history.levels.length} · sort: ${SORT_LABEL[sort]}${reverse ? ' (reversed)' : ''} · dotfiles ${showDotfiles ? 'shown' : 'hidden'} · q kills`}
       </div>
     </div>
   )

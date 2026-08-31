@@ -93,3 +93,49 @@ export function parentOf(path: string): string | undefined {
   if (cut <= 0) return cut === 0 ? '/' : undefined
   return trimmed.slice(0, cut)
 }
+
+/** Dired navigation history: the visited levels plus the cursor into them. */
+export interface DiredHistory {
+  /** The visited directory paths in visit order (undefined = the host home). */
+  readonly levels: readonly (string | undefined)[]
+  /** The cursor: levels[index] is the directory on screen. */
+  readonly index: number
+}
+
+/** The fresh history: one level (the starting directory). */
+export function freshDiredHistory(path: string | undefined): DiredHistory {
+  return { levels: [path], index: 0 }
+}
+
+/**
+ * Record one navigation: the forward stack drops (Emacs dired does not
+ * branch histories), the target appends, the cursor moves onto it.
+ * Re-navigating to the level already on screen returns the same history.
+ * @param history - the current history.
+ * @param path - the target directory (undefined = the host home).
+ * @returns the new history (input untouched).
+ */
+export function pushDiredLevel(history: DiredHistory, path: string | undefined): DiredHistory {
+  if (history.levels[history.index] === path) return history
+  return { levels: [...history.levels.slice(0, history.index + 1), path], index: history.index + 1 }
+}
+
+/**
+ * Step one level back.
+ * @param history - the current history.
+ * @returns the history at the previous level, or null when none exists.
+ */
+export function diredBack(history: DiredHistory): DiredHistory | null {
+  if (history.index === 0) return null
+  return { levels: history.levels, index: history.index - 1 }
+}
+
+/**
+ * Step one level forward.
+ * @param history - the current history.
+ * @returns the history at the next level, or null when none exists.
+ */
+export function diredForward(history: DiredHistory): DiredHistory | null {
+  if (history.index >= history.levels.length - 1) return null
+  return { levels: history.levels, index: history.index + 1 }
+}
