@@ -14,7 +14,27 @@ An advisory loop-breaker, not a model-facing tool: it never appears in the tool 
     include: []                  # tool-name patterns to track; empty ⇒ all tools
     exclude: [todo_write]        # tool-name patterns transparent to the chain
     argumentsPreviewChars: 500   # default; cap on arguments quoted in the detailed reminder
+    cycleThreshold: 2            # default; complete alternations before the ping-pong advisory
+    escalateToBlock: true        # default; after an ignored advisory, veto the next cycle call
 ```
+
+## Ping-pong detection (alternating cycles)
+
+A consecutive-repeat counter cannot see the most damaging loop shape: two calls
+that UNDO each other (edit variant A, then variant B, then A, then B — each
+call differs from its predecessor, so no consecutive run ever builds). The
+guard therefore also tracks a ring of the last call keys per agent. When the
+tail forms a strict period-2 cycle of `cycleThreshold` complete alternations
+(default 2 — the fourth alternating call), it injects the ping-pong advisory:
+stop, re-read the target, pick one direction, apply it once, or ask the user.
+
+If the alternation continues past the advisory (and `escalateToBlock` is on),
+the guard ESCALATES to a veto: the next cycle call throws, so the model sees
+the call fail with `Call blocked: … Do NOT retry this call or its inverse` as
+the error. A broken alternation (a new distinct key) re-arms the advisory for
+the next episode; a user interjection resets all state as before.
+
+`cycleThreshold` fails loud below 2 at plugin load.
 
 `thresholds` fails loud at plugin load: an empty list, a non-integer, a value below 2, or a duplicate throws, never a silent fall-back to defaults; `argumentsPreviewChars` equally rejects anything but an integer >= 1. The list is normalized to ascending order; the FIRST threshold delivers a short generic nudge, every later threshold delivers the detailed form naming the tool, the run length, and the canonical arguments — head-truncated at `argumentsPreviewChars` with an omitted-count marker, so a looping `write`/`edit` payload cannot ride into the next request unbounded (the chain key always compares the FULL canonical string; the cap bounds the reminder, never the detection).
 
