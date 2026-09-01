@@ -408,9 +408,8 @@ describe('alternating ping-pong (edit flip-flop)', () => {
     return [...agent.session.events]
       .filter((e): e is SessionEvent<'tool/result'> => e.type === 'tool/result')
       .flatMap(e => e.data.message.content)
-      .filter((b): b is Extract<(typeof b), { type: 'tool-result'; isError: true }> => b.type === 'tool-result' && b.isError === true)
-      .flatMap(b => b.content)
-      .map(b => b.type === 'text' ? b.text ?? '' : '')
+      .filter(b => b.type === 'tool-result' && b.isError === true)
+      .map(b => b.content.map(c => c.type === 'text' ? c.text ?? '' : '').join(''))
   }
 
   it('advises once at cycleThreshold complete alternations, then vetoes the next cycle call', async () => {
