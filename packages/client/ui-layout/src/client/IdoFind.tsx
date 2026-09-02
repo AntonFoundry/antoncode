@@ -27,9 +27,6 @@ export interface IdoFindProps {
   onCancel: () => void
 }
 
-/** Max candidate rows drawn at once (the rest stay match-reachable). */
-const MAX_VISIBLE = 12
-
 /**
  * The ido find-file prompt.
  * @param props - initial directory, listing face, open/cancel callbacks.
@@ -141,7 +138,13 @@ export function IdoFind({ initialDir, listDirectory, onOpen, onCancel }: IdoFind
   // strand the keyboard).
   useEffect(() => { inputRef.current?.focus() }, [dir, loading])
 
-  const shown = matches.slice(0, MAX_VISIBLE)
+  // Every match renders — the strip's own list scrolls (no fixed row cap;
+  // a level the host cut reports `truncated`, surfaced in the placeholder).
+  const listRef = useRef<HTMLUListElement | null>(null)
+  useEffect(() => {
+    const kid = listRef.current?.children[clamped]
+    if (kid instanceof HTMLElement) kid.scrollIntoView({ block: 'nearest' })
+  }, [clamped, matches.length])
   const label = `Find file: ${dir ?? listing?.home ?? '~'}/`
   return (
     <div className={css.minibuffer} data-minibuffer data-ido>
@@ -153,13 +156,14 @@ export function IdoFind({ initialDir, listDirectory, onOpen, onCancel }: IdoFind
         }}
         className={css.input}
         value={query}
-        placeholder={loading ? 'Listing…' : matches.length === 0 ? 'No match' : 'Type to narrow…'}
+        placeholder={loading ? 'Listing…' : matches.length === 0 ? 'No match' : listing?.truncated === true ? `Type to narrow… (${matches.length} shown — level cut at the host bound)` : 'Type to narrow…'}
         aria-label="Find file"
         onChange={(e) => { setQuery(e.target.value); setIndex(0) }}
         onKeyDown={onKeyDown}
       />
-      {error !== undefined && <div className={css.promptLabel} data-error>{error}</div>}      <ul className={css.candidates}>
-        {shown.map(c => (
+      {error !== undefined && <div className={css.promptLabel} data-error>{error}</div>}
+      <ul ref={listRef} className={css.candidates}>
+        {matches.map((c) => (
           <li key={c.path}>
             <button
               type="button"

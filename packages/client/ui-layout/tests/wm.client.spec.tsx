@@ -8,20 +8,24 @@
  * clientWidth, so sash drags are driven numerically through the stub.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import {
   WM_LEAF_CONVERSATION, WM_LEAF_DETAILS, WM_LEAF_SIDEBAR,
-  canClose, countLeaves, defaultTree, dedupeSingletonBuffers, findLeaf, firstLeafId, keepOnlyLeaf, killBuffer,
+  canClose, countLeaves, defaultTree, findLeaf, findSplit, firstLeafId, keepOnlyLeaf, killBuffer,
   SCRATCH_BUFFER_ID,
   lastLeafId, leafIds, normalizeTree, openBuffer, removeLeaf, setBuffer, setWeights, splitLeaf,
 } from '@deepseek-ai/dsh-client-ui-layout/src/client/wm.ts'
 import { createLayoutStore, createScratchStore, createWmStore } from '@deepseek-ai/dsh-client-ui-layout/src/client/stores.ts'
+import { SIDEBAR_DEFAULT } from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
 import { LayoutController } from '@deepseek-ai/dsh-client-ui-layout/src/client/service.ts'
 import type { PanelActions, WmTreeSource } from '@deepseek-ai/dsh-client-ui-layout/src/client/service.ts'
 import { WmFrame } from '@deepseek-ai/dsh-client-ui-layout/src/client/WmFrame.tsx'
 import type { WmFrameProps } from '@deepseek-ai/dsh-client-ui-layout/src/client/WmFrame.tsx'
+import { FilesBuffer } from '@deepseek-ai/dsh-client-ui-layout/src/client/FilesBuffer.tsx'
+import { flexDiredMatch } from '@deepseek-ai/dsh-client-ui-layout/src/client/dired.ts'
 import type { WmNode } from '@deepseek-ai/dsh-client-ui-layout/src/client/wm.ts'
+import type { DirectoryListing } from '@deepseek-ai/dsh-api-remotes/client'
 import type {
   SessionId, SessionListState, WorkspaceListState,
 } from '@deepseek-ai/dsh-client-runtime/client'
@@ -196,17 +200,29 @@ function hookOf<T>(inst: { subscribe: (fn: () => void) => () => void; getSnapsho
   return function useSelector<S>(sel: (s: T) => S): S { return sel(useSyncExternalStore(inst.subscribe, inst.getSnapshot)) }
 }
 
-/** Records host listing calls; returns one fixed level. */
+/** Records host listing calls; resolves one level of a small fixed tree. */
 const listDirectoryLog: (string | undefined)[] = []
-function listDirectoryStub(path?: string): Promise<never> {
+const DIRED_TREE: Record<string, { name: string; path: string; hidden: boolean; isDirectory: boolean }[]> = {
+  '/proj/wm': [
+    { name: 'a', path: '/proj/wm/a', hidden: false, isDirectory: true },
+    { name: 'b.txt', path: '/proj/wm/b.txt', hidden: false, isDirectory: false },
+  ],
+  '/proj/wm/a': [
+    { name: 'inner', path: '/proj/wm/a/inner', hidden: false, isDirectory: true },
+  ],
+}
+function listDirectoryStub(path?: string): Promise<DirectoryListing> {
   listDirectoryLog.push(path)
-  return Promise.reject(new Error('no host in test'))
+  const level = { path: path ?? '/home/u', home: '/home/u', crumbs: [], entries: DIRED_TREE[path ?? ''] ?? [], truncated: false }
+  return Promise.resolve(level as DirectoryListing)
 }
 function openPathStub(path: string): Promise<void> {
   openPathLog.push(path)
   return Promise.resolve()
 }
 const openPathLog: string[] = []
+/** Records theme loads (M-x load-theme path). */
+const loadedThemes: string[] = []
 
 function mountFrame(initialTree?: WmNode, workspaces?: { id: string; title: string }[]) {
   window.innerWidth = frameWidth
@@ -228,7 +244,7 @@ function mountFrame(initialTree?: WmNode, workspaces?: { id: string; title: stri
       ids: current === undefined ? [] : [current],
       byId: current === undefined
         ? {}
-        : { [current]: { id: current, displayTitle: 'Test', running: false, blank: selectedSessionBlank.current, updatedAt: 1 } },
+        : { [current]: { id: current, displayTitle: 'Test', cwd: '/proj/wm', running: false, blank: selectedSessionBlank.current, updatedAt: 1 } },
       current,
       phase: 'ready',
     } as SessionListState
@@ -252,6 +268,8 @@ function mountFrame(initialTree?: WmNode, workspaces?: { id: string; title: stri
       setFocus={(id) => { act(() => { wm.actions.setFocus(id) }) }}
       setBuffers={(buffers) => { act(() => { wm.actions.setBuffers(buffers) }) }}
       setSidebarWidth={(px) => { act(() => { layout.actions.setSidebar(px) }) }}
+      themeList={() => [{ id: 'anton-dark', colorScheme: 'dark' }, { id: 'paper', colorScheme: 'light' }]}
+      loadTheme={(id) => { loadedThemes.push(id) }}
       reconcileBuffers={() => { act(() => { wm.actions.reconcile() }) }}
       writeScratch={(text) => { act(() => { scratch.actions.setText(text) }) }}
       listDirectory={listDirectoryStub}
@@ -299,6 +317,7 @@ beforeEach(() => {
   Element.prototype.getBoundingClientRect = function () {
     return { width: frameWidth, height: 1080, top: 0, left: 0, right: frameWidth, bottom: 1080, x: 0, y: 0, toJSON: () => ({}) }
   }
+  Element.prototype.scrollIntoView = vi.fn()
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get() { return frameWidth } })
   Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get() { return 1080 } })
   const captured = new WeakSet<Element>()
@@ -311,6 +330,7 @@ afterEach(() => {
   cleanup()
   vi.useRealTimers()
   vi.unstubAllGlobals()
+  delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
   delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth
   delete (HTMLElement.prototype as { clientHeight?: number }).clientHeight
 })
@@ -350,13 +370,13 @@ describe('WmFrame render', () => {
   })
 
   it('mode-line split inserts a new pane beside the target', () => {
-    const { container, getByText, wm } = mountFrame()
-    // The conversation pane's Split right opens the Context pane beside it
-    // (the singleton is focused, not duplicated).
+    const { container, getAllByText, wm } = mountFrame()
+    // The conversation pane's Split right clones the buffer into a second
+    // window beside it (a buffer is content; windows are views).
     const convSplit = container.querySelector('[data-buffer="conversation"] button[aria-label="Split right"]') as HTMLButtonElement
     act(() => { convSplit.click() })
     expect(leafIds(wm.getSnapshot().tree)).toHaveLength(3)
-    expect(getByText('Context')).toBeTruthy()
+    expect(getAllByText('Chat')).toHaveLength(2)
   })
 
   it('brand-strip toggle removes and re-attaches the sidebar leaf', () => {
@@ -384,6 +404,55 @@ describe('WmFrame render', () => {
     expect(tree.weights[0]).toBeCloseTo(0.2, 5)
     // +100px on the sidebar (346 at this viewport) clamps at the 420 max.
     expect(layout.getSnapshot().sidebar).toBe(420)
+  })
+
+  it('renormalizes grow beside the pinned sidebar; no sub-one-grow dead space', () => {
+    // The dead-strip bug this guards: flex-grow below one distributes only
+    // that fraction of the free space (the sub-one flex-factors rule), so
+    // the chat's 0.8 beside the grow-0 pinned sidebar left (1 - 0.8) of the
+    // split's width empty at the frame's right edge.
+    const { container } = mountFrame()
+    const wrappers = [...container.querySelectorAll('[class*="paneWrapper"]')] as HTMLElement[]
+    // Depth order: home sidebar wrapper (pinned px), conversation wrapper.
+    expect(wrappers[0]!.style.flex).toBe('0 0 346px')
+    // 0.8 renormalized over the 0.8 unpinned total: exactly 1.
+    expect(wrappers[1]!.style.flex).toBe('1 1 0%')
+  })
+
+  it('only the home sidebar pane is pinned; a workspace window elsewhere carries weights', () => {
+    // The fill bug this guards: a window that switched to the workspace
+    // buffer (here a column split after the home sidebar leaf closed) was
+    // pinned to the sidebar px preference along the split's main axis —
+    // 346px TALL in a vertical slot — so the buffer filled only a small
+    // box of its window.
+    const detached = splitLeaf(removeLeaf(defaultTree(), WM_LEAF_SIDEBAR), WM_LEAF_CONVERSATION, 'column', 'sidebar', 'sb2')
+    const { container } = mountFrame(detached)
+    // The pane showing the workspace buffer sizes by split weights — the
+    // wrapper is its parent flex child.
+    const pane = container.querySelector('[data-buffer="sidebar"]') as HTMLElement
+    const wrapper = pane.parentElement as HTMLElement
+    expect(wrapper.style.flex).toBe('0.5 1 0%')
+    expect(wrapper.style.flex.startsWith('0 0')).toBe(false)
+  })
+
+  it('a sash on a detached workspace window rewrites weights, not the width preference', () => {
+    const detached = splitLeaf(removeLeaf(defaultTree(), WM_LEAF_SIDEBAR), WM_LEAF_CONVERSATION, 'column', 'sidebar', 'sb2')
+    const { container, wm, layout } = mountFrame(detached)
+    // The column split's only sash bounds the detached workspace window.
+    const detachedSash = container.querySelector('[class*="sash"]') as HTMLElement
+    const down = new PointerEvent('pointerdown', { pointerId: 1, clientX: 900, clientY: 300, bubbles: true })
+    const move = new PointerEvent('pointermove', { pointerId: 1, clientX: 900, clientY: 500, bubbles: true })
+    const up = new PointerEvent('pointerup', { pointerId: 1, clientX: 900, clientY: 500, bubbles: true })
+    act(() => { detachedSash.dispatchEvent(down) })
+    act(() => { detachedSash.dispatchEvent(move); vi.advanceTimersByTime(20) })
+    act(() => { detachedSash.dispatchEvent(up) })
+    const split = findSplit(wm.getSnapshot().tree, 'wm:split:sb2')
+    expect(split).toBeDefined()
+    if (split === undefined) return
+    // +200px of the 1080px column grows the conversation's share; the
+    // sidebar width preference is untouched (it sizes only the home pane).
+    expect(split.weights[0]).toBeCloseTo(0.5 + 200 / 1080, 5)
+    expect(layout.getSnapshot().sidebar).toBe(SIDEBAR_DEFAULT)
   })
 
   it('switching between real sessions removes the details leaf', () => {
@@ -457,21 +526,18 @@ describe('focused leaf + commands', () => {
 })
 
 describe('Emacs chords (window listener)', () => {
-  it('C-x 2 / C-x 3 split the focused leaf; the details pane is never duplicated', () => {
+  it('C-x 2 / C-x 3 split the focused leaf; the buffer clones into the new window', () => {
     const { wm } = mountFrame()
     act(() => { wm.actions.setFocus(WM_LEAF_CONVERSATION) })
     press('x', { ctrlKey: true })
     press('2')
-    // Conversation splits into a details pane (the single session surface is
-    // never duplicated).
+    // Emacs semantics: the new window shows the SAME buffer — a buffer is
+    // content, windows are views onto it; singletons clone like any other.
     const buffers = (t: WmNode): string[] => (t.kind === 'leaf' ? [t.buffer] : t.children.flatMap(buffers))
-    expect(buffers(wm.getSnapshot().tree)).toEqual(['sidebar', 'conversation', 'details'])
-    // A second split request focuses the existing details pane — a second
-    // Context leaf is the historical bug this guard exists for.
+    expect(buffers(wm.getSnapshot().tree)).toEqual(['sidebar', 'conversation', 'conversation'])
     press('x', { ctrlKey: true })
     press('3')
-    expect(buffers(wm.getSnapshot().tree)).toEqual(['sidebar', 'conversation', 'details'])
-    expect(findLeaf(wm.getSnapshot().tree, wm.getSnapshot().focusedLeafId ?? '')?.buffer).toBe('details')
+    expect(buffers(wm.getSnapshot().tree)).toEqual(['sidebar', 'conversation', 'conversation', 'conversation'])
   })
 
   it('C-x 0 closes the focused leaf but never the last window standing', () => {
@@ -500,20 +566,23 @@ describe('Emacs chords (window listener)', () => {
     expect(wm.getSnapshot().focusedLeafId).toBe(WM_LEAF_CONVERSATION)
   })
 
-  it('C-x b opens the switch-buffer minibuffer; Enter focuses an open buffer', () => {
+  it('C-x b switches the current window even to a buffer already on screen', () => {
     const { wm, getByLabelText } = mountFrame()
     act(() => { wm.actions.setFocus(WM_LEAF_SIDEBAR) })
     press('x', { ctrlKey: true })
     press('b')
     const prompt = getByLabelText('Switch buffer') as HTMLInputElement
     expect(prompt).toBeTruthy()
-    // Candidates are Workspace / Chat / Context — Chat is open: arrow down
-    // once and Enter focuses the conversation leaf.
-    // Separate act blocks: the selection state must flush between the two
-    // keydowns (discrete-event batching would run Enter on the stale index).
+    // Chat is already open in its own window: Emacs C-x b still switches the
+    // CURRENT window to it — a second view of the same buffer, not a focus
+    // jump. Separate act blocks: the selection state must flush between the
+    // two keydowns (discrete-event batching would run Enter on the stale index).
     act(() => { prompt.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })) })
     act(() => { prompt.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
-    expect(wm.getSnapshot().focusedLeafId).toBe(WM_LEAF_CONVERSATION)
+    const buffers = (t: WmNode): string[] => (t.kind === 'leaf' ? [t.buffer] : t.children.flatMap(buffers))
+    // A swap, not a split: two windows, both showing Chat.
+    expect(buffers(wm.getSnapshot().tree)).toEqual(['conversation', 'conversation'])
+    expect(findLeaf(wm.getSnapshot().tree, wm.getSnapshot().focusedLeafId ?? '')?.buffer).toBe('conversation')
   })
 
   it('C-x b to an unshown buffer swaps the focused window (Emacs: never a split)', () => {
@@ -530,18 +599,49 @@ describe('Emacs chords (window listener)', () => {
     expect(scratch.getSnapshot().text).toEqual('')
   })
 
-  it('Escape cancels the prompt; typing in an input never reaches the parser', () => {
+  it('C-n / C-p move the minibuffer selection (Emacs line motion)', () => {
+    const { getByLabelText, wm } = mountFrame()
+    act(() => { wm.actions.setFocus(WM_LEAF_SIDEBAR) })
+    // C-n moves down one candidate: Enter then swaps this window to Chat.
+    press('x', { ctrlKey: true })
+    press('b')
+    const prompt = getByLabelText('Switch buffer') as HTMLInputElement
+    act(() => { prompt.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', ctrlKey: true, bubbles: true })) })
+    act(() => { prompt.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('conversation')
+    // C-p from the top clamps at the first candidate: Enter swaps back.
+    press('x', { ctrlKey: true })
+    press('b')
+    const again = getByLabelText('Switch buffer') as HTMLInputElement
+    act(() => { again.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true })) })
+    act(() => { again.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('sidebar')
+  })
+
+  it('Escape cancels the prompt; chords fire over text fields too', () => {
     const { getByLabelText, wm } = mountFrame()
     press('x', { ctrlKey: true })
     press('b')
     expect(getByLabelText('Switch buffer')).toBeTruthy()
     press('Escape')
     expect(document.querySelector('[data-minibuffer]')).toBeNull()
-    // Guard: a keydown originating on an input target is ignored entirely.
-    act(() => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'x', ctrlKey: true }))
-    })
-    expect(wm.getSnapshot().tree).toEqual(wm.getSnapshot().tree)
+    // Chords reach the parser from a TEXT-FIELD target: C-x arms (echo),
+    // an unbound follower is consumed and disarms, and plain typing with
+    // nothing armed neither arms nor runs anything.
+    const input = document.createElement('textarea')
+    document.body.appendChild(input)
+    const fromField = (key: string, mods: { ctrlKey?: boolean } = {}): void => {
+      act(() => { input.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...mods })) })
+    }
+    fromField('x', { ctrlKey: true })
+    expect(document.querySelector('[data-echo] > span')?.textContent).toBe('C-x-')
+    fromField('z')
+    expect(document.querySelector('[data-echo] > span')?.textContent).not.toBe('C-x-')
+    fromField('1')
+    fromField('2')
+    // Nothing ran: the tree is untouched by bare keys with no prefix.
+    expect(leafIds(wm.getSnapshot().tree)).toEqual(['sidebar', 'conversation'])
+    input.remove()
   })
 
   it('C-x w opens the switch-workspace minibuffer; Enter opens the workspace', () => {
@@ -609,16 +709,6 @@ describe('Emacs chords (window listener)', () => {
   })
 })
 
-describe('singleton dedupe', () => {
-  it('a loaded tree with two conversation leaves collapses to the first one', () => {
-    const doubled = splitLeaf(defaultTree(), WM_LEAF_CONVERSATION, 'row', 'conversation', 'wm:leaf:dup')
-    const shipped = defaultTree()
-    expect(leafIds(dedupeSingletonBuffers(doubled))).toEqual(leafIds(shipped))
-    // No duplicates: the call is a no-op returning the same reference.
-    expect(dedupeSingletonBuffers(shipped)).toBe(shipped)
-  })
-})
-
 describe('buffer registry', () => {
   it('seeds the singletons, migrates pre-registry snapshots, and reconciles', () => {
     const instance = createWmStore().create()
@@ -672,34 +762,74 @@ describe('winner mode + new chords (window listener)', () => {
     expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
   })
 
-  it('C-x C-f opens a files buffer for the typed path; C-x d lists the home level', () => {
-    const { getByLabelText } = mountFrame(undefined, [])
+  it('C-x C-f opens the ido prompt; typing narrows, Enter descends, C-j lands dired', async () => {
+    const { container } = mountFrame(undefined, [])
     press('x', { ctrlKey: true })
     press('f', { ctrlKey: true })
-    const input = getByLabelText('Find file') as HTMLInputElement
-    act(() => {
-      input.focus()
-    })
-    act(() => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
-    // No candidates + empty free entry: nothing opens; a typed path needs the
-    // input value — drive it through the React-managed change event.
-    expect(document.querySelector('[data-minibuffer]')).toBeTruthy()
+
+    const input = () => container.querySelector('[data-ido] input') as HTMLInputElement
+    expect(input()).toBeTruthy()
+    // The prompt seeds at the focused session's workspace directory.
+    expect(listDirectoryLog.at(-1)).toBe('/proj/wm')
+    await act(async () => { await Promise.resolve() })
+    // The live list shows the level: a directory and a plain file.
+    expect(container.querySelectorAll('[data-ido] li').length).toBe(2)
+    // Typing narrows ido-style (flex, case-insensitive)…
+    await act(async () => { fireEvent.change(input(), { target: { value: 'B.TXT' } }) })
+    expect(container.querySelectorAll('[data-ido] li').length).toBe(1)
+    await act(async () => { fireEvent.change(input(), { target: { value: '' } }) })
+    // …Enter on the selected directory descends into it.
+    await act(async () => { fireEvent.keyDown(input(), { key: 'Enter' }) })
+    expect(listDirectoryLog.at(-1)).toBe('/proj/wm/a')
+    // C-j lands the full dired window at the active directory.
+    await act(async () => { fireEvent.keyDown(input(), { key: 'j', ctrlKey: true }) })
+    expect(container.querySelector('[data-buffer="files"]')).toBeTruthy()
+    expect(document.querySelector('[data-minibuffer][data-ido]')).toBeNull()
+    // Escape cancels a reopened prompt.
+    press('x', { ctrlKey: true })
+    press('f', { ctrlKey: true })
+    expect(container.querySelector('[data-ido] input')).toBeTruthy()
     press('Escape')
+    expect(container.querySelector('[data-ido] input')).toBeNull()
   })
 
-  it('C-x ←/→ cycle the focused leaf, skipping singletons shown elsewhere', () => {
+
+
+
+
+  it('the modifier down-stroke of a real keyboard never disarms the armed prefix', async () => {
+    // C-x C-f on a real keyboard sends Control↓ AGAIN between the two
+    // keystrokes. That bare modifier keydown is unbound — and used to
+    // disarm the prefix mid-chord, making C-x C-f unreachable live.
+    const { container } = mountFrame()
+    const fromBody = (key: string, mods: { ctrlKey?: boolean } = {}): void => {
+      act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...mods })) })
+    }
+    fromBody('x', { ctrlKey: true })
+    expect(document.querySelector('[data-echo] > span')?.textContent).toBe('C-x-')
+    fromBody('Control', { ctrlKey: true })
+    expect(document.querySelector('[data-echo] > span')?.textContent).toBe('C-x-')
+    fromBody('f', { ctrlKey: true })
+    // The chord ran: the ido find-file prompt opened.
+    expect(container.querySelector('[data-ido] input')).toBeTruthy()
+  })
+
+  it('C-x ←/→ cycle the focused leaf through the whole registry', () => {
     const { wm } = mountFrame()
     act(() => { wm.actions.setFocus(WM_LEAF_SIDEBAR) })
     press('x', { ctrlKey: true })
-    // Chat is shown elsewhere: cycling skips it (that duplicated panes — the
-    // placement bug). Context is closed, so it cycles INTO this window.
+    // Registry order: Workspace, Chat, Context, *scratch*. Chat is shown in
+    // its own window — cycling lands on it anyway (clones, not skips).
+    press('ArrowRight')
+    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('conversation')
+    press('x', { ctrlKey: true })
     press('ArrowRight')
     expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('details')
     press('x', { ctrlKey: true })
     press('ArrowRight')
     expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe(SCRATCH_BUFFER_ID)
     press('x', { ctrlKey: true })
-    press('ArrowLeft') // back
+    press('ArrowLeft') // back through the same order
     expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('details')
   })
 
@@ -860,5 +990,102 @@ describe('weight-normalization regression (pane placement bug)', () => {
     expect(resplit.weights[0]).toBeGreaterThanOrEqual(0.17)
     expect(resplit.weights[0]).toBeLessThanOrEqual(0.19)
     expect(resplit.weights[1]).toBeCloseTo(0.82, 9)
+  })
+})
+
+describe('echo area (StatusLine)', () => {
+  it('rests on the focused buffer, echoes the armed chord, and expires messages', () => {
+    const { container, getByTestId } = mountFrame()
+    const echoText = () => container.querySelector('[data-echo] > span') as HTMLElement
+    // Resting face: the focused leaf's buffer (first leaf = Workspace).
+    expect(echoText().textContent).toBe('(Workspace)')
+    // Arming C-x echoes the chord; the which-key popup no longer repeats it.
+    press('x', { ctrlKey: true })
+    expect(echoText().textContent).toBe('C-x-')
+    expect(echoText().dataset.armed).toBe('true')
+    // Cancel leaves its own transient message ('Quit'), not the resting face.
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+    expect(echoText().textContent).toBe('Quit')
+    // A command lands a transient message; it expires back to the resting face.
+    press('x', { ctrlKey: true })
+    press('l')
+    expect(echoText().textContent).toBe('Layout reset')
+    act(() => { vi.advanceTimersByTime(4100) })
+    expect(echoText().textContent).toBe('(Workspace)')
+    // The strip always reports the focused buffer name and window count.
+    expect(getByTestId('center-content')).toBeTruthy()
+    expect(container.querySelector('[data-echo]')!.textContent).toContain('2 windows')
+  })
+
+  it('split and close leave feedback in the echo area', () => {
+    const { container, wm } = mountFrame()
+    const echoText = () => container.querySelector('[data-echo] > span') as HTMLElement
+    act(() => { (container.querySelector('[data-buffer="conversation"] button[aria-label="Split right"]') as HTMLElement).click() })
+    expect(echoText().textContent).toBe('Split right')
+    // Close the cloned (second) conversation window.
+    const convCloses = container.querySelectorAll('[data-buffer="conversation"] button[aria-label="Close"]')
+    act(() => { (convCloses[convCloses.length - 1] as HTMLElement).click() })
+    expect(echoText().textContent).toBe('Closed window')
+    act(() => { (container.querySelector('[data-buffer="sidebar"] button[aria-label="Close"]') as HTMLElement).click() })
+    expect(echoText().textContent).toBe('Closed window')
+    // The last window standing refuses with a message instead of silently
+    // (its Close button is not even rendered; the chord still reaches the
+    // guarded operation).
+    press('x', { ctrlKey: true })
+    press('0')
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION])
+    expect(echoText().textContent).toBe('The last window stands')
+  })
+})
+
+describe('FilesBuffer keyboard', () => {
+  const diredListing = {
+    path: '/h', home: '/h', crumbs: [{ name: 'h', path: '/h', hidden: false, isDirectory: true }],
+    entries: [
+      { name: 'a', path: '/h/a', hidden: false, isDirectory: true, mode: 0o040755, size: 96, modified: 1700000000000 },
+      { name: 'b.txt', path: '/h/b.txt', hidden: false, isDirectory: false, mode: 0o100644, size: 3072, modified: 1700000000000 },
+    ],
+  }
+
+  function mountDired(active = false) {
+    const listDirectory = vi.fn(async () => diredListing)
+    const onNavigate = vi.fn()
+    const view = render(
+      <FilesBuffer
+        path="/h" active={active}
+        listDirectory={listDirectory as never} openPath={vi.fn(async () => {})}
+        onNavigate={onNavigate} onKill={vi.fn()}
+      />,
+    )
+    const dired = view.container.firstElementChild as HTMLElement
+    return { dired, onNavigate, ...view }
+  }
+
+  const flush = async () => { await act(async () => { await Promise.resolve() }) }
+
+  it('takes the DOM focus when its window is the focused leaf', async () => {
+    const { dired } = mountDired(true)
+    await flush()
+    expect(document.activeElement).toBe(dired)
+  })
+
+  it('C-p / C-n move the selection like the arrows', async () => {
+    const { dired } = mountDired()
+    await flush()
+    dired.focus()
+    const selectedRow = () => dired.querySelector('[data-selected]')
+    expect(selectedRow()?.textContent).toContain('a')
+    // The stat columns render: a perms string per row, a kind glyph per name.
+    expect(dired.querySelectorAll('[class*="perms"]')[0]?.textContent).toBe('drwxr-xr-x')
+    expect(dired.querySelectorAll('[class*="perms"]')[1]?.textContent).toBe('-rw-r--r--')
+    expect(dired.querySelectorAll('[class*="size"]')[0]?.textContent).toBe('96')
+    expect(dired.querySelectorAll('[class*="size"]')[1]?.textContent).toBe('3.0k')
+    fireEvent.keyDown(dired, { key: 'n', ctrlKey: true })
+    expect(selectedRow()?.textContent).toContain('b')
+    fireEvent.keyDown(dired, { key: 'p', ctrlKey: true })
+    expect(selectedRow()?.textContent).toContain('a')
+    // Plain keys keep working beside the ctrl chords.
+    fireEvent.keyDown(dired, { key: 'n' })
+    expect(selectedRow()?.textContent).toContain('b')
   })
 })

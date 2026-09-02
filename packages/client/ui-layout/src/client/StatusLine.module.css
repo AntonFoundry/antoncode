@@ -1,0 +1,37 @@
+/* Echo area: the frame's last row (Emacs echo-area placement). The
+   minibuffer strip expands the frame directly above it when a prompt is
+   active; at rest this one line is the whole footprint. */
+
+.echo {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 24px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  background: var(--dsw-alias-bg-base);
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  user-select: none;
+}
+
+.echoText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* An armed chord reads as live state, not a message. */
+.echoText[data-armed] {
+  color: var(--dsw-alias-brand-primary);
+  font-weight: 600;
+}
+
+.echoMeta {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
+  font-size: 11px;
+}

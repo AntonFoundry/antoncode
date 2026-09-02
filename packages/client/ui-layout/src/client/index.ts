@@ -16,6 +16,7 @@ import { WmFrame } from './WmFrame.tsx'
 import { createLayoutStore, createScratchStore, createWmStore } from './stores.ts'
 import { LayoutController } from './service.ts'
 import { ThemePresenter } from './theme-presenter.ts'
+import { LAYOUT_THEMES, THEME_STORAGE_KEY } from './themes.ts'
 
 // Contract exports only (export-convergence rule: cross-package consumers
 // keep a symbol exported; test-only/package-internal symbols live off /src).
@@ -155,6 +156,11 @@ export function apply(ctx: ClientContext): void {
           setFocus: (leafId: string | undefined) => { wm.actions.setFocus(leafId) },
           setBuffers: (buffers: Parameters<typeof wm.actions.setBuffers>[0]) => { wm.actions.setBuffers(buffers) },
           setSidebarWidth: (px: number) => { actions.setSidebar(px) },
+          themeList: () => LAYOUT_THEMES.map(t => ({ id: t.id, colorScheme: t.colorScheme })),
+          loadTheme: (id: string) => {
+            ctx.theme.setTheme(id)
+            try { window.localStorage.setItem(THEME_STORAGE_KEY, id) } catch { /* private mode */ }
+          },
           reconcileBuffers: () => { wm.actions.reconcile() },
           writeScratch: (text: string) => { scratch.actions.setText(text) },
           openWorkspace: (workspaceId: string) => {
@@ -169,7 +175,8 @@ export function apply(ctx: ClientContext): void {
           },
           // The dired faces route through the workspaces service (the browse
           // capability's client seam — ctx has no direct 'host' service).
-          listDirectory: (path?: string, signal?: AbortSignal) => ctx.workspaces.listDirectory(path, signal),
+          listDirectory: (path?: string, opts?: { includeFiles?: boolean }, signal?: AbortSignal) =>
+            ctx.workspaces.listDirectory(path, opts, signal),
           openPath: (path: string) => ctx.workspaces.openPath(path),
         }
       },
@@ -185,11 +192,20 @@ export function apply(ctx: ClientContext): void {
   // state through the getter once, then event-driven only; no React path.
   ctx.effect(() => {
     const presenter = new ThemePresenter()
+    // The compos-style palette: register the named themes, then restore the
+    // persisted choice (localStorage — the theme service persists only the
+    // light/dark/system preference, not registered ids).
+    const disposers = LAYOUT_THEMES.map(t => ctx.theme.register(t))
+    const stored = (() => { try { return window.localStorage.getItem(THEME_STORAGE_KEY) } catch { return undefined } })()
+    if (stored !== undefined && LAYOUT_THEMES.some(t => t.id === stored)) {
+      try { ctx.theme.setTheme(stored) } catch { /* a race with registration is not user-facing */ }
+    }
     presenter.apply(ctx.theme.getTheme())
     const off = ctx.on('theme/change', (snapshot) => { presenter.apply(snapshot) })
     return () => {
       off()
       presenter.dispose()
+      for (const d of disposers) d()
     }
   }, 'ui-layout: theme presenter')
 }

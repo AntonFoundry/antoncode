@@ -4,9 +4,11 @@
  * so the caller (WmFrame) carries the armed prefix and passes it in; this
  * module stays stateless and DOM-free.
  *
- * Text-safety contract: the INPUT/TARGET guard lives in WmFrame (only the
- * event target knows the element kind), so this parser never sees — and
- * never needs to see — whether typing was in a text field.
+ * Element-safety contract: the parser is target-agnostic and safe to run
+ * over text fields — chords are ctrl/alt sequences, and a bare key only
+ * ever runs once a prefix is armed (the caller consumes that keystroke, so
+ * it is never inserted into the field). The caller owns what an unarmed
+ * bare Escape means for the focused element.
  */
 
 /** One window command the chord tables bind. */
@@ -51,6 +53,8 @@ export type WmCommand =
   | 'restart-app'
   /** Dump the window tree JSON into *scratch* (layout diagnostics). */
   | 'dump-layout'
+  /** Load a named theme from the frame's palette (compos load-theme). */
+  | 'load-theme'
 
 /** One parse outcome: arm a prefix, run a command, or nothing. */
 export type ChordResult = { prefix: 'x' | 'c' } | { command: WmCommand } | null
@@ -154,6 +158,7 @@ export const COMMANDS: readonly CommandEntry[] = [
   { name: 'keyboard-quit', command: 'cancel', keys: 'C-g' },
   { name: 'restart-app', command: 'restart-app', keys: 'M-x' },
   { name: 'dump-layout', command: 'dump-layout', keys: 'M-x' },
+  { name: 'load-theme', command: 'load-theme', keys: 'M-x' },
 ]
 
 /** One which-key row: the keys that complete an armed prefix, and what they do. */

@@ -96,10 +96,44 @@
   white-space: nowrap;
 }
 
+/* Kind glyph rides the name's left edge: a folder triangle for directories,
+   a dim square for plain files (compos's icon column, glyph-scaled). */
+.name::before {
+  display: inline-block;
+  width: 1.2em;
+  color: var(--dsw-alias-label-secondary);
+  content: '▪';
+  font-size: 11px;
+}
+
+.name[data-kind='dir']::before {
+  color: var(--dsw-alias-state-business-primary);
+  content: '▸';
+}
+
 .meta {
   flex: none;
+  display: flex;
+  gap: 14px;
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.perms {
+  min-width: 9em;
+  text-align: right;
+}
+
+.size {
+  min-width: 5em;
+  text-align: right;
+}
+
+.date {
+  min-width: 11em;
+  text-align: right;
+  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
 }
 
 .hint {

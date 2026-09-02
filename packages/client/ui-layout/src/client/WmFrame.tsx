@@ -5,16 +5,24 @@
  * line title: Workspace / Chat / Context / *scratch* / `Dired: <path>`);
  * sibling pairs carry draggable sashes whose pointer drag rewrites the parent
  * split's weights. Chords (keymap.ts) and pane pointerdowns drive the focused
- * leaf; the minibuffer (Minibuffer.tsx) serves switch-buffer, find-file,
- * kill-buffer, and switch-workspace. Winner mode (C-c ←/→) undoes/redoes
+ * leaf; the minibuffer (Minibuffer.tsx) serves switch-buffer, kill-buffer,
+ * switch-workspace, and the M-x palette, docked in the flow directly above the
+ * echo area (StatusLine.tsx) — the frame's persistent last row carrying the
+ * armed-chord echo, transient command feedback, and the focused buffer.
+ * C-x C-f opens the ido find-file prompt (IdoFind.tsx): a live, narrowing
+ * listing of the workspace directory; confirming it lands the full dired
+ * window. Winner mode (C-c ←/→) undoes/redoes
  * structural layout changes — the layout history lives in frame refs (the
  * engine persists whole store snapshots, so runtime-only history cannot ride
  * the store without resurrecting stale layouts across reloads); sash weight
  * drags deliberately skip history. Scratch (*scratch*, ScratchBuffer) and
- * dired-lite files buffers (FilesBuffer) render in-leaf. The frame keeps the
- * earlier ports: the session-switch details close, the narrow-viewport
- * sidebar auto-remove, and the 'shell.overlay' layer. Pure component:
- * everything arrives through the four shares.
+ * dired-lite files buffers (FilesBuffer) render in-leaf. Every window's
+ * buffer fills its window: only the HOME sidebar pane (the canonical
+ * sidebar leaf in a row split) is pinned to the column width preference —
+ * every other window sizes by split weights, whatever buffer it shows. The
+ * frame keeps the earlier ports: the session-switch details close, the
+ * narrow-viewport sidebar auto-remove, and the 'shell.overlay' layer. Pure
+ * component: everything arrives through the four shares.
  */
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
@@ -31,11 +39,13 @@ const SIDEBAR_SHARE_MAX = 0.2
 import type { createLayoutStore, ScratchState, WmState } from './stores.ts'
 import { COMMANDS, PREFIX_HINTS, parseChord, type ArmedPrefix, type WmCommand } from './keymap.ts'
 import { Minibuffer, type MinibufferCandidate } from './Minibuffer.tsx'
+import { IdoFind } from './IdoFind.tsx'
+import { StatusLine } from './StatusLine.tsx'
 import { ScratchBuffer } from './ScratchBuffer.tsx'
 import { FilesBuffer } from './FilesBuffer.tsx'
 import {
   SINGLETON_BUFFERS, SCRATCH_BUFFER_ID, WM_LEAF_DETAILS, WM_LEAF_SIDEBAR, bufferTitle, canClose, defaultTree,
-  dedupeSingletonBuffers, ensureBuffer, findBuffer, findLeaf, findSplit, firstLeafId, normalizeTree,
+  ensureBuffer, findBuffer, findLeaf, findSplit, firstLeafId, normalizeTree,
   SIDEBAR_REATTACH_WEIGHT,
   isSingletonBuffer, keepOnlyLeaf,
   killBuffer, leafIds, removeLeaf, scratchBuffer, setWeights, splitLeaf, swapBuffer,
@@ -82,8 +92,12 @@ export interface WmFrameInjected {
    * resolvable session falls back to the New Session flow for it.
    */
   openWorkspace: (workspaceId: string) => void
+  /** The frame's theme palette (compos load-theme's candidates). */
+  themeList: () => { id: string; colorScheme: string }[]
+  /** Load one palette theme by id and persist the choice. */
+  loadTheme: (id: string) => void
   /** List one directory level (absent path = host home). */
-  listDirectory: (path?: string, signal?: AbortSignal) => Promise<DirectoryListing>
+  listDirectory: (path?: string, opts?: { includeFiles?: boolean }, signal?: AbortSignal) => Promise<DirectoryListing>
   /** Open a path with the host OS default application. */
   openPath: (path: string) => Promise<void>
 }
@@ -107,6 +121,21 @@ const freshFilesBuffer = (): WmBuffer => ({ id: freshId('buffer:files'), kind: '
 /** Minimum px size of one child subtree of a split (spec: sidebar 200, rest 240). */
 function minPxOf(node: WmNode): number {
   return node.kind === 'leaf' && node.buffer === 'sidebar' ? SIDEBAR_PANE_MIN : PANE_MIN
+}
+
+/**
+ * Whether one split child is the HOME sidebar pane: the canonical sidebar
+ * leaf (`WM_LEAF_SIDEBAR`, the id the shipped tree and every re-attach path
+ * use) in its home orientation — a child of a ROW split. Only that pane is
+ * pinned to the column width preference; any other window showing the
+ * workspace buffer (a column-split placement, a leaf that switched to it via
+ * C-x b) is a normal weighted window whose buffer must fill it.
+ * @param child - one split child subtree.
+ * @param dir - the parent split's orientation.
+ * @returns true when the child is the pinned home sidebar pane.
+ */
+function isHomeSidebar(child: WmNode, dir: WmDirection): boolean {
+  return child.kind === 'leaf' && child.id === WM_LEAF_SIDEBAR && child.buffer === 'sidebar' && dir === 'row'
 }
 
 /** Context toggle icon: a pane outline with the column on the RIGHT. */
@@ -204,7 +233,7 @@ interface ScratchBufferShared {
 
 /** Files body share (host listing face + registry navigation/kill). */
 interface FilesBufferShared {
-  listDirectory: (path?: string, signal?: AbortSignal) => Promise<DirectoryListing>
+  listDirectory: (path?: string, opts?: { includeFiles?: boolean }, signal?: AbortSignal) => Promise<DirectoryListing>
   openPath: (path: string) => Promise<void>
   onNavigate: (bufferId: string, path: string | undefined) => void
   onKill: (bufferId: string) => void
@@ -259,6 +288,7 @@ function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf
       ? (
         <FilesBuffer
           path={buffer?.path}
+          active={focused}
           listDirectory={files.listDirectory}
           openPath={files.openPath}
           onNavigate={(target) => { files.onNavigate(node.buffer, target) }}
@@ -300,6 +330,20 @@ function NodeView(props: NodeRenderProps & { node: WmNode }) {
   const splitRef = useRef<HTMLDivElement | null>(null)
   const dragBase = useRef<SashDragBase>({ size: 0, index: 0, w0: 0, w1: 0, delta: 0, sidebar: null })
   if (node.kind === 'leaf') return <LeafPane {...props} node={node} />
+  // Fill guarantee, link 2: flex-grow factors below one distribute only that
+  // fraction of the free space (the sub-one flex-factors rule), so a split
+  // whose pinned home sidebar carries grow 0 would leave (1 - Σgrow) of its
+  // width as dead space. The unpinned children's weights are therefore
+  // renormalized over the split's unpinned weight total, keeping Σgrow at
+  // exactly 1 whatever the stored weight ratios.
+  const pinned = node.children.map(child => isHomeSidebar(child, node.dir))
+  const unpinnedTotal = node.weights.reduce((sum, w, i) => sum + (pinned[i] ? 0 : (w ?? 0)), 0)
+  const unpinnedCount = pinned.filter(isPinned => !isPinned).length
+  const growOf = (i: number): number => {
+    if (pinned[i]) return 0
+    if (unpinnedTotal <= 0) return 1 / Math.max(unpinnedCount, 1)
+    return (node.weights[i] ?? 0) / unpinnedTotal
+  }
   return (
     <div
       ref={splitRef}
@@ -315,13 +359,16 @@ function NodeView(props: NodeRenderProps & { node: WmNode }) {
               onStart={() => {
                 // Freeze the gesture base: split size and the two adjacent
                 // weights at drag start, so deltas never compound (the
-                // DragHandle base-width pattern).
+                // DragHandle base-width pattern). Only the HOME sidebar
+                // boundary resizes the width preference (isHomeSidebar); a
+                // workspace buffer shown in any other window resizes
+                // ordinary split weights like every other pane.
                 const el = splitRef.current
-                const side = child.kind === 'leaf' && child.buffer === 'sidebar'
+                const prev = node.children[i - 1]
+                const side = isHomeSidebar(child, node.dir)
                   ? { index: i, width: props.sidebarOwner.width }
                   : undefined
-                const sidePrev = i > 0 && node.children[i - 1]?.kind === 'leaf'
-                  && (node.children[i - 1] as Extract<WmNode, { kind: 'leaf' }>).buffer === 'sidebar'
+                const sidePrev = prev !== undefined && isHomeSidebar(prev, node.dir)
                   ? { index: i - 1, width: props.sidebarOwner.width }
                   : undefined
                 dragBase.current = {
@@ -341,11 +388,14 @@ function NodeView(props: NodeRenderProps & { node: WmNode }) {
           )}
           <div
             className={css.paneWrapper}
-            style={child.kind === 'leaf' && child.buffer === 'sidebar'
-              ? // The sidebar pane IS the sidebar: pinned to the column width,
-            // so the divider sits exactly on the sidebar's edge.
+            style={pinned[i]
+              ? // The home sidebar pane IS the sidebar column: pinned to the
+              // width preference, so the divider sits exactly on its edge.
+              // Every other window (including one switched to the workspace
+              // buffer) carries the renormalized split weight — a fill
+              // guarantee for the buffer it shows.
               { display: 'flex', flexDirection: 'column', flex: `0 0 ${props.sidebarOwner.width}px` }
-              : { display: 'flex', flexDirection: 'column', flex: `${node.weights[i] ?? 1} 1 0%` }}
+              : { display: 'flex', flexDirection: 'column', flex: `${growOf(i)} 1 0%` }}
           >
             <NodeView {...props} node={child} />
           </div>
@@ -370,6 +420,8 @@ export function WmFrame({
   setTree,
   setFocus,
   setSidebarWidth,
+  themeList,
+  loadTheme,
   setBuffers,
   reconcileBuffers,
   writeScratch,
@@ -391,10 +443,20 @@ export function WmFrame({
   // Chord prefix + minibuffer prompt are frame-local runtime state (keymap.ts
   // owns the pure parsing; the armed prefix is the cross-keypress state).
   const [prefixArmed, setPrefixArmed] = useState<ArmedPrefix>(undefined)
-  const [prompt, setPrompt] = useState<'buffer' | 'workspace' | 'find-file' | 'kill-buffer' | 'commands' | null>(null)
+  const [prompt, setPrompt] = useState<'buffer' | 'workspace' | 'find-file' | 'kill-buffer' | 'commands' | 'themes' | null>(null)
   // Restart-in-progress banner: shown while the poll waits for the host.
   const [restarting, setRestarting] = useState(false)
   const [scratchFlushTick, setScratchFlushTick] = useState(0)
+  // Echo area: transient command feedback, self-expiring back to the resting
+  // face (the armed chord echoes through prefixArmed directly, never here).
+  const [echo, setEcho] = useState<string | undefined>(undefined)
+  const echoTimer = useRef<number | undefined>(undefined)
+  useEffect(() => () => { window.clearTimeout(echoTimer.current) }, [])
+  const notify = useCallback((text: string) => {
+    window.clearTimeout(echoTimer.current)
+    setEcho(text)
+    echoTimer.current = window.setTimeout(() => { setEcho(undefined) }, 4000)
+  }, [])
   const prefixRef = useRef(prefixArmed)
   prefixRef.current = prefixArmed
   const promptRef = useRef(prompt)
@@ -431,6 +493,18 @@ export function WmFrame({
     setTree(next)
   }, [setTree])
 
+  // The echo area's resting face: the focused window's buffer (the registry
+  // gap fallback mirrors LeafPane's body resolution so the name always
+  // matches what the window shows).
+  const focusedTitle = useMemo(() => {
+    if (focusedId === undefined) return '(none)'
+    const leaf = findLeaf(tree, focusedId)
+    if (leaf === undefined) return '(none)'
+    const b = findBuffer(buffers, leaf.buffer)
+    if (b !== undefined) return bufferTitle(b)
+    return isSingletonBuffer(leaf.buffer) ? leaf.buffer : 'scratch'
+  }, [tree, buffers, focusedId])
+
   /** Weight-only write (sash drag): no winner-history entry. */
   const writeWeights = useCallback((next: WmNode) => { setTree(next) }, [setTree])
 
@@ -457,14 +531,11 @@ export function WmFrame({
   // closed (the user closed it).
   const first = useRef<{ hadSidebar: boolean } | null>(null)
   useLayoutEffect(() => {
-    // Heal a loaded tree: duplicate singleton panes (two Context leaves from
-    // an older split rule) collapse to the depth-first one. An effect, not a
-    // render-body write: the store update must land after paint commitment.
-    let healed = normalizeTree(dedupeSingletonBuffers(treeRef.current))
-    // Context always starts closed: the header toggle opens it on demand, so
-    // a fresh load never resumes with a split the user did not ask for.
-    const detailsLeaf = findLeaf(healed, WM_LEAF_DETAILS)
-    if (detailsLeaf !== undefined) healed = removeLeaf(healed, WM_LEAF_DETAILS)
+    // Heal a loaded tree: renormalize drifted weights. Nothing else — the
+    // persisted tree IS the layout (windows are views; a buffer shown in
+    // several windows is legitimate and reloads as arranged). An effect, not
+    // a render-body write: the store update must land after paint commitment.
+    const healed = normalizeTree(treeRef.current)
     if (healed !== treeRef.current) setTree(healed)
     first.current = { hadSidebar: findLeaf(treeRef.current, WM_LEAF_SIDEBAR) !== undefined }
     // Once per mount: the loaded tree is the heal subject.
@@ -520,7 +591,8 @@ export function WmFrame({
     const result = killBuffer({ buffers, tree: treeRef.current }, bufferId)
     setBuffers(result.buffers)
     setTree(result.tree)
-  }, [buffers, setBuffers, setTree])
+    notify(`Killed ${bufferId}`)
+  }, [buffers, notify, setBuffers, setTree])
 
   /** Open a files buffer beside the focused leaf (one listing per buffer). */
   const openFilesBuffer = useCallback((target: string | undefined) => {
@@ -539,21 +611,23 @@ export function WmFrame({
     const t = treeRef.current
     const leaf = findLeaf(t, leafId)
     if (leaf === undefined) return
-    // A conversation leaf splits into a details pane: the conversation slot
-    // is the single session surface, so it is never duplicated — and a
-    // details pane already on screen is focused instead of duplicated.
-    const newBuffer = leaf.buffer === 'conversation' ? 'details' : leaf.buffer
-    if (newBuffer === 'details') {
-      const existing = leafIds(t).find(leafId => findLeaf(t, leafId)?.buffer === 'details')
-      if (existing !== undefined) { setFocus(existing); return }
-    }
-    writeTree(splitLeaf(t, leafId, dir, newBuffer, freshLeafId()))
-  }, [setFocus, writeTree])
+    // Emacs C-x 2 / C-x 3: the new window shows the SAME buffer. A buffer
+    // is content and a window is a view onto it — singletons clone like any
+    // other buffer (two Chat windows are two views of the one session
+    // surface; the registry keeps exactly one buffer of each kind).
+    writeTree(splitLeaf(t, leafId, dir, leaf.buffer, freshLeafId()))
+    notify(dir === 'column' ? 'Split below' : 'Split right')
+  }, [notify, writeTree])
 
   const onClose = useCallback((leafId: string) => {
     const t = treeRef.current
-    if (canClose(t, leafId)) writeTree(removeLeaf(t, leafId))
-  }, [writeTree])
+    if (canClose(t, leafId)) {
+      writeTree(removeLeaf(t, leafId))
+      notify('Closed window')
+    } else {
+      notify('The last window stands')
+    }
+  }, [notify, writeTree])
 
   const onSash = useCallback((splitId: string, base: SashDragBase) => {
     // A boundary touching the sidebar leaf resizes the width preference (the
@@ -662,6 +736,12 @@ export function WmFrame({
     })
   ), [workspaceSnapshot, sessionsListSnapshot])
 
+  // load-theme candidates: the frame palette (compos load-theme), the id as
+  // the completion and the color scheme as the hint.
+  const themeCandidates = useMemo<MinibufferCandidate[]>(() => (
+    themeList().map(t => ({ id: t.id, label: t.id, hint: t.colorScheme }))
+  ), [themeList])
+
   // M-x palette candidates: every registered command, its Emacs name, and
   // its binding as the hint. Execution dispatches the id as a command.
   const commandCandidates = useMemo<MinibufferCandidate[]>(() => (
@@ -677,8 +757,8 @@ export function WmFrame({
       runCommandRef.current(id as WmCommand)
       return
     }
-    if (kind === 'find-file') {
-      openFilesBuffer(id)
+    if (kind === 'themes') {
+      loadTheme(id)
       return
     }
     if (kind === 'kill-buffer') {
@@ -690,13 +770,9 @@ export function WmFrame({
       return
     }
     const t = treeRef.current
-    const existing = leafIds(t).find(leafId => findLeaf(t, leafId)?.buffer === id)
-    if (existing !== undefined) {
-      // The buffer is on screen: jump to its window (the C-x arrows' jump).
-      setFocus(existing)
-      return
-    }
-    // Emacs C-x b: the CURRENT window switches to the buffer — never a split.
+    // Emacs C-x b: the CURRENT window switches to the buffer — never a
+    // split, and a buffer already on screen clones into this window rather
+    // than yanking focus across the frame (windows are views).
     const anchor = focusRef.current
     if (anchor === undefined) return
     // Scratch exists once you ask for it (compos: on-demand scratch).
@@ -714,16 +790,11 @@ export function WmFrame({
     if (anchor === undefined) return
     const leaf = findLeaf(t, anchor)
     if (leaf === undefined) return
-    const shownElsewhere = new Set(
-      leafIds(t)
-        .filter(leafId => leafId !== anchor)
-        .map(leafId => findLeaf(t, leafId)?.buffer)
-        .filter((id): id is string => id !== undefined),
-    )
-    // Same registry expansion the C-x b candidates use.
+    // Same registry expansion the C-x b candidates use — the FULL order:
+    // buffers are content, windows are views, so a buffer shown in another
+    // window stays in the cycle (cloning, not skipping).
     const ids = [...SINGLETON_BUFFERS, scratchBuffer(), ...buffers.filter(b => b.kind === 'files')]
       .map(b => b.id)
-      .filter(id => !shownElsewhere.has(id))
     if (ids.length === 0) return
     const at = ids.indexOf(leaf.buffer)
     const nextId = ids[(at + step + ids.length) % ids.length]
@@ -740,12 +811,16 @@ export function WmFrame({
         restartAbortRef.current?.abort()
         restartAbortRef.current = null
         setRestarting(false)
+        notify('Quit')
         return
       case 'switch-buffer':
         setPrompt('buffer')
         return
       case 'm-x':
         setPrompt('commands')
+        return
+      case 'load-theme':
+        setPrompt('themes')
         return
       case 'dump-layout': {
         // Diagnostics: the persisted tree, pretty-printed into *scratch* and
@@ -759,6 +834,7 @@ export function WmFrame({
           setFocus(anchor)
         }
         void navigator.clipboard?.writeText?.(dump).catch(() => {})
+        notify('Layout dumped to *scratch*')
         return
       }
       case 'restart-app': {
@@ -781,21 +857,24 @@ export function WmFrame({
         setPrompt('kill-buffer')
         return
       case 'dired': {
-        // The host home directory: list without a path, adopt the answered path.
-        void listDirectory(undefined).then((listing) => { openFilesBuffer(listing.path) })
+        // The host home directory: list without a path.
+        void listDirectory(undefined, { includeFiles: true }).then((listing) => { openFilesBuffer(listing.path) })
         return
       }
       case 'save-scratch':
         setScratchFlushTick(tick => tick + 1)
+        notify('Wrote *scratch*')
         return
       case 'reset-layout':
         writeTree(defaultTree())
+        notify('Layout reset')
         return
       case 'winner-undo': {
         const prev = historyRef.current.pop()
         if (prev === undefined) return
         futureRef.current.push(treeRef.current)
         setTree(prev)
+        notify('Undo')
         return
       }
       case 'winner-redo': {
@@ -803,6 +882,7 @@ export function WmFrame({
         if (next === undefined) return
         historyRef.current.push(treeRef.current)
         setTree(next)
+        notify('Redo')
         return
       }
       case 'previous-buffer':
@@ -833,7 +913,8 @@ export function WmFrame({
         return
       }
     }
-  }, [buffers, cycleBuffer, listDirectory, onClose, onSplit, setBuffers, setFocus, setTree, writeScratch, writeTree])
+  }, [buffers, cycleBuffer, listDirectory, loadTheme, notify, onClose, onSplit,
+    sessionsListSnapshot, setBuffers, setFocus, setTree, writeScratch, writeTree])
   // The minibuffer's execute callback precedes this declaration; the mirror
   // lets it dispatch palette picks without a dependency cycle.
   const runCommandRef = useRef(runCommand)
@@ -841,14 +922,15 @@ export function WmFrame({
   // An open restart wait aborts when the user cancels (C-g): the page stays.
   const restartAbortRef = useRef<AbortController | null>(null)
 
-  // Global chord listener: capture phase, installed while mounted. Text
-  // fields are never hijacked (input/textarea/contentEditable targets skip
-  // the parser, so C-x stays cut in place); while a minibuffer prompt is
-  // open only its own keys and the cancel keys respond.
+  // Global chord listener: capture phase, installed while mounted. Chords
+  // fire EVERYWHERE — including text fields (Emacs: the keyboard belongs to
+  // the command loop; on macOS Ctrl+X has no native meaning in a text field,
+  // and while a prefix is armed the following keystroke is consumed, never
+  // inserted). Two carve-outs: an open minibuffer/ido prompt owns its own
+  // keys (its input handles navigation and cancel), and a bare Escape with
+  // nothing armed stays the app's own key (blur/dismiss) — never a chord.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      const target = e.target as HTMLElement | null
-      if (target !== null && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
       if (promptRef.current !== null) {
         // The minibuffer's input owns navigation; bare keys fall through.
         if (e.key === 'Escape' || (e.ctrlKey && (e.key === 'g' || e.key === 'G'))) {
@@ -857,10 +939,20 @@ export function WmFrame({
         }
         return
       }
+      if (e.key === 'Escape' && prefixRef.current === undefined) return
+      // Bare modifier down-strokes (the Control↓ that STARTS the next
+      // chord's second keystroke) never touch the armed prefix: real
+      // keyboards send them between the two keystrokes of C-x C-f, and
+      // treating them as unbound disarmed the prefix mid-chord.
+      if (e.key === 'Control' || e.key === 'Shift' || e.key === 'Alt' || e.key === 'Meta') return
       const result = parseChord(e, prefixRef.current)
       if (result === null) {
-        // An unbound key while armed kills the pending chord.
-        if (prefixRef.current !== undefined) setPrefixArmed(undefined)
+        // An unbound key while armed kills the pending chord — and is
+        // consumed (never inserted into whatever field has focus).
+        if (prefixRef.current !== undefined) {
+          e.preventDefault()
+          setPrefixArmed(undefined)
+        }
         return
       }
       e.preventDefault()
@@ -950,19 +1042,33 @@ export function WmFrame({
       <div className={css.treeArea}>
         <NodeView {...renderProps} node={tree} />
       </div>
-      {prompt !== null && (
+      {prompt === 'find-file' && (() => {
+        // Emacs C-x C-f over the workspace: the ido prompt seeds at the
+        // focused session's directory (its cwd IS the workspace), falling
+        // back to the host home.
+        const currentId = sessionsListSnapshot.current
+        const cwd = currentId === undefined ? undefined : sessionsListSnapshot.byId[currentId]?.cwd
+        return (
+          <IdoFind
+            initialDir={cwd}
+            listDirectory={listDirectory}
+            onOpen={(dir) => { setPrompt(null); openFilesBuffer(dir) }}
+            onCancel={() => { setPrompt(null) }}
+          />
+        )
+      })()}
+      {prompt !== null && prompt !== 'find-file' && (
         <Minibuffer
           prompt={prompt === 'buffer' ? 'Switch buffer'
             : prompt === 'workspace' ? 'Switch workspace'
               : prompt === 'commands' ? 'M-x'
-                : prompt === 'find-file' ? 'Find file'
+                : prompt === 'themes' ? 'Load theme'
                   : 'Kill buffer'}
           candidates={prompt === 'buffer' ? bufferCandidates
             : prompt === 'workspace' ? workspaceCandidates
               : prompt === 'commands' ? commandCandidates
-                : prompt === 'find-file' ? []
+                : prompt === 'themes' ? themeCandidates
                   : killCandidates}
-          freeEntry={prompt === 'find-file'}
           onExecute={onMinibufferExecute}
           onCancel={() => { setPrompt(null) }}
         />
@@ -974,9 +1080,8 @@ export function WmFrame({
       )}
       {prefixArmed !== undefined && (
         <div className={css.whichKey} aria-hidden>
-          <span className={css.prefixIndicator}>{
-            prefixArmed === 'x' ? 'C-x-' : 'C-c-'
-          }</span>
+          {/* The armed chord itself echoes in the echo area; this popup
+              carries only the completions. */}
           <ul className={css.whichKeyList}>
             {PREFIX_HINTS[prefixArmed].map(h => (
               <li key={h.keys}>
@@ -987,6 +1092,12 @@ export function WmFrame({
           </ul>
         </div>
       )}
+      <StatusLine
+        prefix={prefixArmed}
+        message={echo}
+        bufferTitle={focusedTitle}
+        windowCount={leafIds(tree).length}
+      />
       <div className={css.overlayLayer} data-shell-overlay>
         {renderSlot('shell.overlay', {})}
       </div>

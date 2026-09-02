@@ -22,7 +22,7 @@ describe('dired formatting + ido matching', () => {
   it('flexDiredMatch keeps rows whose name carries every query character in order', () => {
 
     expect(flexDiredMatch(rows, '').length).toBe(4)
-    expect(flexDiredMatch(rows, 'TA').map(e => e.name)).toEqual(['zeta.txt', 'alpha.md'])
+    expect(flexDiredMatch(rows, 'TA').map(e => e.name)).toEqual(['zeta.txt', 'Beta'])
     expect(flexDiredMatch(rows, 'zzz')).toEqual([])
 
     // Case-insensitive with in-order characters (not substrings).
