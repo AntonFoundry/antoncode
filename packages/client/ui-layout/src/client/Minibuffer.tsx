@@ -31,8 +31,6 @@ export interface MinibufferProps {
   onExecute: (id: string) => void
   /** Cancel the prompt (Esc / C-g). */
   onCancel: () => void
-  /** Free-entry mode (C-x C-f): Enter submits the typed text even with no candidates. */
-  freeEntry?: boolean
 }
 
 /**
@@ -40,7 +38,7 @@ export interface MinibufferProps {
  * @param props - prompt, candidates, execute/cancel callbacks.
  * @returns the strip element, or null when there is nothing to prompt for.
  */
-export function Minibuffer({ prompt, candidates, onExecute, onCancel, freeEntry }: MinibufferProps) {
+export function Minibuffer({ prompt, candidates, onExecute, onCancel }: MinibufferProps) {
   const [query, setQuery] = useState('')
   const [index, setIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -62,12 +60,14 @@ export function Minibuffer({ prompt, candidates, onExecute, onCancel, freeEntry 
       onCancel()
       return
     }
-    if (e.key === 'ArrowDown') {
+    // Emacs line motion inside the prompt: C-n / C-p mean down / up, the
+    // arrows mean the same (both move the selection, never the caret).
+    if (e.key === 'ArrowDown' || (e.ctrlKey && (e.key === 'n' || e.key === 'N'))) {
       e.preventDefault()
       setIndex(Math.min(clamped + 1, filtered.length - 1))
       return
     }
-    if (e.key === 'ArrowUp') {
+    if (e.key === 'ArrowUp' || (e.ctrlKey && (e.key === 'p' || e.key === 'P'))) {
       e.preventDefault()
       setIndex(Math.max(clamped - 1, 0))
       return
@@ -76,7 +76,6 @@ export function Minibuffer({ prompt, candidates, onExecute, onCancel, freeEntry 
       e.preventDefault()
       const hit = filtered[clamped]
       if (hit !== undefined) onExecute(hit.id)
-      else if (freeEntry && query.trim() !== '') onExecute(query.trim())
     }
   }
 

@@ -1,12 +1,12 @@
 /**
- * Dired-lite pure helpers: sorting, filtering, and path ancestry for the
- * files buffer (compos's dired.scm behavior, client side). The wire
- * (`host.listDirectory` via the workspaces face) carries
- * `{name, path, hidden}` rows plus a crumbs ancestry chain; size/mtime are
- * optional extensions the sort falls back from when absent.
+ * Dired pure helpers: sorting, filtering, formatting, and path ancestry for
+ * the files buffer (compos's dired.scm behavior, client side). The wire
+ * (`host.listDirectory` with `includeFiles`) carries stat'd rows — kind,
+ * size, mtime, POSIX mode — plus a crumbs ancestry chain; the formatting
+ * helpers fall back gracefully over rows a platform left without stats.
  */
 
-/** One listing row (the wire shape plus optional stat extensions). */
+/** One listing row (the wire shape; the stat fields mirror the wire optionals). */
 export interface DiredEntry {
   /** Base name shown in the row. */
   name: string
@@ -14,10 +14,84 @@ export interface DiredEntry {
   path: string
   /** Hidden by the host platform's convention (dot-prefixed on POSIX). */
   hidden: boolean
-  /** Optional stat extension: byte size. */
+  /** An enterable directory (Enter descends) versus a plain row (Enter opens with the host). */
+  isDirectory?: boolean
+  /** Byte size. */
   size?: number
-  /** Optional stat extension: modification time (epoch ms). */
+  /** Modification time (epoch ms). */
   modified?: number
+  /** POSIX mode bits (type nibble included, e.g. `0o100644`). */
+  mode?: number
+}
+
+/**
+ * Ido-style flex match: every query character must appear in the row name
+ * in order (case-insensitive). The empty query matches everything.
+ * @param entries - the listing rows.
+ * @param query - the typed segment.
+ * @returns the matching rows in listing order (input untouched).
+ */
+export function flexDiredMatch(entries: readonly DiredEntry[], query: string): DiredEntry[] {
+  const q = query.toLowerCase()
+  if (q === '') return [...entries]
+  return entries.filter((entry) => {
+    const name = entry.name.toLowerCase()
+    let at = 0
+    for (const ch of q) {
+      at = name.indexOf(ch, at)
+      if (at === -1) return false
+      at += 1
+    }
+    return true
+  })
+}
+
+/**
+ * Format POSIX mode bits as the classic nine-flag string (compos's perms
+ * column): the type nibble renders `d`/`l`/`-`, then the rwx triples.
+ * @param mode - the stat mode bits, or undefined (renders an empty column).
+ * @returns e.g. `drwxr-xr-x`, or '' without a mode.
+ */
+export function formatDiredMode(mode: number | undefined): string {
+  if (mode === undefined) return ''
+  const bit = (n: number): string => (mode & (1 << n)) === 0 ? '-' : 'rwx'.charAt(2 - (n % 3))
+  const type = (mode & 0o170000) === 0o040000 ? 'd' : (mode & 0o170000) === 0o120000 ? 'l' : '-'
+  return type + [8, 7, 6, 5, 4, 3, 2, 1, 0].map(bit).join('')
+}
+
+/**
+ * Format a byte size the dired way: raw below 1k, then one-decimal k/M/G.
+ * @param bytes - the size, or undefined (renders an empty column).
+ * @returns e.g. `13k`, `1.5M`, or '' without a size.
+ */
+export function formatDiredSize(bytes: number | undefined): string {
+  if (bytes === undefined) return ''
+  if (bytes < 1024) return String(bytes)
+  const units = ['k', 'M', 'G', 'T'] as const
+  let value = bytes
+  let unit = -1
+  do {
+    value /= 1024
+    unit += 1
+  } while (value >= 1024 && unit < units.length - 1)
+  const text = value >= 10 ? String(Math.round(value)) : value.toFixed(1)
+  return text + (units[unit] ?? 'k')
+}
+
+/**
+ * Format a modification time as the dired date column: `Mon DD HH:MM` for
+ * the current year, `Mon DD  YYYY` for older rows (Emacs ls behavior).
+ * @param mtimeMs - epoch milliseconds, or undefined (renders an empty column).
+ * @returns e.g. `Aug 29 19:40`, or '' without a time.
+ */
+export function formatDiredDate(mtimeMs: number | undefined): string {
+  if (mtimeMs === undefined) return ''
+  const d = new Date(mtimeMs)
+  const mon = d.toLocaleString('en-US', { month: 'short' })
+  const day = String(d.getDate()).padStart(2, ' ')
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  const sameYear = d.getFullYear() === new Date().getFullYear()
+  return sameYear ? `${mon} ${day} ${hm}` : `${mon} ${day}  ${d.getFullYear()}`
 }
 
 /** Sort keys, cycled by the `s` key: name → size → modified. */

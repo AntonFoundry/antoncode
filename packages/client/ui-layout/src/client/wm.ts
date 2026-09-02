@@ -403,14 +403,7 @@ export function killBuffer(
   return { buffers, tree: normalizeTree(map(state.tree)) }
 }
 
-/**
- * Drop duplicate singleton leaves from a loaded tree (a persisted tree can
- * carry two details panes from an older split rule). The first leaf in depth
- * order wins; every later leaf showing the same singleton is removed, and a
- * split reduced to one child collapses.
- * @param tree - the loaded window tree.
- * @returns the deduplicated tree (same reference when nothing changed).
- */
+
 /**
  * Renormalize every split's weights to sum exactly 1, recursively (loaded
  * trees can carry drifted weights from older operations; a split whose
@@ -445,18 +438,6 @@ export function normalizeTree(node: WmNode): WmNode {
  */
 export function normalizeWeights(node: WmNode): WmNode {
   return normalizeTree(node)
-}
-
-export function dedupeSingletonBuffers(tree: WmNode): WmNode {
-  const seen = new Set<string>()
-  let t = tree
-  for (const leafId of leafIds(t)) {
-    const node = findLeaf(t, leafId)
-    if (node === undefined || !isSingletonBuffer(node.buffer)) continue
-    if (seen.has(node.buffer)) t = removeLeaf(t, leafId)
-    else seen.add(node.buffer)
-  }
-  return t
 }
 
 /**
