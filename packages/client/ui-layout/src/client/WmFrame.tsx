@@ -48,7 +48,7 @@ import {
   findFirstLeaf, isSingletonBuffer,
   ensureBuffer, findBuffer, findLeaf, findSplit, firstLeafId, normalizeTree,
   SIDEBAR_REATTACH_WEIGHT,
-  keepOnlyLeaf, killBuffer, leafIds, removeLeaf, scratchBuffer, setWeights, splitLeaf, swapBuffer,
+  flipWithSibling, keepOnlyLeaf, killBuffer, leafIds, removeLeaf, scratchBuffer, setWeights, splitLeaf, swapBuffer, tidyTree,
   type WmBuffer, type WmDirection, type WmNode,
 } from './wm.ts'
 import { requestHarnessRestart, waitAndReload } from './bridge.ts'
@@ -139,6 +139,36 @@ function isHomeSidebar(child: WmNode, dir: WmDirection): boolean {
 }
 
 /** Context toggle icon: a pane outline with the column on the RIGHT. */
+function FlipIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width={18} height={18} aria-hidden>
+      <path d="M5 3 2 6l3 3" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M11 13l3-3-3-3" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <line x1="2.5" y1="6" x2="13" y2="6" stroke="currentColor" strokeWidth="1.5" />
+      <line x1="13.5" y1="10" x2="3" y2="10" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  )
+}
+
+function ExpandIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width={18} height={18} aria-hidden>
+      <path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  )
+}
+
+function TidyIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width={18} height={18} aria-hidden>
+      <rect x="2" y="2" width="5.5" height="5.5" rx="1" fill="none" stroke="currentColor" strokeWidth="1.3" />
+      <rect x="8.5" y="2" width="5.5" height="5.5" rx="1" fill="none" stroke="currentColor" strokeWidth="1.3" />
+      <rect x="2" y="8.5" width="5.5" height="5.5" rx="1" fill="none" stroke="currentColor" strokeWidth="1.3" />
+      <rect x="8.5" y="8.5" width="5.5" height="5.5" rx="1" fill="none" stroke="currentColor" strokeWidth="1.3" />
+    </svg>
+  )
+}
+
 function ContextIcon() {
   return (
     <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden>
@@ -251,6 +281,9 @@ interface NodeRenderProps {
   onFocus: (leafId: string) => void
   onSplit: (leafId: string, dir: WmDirection) => void
   onClose: (leafId: string) => void
+  onFlip: (leafId: string) => void
+  onExpand: (leafId: string) => void
+  onTidy: () => void
   onSash: (splitId: string, base: SashDragBase) => void
   onDragging: (dragging: boolean) => void
 }
@@ -274,7 +307,10 @@ interface SashDragBase {
  * cursor; the focused pane's mode line highlights.
  */
 function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf' }> }) {
-  const { node, tree, focusedId, buffers, renderSlot, sidebarOwner, scratch, files, onFocus, onSplit, onClose } = props
+  const {
+    node, tree, focusedId, buffers, renderSlot, sidebarOwner, scratch, files,
+    onFocus, onSplit, onClose, onFlip, onExpand, onTidy,
+  } = props
   const buffer = findBuffer(buffers, node.buffer)
   // A leaf referencing a registry gap falls back by id so a hand-edited or
   // partially migrated snapshot still renders the shell.
@@ -328,12 +364,32 @@ function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf
             <SplitRightIcon />
           </button>
           {closeable && (
-            <button
-              type="button" className={css.modeButton} aria-label="Close" title="Close window (C-x 0)"
-              onClick={() => { onClose(node.id) }}
-            >
-              <IconCloseOutline16 size={14} />
-            </button>
+            <>
+              <button
+                type="button" className={css.modeButton} aria-label="Tidy panes" title="Tidy panes (balance all splits)"
+                onClick={() => { onTidy() }}
+              >
+                <TidyIcon />
+              </button>
+              <button
+                type="button" className={css.modeButton} aria-label="Flip pane" title="Flip with sibling pane (M-x flip-pane)"
+                onClick={() => { onFlip(node.id) }}
+              >
+                <FlipIcon />
+              </button>
+              <button
+                type="button" className={css.modeButton} aria-label="Expand pane" title="Expand to full frame (C-x 1)"
+                onClick={() => { onExpand(node.id) }}
+              >
+                <ExpandIcon />
+              </button>
+              <button
+                type="button" className={css.modeButton} aria-label="Close" title="Close window (C-x 0)"
+                onClick={() => { onClose(node.id) }}
+              >
+                <IconCloseOutline16 size={14} />
+              </button>
+            </>
           )}
         </span>
       </div>
@@ -727,6 +783,23 @@ export function WmFrame({
     }
   }, [notify, writeTree])
 
+  const onFlip = useCallback((leafId: string) => {
+    writeTree(flipWithSibling(treeRef.current, leafId))
+    notify('Flipped pane')
+  }, [notify, writeTree])
+
+  const onExpand = useCallback((leafId: string) => {
+    // C-x 1 semantics from the pane header: keep only this leaf.
+    writeTree(keepOnlyLeaf(treeRef.current, leafId))
+    setFocus(leafId)
+    notify('Expanded pane')
+  }, [notify, setFocus, writeTree])
+
+  const onTidy = useCallback(() => {
+    writeTree(tidyTree(treeRef.current))
+    notify('Tidied panes')
+  }, [notify, writeTree])
+
   const onSash = useCallback((splitId: string, base: SashDragBase) => {
     // A boundary touching the sidebar leaf resizes the width preference (the
     // pane is pinned to it), not the split weights.
@@ -978,6 +1051,19 @@ export function WmFrame({
         }
         return
       }
+      case 'tidy-panes': {
+        writeTree(tidyTree(treeRef.current))
+        notify('Tidied panes')
+        return
+      }
+      case 'flip-pane': {
+        const id = focusRef.current
+        if (id !== undefined) {
+          writeTree(flipWithSibling(treeRef.current, id))
+          notify('Flipped pane')
+        }
+        return
+      }
       case 'multi-cursor': {
         // The broadcast state lives in ui-terminal's store; the frame only
         // raises the toggle event (same seam as the c0ntext open-map event).
@@ -1133,6 +1219,9 @@ export function WmFrame({
     onFocus: setFocus,
     onSplit,
     onClose,
+    onFlip,
+    onExpand,
+    onTidy,
     onSash,
     onDragging: setDragging,
   }
