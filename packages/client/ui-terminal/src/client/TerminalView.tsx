@@ -214,7 +214,12 @@ export function TerminalView(props: TerminalViewProps) {
         aria-label="Broadcast keystrokes to all terminals"
         title={broadcast.broadcast ? 'Multi-cursor ON — keystrokes go to every terminal' : 'Multi-cursor OFF'}
         onClick={toggleBroadcast}
-      >⧉</button>
+      >
+        <svg width={12} height={12} viewBox="0 0 16 16" fill="none" aria-hidden>
+          <rect x="5" y="2" width="9" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+          <path d="M11 14H3.5A1.5 1.5 0 0 1 2 12.5V5" stroke="currentColor" strokeWidth="1.4" />
+        </svg>
+      </button>
     </div>
   )
 }
