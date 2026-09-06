@@ -86,6 +86,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * `id` is added beside the shipped entries instead of replacing them.
      */
     'shell.overlay': { kind: 'list'; scope: 'root' }
+    /**
+     * One interactive PTY terminal surface. OCCUPIED by ui-terminal's
+     * xterm.js view; the owning buffer's session id rides the owner props.
+     */
+    'terminal.view': { kind: 'single'; scope: 'root'; owner: { sessionId?: string | undefined } }
   }
 }
 
@@ -115,7 +120,7 @@ export interface ConvOwnerProps {}
 export interface DetailsOwnerProps {}
 
 /** Required services (cordis fiber inject — the loader passes all module exports as an object plugin). */
-export const inject = ['slots', 'theme', 'workspaces', 'sessions']
+export const inject = ['slots', 'theme', 'workspaces', 'sessions', 'connection']
 
 /**
  * Client plugin body: provide ctx.layout, then one register() call — WmFrame
@@ -136,6 +141,7 @@ export function apply(ctx: ClientContext): void {
         'conversation': { kind: 'single', scope: 'session-maybe' },
         'details': { kind: 'single', scope: 'session' },
         'shell.overlay': { kind: 'list', scope: 'root' },
+        'terminal.view': { kind: 'single', scope: 'root' },
       },
       // Exclusive store: the factory itself — the framework instantiates per
       // entry and delivers useStore/actions to WmFrame as standard props.
@@ -178,6 +184,8 @@ export function apply(ctx: ClientContext): void {
           listDirectory: (path?: string, opts?: { includeFiles?: boolean }, signal?: AbortSignal) =>
             ctx.workspaces.listDirectory(path, opts, signal),
           openPath: (path: string) => ctx.workspaces.openPath(path),
+          // The api client returns the RpcResponse envelope: the business
+          // result sits under `result` ({ ok: true, value } | { ok: false }).
         }
       },
     }, WmFrame)
@@ -196,8 +204,8 @@ export function apply(ctx: ClientContext): void {
     // persisted choice (localStorage — the theme service persists only the
     // light/dark/system preference, not registered ids).
     const disposers = LAYOUT_THEMES.map(t => ctx.theme.register(t))
-    const stored = (() => { try { return window.localStorage.getItem(THEME_STORAGE_KEY) } catch { return undefined } })()
-    if (stored !== undefined && LAYOUT_THEMES.some(t => t.id === stored)) {
+    const stored = (() => { try { return window.localStorage.getItem(THEME_STORAGE_KEY) } catch { return null } })()
+    if (stored !== null && LAYOUT_THEMES.some(t => t.id === stored)) {
       try { ctx.theme.setTheme(stored) } catch { /* a race with registration is not user-facing */ }
     }
     presenter.apply(ctx.theme.getTheme())

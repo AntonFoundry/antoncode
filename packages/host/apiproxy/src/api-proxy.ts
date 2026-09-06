@@ -92,7 +92,7 @@ import type {} from '@deepseek-ai/dsh-user-approval'
 import { approvalResponsePayloadSchema } from './api/approvals.schema.ts'
 import { imageLimitsProjectionSchema, sessionListMetadataProjectionSchema } from './api/sessions.schema.ts'
 import { questionResponsePayloadSchema } from './api/questions.schema.ts'
-import type { ClientResponse, RpcError, RpcReceipt, RpcRequest, RpcResponse } from './api/rpc.ts'
+import type { ClientResponse, RpcError, RpcErrorDetailsMap, RpcErrorCode, RpcReceipt, RpcRequest, RpcResponse } from './api/rpc.ts'
 import { RpcId } from './api/rpc.ts'
 import type {
   AskUserQuestionAnswer, AskUserQuestionItem, AskUserQuestionRequest,
@@ -590,6 +590,21 @@ async function summarizeCold(
 }
 
 /** Map a browse-primitive failure onto the wire error vocabulary (unknown throws stay internal). */
+// ---- Interactive PTY sessions (term domain): login shells on node-pty ----
+// node-pty is required lazily: this module also loads in browser-facing
+// type graphs, and the native binary only exists in the host runtime.
+type PtySession = { pty: import('node-pty').IPty; buffer: string; base: number; exited: boolean }
+const termSessions = new Map<string, PtySession>()
+const TERM_BUFFER_CAP = 400_000
+let termSeq = 0
+
+function termErr<K extends RpcErrorCode>(
+  request: RpcRequest<unknown>, code: K, message: string, details: RpcErrorDetailsMap[K],
+): RpcResponse<never> {
+  const error: RpcError = { code, message, details } as RpcError
+  return err(request, error)
+}
+
 function directoryError(error: unknown): RpcError {
   if (error instanceof DirectoryPickerError) {
     return { code: error.code, message: error.message, details: { path: error.path } }
@@ -3052,7 +3067,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         try {
           // The carrier's signal follows the caller: a disconnect or timeout
           // stops the backend's directory scan instead of outliving it.
-          return ok(request, await capability.list(request.payload.path, signal))
+          return ok(request, await capability.list(
+            request.payload.path,
+            request.payload.includeFiles === true ? { includeFiles: true } : undefined,
+            signal,
+          ))
         } catch (error: unknown) {
           // An abort is the caller's own timeout/disconnect, not a server
           // failure — same code pickDirectory and command.execute report.
@@ -3499,6 +3518,88 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             details: { settingsNs, ...baseURL === undefined ? {} : { baseURL } },
           })
         }
+      },
+    },
+    term: {
+      async spawn(request) {
+        const { cols = 80, rows = 24 } = request.payload
+        try {
+          // Lazy require: the native binary exists only in the host runtime,
+          // and this module also loads in browser-facing type graphs.
+          const [{ spawn: ptySpawn }, os] = await Promise.all([
+            import('node-pty'),
+            import('node:os'),
+          ])
+          termSeq += 1
+          const sessionId = `term-${termSeq}-${randomUUID().slice(0, 8)}`
+          const session: PtySession = {
+            pty: ptySpawn('/bin/bash', ['-l'], {
+              name: 'xterm-256color',
+              cols,
+              rows,
+              cwd: os.homedir(),
+              env: { ...process.env, TERM: 'xterm-256color' } as Record<string, string>,
+            }),
+            buffer: '',
+            base: 0,
+            exited: false,
+          }
+          session.pty.onData((data: string) => {
+            session.buffer += data
+            const overflow = session.buffer.length - TERM_BUFFER_CAP
+            if (overflow > 0) {
+              session.buffer = session.buffer.slice(overflow)
+              session.base += overflow
+            }
+          })
+          session.pty.onExit(() => { session.exited = true })
+          termSessions.set(sessionId, session)
+          return ok(request, { sessionId })
+        } catch (error: unknown) {
+          if ((error as { code?: string }).code === 'MODULE_NOT_FOUND') {
+            return termErr(request, 'term-unavailable', 'interactive terminals need the node-pty native module', { }) as RpcResponse<never>
+          }
+          return termErr(request, 'term-spawn-failed', error instanceof Error ? error.message : String(error), { message: error instanceof Error ? error.message : String(error) })
+        }
+      },
+      async read(request) {
+        try {
+          const session = termSessions.get(request.payload.sessionId)
+          if (session === undefined) return termErr(request, 'term-no-session', `no such terminal session: ${request.payload.sessionId}`, { sessionId: request.payload.sessionId })
+          const since = Math.max(request.payload.since, session.base)
+          const data = session.buffer.slice(since - session.base)
+          return ok(request, { data, next: since + data.length, exited: session.exited })
+        } catch (error: unknown) {
+          return termErr(request, 'term-read-failed', error instanceof Error ? error.message : String(error), { message: error instanceof Error ? error.message : String(error) })
+        }
+      },
+      async input(request) {
+        try {
+          const session = termSessions.get(request.payload.sessionId)
+          if (session === undefined) return termErr(request, 'term-no-session', `no such terminal session: ${request.payload.sessionId}`, { sessionId: request.payload.sessionId })
+          session.pty.write(request.payload.data)
+          return ok(request, { wrote: true })
+        } catch (error: unknown) {
+          return termErr(request, 'term-input-failed', error instanceof Error ? error.message : String(error), { message: error instanceof Error ? error.message : String(error) })
+        }
+      },
+      async resize(request) {
+        try {
+          const session = termSessions.get(request.payload.sessionId)
+          if (session === undefined) return termErr(request, 'term-no-session', `no such terminal session: ${request.payload.sessionId}`, { sessionId: request.payload.sessionId })
+          session.pty.resize(request.payload.cols, request.payload.rows)
+          return ok(request, { resized: true })
+        } catch (error: unknown) {
+          return termErr(request, 'term-resize-failed', error instanceof Error ? error.message : String(error), { message: error instanceof Error ? error.message : String(error) })
+        }
+      },
+      async dispose(request) {
+        const session = termSessions.get(request.payload.sessionId)
+        if (session !== undefined) {
+          try { session.pty.kill() } catch { /* already dead */ }
+          termSessions.delete(request.payload.sessionId)
+        }
+        return ok(request, { disposed: true })
       },
     },
 

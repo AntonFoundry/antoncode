@@ -154,7 +154,7 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
         return { rpcId: request.rpcId, result: { ok: true, value: { path: null } } }
       },
       async listDirectory(request) {
-        return { rpcId: request.rpcId, result: { ok: true, value: { path: '/w', home: '/w', crumbs: [{ name: '/', path: '/', hidden: false }], entries: [], truncated: false } } }
+        return { rpcId: request.rpcId, result: { ok: true, value: { path: '/w', home: '/w', crumbs: [{ name: '/', path: '/', hidden: false, isDirectory: true }], entries: [], truncated: false } } }
       },
       async createDirectory(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { path: '/w/new' } } }
@@ -292,6 +292,13 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
     async respond(message: ClientResponse): Promise<RpcReceipt> {
       return message.rpcId === 'known' ? { accepted: true } : { accepted: false, reason: 'not-pending' }
     },
+    term: {
+      spawn: () => { throw new Error('no term in this fixture') },
+      read: () => { throw new Error('no term in this fixture') },
+      input: () => { throw new Error('no term in this fixture') },
+      resize: () => { throw new Error('no term in this fixture') },
+      dispose: () => { throw new Error('no term in this fixture') },
+    },
     downloads: {
       async sessionLog() {
         return new Response('stub', { status: 404 })
@@ -407,7 +414,7 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
     const listed = await c.host.listDirectory({ path: '/w' })
     expect(listed.result).toEqual({
       ok: true,
-      value: { path: '/w', home: '/w', crumbs: [{ name: '/', path: '/', hidden: false }], entries: [], truncated: false },
+      value: { path: '/w', home: '/w', crumbs: [{ name: '/', path: '/', hidden: false, isDirectory: true }], entries: [], truncated: false },
     })
     const home = await c.host.listDirectory({})
     expect(home.result).toMatchObject({ ok: true, value: { home: '/w' } })

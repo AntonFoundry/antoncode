@@ -16,7 +16,7 @@
 export type WmDirection = 'row' | 'column'
 
 /** The buffer kinds the registry knows. */
-export type WmBufferKind = 'sidebar' | 'conversation' | 'details' | 'scratch' | 'files'
+export type WmBufferKind = 'sidebar' | 'conversation' | 'details' | 'scratch' | 'files' | 'terminal'
 
 /**
  * One registry entry. `path` is present only on `files` buffers (the
@@ -24,7 +24,13 @@ export type WmBufferKind = 'sidebar' | 'conversation' | 'details' | 'scratch' | 
  * shell kinds are singletons — exactly one buffer of each exists, always,
  * and they cannot be killed.
  */
-export interface WmBuffer { id: string; kind: WmBufferKind; path?: string }
+export interface WmBuffer {
+  id: string
+  kind: WmBufferKind
+  path?: string
+  /** Present on `terminal` buffers: the interactive PTY session this buffer shows. */
+  sessionId?: string
+}
 
 /** Stable ids of the three singleton buffers (their ids ARE their kind names). */
 export const SINGLETON_BUFFER_IDS: readonly string[] = ['sidebar', 'conversation', 'details']
@@ -52,6 +58,23 @@ export function scratchBuffer(): WmBuffer {
 }
 
 /**
+ * The full buffer roster in shell order: singletons, scratch on demand, then
+ * every registered content buffer, deduplicated by id (a reconciled registry
+ * already carries the singletons). Candidate lists and the cycle order share
+ * this expansion so a new buffer kind is listed automatically — no per-kind
+ * whitelist to forget.
+ * @param buffers - live registry (wm snapshot).
+ * @returns roster entries, registry order after the singletons and scratch.
+ */
+export function bufferRoster(buffers: readonly WmBuffer[]): WmBuffer[] {
+  const roster = [...SINGLETON_BUFFERS.map(b => ({ ...b })), scratchBuffer()]
+  for (const buffer of buffers) {
+    if (!roster.some(known => known.id === buffer.id)) roster.push(buffer)
+  }
+  return roster
+}
+
+/**
  * Whether a buffer id is one of the unhittable singletons.
  * @param id - buffer id.
  * @returns true for sidebar/conversation/details.
@@ -72,6 +95,7 @@ export function bufferTitle(buffer: WmBuffer): string {
     case 'details': return 'Context'
     case 'scratch': return '*scratch*'
     case 'files': return `Dired: ${buffer.path ?? '?'}`
+    case 'terminal': return 'Terminal'
   }
 }
 

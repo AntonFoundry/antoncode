@@ -131,6 +131,13 @@ function scriptedApi(overrides: {
     },
     events: { mux: () => empty<MuxFrame>(), host: () => empty<HostFrame>(), ...overrides.events },
     respond: overrides.respond ?? (() => Promise.resolve({ accepted: false as const, reason: 'not-pending' as const })),
+    term: {
+      spawn: () => { throw new Error('no term in this fixture') },
+      read: () => { throw new Error('no term in this fixture') },
+      input: () => { throw new Error('no term in this fixture') },
+      resize: () => { throw new Error('no term in this fixture') },
+      dispose: () => { throw new Error('no term in this fixture') },
+    },
     downloads: { sessionLog: async () => new Response('stub', { status: 404 }) },
   }
 }

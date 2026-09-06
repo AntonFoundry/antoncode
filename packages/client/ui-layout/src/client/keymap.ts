@@ -53,6 +53,8 @@ export type WmCommand =
   | 'restart-app'
   /** Dump the window tree JSON into *scratch* (layout diagnostics). */
   | 'dump-layout'
+  /** Open an interactive terminal buffer (login bash on a node-pty). */
+  | 'term'
   /** Load a named theme from the frame's palette (compos load-theme). */
   | 'load-theme'
 
@@ -115,6 +117,7 @@ export function parseChord(event: KeyEventLike, prefix: ArmedPrefix): ChordResul
     case 'd': return prefix === 'x' ? { command: 'dired' } : null
     case 'k': return prefix === 'x' ? { command: 'kill-buffer' } : null
     case 'l': return prefix === 'x' ? { command: 'reset-layout' } : null
+    case 't': return prefix === 'x' ? { command: 'term' } : null
     case 'o': return prefix === 'x' ? { command: 'other-window' } : null
     case '0': return prefix === 'x' ? { command: 'close' } : null
     case '1': return prefix === 'x' ? { command: 'single' } : null
@@ -158,6 +161,7 @@ export const COMMANDS: readonly CommandEntry[] = [
   { name: 'keyboard-quit', command: 'cancel', keys: 'C-g' },
   { name: 'restart-app', command: 'restart-app', keys: 'M-x' },
   { name: 'dump-layout', command: 'dump-layout', keys: 'M-x' },
+  { name: 'term', command: 'term', keys: 'C-x t' },
   { name: 'load-theme', command: 'load-theme', keys: 'M-x' },
 ]
 

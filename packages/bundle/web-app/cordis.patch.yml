@@ -87,6 +87,11 @@
     # Resolve bind host, SSH launch, and display once at boot, then mount the
     # matching dual-face directory picker. Mount -native or -browse directly in
     # an overlay to pin the interaction.
+    # WM terminal buffers: the xterm.js view occupying the frame's
+    # terminal.view slot (one interactive login-shell PTY per buffer).
+    - id: ui-terminal-view
+      name: '@deepseek-ai/dsh-client-ui-terminal'
+
     - id: directory-picker
       name: '@deepseek-ai/dsh-host-directory-picker-auto'
 

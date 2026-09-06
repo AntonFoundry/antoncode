@@ -23,7 +23,6 @@ import type { PanelActions, WmTreeSource } from '@deepseek-ai/dsh-client-ui-layo
 import { WmFrame } from '@deepseek-ai/dsh-client-ui-layout/src/client/WmFrame.tsx'
 import type { WmFrameProps } from '@deepseek-ai/dsh-client-ui-layout/src/client/WmFrame.tsx'
 import { FilesBuffer } from '@deepseek-ai/dsh-client-ui-layout/src/client/FilesBuffer.tsx'
-import { flexDiredMatch } from '@deepseek-ai/dsh-client-ui-layout/src/client/dired.ts'
 import type { WmNode } from '@deepseek-ai/dsh-client-ui-layout/src/client/wm.ts'
 import type { DirectoryListing } from '@deepseek-ai/dsh-api-remotes/client'
 import type {
@@ -812,6 +811,34 @@ describe('winner mode + new chords (window listener)', () => {
     fromBody('f', { ctrlKey: true })
     // The chord ran: the ido find-file prompt opened.
     expect(container.querySelector('[data-ido] input')).toBeTruthy()
+  })
+
+  it('ido path semantics: ~ resolves home, a slash descends, the tail narrows', async () => {
+    const { container } = mountFrame(undefined, [])
+    press('x', { ctrlKey: true })
+    press('f', { ctrlKey: true })
+    const input = () => container.querySelector('[data-ido] input') as HTMLInputElement
+    await act(async () => { await Promise.resolve() })
+
+    // `~` alone jumps the prompt to the host home directory.
+    await act(async () => { fireEvent.change(input(), { target: { value: '~' } }) })
+    await act(async () => { await Promise.resolve() })
+    expect(listDirectoryLog.at(-1)).toBe('/home/u')
+
+    // Relative descent on a fresh prompt: a trailing slash commits the
+    // matched directory — exact names win, flex falls back — and the tail
+    // narrows what remains.
+    press('Escape')
+    press('x', { ctrlKey: true })
+    press('f', { ctrlKey: true })
+    await act(async () => { await Promise.resolve() })
+    await act(async () => { fireEvent.change(input(), { target: { value: 'a/' } }) })
+    await act(async () => { await Promise.resolve() })
+    expect(listDirectoryLog.at(-1)).toBe('/proj/wm/a')
+    expect(container.querySelectorAll('[data-ido] li').length).toBe(1)
+    await act(async () => { fireEvent.change(input(), { target: { value: 'in' } }) })
+    expect(container.querySelectorAll('[data-ido] li').length).toBe(1)
+    expect(container.querySelector('[data-ido] li')?.textContent).toContain('inner')
   })
 
   it('C-x ←/→ cycle the focused leaf through the whole registry', () => {

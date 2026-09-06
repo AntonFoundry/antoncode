@@ -47,7 +47,7 @@ async function bench() {
 
 describe('ui-layout client apply', () => {
   it('declares its service dependencies', () => {
-    expect(inject).toEqual(['slots', 'theme', 'workspaces', 'sessions'])
+    expect(inject).toEqual(['slots', 'theme', 'workspaces', 'sessions', 'connection'])
   })
 
   it('provides ctx.layout and registers WmFrame into root with the three child declarations', async () => {

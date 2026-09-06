@@ -329,11 +329,14 @@ describe('host domain schemas', () => {
     const listing = hostListDirectoryValueSchema.parse({
       path: '/home/u/p',
       home: '/home/u',
-      crumbs: [{ name: '/', path: '/', hidden: false }, { name: 'p', path: '/home/u/p', hidden: false }],
-      entries: [{ name: '.dot', path: '/home/u/p/.dot', hidden: true }],
+      crumbs: [{ name: '/', path: '/', hidden: false, isDirectory: true }, { name: 'p', path: '/home/u/p', hidden: false, isDirectory: true }],
+      entries: [{ name: '.dot', path: '/home/u/p/.dot', hidden: true, isDirectory: true, size: 96, mtimeMs: 1700000000000, mode: 0o040755 }],
       truncated: false,
     })
     expect(listing.entries[0]?.hidden).toBe(true)
+    // The dired stat columns are optional wire decorations; the request's
+    // includeFiles flag is optional too.
+    expect(hostListDirectoryRequestSchema.parse({ includeFiles: true })).toEqual({ includeFiles: true })
     // The flag is part of the wire value, not an optional decoration.
     expect(() => hostListDirectoryValueSchema.parse({ path: '/x', home: '/x', crumbs: [], entries: [] })).toThrow()
     expect(hostCreateDirectoryRequestSchema.parse({ path: '/x', name: 'new' })).toEqual({ path: '/x', name: 'new' })
