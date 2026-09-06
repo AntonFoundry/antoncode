@@ -292,7 +292,6 @@ interface NodeRenderProps {
   onSplit: (leafId: string, dir: WmDirection) => void
   onClose: (leafId: string) => void
   onFlip: (leafId: string) => void
-  onExpand: (leafId: string) => void
   onToggleExpand: () => void
   expanded: boolean
   onTidy: () => void
@@ -321,7 +320,7 @@ interface SashDragBase {
 function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf' }> }) {
   const {
     node, tree, focusedId, buffers, renderSlot, sidebarOwner, scratch, files,
-    onFocus, onSplit, onClose, onFlip, onExpand, onToggleExpand, expanded, onTidy,
+    onFocus, onSplit, onClose, onFlip, onToggleExpand, expanded, onTidy,
   } = props
   const buffer = findBuffer(buffers, node.buffer)
   // A leaf referencing a registry gap falls back by id so a hand-edited or
@@ -399,7 +398,7 @@ function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf
               ) : (
                 <button
                   type="button" className={css.modeButton} aria-label="Expand pane" title="Expand to full frame (C-x 1)"
-                  onClick={() => { onExpand(node.id) }}
+                  onClick={() => { onToggleExpand() }}
                 >
                   <ExpandIcon />
                 </button>
@@ -848,13 +847,6 @@ export function WmFrame({
     notify('Flipped pane')
   }, [notify, writeTree])
 
-  const onExpand = useCallback((leafId: string) => {
-    // C-x 1 semantics from the pane header: keep only this leaf.
-    writeTree(keepOnlyLeaf(treeRef.current, leafId))
-    setFocus(leafId)
-    notify('Expanded pane')
-  }, [notify, setFocus, writeTree])
-
   const onTidy = useCallback(() => {
     writeTree(tidyTree(treeRef.current))
     notify('Tidied panes')
@@ -1197,10 +1189,7 @@ export function WmFrame({
         }
         return
       }
-      case 'restore-layout': {
-        onToggleExpandRef.current()
-        return
-      }
+      case 'restore-layout':
       case 'multi-cursor': {
         // The broadcast state lives in ui-terminal's store; the frame only
         // raises the toggle event (same seam as the c0ntext open-map event).
@@ -1247,8 +1236,9 @@ export function WmFrame({
         if (focusRef.current !== undefined) onClose(focusRef.current)
         return
       case 'single': {
-        const id = focusRef.current
-        if (id !== undefined) writeTree(keepOnlyLeaf(treeRef.current, id))
+        // C-x 1 rides the toggle: expanding stashes the pre-expand tree, so
+        // a second C-x 1 (or the header button) restores it.
+        onToggleExpandRef.current()
         return
       }
       case 'other-window': {
@@ -1359,7 +1349,6 @@ export function WmFrame({
     onSplit,
     onClose,
     onFlip,
-    onExpand,
     onToggleExpand,
     expanded,
     onTidy,
