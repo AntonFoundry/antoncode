@@ -182,6 +182,7 @@ export function apply(ctx: ClientContext): void {
           },
           reconcileBuffers: () => { wm.actions.reconcile() },
           writeScratch: (text: string) => { scratch.actions.setText(text) },
+          openSession: (sessionId: string) => (ctx.sessions as unknown as { open(id: string): void }).open(sessionId),
           openWorkspace: (workspaceId: string) => {
             const view = ctx.workspaces.list.getSnapshot().items.find(w => w.workspaceId === workspaceId)
             const list = ctx.sessions.list.getSnapshot()

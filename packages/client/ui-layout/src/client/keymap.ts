@@ -61,6 +61,8 @@ export type WmCommand =
   | 'tidy-panes'
   /** Swap the focused pane with its sibling in the parent split. */
   | 'flip-pane'
+  /** Restore the pre-expand layout (undo expand-to-full). */
+  | 'restore-layout'
   /** Load a named theme from the frame's palette (compos load-theme). */
   | 'load-theme'
 
@@ -171,6 +173,7 @@ export const COMMANDS: readonly CommandEntry[] = [
   { name: 'multi-cursor', command: 'multi-cursor', keys: 'M-x' },
   { name: 'tidy-panes', command: 'tidy-panes', keys: 'M-x' },
   { name: 'flip-pane', command: 'flip-pane', keys: 'M-x' },
+  { name: 'restore-layout', command: 'restore-layout', keys: 'M-x' },
   { name: 'load-theme', command: 'load-theme', keys: 'M-x' },
 ]
 
