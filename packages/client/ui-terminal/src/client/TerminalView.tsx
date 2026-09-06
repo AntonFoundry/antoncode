@@ -72,6 +72,20 @@ export function TerminalView(props: TerminalViewProps) {
       term.open(host)
       try { fit.fit() } catch { /* zero-size container before layout settles */ }
 
+      // Debug capture (termdebug): record every write, fit, and resize with
+      // timestamps so a startup garble can be attributed to its emitter.
+      const dbg = new URLSearchParams(window.location.search).has('termdebug')
+      const trace: string[] = []
+      if (dbg) {
+        (window as unknown as { __termTrace: string[] }).__termTrace = trace
+        const origWrite = term.write.bind(term)
+        term.write = ((data: string) => { trace.push(`write:${JSON.stringify(data.slice(0, 80))}`); return origWrite(data) }) as typeof term.write
+      }
+      const mark = (what: string): void => {
+        if (dbg) trace.push(`${what}: cols=${term.cols} rows=${term.rows}`)
+      }
+      mark('created')
+
       // Let web fonts finish, then wait for the pane grid to reach a stable,
       // usable size BEFORE the shell spawns. A freshly split pane settles
       // over several frames; spawning into a transient narrow grid makes bash
@@ -84,6 +98,7 @@ export function TerminalView(props: TerminalViewProps) {
           try { fit.fit() } catch { /* zero-size container still settling */ }
           const cols = term.cols
           const rows = term.rows
+          mark('settle-fit')
           await new Promise(resolve => setTimeout(resolve, 120))
           if (disposed) return
           try { fit.fit() } catch { /* as above */ }
@@ -91,10 +106,12 @@ export function TerminalView(props: TerminalViewProps) {
         }
       }
       await stableGrid()
+      mark('pre-spawn')
       if (disposed) return
 
       if (liveSession === undefined) {
         const spawned = await faces.spawn(term.cols, term.rows)
+        mark('spawned')
         if (disposed) { void facesRef.current.dispose(spawned.sessionId); return }
         liveSession = spawned.sessionId
       }
@@ -118,15 +135,23 @@ export function TerminalView(props: TerminalViewProps) {
       const ro = new ResizeObserver(() => {
         try {
           fit.fit()
+          mark('ro-fit')
           pushResize()
         } catch { /* the session may already be gone */ }
       })
       ro.observe(host)
 
       let exitWritten = false
+      // Single-flight: a read that outlives its tick must not overlap the
+      // next one — two in-flight reads share the same cursor and both write
+      // the same tail, double-printing the prompt (the startup chevron
+      // overprint). The next tick re-checks after the cursor advances.
+      let reading = false
       poll = window.setInterval(() => {
-        if (disposed || exitWritten || liveSession === undefined) return
+        if (disposed || exitWritten || reading || liveSession === undefined) return
+        reading = true
         void facesRef.current.read(liveSession, since).then((result) => {
+          reading = false
           if (disposed || exitWritten) return
           if (result.data.length > 0) {
             term.write(result.data)
@@ -139,7 +164,7 @@ export function TerminalView(props: TerminalViewProps) {
             if (poll !== undefined) window.clearInterval(poll)
             term.write('\r\n\x1b[90m[process exited — close the window or C-x t for a new shell]\x1b[0m')
           }
-        })
+        }, () => { reading = false })
       }, 60)
     })()
 
