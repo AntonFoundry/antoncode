@@ -52,6 +52,17 @@
   resize: none;
 }
 
+/* The character-width measuring rig (a visible run of `f`/`P` spans) lives
+   inside the helpers block: it must stay laid-out for measurement but never
+   paint. Park it off-screen with visibility hidden — display: none would
+   break cell-width measuring. */
+.host :global(.xterm .xterm-width-cache-measure-container) {
+  position: absolute;
+  top: 0;
+  left: -9999em;
+  visibility: hidden;
+}
+
 .host :global(.xterm .xterm-screen) {
   position: relative;
 }
