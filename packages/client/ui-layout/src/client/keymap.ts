@@ -57,6 +57,10 @@ export type WmCommand =
   | 'term'
   /** Toggle keystroke broadcast across every open terminal (multi-cursor). */
   | 'multi-cursor'
+  /** Balance every split's weights to equal shares (tidy panes). */
+  | 'tidy-panes'
+  /** Swap the focused pane with its sibling in the parent split. */
+  | 'flip-pane'
   /** Load a named theme from the frame's palette (compos load-theme). */
   | 'load-theme'
 
@@ -165,6 +169,8 @@ export const COMMANDS: readonly CommandEntry[] = [
   { name: 'dump-layout', command: 'dump-layout', keys: 'M-x' },
   { name: 'term', command: 'term', keys: 'C-x t' },
   { name: 'multi-cursor', command: 'multi-cursor', keys: 'M-x' },
+  { name: 'tidy-panes', command: 'tidy-panes', keys: 'M-x' },
+  { name: 'flip-pane', command: 'flip-pane', keys: 'M-x' },
   { name: 'load-theme', command: 'load-theme', keys: 'M-x' },
 ]
 

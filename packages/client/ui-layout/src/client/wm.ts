@@ -526,6 +526,52 @@ export function lastLeafId(node: WmNode): string | undefined {
  * @param leafId - the leaf to keep.
  * @returns the reduced tree (same reference when nothing else remains).
  */
+/**
+ * Balance every split's weights to equal shares, recursively (tidy panes).
+ * Pure: returns a new tree; the input is untouched.
+ * @param node - subtree root.
+ * @returns the balanced tree.
+ */
+export function tidyTree(node: WmNode): WmNode {
+  if (node.kind === 'leaf') return node
+  const count = node.children.length
+  return {
+    ...node,
+    weights: node.children.map(() => 1 / count),
+    children: node.children.map(tidyTree),
+  }
+}
+
+/**
+ * Swap a leaf with its sibling inside the parent split (flip panes): the
+ * leaf takes the sibling's position and weight. A leaf whose parent is the
+ * root with no sibling, or an only child, returns the tree unchanged.
+ * @param node - subtree root.
+ * @param leafId - the leaf to flip.
+ * @returns the flipped tree, or the input when no sibling exists.
+ */
+export function flipWithSibling(node: WmNode, leafId: string): WmNode {
+  if (node.kind === 'leaf') return node
+  const index = node.children.findIndex(child => child.kind === 'leaf' && child.id === leafId)
+  if (index > 0 || (index === 0 && node.children.length > 1)) {
+    const siblingIndex = index === 0 ? 1 : index - 1
+    const children = node.children.slice()
+    const weights = node.weights.slice()
+    const moved = node.children[index]
+    const sibling = children[siblingIndex]
+    if (moved === undefined || sibling === undefined) return node
+    children[index] = sibling
+    children[siblingIndex] = moved
+    const movedWeight = node.weights[index]
+    const siblingWeight = weights[siblingIndex]
+    if (movedWeight === undefined || siblingWeight === undefined) return node
+    weights[index] = siblingWeight
+    weights[siblingIndex] = movedWeight
+    return { ...node, children, weights }
+  }
+  return { ...node, children: node.children.map(child => flipWithSibling(child, leafId)) }
+}
+
 export function keepOnlyLeaf(node: WmNode, leafId: string): WmNode {
   return normalizeTree(leafIds(node).filter(id => id !== leafId).reduce(
     (tree, id) => removeLeaf(tree, id),
