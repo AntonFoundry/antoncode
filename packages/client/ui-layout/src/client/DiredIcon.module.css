@@ -1,0 +1,16 @@
+/* Dired row icons: theme-token colors — the class names carry the semantic
+   (folder/code/image/archive/config/doc/file), the values follow the loaded
+   palette. */
+
+.icon {
+  flex: none;
+  vertical-align: -0.15em;
+}
+
+.folder { color: var(--dsw-alias-state-business-primary); }
+.code { color: var(--dsw-alias-state-warn-primary); }
+.image { color: var(--dsw-alias-state-success-primary); }
+.archive { color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary)); }
+.config { color: var(--dsw-alias-label-secondary); }
+.doc { color: var(--dsw-alias-label-secondary); }
+.file { color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary)); }

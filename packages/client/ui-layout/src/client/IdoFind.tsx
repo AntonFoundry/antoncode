@@ -2,7 +2,11 @@
  * Ido find-file: the interactive directory prompt (Emacs ido-mode over the
  * wire). One active directory, a typed segment narrowing its live listing
  * (flex match — every query character must appear in order), the candidate
- * list docked above the echo area. Keys: ↑/↓ or C-p/C-n move the selection;
+ * list docked above the echo area. The query is path-aware: `~` jumps to
+ * the host home, a leading `/` to the root, and each complete segment
+ * before a slash descends into its directory match (one refetch per
+ * segment) while the tail flex-narrows the resolved level. Keys: ↑/↓ or
+ * C-p/C-n move the selection;
  * Enter or Tab on a directory descends into it (Enter on a plain file lands
  * the full dired window at its directory); C-j opens dired here from any
  * state; Backspace deletes a character and, with an empty segment, walks up
@@ -12,7 +16,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { DirectoryListing } from '@deepseek-ai/dsh-api-remotes/client'
-import { flexDiredMatch, formatDiredMode, formatDiredSize, type DiredEntry } from './dired.ts'
+import { DiredIcon } from './DiredIcon.tsx'
+import { diredIconKind, flexDiredMatch, formatDiredMode, formatDiredSize, type DiredEntry } from './dired.ts'
 import css from './Minibuffer.module.css'
 
 /** Ido-find props: the injected listing face and the two outcomes. */
@@ -60,6 +65,42 @@ export function IdoFind({ initialDir, listDirectory, onOpen, onCancel }: IdoFind
       })
     return () => { controller.abort() }
   }, [dir, listDirectory])
+
+  // Path semantics for the query (Emacs find-file): `~` jumps to the host
+  // home, a leading `/` to the filesystem root, and every complete segment
+  // before a slash descends into its directory match — one segment per
+  // pass, the refetch chain consuming the rest. The final (partial)
+  // segment stays as the flex query over the resolved directory.
+  useEffect(() => {
+    if (query.startsWith('~')) {
+      const home = listing?.home
+      if (home === undefined) return
+      setDir(home)
+      setQuery(query.slice(1).replace(/^\//, ''))
+      setIndex(0)
+      return
+    }
+    if (query.startsWith('/')) {
+      setDir('/')
+      setQuery(query.replace(/^\/+/, ''))
+      setIndex(0)
+      return
+    }
+    const slash = query.indexOf('/')
+    if (slash === -1) return
+    const head = query.slice(0, slash)
+    const rest = query.slice(slash + 1)
+    if (head === '') return
+    const entries = listing?.entries ?? []
+    // Exact name wins; otherwise the current flex selection descends (ido
+    // commits the best match at the slash).
+    const exact = entries.find(e => e.name === head && e.isDirectory !== false)
+    const hit = exact ?? flexDiredMatch(entries, head)[0]
+    if (hit === undefined || hit.isDirectory === false) return
+    setDir(hit.path)
+    setQuery(rest)
+    setIndex(0)
+  }, [query, listing])
 
   // Ido flex match over the active directory's rows.
   const matches = useMemo<DiredEntry[]>(() => {
@@ -145,7 +186,7 @@ export function IdoFind({ initialDir, listDirectory, onOpen, onCancel }: IdoFind
     const kid = listRef.current?.children[clamped]
     if (kid instanceof HTMLElement) kid.scrollIntoView({ block: 'nearest' })
   }, [clamped, matches.length])
-  const label = `Find file: ${dir ?? listing?.home ?? '~'}/`
+  const label = `Find file: ${dir ?? listing?.home ?? '~'}/${query}`
   return (
     <div className={css.minibuffer} data-minibuffer data-ido>
       <span className={css.promptLabel}>{label}</span>
@@ -163,7 +204,7 @@ export function IdoFind({ initialDir, listDirectory, onOpen, onCancel }: IdoFind
       />
       {error !== undefined && <div className={css.promptLabel} data-error>{error}</div>}
       <ul ref={listRef} className={css.candidates}>
-        {matches.map((c) => (
+        {matches.map(c => (
           <li key={c.path}>
             <button
               type="button"
@@ -172,7 +213,10 @@ export function IdoFind({ initialDir, listDirectory, onOpen, onCancel }: IdoFind
               onMouseEnter={() => { setIndex(matches.indexOf(c)) }}
               onClick={() => { descend(c); inputRef.current?.focus() }}
             >
-              <span className={css.candidateLabel} data-kind={c.isDirectory === false ? 'file' : 'dir'}>{c.name}</span>
+              <span className={css.candidateLabel}>
+                <DiredIcon kind={diredIconKind(c.name, c.isDirectory)} />
+                {c.name}
+              </span>
               <span className={css.candidateHint}>
                 {formatDiredMode(c.mode)} {formatDiredSize(c.size)}
               </span>

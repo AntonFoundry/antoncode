@@ -32,6 +32,20 @@ export interface DirectoryEntry {
   path: string
   /** Hidden by the host platform's convention (dot-prefixed on POSIX); the client owns whether to show it. */
   hidden: boolean
+  /** Row kind: an enterable directory (the browser descends) versus a plain row (dired opens it with the host). */
+  isDirectory: boolean
+  /** Content size in bytes (regular files); absent where the platform cannot report it. */
+  size?: number
+  /** Last modification in Unix milliseconds. */
+  mtimeMs?: number
+  /** POSIX mode bits (e.g. `0o100644` — type nibble included); absent on platforms without modes. */
+  mode?: number
+}
+
+/** Options narrowing or widening one `list` call. */
+export interface DirectoryListOptions {
+  /** Include plain file rows beside the directories (dired's full listing; the folder chooser keeps directories only). */
+  includeFiles?: boolean
 }
 
 /** One directory level plus its ancestry, as a browse backend reports it. */
@@ -65,6 +79,7 @@ export interface DirectoryPickerBrowseCapability {
   /**
    * List one directory level.
    * @param path - absolute directory to list; absent lists the home directory.
+   * @param opts - level options; `includeFiles` widens the rows past enterable directories (dired's full listing).
    * @param signal - caller lifetime; abort stops the scan (a stalled network
    * directory must not outlive a disconnected caller) and rejects with the
    * abort reason.
@@ -74,7 +89,7 @@ export interface DirectoryPickerBrowseCapability {
    * qualified (a wire value must never resolve against the host cwd or, on
    * Windows, its current drive) or cannot be listed.
    */
-  list(path?: string, signal?: AbortSignal): Promise<DirectoryListing>
+  list(path?: string, opts?: DirectoryListOptions, signal?: AbortSignal): Promise<DirectoryListing>
   /**
    * Create one child directory under an existing parent.
    * @param path - absolute existing parent directory.

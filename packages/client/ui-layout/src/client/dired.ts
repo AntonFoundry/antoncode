@@ -25,6 +25,39 @@ export interface DiredEntry {
 }
 
 /**
+ * Icon classification for a listing row (the lsd/LS_COLORS idea, expressed
+ * as theme-token classes instead of terminal colors): a folder kind for
+ * enterable directories, and extension-driven kinds for plain files.
+ * @param name - the row's base name (extension read from it).
+ * @param isDirectory - the row kind flag; undefined counts as a directory.
+ * @returns the icon kind the row should render.
+ */
+export function diredIconKind(name: string, isDirectory?: boolean): DiredIconKind {
+  if (isDirectory !== false) return 'folder'
+  const ext = name.slice(name.lastIndexOf('.') + 1).toLowerCase()
+  if (name.startsWith('.') && name.indexOf('.', 1) === -1) return 'config'
+  switch (ext) {
+    case 'ts': case 'tsx': case 'js': case 'jsx': case 'mjs': case 'cjs':
+    case 'py': case 'rb': case 'go': case 'rs': case 'c': case 'h': case 'cpp':
+    case 'java': case 'php': case 'swift': case 'kt': case 'elm': case 'ex':
+      return 'code'
+    case 'md': case 'mdx': case 'txt': case 'rst': case 'org': case 'pdf':
+      return 'doc'
+    case 'png': case 'jpg': case 'jpeg': case 'gif': case 'webp': case 'svg': case 'ico':
+      return 'image'
+    case 'zip': case 'tar': case 'gz': case 'bz2': case '7z': case 'xz':
+      return 'archive'
+    case 'json': case 'yml': case 'yaml': case 'toml': case 'ini': case 'env':
+      return 'config'
+    default:
+      return 'file'
+  }
+}
+
+/** The icon kinds the dired rows render (see {@link diredIconKind}). */
+export type DiredIconKind = 'folder' | 'file' | 'code' | 'doc' | 'image' | 'archive' | 'config'
+
+/**
  * Ido-style flex match: every query character must appear in the row name
  * in order (case-insensitive). The empty query matches everything.
  * @param entries - the listing rows.

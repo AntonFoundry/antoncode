@@ -16,6 +16,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { canExecute, hasLinuxChooserBinary } from './probe.ts'
+import z from '@deepseek-ai/schemastery'
 import type { DirectoryPickerBackendKind } from './resolve.ts'
 import { resolveDirectoryPickerBackend } from './resolve.ts'
 
@@ -59,13 +60,30 @@ export const SURFACE_PACKAGES: Record<DirectoryPickerBackendKind, string> = {
  * both faces of the mounted interaction (and their dependents) quiesced.
  * @param ctx - cordis context carrying the injected `webServer` and `loader`.
  */
-export async function apply(ctx: Context): Promise<void> {
-  const backend = resolveDirectoryPickerBackend({
-    bindHost: ctx.webServer.host,
-    platform: process.platform,
-    env: process.env,
-    linuxChooser: hasLinuxChooserBinary(process.env.PATH, canExecute),
-  })
+/** Validated plugin configuration. */
+export interface Config {
+  /**
+   * `auto` (default) resolves the interaction from the boot-time sample;
+   * `native`/`browse` pin it — a patch layer can set this (patches may
+   * configure a mounted row but can never swap its package name).
+   */
+  kind: 'auto' | DirectoryPickerBackendKind
+}
+
+/** Validated plugin configuration (Schemastery seat). */
+export const Config: z<Config> = z.object({
+  kind: z.union(['auto', 'native', 'browse'] as const).default('auto'),
+})
+
+export async function apply(ctx: Context, config: Config): Promise<void> {
+  const backend = config.kind === 'auto'
+    ? resolveDirectoryPickerBackend({
+      bindHost: ctx.webServer.host,
+      platform: process.platform,
+      env: process.env,
+      linuxChooser: hasLinuxChooserBinary(process.env.PATH, canExecute),
+    })
+    : config.kind
   await ctx.effect(async () => {
     // Root-tree create: the Loader root is in-memory (write() is a no-op), so
     // the mounted rows can never be persisted back into a config file. The

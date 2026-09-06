@@ -42,10 +42,11 @@ export interface IWorkspaces {
   /**
    * List one directory level through the Host's `browse` capability.
    * @param path - absolute directory to list; absent lists the Host home directory.
+   * @param opts - level options; `includeFiles` widens the rows past enterable directories.
    * @param signal - aborts the wire request (and the Host's scan) when the caller supersedes it.
    * @returns the level's listing with breadcrumb ancestry.
    */
-  listDirectory(path?: string, signal?: AbortSignal): Promise<DirectoryListing>
+  listDirectory(path?: string, opts?: { includeFiles?: boolean }, signal?: AbortSignal): Promise<DirectoryListing>
   /**
    * Create one child directory through the Host's `browse` capability.
    * @param path - absolute existing parent directory.

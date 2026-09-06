@@ -16,8 +16,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { DirectoryListing } from '@deepseek-ai/dsh-api-remotes/client'
+import { DiredIcon } from './DiredIcon.tsx'
 import {
-  diredBack, diredForward, filterDired, formatDiredDate, formatDiredMode, formatDiredSize,
+  diredBack, diredForward, diredIconKind, filterDired, formatDiredDate, formatDiredMode, formatDiredSize,
   freshDiredHistory, nextDiredSort, parentOf,
   pushDiredLevel, sortDired, type DiredEntry, type DiredHistory, type DiredSort,
 } from './dired.ts'
@@ -243,7 +244,10 @@ export function FilesBuffer({ path, listDirectory, onNavigate, onKill, active, o
               onMouseEnter={() => { setSelected(i) }}
               onClick={() => { visit(entry) }}
             >
-              <span className={css.name} data-kind={entry.isDirectory === false ? 'file' : 'dir'}>{entry.name}</span>
+              <span className={css.name}>
+                <DiredIcon kind={diredIconKind(entry.name, entry.isDirectory)} />
+                {entry.name}
+              </span>
               <span className={css.meta}>
                 <span className={css.perms}>{formatDiredMode(entry.mode)}</span>
                 <span className={css.size}>{formatDiredSize(entry.size)}</span>

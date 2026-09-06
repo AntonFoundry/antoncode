@@ -332,12 +332,14 @@ describe('WorkspaceRuntime', () => {
     const ctx = new Context()
     const api = new FakeApiClient()
     const workspaces = new WorkspaceRuntime(ctx, api, new SessionRuntime(ctx, api, fakeRemote()))
-    const listing = { path: '/home/u', home: '/home/u', crumbs: [{ name: '/', path: '/', hidden: false }], entries: [{ name: 'p', path: '/home/u/p', hidden: false }], truncated: false }
+    const listing = { path: '/home/u', home: '/home/u', crumbs: [{ name: '/', path: '/', hidden: false, isDirectory: true }], entries: [{ name: 'p', path: '/home/u/p', hidden: false, isDirectory: true }], truncated: false }
     api.onListDirectory = () => Promise.resolve(ok(listing))
     await expect(workspaces.listDirectory()).resolves.toEqual(listing)
     await expect(workspaces.listDirectory('/home/u')).resolves.toEqual(listing)
+    // The widened level rides the same RPC: files included.
+    await expect(workspaces.listDirectory('/home/u', { includeFiles: true })).resolves.toEqual(listing)
     // The optional path is omitted from the payload, not sent as undefined.
-    expect(api.callsOf('host.listDirectory')).toEqual([{}, { path: '/home/u' }])
+    expect(api.callsOf('host.listDirectory')).toEqual([{}, { path: '/home/u' }, { path: '/home/u', includeFiles: true }])
     api.onListDirectory = () => Promise.resolve(err({ code: 'directory-unreadable', message: 'denied', details: { path: '/x' } }))
     const listFailure = workspaces.listDirectory('/x')
     await expect(listFailure).rejects.toBeInstanceOf(DirectoryBrowseError)

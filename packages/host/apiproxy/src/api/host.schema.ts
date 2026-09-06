@@ -33,11 +33,16 @@ export const directoryEntrySchema = z.object({
   name: z.string(),
   path: z.string(),
   hidden: z.boolean(),
+  isDirectory: z.boolean(),
+  size: z.number().optional(),
+  mtimeMs: z.number().optional(),
+  mode: z.number().optional(),
 }) satisfies z.ZodType<Wire<DirectoryEntry>>
 
 /** host.listDirectory request payload; an absent path lists the home directory. */
 export const hostListDirectoryRequestSchema = z.object({
   path: z.string().optional(),
+  includeFiles: z.boolean().optional(),
 }) satisfies z.ZodType<Wire<RequestPayload<'host.listDirectory'>>>
 
 /** host.listDirectory response value. */
