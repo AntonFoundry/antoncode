@@ -50,7 +50,7 @@ export interface DirectoryBrowserProps {
   /** Dialog visibility (owner-local; closed unmounts nothing but resets on reopen). */
   open: boolean
   /** List one directory level (absent path = the Host home directory); the signal aborts a superseded scan on the wire. */
-  listDirectory: (path?: string, signal?: AbortSignal) => Promise<DirectoryListing>
+  listDirectory: (path?: string, opts?: { includeFiles?: boolean }, signal?: AbortSignal) => Promise<DirectoryListing>
   /** Create one child directory under an existing parent. */
   createDirectory: (path: string, name: string) => Promise<string>
   /** The operator confirmed a directory (the selection, else the listed level). */
@@ -329,7 +329,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
     const controller = new AbortController()
     scanController.current = controller
     restartSlowScanWindow()
-    return { seq, scan: listDirectory(path, controller.signal) }
+    return { seq, scan: listDirectory(path, undefined, controller.signal) }
   }, [supersede, restartSlowScanWindow, listDirectory])
 
   /**
@@ -340,7 +340,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
     const controller = new AbortController()
     scanController.current = controller
     restartSlowScanWindow()
-    return listDirectory(path, controller.signal)
+    return listDirectory(path, undefined, controller.signal)
   }, [restartSlowScanWindow, listDirectory])
 
   /**

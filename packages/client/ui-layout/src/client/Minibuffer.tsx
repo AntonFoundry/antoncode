@@ -18,9 +18,6 @@ export interface MinibufferCandidate {
   hint?: string
 }
 
-/** Max candidate rows drawn at once (the rest stay filter-reachable). */
-const MAX_VISIBLE = 8
-
 /** Minibuffer props: prompt label, resolved candidates, and the two outcomes. */
 export interface MinibufferProps {
   /** Prompt line label, e.g. "Switch buffer" or "Find file". */
@@ -48,7 +45,7 @@ export function Minibuffer({ prompt, candidates, onExecute, onCancel }: Minibuff
     const hits = q === ''
       ? candidates
       : candidates.filter(c => c.label.toLowerCase().includes(q) || c.id.toLowerCase().includes(q))
-    return hits.slice(0, MAX_VISIBLE)
+    return hits
   }, [candidates, query])
   const clamped = Math.min(index, Math.max(0, filtered.length - 1))
 

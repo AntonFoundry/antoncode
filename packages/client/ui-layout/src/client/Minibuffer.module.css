@@ -69,18 +69,11 @@
   font-size: 12px;
 }
 
-/* Ido find-file rows: kind glyph on the label, stat hint on the right. */
-.candidateLabel::before {
-  display: inline-block;
-  width: 1.2em;
-  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
-  content: '▪';
-  font-size: 11px;
-}
-
-.candidateLabel[data-kind='dir']::before {
-  color: var(--dsw-alias-state-business-primary);
-  content: '▸';
+/* Ido find-file rows: the icon component rides the label's left edge. */
+.candidateLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .promptLabel[data-error] {

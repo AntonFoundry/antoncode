@@ -87,7 +87,7 @@ function listingFor(path?: string): DirectoryListing {
 }
 
 function mount(overrides: Partial<Parameters<typeof DirectoryBrowser>[0]> = {}) {
-  const listDirectory = vi.fn(async (path?: string) => listingFor(path))
+  const listDirectory = vi.fn(async (path?: string, _opts?: { includeFiles?: boolean }, _signal?: AbortSignal) => listingFor(path))
   const createDirectory = vi.fn(async (path: string, name: string) => `${path}/${name}`)
   const onOpen = vi.fn()
   const onClose = vi.fn()
@@ -125,7 +125,7 @@ describe('DirectoryBrowser', () => {
   it('opens at the Host home as one wide column, hides hidden entries, and roots the crumbs at Home', async () => {
     const b = mount()
     await waitFor(() => { expect(screen.getByRole('listitem')).toBeTruthy() })
-    expect(b.listDirectory).toHaveBeenCalledWith(undefined, expect.any(AbortSignal))
+    expect(b.listDirectory).toHaveBeenCalledWith(undefined, undefined, expect.any(AbortSignal))
     expect(columns()).toHaveLength(1)
     expect(screen.getByRole('listitem').textContent).toBe('Documents')
     expect(screen.queryByText('.config')).toBeNull()
@@ -165,7 +165,7 @@ describe('DirectoryBrowser', () => {
     expect(selectedRow.textContent).toBe('Documents')
     expect(rowButton(selectedRow).getAttribute('aria-current')).toBe('true')
     expect(within(preview!).getByRole('listitem').textContent).toBe('harness')
-    expect(b.listDirectory).toHaveBeenLastCalledWith(DOCS, expect.any(AbortSignal))
+    expect(b.listDirectory).toHaveBeenLastCalledWith(DOCS, undefined, expect.any(AbortSignal))
     expect(within(screen.getByRole('navigation')).getByRole('button', { name: 'Documents' })).toBeTruthy()
   })
 
@@ -185,7 +185,7 @@ describe('DirectoryBrowser', () => {
   it('aborts a superseded listing on the wire, and the in-flight one on close', async () => {
     const signals: (AbortSignal | undefined)[] = []
     const gates: (() => void)[] = []
-    const listDirectory = vi.fn((path?: string, signal?: AbortSignal) => {
+    const listDirectory = vi.fn((path?: string, _opts?: { includeFiles?: boolean }, signal?: AbortSignal) => {
       signals.push(signal)
       if (signals.length === 1) return Promise.resolve(listingFor(path))
       // Later listings hang until released: supersession must abort them
@@ -254,7 +254,7 @@ describe('DirectoryBrowser', () => {
       // Only the FIRST explicit HOME request (the parent leg) hangs; the
       // later home crumb jump lists normally.
       let homeCalls = 0
-      const listDirectory = vi.fn((path?: string, signal?: AbortSignal) => {
+      const listDirectory = vi.fn((path?: string, _opts?: { includeFiles?: boolean }, signal?: AbortSignal) => {
         signals.push(signal)
         if (path === HOME && ++homeCalls === 1) {
           return new Promise<DirectoryListing>((resolve) => { settlers.push(resolve) })
@@ -728,7 +728,7 @@ describe('DirectoryBrowser', () => {
     // pane — a typed path moves the Miller view exactly as a crumb jump does.
     fireEvent.change(input, { target: { value: `${DOCS}/h` } })
     await waitFor(() => { expect(columns()).toHaveLength(2) })
-    expect(b.listDirectory).toHaveBeenCalledWith(`${DOCS}/`, expect.anything())
+    expect(b.listDirectory).toHaveBeenCalledWith(`${DOCS}/`, undefined, expect.anything())
     expect(within(columns()[0]!).getByText('Documents')).toBeTruthy()
     expect(within(columns()[1]!).getByText('harness')).toBeTruthy()
     // Still editing: the panes moved under the draft, the editor stayed.
@@ -759,7 +759,7 @@ describe('DirectoryBrowser', () => {
     await waitFor(() => { expect(within(columns()[0]!).getByText('Documents')).toBeTruthy() })
     expect(columns()).toHaveLength(2)
     expect(within(columns()[1]!).getAllByRole('listitem').map(item => item.textContent)).toEqual(['harness'])
-    expect(b.listDirectory).toHaveBeenCalledWith(`${DOCS}/`, expect.anything())
+    expect(b.listDirectory).toHaveBeenCalledWith(`${DOCS}/`, undefined, expect.anything())
   })
 
   it('holds a stale pane still until its landing, instead of narrowing it first', async () => {
@@ -851,7 +851,7 @@ describe('DirectoryBrowser', () => {
     fireEvent.click(screen.getByRole('button', { name: 'browser.editPath' }))
     const input = screen.getByLabelText<HTMLInputElement>('browser.editPath')
     fireEvent.change(input, { target: { value: `${DOCS}/h` } })
-    await waitFor(() => { expect(listDirectory).toHaveBeenCalledWith(HOME, expect.anything()) })
+    await waitFor(() => { expect(listDirectory).toHaveBeenCalledWith(HOME, undefined, expect.anything()) })
     await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 400) }) })
     // Well past the submitted-navigation bound: still the pre-walk view.
     expect(columns()).toHaveLength(1)
@@ -873,7 +873,7 @@ describe('DirectoryBrowser', () => {
     // with the tail filtering it.
     fireEvent.change(input, { target: { value: '/ho' } })
     await waitFor(() => { expect(columns()).toHaveLength(1) })
-    expect(b.listDirectory).toHaveBeenCalledWith('/', expect.anything())
+    expect(b.listDirectory).toHaveBeenCalledWith('/', undefined, expect.anything())
     expect(screen.getAllByRole('listitem').map(item => item.textContent)).toEqual(['home'])
   })
 
@@ -915,7 +915,7 @@ describe('DirectoryBrowser', () => {
     // Correcting only the final segment leaves the directory part unchanged;
     // the edit must still release the hold and re-arm the wait.
     fireEvent.change(input, { target: { value: `${HARNESS}x` } })
-    await waitFor(() => { expect(listDirectory).toHaveBeenCalledWith(`${DOCS}/`, expect.anything()) })
+    await waitFor(() => { expect(listDirectory).toHaveBeenCalledWith(`${DOCS}/`, undefined, expect.anything()) })
     await waitFor(() => { expect(screen.getByText('harness')).toBeTruthy() })
   })
 
@@ -941,7 +941,7 @@ describe('DirectoryBrowser', () => {
     fireEvent.click(screen.getByRole('button', { name: 'browser.editPath' }))
     const input = screen.getByLabelText<HTMLInputElement>('browser.editPath')
     fireEvent.change(input, { target: { value: `${HOME}/nope/x` } })
-    await waitFor(() => { expect(b.listDirectory).toHaveBeenCalledWith(`${HOME}/nope/`, expect.anything()) })
+    await waitFor(() => { expect(b.listDirectory).toHaveBeenCalledWith(`${HOME}/nope/`, undefined, expect.anything()) })
     // A half-typed directory is unreadable most of the time: the last
     // readable level keeps rendering and no error interrupts the typing.
     expect(screen.getByText('Documents')).toBeTruthy()
@@ -984,9 +984,9 @@ describe('DirectoryBrowser', () => {
     fireEvent.click(screen.getByRole('button', { name: 'browser.editPath' }))
     const input = screen.getByLabelText<HTMLInputElement>('browser.editPath')
     fireEvent.change(input, { target: { value: `${DOCS}/h` } })
-    await waitFor(() => { expect(listDirectory).toHaveBeenCalledWith(`${DOCS}/`, expect.anything()) })
+    await waitFor(() => { expect(listDirectory).toHaveBeenCalledWith(`${DOCS}/`, undefined, expect.anything()) })
     fireEvent.change(input, { target: { value: '/x' } })
-    await waitFor(() => { expect(listDirectory).toHaveBeenCalledWith('/', expect.anything()) })
+    await waitFor(() => { expect(listDirectory).toHaveBeenCalledWith('/', undefined, expect.anything()) })
     // Back onto the listed level: neither pending scan may still land.
     fireEvent.change(input, { target: { value: `${HOME}/D` } })
     await act(async () => { landDocs(); failRoot() })
@@ -1172,11 +1172,11 @@ describe('DirectoryBrowser', () => {
     // rows nor status behind.
     await waitFor(() => { expect(screen.getByRole('listitem').textContent).toBe('Documents') })
     expect(listDirectory).toHaveBeenCalledTimes(2)
-    expect(listDirectory).toHaveBeenLastCalledWith(undefined, expect.any(AbortSignal))
+    expect(listDirectory).toHaveBeenLastCalledWith(undefined, undefined, expect.any(AbortSignal))
   })
 
   it('passes the entered path to the Host untrimmed (trim only gates blank drafts)', async () => {
-    const listDirectory = vi.fn(async (path?: string) => listingFor(path))
+    const listDirectory = vi.fn(async (path?: string, _opts?: { includeFiles?: boolean }, _signal?: AbortSignal) => listingFor(path))
     mount({ listDirectory })
     await waitFor(() => { expect(screen.getByRole('listitem')).toBeTruthy() })
     fireEvent.click(screen.getByRole('button', { name: 'browser.editPath' }))
@@ -1184,7 +1184,7 @@ describe('DirectoryBrowser', () => {
     fireEvent.change(input, { target: { value: `${DOCS} ` } })
     fireEvent.keyDown(input, { key: 'Enter' })
     // A trailing space may name a real directory; trimming would list its sibling.
-    await waitFor(() => { expect(listDirectory).toHaveBeenLastCalledWith(`${DOCS} `, expect.any(AbortSignal)) })
+    await waitFor(() => { expect(listDirectory).toHaveBeenLastCalledWith(`${DOCS} `, undefined, expect.any(AbortSignal)) })
   })
 
   it('surfaces an unreadable target as an alert and keeps the edit open for correction', async () => {
@@ -1328,7 +1328,7 @@ describe('DirectoryBrowser', () => {
     expect(b.listDirectory.mock.calls.length).toBe(listCalls)
     fireEvent.compositionEnd(pathInput)
     fireEvent.keyDown(pathInput, { key: 'Enter' })
-    await waitFor(() => { expect(b.listDirectory).toHaveBeenLastCalledWith(DOCS, expect.any(AbortSignal)) })
+    await waitFor(() => { expect(b.listDirectory).toHaveBeenLastCalledWith(DOCS, undefined, expect.any(AbortSignal)) })
     // Create dialog: same guard.
     fireEvent.click(screen.getByRole('button', { name: 'browser.newFolder' }))
     const nameInput = screen.getByLabelText('browser.folderName')
@@ -1747,6 +1747,6 @@ describe('DirectoryBrowser', () => {
     b.view.rerender(<DirectoryBrowser {...b.props} open />)
     await waitFor(() => { expect(screen.getByRole('listitem').textContent).toBe('Documents') })
     expect(columns()).toHaveLength(1)
-    expect(b.listDirectory).toHaveBeenLastCalledWith(undefined, expect.any(AbortSignal))
+    expect(b.listDirectory).toHaveBeenLastCalledWith(undefined, undefined, expect.any(AbortSignal))
   })
 })

@@ -13,6 +13,14 @@ export interface DirectoryEntry {
   path: string
   /** Hidden by the host platform's convention (dot-prefixed on POSIX); the client owns whether to show it. */
   hidden: boolean
+  /** Row kind: an enterable directory (the browser descends) versus a plain row (dired opens it with the host). */
+  isDirectory: boolean
+  /** Content size in bytes (regular files); absent where the platform cannot report it. */
+  size?: number
+  /** Last modification in Unix milliseconds. */
+  mtimeMs?: number
+  /** POSIX mode bits (e.g. `0o100644` — type nibble included); absent on platforms without modes. */
+  mode?: number
 }
 
 /** host.listDirectory response value: one directory level plus its ancestry. */
@@ -69,7 +77,7 @@ export interface HostApi {
    * on disconnect or timeout.
    */
   listDirectory(
-    request: RpcRequest<{ path?: string }>,
+    request: RpcRequest<{ path?: string; includeFiles?: boolean }>,
     signal: AbortSignal,
   ): Promise<RpcResponse<DirectoryListing>>
 
