@@ -79,6 +79,17 @@ pnpm run demo:cordis    # the agent modifies its own runtime (needs key)
 pnpm run demo:acp       # ACP automation server (needs DEEPSEEK_API_KEY)
 ```
 
+### Anton macOS app (apps/anton-bridge)
+
+The app ships only built `lib/` output, so rebuild changed packages first (`npx tsc -b tsconfig.client.json` + `pnpm --filter <pkg> run bundle`, or a full `pnpm run build`), then:
+
+```sh
+pnpm run anton:build:macos  # assemble + codesign the candidate at dist/Anton.next.app
+bash dist/install-anton.sh  # quit the running app, swap Anton.next.app → Anton.app (old becomes Anton.previous.app), relaunch
+```
+
+To bounce just the Harness process without touching the app, POST `http://127.0.0.1:3742/bridge/api/harness/restart` — it reloads the tree the bridge serves: the bundle inside `Anton.app` for the installed app (so app code changes still need the rebuild + install above), or this checkout under `pnpm run anton:dev`, which runs the bridge from source.
+
 ### Host sandbox failures
 
 When required `gh`, `pnpm`, build, test, or generator commands fail because the agent sandbox blocks credentials, network, IPC, file watching, or nested `sandbox-exec`, retry unchanged with the narrowest host escalation before diagnosing authentication or project failure. Require sandbox evidence; never bypass genuine test failures or the product sandbox under test.
@@ -124,6 +135,7 @@ Real-API tests and demos read `DEEPSEEK_API_KEY`, optional `DEEPSEEK_BASE_URL`, 
 - **A tool's UI render intent is part of its design**, decided up front (`generic`/`terminal`/`diff`, `locations`); presentation methods are pure functions of `args` ([cookbook](docs/cookbook/adding-a-tool.md)).
 - **Plan unit, e2e, and snapshot coverage** for capability seams, lifecycle paths, and transcript output; include missing snapshot-harness support in the same change.
 - **Both SDKs project the loop.** Agent-loop, session-lifecycle, and `SessionEventMap` changes update the TypeScript and Python SDK expected outputs in the same PR; `pnpm run test` covers neither ([surfaces](docs/testing.md#when-a-snapshot-test-is-required)).
+- **Commit the tree after each feature or bug fix.** When a feature or bug fix passes its narrow checks, commit it immediately (deliberate message; its Agent Note, README, and test updates in the same commit) — do not leave a large uncommitted tree accumulating across tasks. Never commit `dist/` output or credentials.
 - **Choose PR history deliberately.** Split independent changes; fix the introducing PR before propagation. Standalone PRs and official stacks may merge-forward or rebase after review. Rewrites use `--force-with-lease`, abort on remote movement, never raw `--force`; an in-progress merge-forward preserves its checkpoint before taking a newer base ([rationale](.agents/notes/implemented/process/2026-08-02-native-github-stacks-and-optional-rebases.md)).
 - **Labels:** one PR `kind/*`, all material `area/*`, and native Issue Type ([taxonomy](.agents/notes/implemented/process/2026-08-08-unified-github-label-taxonomy.md)).
 - TODO markers: `FIXME`/`TODO`/`XXX` by urgency ([semantics](docs/development.md)).
