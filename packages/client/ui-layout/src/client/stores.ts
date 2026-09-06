@@ -18,13 +18,30 @@ import {
 } from './wm.ts'
 
 /**
- * Layout store state: panel width preferences in px (0 = closed), plus the
+ * The frame's viewing mode: 'agent' is the standard sidebar+conversation+
+ * details composition, 'chat' is the conversation alone, 'code' tiles every
+ * terminal buffer and hides the panels. Persisted at `dsh.layout.mode`.
+ */
+export type LayoutMode = 'agent' | 'code' | 'chat'
+
+const MODE_KEY = 'dsh.layout.mode'
+
+function seedMode(): LayoutMode {
+  try {
+    const stored = window.localStorage.getItem(MODE_KEY)
+    return stored === 'code' || stored === 'chat' ? stored : 'agent'
+  } catch { return 'agent' }
+}
+
+/**
+ * Layout store state: panel width preferences in px (0 = closed), the
  * narrow-viewport pair — `narrow` mirrors AppFrame's breakpoint reading
  * (viewport < SIDEBAR_AUTO_COLLAPSE) so toggleSidebar can pick semantics, and
  * `narrowExpanded` is the manual override that re-expands the auto-collapsed
- * sidebar over the squeezed center without rewriting the width preference.
+ * sidebar over the squeezed center without rewriting the width preference —
+ * plus the frame's viewing {@link LayoutMode}.
  */
-type LayoutState = { sidebar: number; details: number; narrow: boolean; narrowExpanded: boolean }
+type LayoutState = { sidebar: number; details: number; narrow: boolean; narrowExpanded: boolean; mode: LayoutMode }
 
 /**
  * Annotation twin of the actions literal below (the export needs a declared
@@ -37,6 +54,7 @@ type LayoutActions = {
   setNarrow: (draft: LayoutState, narrow: boolean) => void
   openDetails: (draft: LayoutState) => void
   closeDetails: (draft: LayoutState) => void
+  setMode: (draft: LayoutState, mode: LayoutMode) => void
 }
 
 /**
@@ -51,7 +69,7 @@ type LayoutActions = {
  */
 export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutActions>  {
   const handle = defineStore({
-    init: (): LayoutState => ({ sidebar: SIDEBAR_DEFAULT, details: 0, narrow: false, narrowExpanded: false }),
+    init: (): LayoutState => ({ sidebar: SIDEBAR_DEFAULT, details: 0, narrow: false, narrowExpanded: false, mode: seedMode() }),
     actions: {
       setSidebar: (d, px: number) => { d.sidebar = clampWidth(px, SIDEBAR_MIN, SIDEBAR_MAX) },
       setDetails: (d, px: number) => { d.details = clampWidth(px, DETAILS_MIN, DETAILS_MAX) },
@@ -70,6 +88,10 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
       },
       openDetails: (d) => { if (d.details === 0) d.details = DETAILS_DEFAULT },
       closeDetails: (d) => { d.details = 0 },
+      setMode: (d, mode: LayoutMode) => {
+        d.mode = mode
+        try { window.localStorage.setItem(MODE_KEY, mode) } catch { /* private mode */ }
+      },
     },
   })
   return handle

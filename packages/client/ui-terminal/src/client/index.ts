@@ -7,6 +7,7 @@
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import { createBroadcastStore } from './broadcast.js'
 import { TerminalView } from './TerminalView.js'
 
 export const inject = ['slots', 'connection', 'theme']
@@ -18,6 +19,17 @@ export const inject = ['slots', 'connection', 'theme']
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
+  // The broadcast store: one instance, created here and shared two ways —
+  // the hooks compartment (views subscribe via useBroadcast) and the inject
+  // face (the write actions). M-x multi-cursor raises the toggle event from
+  // the WM; this listener flips the same single instance.
+  const broadcast = createBroadcastStore().create()
+  ctx.effect(() => {
+    const onToggle = (): void => { broadcast.actions.setBroadcast(!broadcast.getSnapshot().broadcast) }
+    window.addEventListener('ui-terminal:toggle-broadcast', onToggle)
+    return () => { window.removeEventListener('ui-terminal:toggle-broadcast', onToggle) }
+  }, 'ui-terminal: multi-cursor toggle event')
+
   ctx.slots.inject('terminal.view', () => ctx.slots.register({
     name: 'terminal.view',
     inject: () => {
@@ -36,6 +48,8 @@ export function apply(ctx: ClientContext): void {
         resize: (sessionId: string, cols: number, rows: number) => api.term.resize({ sessionId, cols, rows }).then(() => undefined),
         dispose: (sessionId: string) => api.term.dispose({ sessionId }).then(() => undefined),
         themeTokens: () => theme.getTheme().active.tokens,
+        broadcastActions: broadcast.actions,
+        hooks: { broadcast },
       }
     },
   }, TerminalView))

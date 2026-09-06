@@ -260,3 +260,70 @@
 .whichKeyLabel {
   color: var(--dsw-alias-label-secondary);
 }
+
+/* Mode switcher: the Agent | Code | Chat segmented control centered in the
+   brand row. */
+.modeSwitch {
+  display: flex;
+  gap: 2px;
+  margin: 0 auto;
+  padding: 2px;
+  border: 1px solid var(--dsw-alias-border-subtle);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-sunken);
+}
+
+.modeTab {
+  appearance: none;
+  border: 0;
+  border-radius: 6px;
+  padding: 3px 14px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+
+.modeTab[data-active] {
+  background: var(--dsw-alias-bg-raised);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Code mode: every terminal buffer tiled as a card. */
+.codeGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+  gap: 1px;
+  align-content: stretch;
+  height: 100%;
+  background: var(--dsw-alias-border-subtle);
+  overflow: auto;
+}
+
+.codeCard {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: var(--dsw-alias-bg-base);
+}
+
+.codeCard > :global(*) {
+  min-height: 0;
+}
+
+.codeCard :global([data-terminal-view]) {
+  flex: 1;
+  min-height: 0;
+}
+
+.codeEmpty {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--dsw-alias-label-secondary);
+}

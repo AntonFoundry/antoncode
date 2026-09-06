@@ -336,9 +336,11 @@ afterEach(() => {
 
 describe('WmFrame render', () => {
   it('renders a mode line per leaf with the buffer titles and slot contents', () => {
-    const { getByText, getByTestId, getAllByLabelText, queryByText, queryByTestId } = mountFrame()
+    const { getByText, getByTestId, getAllByLabelText, queryByText, queryByTestId, container } = mountFrame()
+    const modeLineText = (text: string): Element[] =>
+      [...container.querySelectorAll('[class*=bufferName]')].filter(el => el.textContent === text)
     expect(getByText('Workspace')).toBeTruthy()
-    expect(getByText('Chat')).toBeTruthy()
+    expect(modeLineText('Chat').length).toBeGreaterThan(0)
     // Context stays closed on a fresh load (the header toggle opens it).
     expect(queryByText('Context')).toBeNull()
     expect(getByTestId('sidebar-content')).toBeTruthy()
@@ -359,23 +361,23 @@ describe('WmFrame render', () => {
   })
 
   it('mode-line close removes any leaf with a remaining window behind it', () => {
-    const { container, wm, queryByText } = mountFrame()
+    const { container, wm } = mountFrame()
     const closeButtonOf = (buffer: string): HTMLButtonElement =>
       container.querySelector(`[data-buffer="${buffer}"] button[aria-label="Close"]`) as HTMLButtonElement
     // The conversation pane closes too: chat returns through C-x b.
     act(() => { closeButtonOf('conversation').click() })
     expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR])
-    expect(queryByText('Chat')).toBeNull()
+    expect([...container.querySelectorAll('[class*=bufferName]')].some(el => el.textContent === 'Chat')).toBe(false)
   })
 
   it('mode-line split inserts a new pane beside the target', () => {
-    const { container, getAllByText, wm } = mountFrame()
+    const { container, wm } = mountFrame()
     // The conversation pane's Split right clones the buffer into a second
     // window beside it (a buffer is content; windows are views).
     const convSplit = container.querySelector('[data-buffer="conversation"] button[aria-label="Split right"]') as HTMLButtonElement
     act(() => { convSplit.click() })
     expect(leafIds(wm.getSnapshot().tree)).toHaveLength(3)
-    expect(getAllByText('Chat')).toHaveLength(2)
+    expect([...container.querySelectorAll('[class*=bufferName]')].filter(el => el.textContent === 'Chat')).toHaveLength(2)
   })
 
   it('brand-strip toggle removes and re-attaches the sidebar leaf', () => {

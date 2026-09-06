@@ -45,10 +45,10 @@ import { ScratchBuffer } from './ScratchBuffer.tsx'
 import { FilesBuffer } from './FilesBuffer.tsx'
 import {
   SINGLETON_BUFFERS, SCRATCH_BUFFER_ID, WM_LEAF_DETAILS, WM_LEAF_SIDEBAR, bufferRoster, bufferTitle, canClose, defaultTree,
+  findFirstLeaf, isSingletonBuffer,
   ensureBuffer, findBuffer, findLeaf, findSplit, firstLeafId, normalizeTree,
   SIDEBAR_REATTACH_WEIGHT,
-  isSingletonBuffer, keepOnlyLeaf,
-  killBuffer, leafIds, removeLeaf, scratchBuffer, setWeights, splitLeaf, swapBuffer,
+  keepOnlyLeaf, killBuffer, leafIds, removeLeaf, scratchBuffer, setWeights, splitLeaf, swapBuffer,
   type WmBuffer, type WmDirection, type WmNode,
 } from './wm.ts'
 import { requestHarnessRestart, waitAndReload } from './bridge.ts'
@@ -105,7 +105,7 @@ export interface WmFrameInjected {
 /** Full composed props: runtime share + child-slot render share + store share + injected wm face. */
 export type WmFrameProps =
   & PropsRuntime<'root'>
-  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'shell.overlay' | 'terminal.view'>
+  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'shell.overlay' | 'terminal.view' | 'shell.topbar.left' | 'shell.topbar.right'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
   & WmFrameInjected
 
@@ -428,12 +428,88 @@ function NodeView(props: NodeRenderProps & { node: WmNode }) {
 }
 
 /**
+ * Brand-row right chrome: notification and account placeholder buttons.
+ * Layout-owned stand-ins occupying `shell.topbar.right` until ui-jobs and
+ * identity contribute real occupants (the slot is the seam).
+ */
+export function TopbarChrome() {
+  return (
+    <>
+      <button type="button" className={css.brandToggle} aria-label="Notifications" title="Notifications (coming soon)">
+        <svg width={16} height={16} viewBox="0 0 16 16" fill="none" aria-hidden>
+          <path d="M8 2a4 4 0 0 0-4 4v3l-1.2 2.1a.5.5 0 0 0 .43.75h9.54a.5.5 0 0 0 .43-.75L12 9V6a4 4 0 0 0-4-4Z" stroke="currentColor" strokeWidth="1.2" />
+          <path d="M6.5 12.5a1.5 1.5 0 0 0 3 0" stroke="currentColor" strokeWidth="1.2" />
+        </svg>
+      </button>
+      <button type="button" className={css.brandToggle} aria-label="Account" title="Account (coming soon)">
+        <svg width={16} height={16} viewBox="0 0 16 16" fill="none" aria-hidden>
+          <circle cx="8" cy="8" r="6.4" stroke="currentColor" strokeWidth="1.2" />
+          <circle cx="8" cy="6.4" r="2" stroke="currentColor" strokeWidth="1.2" />
+          <path d="M3.8 12.6a4.6 4.6 0 0 1 8.4 0" stroke="currentColor" strokeWidth="1.2" />
+        </svg>
+      </button>
+    </>
+  )
+}
+
+/**
+ * Code mode body: every terminal buffer tiled as a card (mode line + the
+ * terminal.view slot occupant), in a wrapping grid. Without terminals an
+ * empty state offers the spawn keybinding.
+ */
+function CodeGrid(props: {
+  buffers: WmBuffer[]
+  renderSlot: NodeRenderProps['renderSlot']
+  runCommand: (command: WmCommand) => void
+}) {
+  const terminals = props.buffers.filter(b => b.kind === 'terminal')
+  if (terminals.length === 0) {
+    return (
+      <div className={css.codeEmpty} data-code-grid>
+        <p>No terminals yet.</p>
+        <button type="button" className={css.modeButton} onClick={() => { props.runCommand('term') }}>
+          Open a terminal (C-x t)
+        </button>
+      </div>
+    )
+  }
+  return (
+    <div className={css.codeGrid} data-code-grid>
+      {terminals.map(buffer => (
+        <section key={buffer.id} className={css.codeCard}>
+          <div className={css.modeLine}>
+            <span className={css.bufferName}>{bufferTitle(buffer)}</span>
+          </div>
+          {props.renderSlot('terminal.view', { sessionId: buffer.sessionId })}
+        </section>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * Chat mode body: the first conversation leaf rendered fullscreen — the
+ * tree stays untouched, so returning to agent mode restores every window.
+ */
+function ChatFocus(props: { renderProps: NodeRenderProps; tree: WmNode }) {
+  const leaf = findFirstLeaf(props.tree, (bufferId) => {
+    const kind = props.renderProps.buffers.find(b => b.id === bufferId)?.kind
+      ?? (isSingletonBuffer(bufferId) ? bufferId : 'scratch')
+    return kind === 'conversation'
+  })
+  // Rendering the leaf node itself skips its parent splits — the
+  // conversation fills the frame while the tree stays untouched.
+  return <NodeView {...props.renderProps} node={leaf ?? props.tree} />
+}
+
+/**
  * The window-manager frame (see module doc).
  * @param props - the four shares plus the injected wm face.
  * @returns the frame element tree.
  */
 export function WmFrame({
   useStore,
+  actions,
   useSessions,
   useWorkspaces,
   renderSlot,
@@ -902,6 +978,12 @@ export function WmFrame({
         }
         return
       }
+      case 'multi-cursor': {
+        // The broadcast state lives in ui-terminal's store; the frame only
+        // raises the toggle event (same seam as the c0ntext open-map event).
+        window.dispatchEvent(new CustomEvent('ui-terminal:toggle-broadcast'))
+        return
+      }
       case 'save-scratch':
         setScratchFlushTick(tick => tick + 1)
         notify('Wrote *scratch*')
@@ -1068,20 +1150,43 @@ export function WmFrame({
         >
           <IconPanelLeftOutline16 size={18} />
         </button>
-        <button
-          type="button"
-          className={css.brandToggle}
-          aria-label="Toggle context panel"
-          title="Toggle context panel"
-          data-active={findLeaf(tree, WM_LEAF_DETAILS) !== undefined || undefined}
-          style={{ marginLeft: 'auto' }}
-          onClick={onContextToggle}
-        >
-          <ContextIcon />
-        </button>
+        {renderSlot('shell.topbar.left', {})}
+        <div className={css.modeSwitch} role="tablist" aria-label="Layout mode">
+          {(['agent', 'code', 'chat'] as const).map(m => (
+            <button
+              key={m}
+              type="button"
+              role="tab"
+              aria-selected={panels.mode === m || undefined}
+              className={css.modeTab}
+              data-active={panels.mode === m || undefined}
+              onClick={() => { actions.setMode(m) }}
+            >
+              {m === 'agent' ? 'Agent' : m === 'code' ? 'Code' : 'Chat'}
+            </button>
+          ))}
+        </div>
+        {renderSlot('shell.topbar.right', {})}
+        {panels.mode !== 'code' && (
+          <button
+            type="button"
+            className={css.brandToggle}
+            aria-label="Toggle context panel"
+            title="Toggle context panel"
+            data-active={findLeaf(tree, WM_LEAF_DETAILS) !== undefined || undefined}
+            style={{ marginLeft: 'auto' }}
+            onClick={onContextToggle}
+          >
+            <ContextIcon />
+          </button>
+        )}
       </div>
       <div className={css.treeArea}>
-        <NodeView {...renderProps} node={tree} />
+        {panels.mode === 'code'
+          ? <CodeGrid buffers={buffers} renderSlot={renderSlot} runCommand={runCommand} />
+          : panels.mode === 'chat'
+            ? <ChatFocus renderProps={renderProps} tree={tree} />
+            : <NodeView {...renderProps} node={tree} />}
       </div>
       {prompt === 'find-file' && (() => {
         // Emacs C-x C-f over the workspace: the ido prompt seeds at the
