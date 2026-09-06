@@ -45,7 +45,7 @@ import { ScratchBuffer } from './ScratchBuffer.tsx'
 import { FilesBuffer } from './FilesBuffer.tsx'
 import {
   SINGLETON_BUFFERS, SCRATCH_BUFFER_ID, WM_LEAF_DETAILS, WM_LEAF_SIDEBAR, bufferRoster, bufferTitle, canClose, defaultTree,
-  findFirstLeaf, isSingletonBuffer,
+  isSingletonBuffer,
   ensureBuffer, findBuffer, findLeaf, findSplit, firstLeafId, normalizeTree,
   SIDEBAR_REATTACH_WEIGHT,
   flipWithSibling, keepOnlyLeaf, killBuffer, leafIds, removeLeaf, scratchBuffer, setWeights, splitLeaf, swapBuffer, tidyTree,
@@ -92,6 +92,7 @@ export interface WmFrameInjected {
    * resolvable session falls back to the New Session flow for it.
    */
   openWorkspace: (workspaceId: string) => void
+  openSession: (sessionId: string) => void
   /** The frame's theme palette (compos load-theme's candidates). */
   themeList: () => { id: string; colorScheme: string }[]
   /** Load one palette theme by id and persist the choice. */
@@ -154,6 +155,15 @@ function ExpandIcon() {
   return (
     <svg viewBox="0 0 16 16" width={18} height={18} aria-hidden>
       <path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  )
+}
+
+function RestoreIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width={18} height={18} aria-hidden>
+      <path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M2.5 2.5V6h3.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
     </svg>
   )
 }
@@ -283,6 +293,8 @@ interface NodeRenderProps {
   onClose: (leafId: string) => void
   onFlip: (leafId: string) => void
   onExpand: (leafId: string) => void
+  onToggleExpand: () => void
+  expanded: boolean
   onTidy: () => void
   onSash: (splitId: string, base: SashDragBase) => void
   onDragging: (dragging: boolean) => void
@@ -309,7 +321,7 @@ interface SashDragBase {
 function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf' }> }) {
   const {
     node, tree, focusedId, buffers, renderSlot, sidebarOwner, scratch, files,
-    onFocus, onSplit, onClose, onFlip, onExpand, onTidy,
+    onFocus, onSplit, onClose, onFlip, onExpand, onToggleExpand, expanded, onTidy,
   } = props
   const buffer = findBuffer(buffers, node.buffer)
   // A leaf referencing a registry gap falls back by id so a hand-edited or
@@ -377,12 +389,21 @@ function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf
               >
                 <FlipIcon />
               </button>
-              <button
-                type="button" className={css.modeButton} aria-label="Expand pane" title="Expand to full frame (C-x 1)"
-                onClick={() => { onExpand(node.id) }}
-              >
-                <ExpandIcon />
-              </button>
+              {expanded ? (
+                <button
+                  type="button" className={css.modeButton} aria-label="Restore layout" title="Restore the pre-expand layout"
+                  onClick={() => { onToggleExpand() }}
+                >
+                  <RestoreIcon />
+                </button>
+              ) : (
+                <button
+                  type="button" className={css.modeButton} aria-label="Expand pane" title="Expand to full frame (C-x 1)"
+                  onClick={() => { onExpand(node.id) }}
+                >
+                  <ExpandIcon />
+                </button>
+              )}
               <button
                 type="button" className={css.modeButton} aria-label="Close" title="Close window (C-x 0)"
                 onClick={() => { onClose(node.id) }}
@@ -557,18 +578,38 @@ function CodeGrid(props: {
 }
 
 /**
- * Chat mode body: the first conversation leaf rendered fullscreen — the
- * tree stays untouched, so returning to agent mode restores every window.
+ * Agent mode body: every session of the active workspace as a launcher card
+ * (title, recency, current marker). Clicking a card opens that session —
+ * the frame's conversation windows then show it. A true N-conversation
+ * tiled arrangement needs per-card session contexts (a framework seam that
+ * does not exist yet); this grid is the honest first cut.
  */
-function ChatFocus(props: { renderProps: NodeRenderProps; tree: WmNode }) {
-  const leaf = findFirstLeaf(props.tree, (bufferId) => {
-    const kind = props.renderProps.buffers.find(b => b.id === bufferId)?.kind
-      ?? (isSingletonBuffer(bufferId) ? bufferId : 'scratch')
-    return kind === 'conversation'
-  })
-  // Rendering the leaf node itself skips its parent splits — the
-  // conversation fills the frame while the tree stays untouched.
-  return <NodeView {...props.renderProps} node={leaf ?? props.tree} />
+function AgentGrid(props: {
+  sessions: ReadonlyArray<{ id: string; displayTitle: string; updatedAt: number }>
+  currentSessionId: string | undefined
+  onOpen: (sessionId: string) => void
+}) {
+  if (props.sessions.length === 0) {
+    return <div className={css.codeEmpty}><p>No sessions in this workspace yet.</p></div>
+  }
+  return (
+    <div className={css.codeGrid} data-agent-grid>
+      {props.sessions.map(session => (
+        <button
+          key={session.id}
+          type="button"
+          className={css.codeCard}
+          data-current={session.id === props.currentSessionId || undefined}
+          onClick={() => { props.onOpen(session.id) }}
+        >
+          <span className={css.modeLine}>
+            <span className={css.bufferName}>{session.displayTitle || session.id}</span>
+          </span>
+          <span className={css.agentCardMeta}>updated {new Date(session.updatedAt).toLocaleTimeString()}</span>
+        </button>
+      ))}
+    </div>
+  )
 }
 
 /**
@@ -593,6 +634,7 @@ export function WmFrame({
   reconcileBuffers,
   writeScratch,
   openWorkspace,
+  openSession,
   listDirectory,
   openPath,
 }: WmFrameProps) {
@@ -604,6 +646,10 @@ export function WmFrame({
   const buffers = useMemo<WmBuffer[]>(() => wmSnapshot.buffers ?? [...SINGLETON_BUFFERS], [wmSnapshot.buffers])
   const focusedLeafId = wmSnapshot.focusedLeafId
   const scratchText = useScratch(s => s.text)
+  const buffersRef = useRef(buffers)
+  buffersRef.current = buffers
+  const focusedIdRef = useRef(focusedLeafId)
+  focusedIdRef.current = focusedLeafId
   const frameRef = useRef<HTMLDivElement | null>(null)
   const [viewport, setViewport] = useState(() => window.innerWidth)
   const [dragging, setDragging] = useState(false)
@@ -613,6 +659,7 @@ export function WmFrame({
   const [prompt, setPrompt] = useState<'buffer' | 'workspace' | 'find-file' | 'kill-buffer' | 'commands' | 'themes' | null>(null)
   // Restart-in-progress banner: shown while the poll waits for the host.
   const [restarting, setRestarting] = useState(false)
+  const [expanded, setExpanded] = useState(false)
   const [scratchFlushTick, setScratchFlushTick] = useState(0)
   // Echo area: transient command feedback, self-expiring back to the resting
   // face (the armed chord echoes through prefixArmed directly, never here).
@@ -813,6 +860,27 @@ export function WmFrame({
     notify('Tidied panes')
   }, [notify, writeTree])
 
+  // Pre-expand tree stash: component-level (a session-scope gesture, not
+  // worth a persisted slot) — restore returns the exact prior orientation.
+  const preExpandRef = useRef<WmNode | undefined>(undefined)
+  const onToggleExpand = useCallback(() => {
+    if (preExpandRef.current !== undefined) {
+      const restored = preExpandRef.current
+      preExpandRef.current = undefined
+      setExpanded(false)
+      writeTree(restored)
+      notify('Restored layout')
+      return
+    }
+    const id = focusRef.current ?? firstLeafId(treeRef.current)
+    if (id === undefined) return
+    preExpandRef.current = treeRef.current
+    setExpanded(true)
+    writeTree(keepOnlyLeaf(treeRef.current, id))
+    setFocus(id)
+    notify('Expanded pane — the button restores the layout')
+  }, [notify, setFocus, writeTree])
+
   const onSash = useCallback((splitId: string, base: SashDragBase) => {
     // A boundary touching the sidebar leaf resizes the width preference (the
     // pane is pinned to it), not the split weights.
@@ -920,6 +988,58 @@ export function WmFrame({
       return { id: w.workspaceId as string, label: w.title, ...(hint === undefined ? {} : { hint }) }
     })
   ), [workspaceSnapshot, sessionsListSnapshot])
+
+  // Agent mode: the active workspace's sessions (the current session's
+  // workspace owns the frame's arrangement).
+  const activeWorkspaceId = useMemo(() => {
+    const current = sessionsListSnapshot.current
+    if (current === undefined) return undefined
+    return workspaceSnapshot.items.find(w => w.sessionIds.includes(current))?.workspaceId
+  }, [workspaceSnapshot.items, sessionsListSnapshot.current])
+  const workspaceSessions = useMemo(() => {
+    const ws = workspaceSnapshot.items.find(w => w.workspaceId === activeWorkspaceId)
+    if (ws === undefined) return []
+    return ws.sessionIds
+      .map(id => sessionsListSnapshot.byId[id])
+      .filter(session => session !== undefined)
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+  }, [workspaceSnapshot.items, sessionsListSnapshot, activeWorkspaceId])
+
+  // Per-workspace arrangements: the window tree is a workspace fact. On an
+  // active-workspace change the outgoing snapshot is stashed under the old
+  // workspace's key and the incoming one loaded (first visit keeps the
+  // store's persisted default). Mid-workspace edits persist on switch.
+  const prevWsRef = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    const ws = activeWorkspaceId
+    if (ws === undefined) return
+    const prev = prevWsRef.current
+    if (prev === ws) return
+    const stash = (target: string): void => {
+      try {
+        window.localStorage.setItem(`dsh.layout.wm:${target}`, JSON.stringify({
+          tree: treeRef.current,
+          buffers: buffersRef.current,
+          focusedLeafId: focusedIdRef.current,
+        }))
+      } catch { /* private mode */ }
+    }
+    if (prev !== undefined) stash(prev)
+    prevWsRef.current = ws
+    let parsed: { tree?: WmNode; buffers?: WmBuffer[] } | undefined
+    try {
+      const raw = window.localStorage.getItem(`dsh.layout.wm:${ws}`)
+      parsed = raw === null ? undefined : JSON.parse(raw)
+    } catch { parsed = undefined }
+    if (parsed?.tree !== undefined) {
+      setTree(parsed.tree)
+      if (parsed.buffers !== undefined) setBuffers(parsed.buffers)
+      setFocus(undefined)
+      preExpandRef.current = undefined
+      setExpanded(false)
+    }
+    // Runs on workspace change only; the prev guard makes re-runs no-ops.
+  }, [activeWorkspaceId, setTree, setBuffers, setFocus])
 
   // load-theme candidates: the frame palette (compos load-theme), the id as
   // the completion and the color scheme as the hint.
@@ -1077,6 +1197,10 @@ export function WmFrame({
         }
         return
       }
+      case 'restore-layout': {
+        onToggleExpandRef.current()
+        return
+      }
       case 'multi-cursor': {
         // The broadcast state lives in ui-terminal's store; the frame only
         // raises the toggle event (same seam as the c0ntext open-map event).
@@ -1141,6 +1265,8 @@ export function WmFrame({
   // lets it dispatch palette picks without a dependency cycle.
   const runCommandRef = useRef(runCommand)
   runCommandRef.current = runCommand
+  const onToggleExpandRef = useRef(onToggleExpand)
+  onToggleExpandRef.current = onToggleExpand
   // An open restart wait aborts when the user cancels (C-g): the page stays.
   const restartAbortRef = useRef<AbortController | null>(null)
 
@@ -1234,6 +1360,8 @@ export function WmFrame({
     onClose,
     onFlip,
     onExpand,
+    onToggleExpand,
+    expanded,
     onTidy,
     onSash,
     onDragging: setDragging,
@@ -1283,10 +1411,16 @@ export function WmFrame({
         <div className={css.topbarRight}>{renderSlot('shell.topbar.right', {})}</div>
       </div>
       <div className={css.treeArea}>
-        {panels.mode === 'code'
-          ? <CodeGrid buffers={buffers} renderSlot={renderSlot} runCommand={runCommand} />
-          : panels.mode === 'chat'
-            ? <ChatFocus renderProps={renderProps} tree={tree} />
+        {panels.mode === 'agent'
+          ? (
+            <AgentGrid
+              sessions={workspaceSessions}
+              currentSessionId={sessionsListSnapshot.current}
+              onOpen={(sessionId) => { openSession(sessionId) }}
+            />
+          )
+          : panels.mode === 'code'
+            ? <CodeGrid buffers={buffers} renderSlot={renderSlot} runCommand={runCommand} />
             : <NodeView {...renderProps} node={tree} />}
       </div>
       {prompt === 'find-file' && (() => {

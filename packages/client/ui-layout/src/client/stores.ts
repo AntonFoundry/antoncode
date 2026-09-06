@@ -29,8 +29,12 @@ const MODE_KEY = 'dsh.layout.mode'
 function seedMode(): LayoutMode {
   try {
     const stored = window.localStorage.getItem(MODE_KEY)
-    return stored === 'code' || stored === 'chat' ? stored : 'agent'
-  } catch { return 'agent' }
+    // Migration: the pre-rework default 'agent' IS today's 'chat' (the
+    // per-workspace conversation layout).
+    if (stored === 'code' || stored === 'chat') return stored
+    if (stored === 'agent') return 'chat'
+    return 'chat'
+  } catch { return 'chat' }
 }
 
 /**
@@ -107,6 +111,8 @@ export type WmState = {
   focusedLeafId: string | undefined
   /** The buffer registry: singletons always present; scratch/files added on demand. */
   buffers: WmBuffer[]
+  /** The pre-expand tree, present while a pane is expanded to full (restore target). */
+  preExpandTree: WmNode | undefined
 }
 
 /**
@@ -118,6 +124,10 @@ export type WmActions = {
   setBuffers: (draft: WmState, buffers: WmBuffer[]) => void
   /** Heal a pre-registry persisted snapshot: seed the singleton buffers. */
   reconcile: (draft: WmState) => void
+  /** Enter expanded mode: stash the current tree as the restore target. */
+  beginExpand: (draft: WmState, expanded: WmNode) => void
+  /** Leave expanded mode: hand back the stashed pre-expand tree. */
+  endExpand: (draft: WmState) => void
 }
 
 /**
@@ -133,12 +143,17 @@ export function createWmStore(): EngineStoreHandle<WmState, WmActions> {
     // focusedLeafId is a runtime cursor: undefined seeds "first leaf of the
     // loaded tree" (WmFrame normalizes), and stale persisted values are
     // normalized away the same way.
-    init: (): WmState => ({ tree: defaultTree(), focusedLeafId: undefined, buffers: [...SINGLETONS] }),
+    init: (): WmState => ({ tree: defaultTree(), focusedLeafId: undefined, buffers: [...SINGLETONS], preExpandTree: undefined }),
     actions: {
       setTree: (d, tree: WmNode) => { d.tree = tree },
       setFocus: (d, leafId: string | undefined) => { d.focusedLeafId = leafId },
       setBuffers: (d, buffers: WmBuffer[]) => { d.buffers = buffers },
       reconcile: (d) => { d.buffers = ensureSingletons(d.buffers) },
+      beginExpand: (d, expanded: WmNode) => { d.preExpandTree = d.tree; d.tree = expanded; d.focusedLeafId = undefined },
+      endExpand: (d) => {
+        if (d.preExpandTree !== undefined) { d.tree = d.preExpandTree; d.preExpandTree = undefined }
+        d.focusedLeafId = undefined
+      },
     },
     persist: 'dsh.layout.wm',
   })
