@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-06-pane-header-tidy-flip-expand.md
+2026-09-06-pane-header-tidy-flip-expand.md: f517e1a56d8710e8c04af4e175f4c42c3c3d5c84
+2026-09-06-pane-header-tidy-flip-expand.zh.md: 7958c0872f25f6ad9c7605f14c13eb1e00ce0bb7
