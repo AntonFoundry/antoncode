@@ -44,7 +44,7 @@ import { StatusLine } from './StatusLine.tsx'
 import { ScratchBuffer } from './ScratchBuffer.tsx'
 import { FilesBuffer } from './FilesBuffer.tsx'
 import {
-  SINGLETON_BUFFERS, SCRATCH_BUFFER_ID, WM_LEAF_DETAILS, WM_LEAF_SIDEBAR, bufferTitle, canClose, defaultTree,
+  SINGLETON_BUFFERS, SCRATCH_BUFFER_ID, WM_LEAF_DETAILS, WM_LEAF_SIDEBAR, bufferRoster, bufferTitle, canClose, defaultTree,
   ensureBuffer, findBuffer, findLeaf, findSplit, firstLeafId, normalizeTree,
   SIDEBAR_REATTACH_WEIGHT,
   isSingletonBuffer, keepOnlyLeaf,
@@ -105,7 +105,7 @@ export interface WmFrameInjected {
 /** Full composed props: runtime share + child-slot render share + store share + injected wm face. */
 export type WmFrameProps =
   & PropsRuntime<'root'>
-  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'shell.overlay'>
+  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'shell.overlay' | 'terminal.view'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
   & WmFrameInjected
 
@@ -295,21 +295,43 @@ function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf
           onKill={() => { files.onKill(node.buffer) }}
         />
       )
-      : renderSlot(bufferKind as 'sidebar' | 'conversation' | 'details', owner)
+      : bufferKind === 'terminal'
+        ? renderSlot('terminal.view', { sessionId: findBuffer(buffers, node.buffer)?.sessionId })
+        : renderSlot(bufferKind as 'sidebar' | 'conversation' | 'details', owner)
   const title = buffer !== undefined ? bufferTitle(buffer) : '(unnamed)'
+  // A focused terminal buffer must receive keyboard input immediately: the
+  // xterm capture textarea inside the slot occupant takes DOM focus.
+  const paneRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!focused || bufferKind !== 'terminal') return
+    const el = paneRef.current?.querySelector('.xterm-helper-textarea') ?? null
+    if (el !== null) (el as HTMLElement).focus()
+  }, [focused, bufferKind])
   return (
-    <div className={css.pane} data-buffer={bufferKind} data-focused={focused || undefined} onPointerDown={() => { onFocus(node.id) }}>
+    <div
+      ref={paneRef} className={css.pane} data-buffer={bufferKind} data-focused={focused || undefined}
+      onPointerDown={() => { onFocus(node.id) }}
+    >
       <div className={css.modeLine}>
         <span className={css.bufferName}>{title}</span>
         <span className={css.modeActions}>
-          <button type="button" className={css.modeButton} aria-label="Split below" title="Split below (C-x 2)" onClick={() => { onSplit(node.id, 'column') }}>
+          <button
+            type="button" className={css.modeButton} aria-label="Split below" title="Split below (C-x 2)"
+            onClick={() => { onSplit(node.id, 'column') }}
+          >
             <SplitBelowIcon />
           </button>
-          <button type="button" className={css.modeButton} aria-label="Split right" title="Split right (C-x 3)" onClick={() => { onSplit(node.id, 'row') }}>
+          <button
+            type="button" className={css.modeButton} aria-label="Split right" title="Split right (C-x 3)"
+            onClick={() => { onSplit(node.id, 'row') }}
+          >
             <SplitRightIcon />
           </button>
           {closeable && (
-            <button type="button" className={css.modeButton} aria-label="Close" title="Close window (C-x 0)" onClick={() => { onClose(node.id) }}>
+            <button
+              type="button" className={css.modeButton} aria-label="Close" title="Close window (C-x 0)"
+              onClick={() => { onClose(node.id) }}
+            >
               <IconCloseOutline16 size={14} />
             </button>
           )}
@@ -690,11 +712,12 @@ export function WmFrame({
   const workspaceSnapshot = useWorkspaces(s => s)
   const sessionsListSnapshot = useSessions(s => s)
 
-  // Switch-buffer candidates: the three singletons + scratch + every files
-  // buffer in the registry; open buffers hint "open", others "new window".
+  // Switch-buffer candidates: the full roster (singletons + scratch + every
+  // registered buffer, any kind); open buffers hint "open", others
+  // "new window".
   const bufferCandidates = useMemo<MinibufferCandidate[]>(() => {
     const openIds = new Set(leafIds(tree).map(id => findLeaf(tree, id)?.buffer))
-    const registry = [...SINGLETON_BUFFERS, scratchBuffer(), ...buffers.filter(b => b.kind === 'files')]
+    const registry = bufferRoster(buffers)
     return registry.map(b => ({
       id: b.id,
       label: bufferTitle(b),
@@ -793,8 +816,7 @@ export function WmFrame({
     // Same registry expansion the C-x b candidates use — the FULL order:
     // buffers are content, windows are views, so a buffer shown in another
     // window stays in the cycle (cloning, not skipping).
-    const ids = [...SINGLETON_BUFFERS, scratchBuffer(), ...buffers.filter(b => b.kind === 'files')]
-      .map(b => b.id)
+    const ids = bufferRoster(buffers).map(b => b.id)
     if (ids.length === 0) return
     const at = ids.indexOf(leaf.buffer)
     const nextId = ids[(at + step + ids.length) % ids.length]
@@ -859,6 +881,25 @@ export function WmFrame({
       case 'dired': {
         // The host home directory: list without a path.
         void listDirectory(undefined, { includeFiles: true }).then((listing) => { openFilesBuffer(listing.path) })
+        return
+      }
+      case 'term': {
+        // Emacs M-x term: open a terminal buffer in its own window beside
+        // the focused one. The buffer starts WITHOUT a session id — the
+        // terminal view spawns the PTY itself once fonts have settled, so
+        // the shell is born at the true pane size (no startup SIGWINCH,
+        // no multi-line-prompt redraw garble). The leaf must reference the
+        // registry entry by id — an unregistered id falls back to scratch.
+        {
+          const t = treeRef.current
+          const anchor = focusRef.current ?? firstLeafId(t)
+          if (anchor === undefined) return
+          const leafId = freshLeafId()
+          const bufferId = freshId('buffer:term')
+          setBuffers(ensureBuffer(buffers, { id: bufferId, kind: 'terminal' }))
+          writeTree(splitLeaf(t, anchor, 'row', bufferId, leafId))
+          setFocus(leafId)
+        }
         return
       }
       case 'save-scratch':
@@ -1059,6 +1100,10 @@ export function WmFrame({
       })()}
       {prompt !== null && prompt !== 'find-file' && (
         <Minibuffer
+          // Remount per prompt kind: the component owns its query state, and
+          // a kind switch must start the new prompt from an empty filter
+          // (a stale query filtered the theme list to nothing).
+          key={prompt}
           prompt={prompt === 'buffer' ? 'Switch buffer'
             : prompt === 'workspace' ? 'Switch workspace'
               : prompt === 'commands' ? 'M-x'

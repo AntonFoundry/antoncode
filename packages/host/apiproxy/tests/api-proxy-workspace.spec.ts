@@ -167,8 +167,8 @@ const BROWSE_STUB: DirectoryPickerCapability = {
     return {
       path: target,
       home: '/home/user',
-      crumbs: [{ name: '/', path: '/', hidden: false }],
-      entries: [{ name: 'projects', path: `${target}/projects`, hidden: false }],
+      crumbs: [{ name: '/', path: '/', hidden: false, isDirectory: true }],
+      entries: [{ name: 'projects', path: `${target}/projects`, hidden: false, isDirectory: true }],
       truncated: false,
     }
   },
@@ -206,7 +206,7 @@ describe('host.listDirectory / host.createDirectory', () => {
   it('reports an aborted listing as cancelled, like the other signal-following RPCs', async () => {
     const { api } = await harness(undefined, {
       kind: 'browse',
-      list: (_path, signal) => new Promise((_resolve, reject) => {
+      list: (_path, _opts, signal) => new Promise((_resolve, reject) => {
         signal?.addEventListener('abort', () => { reject(new Error('scan aborted')) }, { once: true })
       }),
       createDirectory: async () => '/never',

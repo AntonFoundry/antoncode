@@ -55,6 +55,13 @@ import {
   goalClearValueSchema,
 } from '../api/goals.schema.ts'
 import {
+  termDisposeValueSchema,
+  termInputValueSchema,
+  termReadValueSchema,
+  termResizeValueSchema,
+  termSpawnValueSchema,
+} from '../api/term.schema.ts'
+import {
   settingsDescribeValueSchema, settingsMutateValueSchema, settingsOpenDocumentValueSchema,
   settingsReplaceValueSchema, settingsUpdateValueSchema,
 } from '../api/settings.schema.ts'
@@ -106,6 +113,13 @@ export interface IApiClient {
     history(payload: RequestPayload<'subagent.history'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'subagent.history'>>>
     prompt(payload: RequestPayload<'subagent.prompt'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'subagent.prompt'>>>
     interrupt(payload: RequestPayload<'subagent.interrupt'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'subagent.interrupt'>>>
+  }
+  term: {
+    spawn(payload: RequestPayload<'term.spawn'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'term.spawn'>>>
+    read(payload: RequestPayload<'term.read'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'term.read'>>>
+    input(payload: RequestPayload<'term.input'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'term.input'>>>
+    resize(payload: RequestPayload<'term.resize'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'term.resize'>>>
+    dispose(payload: RequestPayload<'term.dispose'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'term.dispose'>>>
   }
   host: {
     describe(payload: RequestPayload<'host.describe'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'host.describe'>>>
@@ -225,6 +239,11 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'llm.providers': llmProvidersValueSchema,
   'llm.models': llmModelsValueSchema,
   'llm.discoverModels': llmDiscoverModelsValueSchema,
+  'term.spawn': termSpawnValueSchema,
+  'term.read': termReadValueSchema,
+  'term.input': termInputValueSchema,
+  'term.resize': termResizeValueSchema,
+  'term.dispose': termDisposeValueSchema,
 }
 
 /** Default timeout for bounded unary calls (rpc-compare 2026-07-19: a hung host must not leave callers pending forever). */
@@ -482,6 +501,13 @@ export abstract class AbstractApiClient implements IApiClient {
     resume: (payload, signal) => this.callUnary('goal.resume', payload, signal),
     complete: (payload, signal) => this.callUnary('goal.complete', payload, signal),
     clear: (payload, signal) => this.callUnary('goal.clear', payload, signal),
+  }
+  readonly term: IApiClient['term'] = {
+    spawn: (payload, signal) => this.callUnary('term.spawn', payload, signal),
+    read: (payload, signal) => this.callUnary('term.read', payload, signal),
+    input: (payload, signal) => this.callUnary('term.input', payload, signal),
+    resize: (payload, signal) => this.callUnary('term.resize', payload, signal),
+    dispose: (payload, signal) => this.callUnary('term.dispose', payload, signal),
   }
 
   readonly settings: IApiClient['settings'] = {

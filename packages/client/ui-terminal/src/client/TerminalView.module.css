@@ -1,0 +1,68 @@
+/* Terminal surface: fills the pane body; the xterm canvas rides inside.
+   The essential xterm.css rules are ported here (we never load xterm.css
+   itself): without them the keyboard-capture helper textarea renders as a
+   visible empty box at the container's top, and rows lose their cursor/
+   selection styling. */
+
+.host {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 4px 8px;
+  box-sizing: border-box;
+  background: var(--dsw-alias-bg-base);
+}
+
+.host :global(.xterm) {
+  cursor: text;
+  position: relative;
+  height: 100%;
+  user-select: none;
+  -ms-user-select: none;
+  -webkit-user-select: none;
+}
+
+.host :global(.xterm.focus),
+.host :global(.xterm:focus) {
+  outline: none;
+}
+
+.host :global(.xterm .xterm-helpers) {
+  position: absolute;
+  top: 0;
+  z-index: 0;
+}
+
+/* The keyboard-capture textarea: functionally required, visually nothing —
+   parked off-screen exactly as upstream xterm.css does. */
+.host :global(.xterm .xterm-helper-textarea) {
+  padding: 0;
+  border: 0;
+  margin: 0;
+  position: absolute;
+  opacity: 0;
+  left: -9999em;
+  top: 0;
+  width: 0;
+  height: 0;
+  z-index: -5;
+  overflow: hidden;
+  white-space: nowrap;
+  resize: none;
+}
+
+.host :global(.xterm .xterm-screen) {
+  position: relative;
+}
+
+.host :global(.xterm-viewport) {
+  scroll-behavior: smooth;
+  overflow-y: scroll;
+  cursor: default;
+  position: absolute;
+  right: 0;
+  left: 0;
+  top: 0;
+  bottom: 0;
+}

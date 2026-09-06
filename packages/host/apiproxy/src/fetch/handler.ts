@@ -64,7 +64,11 @@ import {
 import {
   credentialsDescribeRequestSchema, credentialsSetRequestSchema, credentialsUnsetRequestSchema,
 } from '../api/credentials.schema.ts'
-import { llmDiscoverModelsRequestSchema, llmModelsRequestSchema, llmProvidersRequestSchema } from '../api/llm.schema.ts'
+import { llmDiscoverModelsRequestSchema,
+  llmModelsRequestSchema, llmProvidersRequestSchema } from '../api/llm.schema.ts'
+import {
+  termDisposeRequestSchema, termInputRequestSchema, termReadRequestSchema, termResizeRequestSchema, termSpawnRequestSchema,
+} from '../api/term.schema.ts'
 import {
   subagentHistoryRequestSchema,
   subagentInterruptRequestSchema,
@@ -116,14 +120,18 @@ const UNARY_ROUTES: UnaryRoutes = {
   'workspace.rename': { schema: workspaceRenameRequestSchema, invoke: (api, r) => api.workspace.rename(r) },
   'workspace.delete': { schema: workspaceDeleteRequestSchema, invoke: (api, r) => api.workspace.delete(r) },
   'workspace.insertBefore': { schema: workspaceInsertBeforeRequestSchema, invoke: (api, r) => api.workspace.insertBefore(r) },
-  'workspace.insertSessionBefore': { schema: workspaceInsertSessionBeforeRequestSchema, invoke: (api, r) => api.workspace.insertSessionBefore(r) },
+  'workspace.insertSessionBefore': {
+    schema: workspaceInsertSessionBeforeRequestSchema, invoke: (api, r) => api.workspace.insertSessionBefore(r),
+  },
   'workspace.archiveSession': { schema: workspaceArchiveSessionRequestSchema, invoke: (api, r) => api.workspace.archiveSession(r) },
   'skill.list': { schema: skillListRequestSchema, invoke: (api, r) => api.skills.list(r) },
   'agentPreset.list': { schema: agentPresetListRequestSchema, invoke: (api, r) => api.agentPresets.list(r) },
   'agentPreset.select': { schema: agentPresetSelectRequestSchema, invoke: (api, r) => api.agentPresets.select(r) },
   'agentPreset.read': { schema: agentPresetReadRequestSchema, invoke: (api, r) => api.agentPresets.read(r) },
   'agentPreset.copy': { schema: agentPresetCopyRequestSchema, invoke: (api, r) => api.agentPresets.copy(r) },
-  'agentPreset.openDocument': { schema: agentPresetOpenDocumentRequestSchema, invoke: (api, r, signal) => api.agentPresets.openDocument(r, signal) },
+  'agentPreset.openDocument': {
+    schema: agentPresetOpenDocumentRequestSchema, invoke: (api, r, signal) => api.agentPresets.openDocument(r, signal),
+  },
   'agentPreset.remove': { schema: agentPresetRemoveRequestSchema, invoke: (api, r) => api.agentPresets.remove(r) },
   'goal.create': { schema: goalCreateRequestSchema, invoke: (api, r) => api.goals.create(r) },
   'goal.edit': { schema: goalEditRequestSchema, invoke: (api, r) => api.goals.edit(r) },
@@ -142,6 +150,11 @@ const UNARY_ROUTES: UnaryRoutes = {
   'llm.providers': { schema: llmProvidersRequestSchema, invoke: (api, r) => api.llm.providers(r) },
   'llm.models': { schema: llmModelsRequestSchema, invoke: (api, r) => api.llm.models(r) },
   'llm.discoverModels': { schema: llmDiscoverModelsRequestSchema, invoke: (api, r, signal) => api.llm.discoverModels(r, signal) },
+  'term.spawn': { schema: termSpawnRequestSchema, invoke: (api, r) => api.term.spawn(r) },
+  'term.read': { schema: termReadRequestSchema, invoke: (api, r) => api.term.read(r) },
+  'term.input': { schema: termInputRequestSchema, invoke: (api, r) => api.term.input(r) },
+  'term.resize': { schema: termResizeRequestSchema, invoke: (api, r) => api.term.resize(r) },
+  'term.dispose': { schema: termDisposeRequestSchema, invoke: (api, r) => api.term.dispose(r) },
 }
 
 /** Route lookup that narrows an arbitrary path segment to a map key (single cast point for the string→key refinement). */
@@ -183,7 +196,9 @@ async function handleUnary<K extends keyof RpcMethodMap>(
   const route = UNARY_ROUTES[method]
   const payload = route.schema.safeParse(message.payload)
   if (!payload.success) {
-    return errorResponse(message.rpcId, { code: 'bad-request', message: `invalid payload for ${method}`, details: { issues: payload.error.issues } })
+    return errorResponse(message.rpcId, {
+      code: 'bad-request', message: `invalid payload for ${method}`, details: { issues: payload.error.issues },
+    })
   }
   try {
     return fullResponse(await route.invoke(api, { rpcId: message.rpcId, payload: payload.data }, signal))
@@ -310,11 +325,15 @@ export function toFetchHandler(api: ApiProxy): { fetch: typeof fetch } {
         // otherwise the fixed sentinel keeps the response a valid ServerResponse.
         const rawId = (body as { rpcId?: unknown } | null)?.rpcId
         const rpcId = typeof rawId === 'string' ? RpcId(rawId) : INVALID_REQUEST_RPC_ID
-        return errorResponse(rpcId, { code: 'bad-request', message: 'invalid client-request message', details: { issues: envelope.error.issues } })
+        return errorResponse(rpcId, {
+          code: 'bad-request', message: 'invalid client-request message', details: { issues: envelope.error.issues },
+        })
       }
       const message: ClientRequest = envelope.data
       if (message.method !== method) {
-        return errorResponse(message.rpcId, { code: 'bad-request', message: `method "${message.method}" does not match path "${method}"`, details: { issues: [] } })
+        return errorResponse(message.rpcId, {
+          code: 'bad-request', message: `method "${message.method}" does not match path "${method}"`, details: { issues: [] },
+        })
       }
       return handleUnary(api, method, message, req.signal)
     },

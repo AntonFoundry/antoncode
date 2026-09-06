@@ -1585,12 +1585,12 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     const name = path.slice(path.lastIndexOf('/') + 1)
     return directoryTree.get(parent)?.includes(name) === true ? [] : undefined
   }
-  const crumbsOf = (path: string): { name: string; path: string; hidden: boolean }[] => {
-    const crumbs = [{ name: '/', path: '/', hidden: false }]
+  const crumbsOf = (path: string): { name: string; path: string; hidden: boolean; isDirectory: boolean }[] => {
+    const crumbs = [{ name: '/', path: '/', hidden: false, isDirectory: true }]
     let acc = ''
     for (const segment of path.split('/').filter(Boolean)) {
       acc += `/${segment}`
-      crumbs.push({ name: segment, path: acc, hidden: false })
+      crumbs.push({ name: segment, path: acc, hidden: false, isDirectory: true })
     }
     return crumbs
   }
@@ -2591,7 +2591,14 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           home: FIXTURE_HOME,
           crumbs: crumbsOf(target),
           entries: [...children].sort((a, b) => a.localeCompare(b))
-            .map(name => ({ name, path: target === '/' ? `/${name}` : `${target}/${name}`, hidden: name.startsWith('.') })),
+            .map(name => ({
+              name,
+              path: target === '/' ? `/${name}` : `${target}/${name}`,
+              hidden: name.startsWith('.'),
+              // The fixture tree marks directories by child-list presence —
+              // every directoryTree key is enterable, plain files are leaves.
+              isDirectory: directoryTree.has(target === '/' ? `/${name}` : `${target}/${name}`),
+            })),
           // The fixture tree is tiny; no level ever reaches a backend bound.
           truncated: false,
         })
@@ -2613,6 +2620,13 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         return ok(request, { path: target })
       },
       openPath: request => ok(request, { opened: true as const }),
+    },
+    term: {
+      spawn: () => { throw new Error('fixture: no interactive terminals') },
+      read: () => { throw new Error('fixture: no interactive terminals') },
+      input: () => { throw new Error('fixture: no interactive terminals') },
+      resize: () => { throw new Error('fixture: no interactive terminals') },
+      dispose: () => { throw new Error('fixture: no interactive terminals') },
     },
     workspace: {
       list: request => ok(request, {
@@ -3181,6 +3195,11 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'llm.providers': return this.api.llm.providers(request)
       case 'llm.models': return this.api.llm.models(request)
       case 'llm.discoverModels': return this.api.llm.discoverModels(request, signal)
+      case 'term.spawn': return this.api.term.spawn(request)
+      case 'term.read': return this.api.term.read(request)
+      case 'term.input': return this.api.term.input(request)
+      case 'term.resize': return this.api.term.resize(request)
+      case 'term.dispose': return this.api.term.dispose(request)
     }
   }
 

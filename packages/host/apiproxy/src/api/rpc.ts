@@ -45,6 +45,12 @@ export interface RpcErrorDetailsMap {
   'directory-exists': { path: string }
   'directory-create-failed': { path: string }
   'directory-picker-unavailable': { capability: string }
+  'term-unavailable': Record<string, never>
+  'term-spawn-failed': { message: string }
+  'term-no-session': { sessionId: string }
+  'term-read-failed': { message: string }
+  'term-input-failed': { message: string }
+  'term-resize-failed': { message: string }
   'agent-preset-read-only': { agentPreset: string; reason: string }
   'agent-preset-locked': { sessionId: SessionId; agentPreset: string }
   'agent-preset-conflict': { sessionId: SessionId; requestedPreset: string; existingPreset?: string }
