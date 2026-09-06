@@ -187,6 +187,22 @@ export function defaultTree(): WmNode {
  * @param leafId - leaf id to find.
  * @returns the leaf, or undefined when absent.
  */
+/**
+ * Pre-order search for the first leaf whose buffer satisfies `predicate`
+ * (Chat mode's conversation-focus walk).
+ * @param node - subtree root.
+ * @param predicate - buffer-kind test over each leaf's buffer id.
+ * @returns the first matching leaf, or undefined.
+ */
+export function findFirstLeaf(node: WmNode, predicate: (bufferId: string) => boolean): WmLeaf | undefined {
+  if (node.kind === 'leaf') return predicate(node.buffer) ? node : undefined
+  for (const child of node.children) {
+    const found = findFirstLeaf(child, predicate)
+    if (found !== undefined) return found
+  }
+  return undefined
+}
+
 export function findLeaf(node: WmNode, leafId: string): WmLeaf | undefined {
   if (node.kind === 'leaf') return node.id === leafId ? node : undefined
   for (const child of node.children) {

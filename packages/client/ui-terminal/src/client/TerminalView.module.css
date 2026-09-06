@@ -77,3 +77,41 @@
   top: 0;
   bottom: 0;
 }
+
+/* Multi-cursor toggle: a small overlay button in the terminal's top-right
+   corner; active state tints the surface border and the button. */
+.host {
+  position: relative;
+}
+
+.host[data-broadcast] {
+  outline: 1px solid var(--dsw-alias-brand-primary);
+  outline-offset: -1px;
+}
+
+.broadcastToggle {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  z-index: 5;
+  appearance: none;
+  border: 1px solid var(--dsw-alias-border-subtle);
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-raised);
+  cursor: pointer;
+  opacity: 0.55;
+}
+
+.broadcastToggle:hover {
+  opacity: 1;
+}
+
+.broadcastToggle[data-active] {
+  color: var(--dsw-alias-brand-primary);
+  border-color: var(--dsw-alias-brand-primary);
+  opacity: 1;
+}

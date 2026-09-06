@@ -55,6 +55,8 @@ export type WmCommand =
   | 'dump-layout'
   /** Open an interactive terminal buffer (login bash on a node-pty). */
   | 'term'
+  /** Toggle keystroke broadcast across every open terminal (multi-cursor). */
+  | 'multi-cursor'
   /** Load a named theme from the frame's palette (compos load-theme). */
   | 'load-theme'
 
@@ -162,6 +164,7 @@ export const COMMANDS: readonly CommandEntry[] = [
   { name: 'restart-app', command: 'restart-app', keys: 'M-x' },
   { name: 'dump-layout', command: 'dump-layout', keys: 'M-x' },
   { name: 'term', command: 'term', keys: 'C-x t' },
+  { name: 'multi-cursor', command: 'multi-cursor', keys: 'M-x' },
   { name: 'load-theme', command: 'load-theme', keys: 'M-x' },
 ]
 

@@ -12,7 +12,7 @@
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { PanelActions } from './service.ts'
-import { WmFrame } from './WmFrame.tsx'
+import { TopbarChrome, WmFrame } from './WmFrame.tsx'
 import { createLayoutStore, createScratchStore, createWmStore } from './stores.ts'
 import { LayoutController } from './service.ts'
 import { ThemePresenter } from './theme-presenter.ts'
@@ -87,6 +87,17 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'shell.overlay': { kind: 'list'; scope: 'root' }
     /**
+     * Brand-row additions, left of the centered mode switch. Occupants are
+     * icon buttons (the sidebar/context toggles remain layout-owned brand
+     * controls).
+     */
+    'shell.topbar.left': { kind: 'list'; scope: 'root' }
+    /**
+     * Brand-row additions right of the mode switch (notification, account,
+     * and future chrome). The context-panel toggle stays layout-owned.
+     */
+    'shell.topbar.right': { kind: 'list'; scope: 'root' }
+    /**
      * One interactive PTY terminal surface. OCCUPIED by ui-terminal's
      * xterm.js view; the owning buffer's session id rides the owner props.
      */
@@ -141,6 +152,8 @@ export function apply(ctx: ClientContext): void {
         'conversation': { kind: 'single', scope: 'session-maybe' },
         'details': { kind: 'single', scope: 'session' },
         'shell.overlay': { kind: 'list', scope: 'root' },
+        'shell.topbar.left': { kind: 'list', scope: 'root' },
+        'shell.topbar.right': { kind: 'list', scope: 'root' },
         'terminal.view': { kind: 'single', scope: 'root' },
       },
       // Exclusive store: the factory itself — the framework instantiates per
@@ -216,4 +229,14 @@ export function apply(ctx: ClientContext): void {
       for (const d of disposers) d()
     }
   }, 'ui-layout: theme presenter')
+  // Brand-row chrome placeholders: notifications and account occupy the
+  // right slot until ui-jobs / identity ship richer occupants (the slot is
+  // the seam — these are layout-owned stand-ins, not ad-hoc chrome).
+  ctx.effect(() => {
+    const dispose = ctx.slots.inject('shell.topbar.right', () => ctx.slots.register({
+      name: 'shell.topbar.right',
+      id: 'ui-layout-topbar-chrome',
+    }, TopbarChrome))
+    return dispose
+  }, 'ui-layout: topbar chrome placeholders')
 }

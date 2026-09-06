@@ -11,6 +11,8 @@ import { useEffect, useRef } from 'react'
 // a dynamic import() here would emit sibling chunks the loader cannot resolve.
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
+import type { BroadcastState } from './broadcast.js'
 import css from './TerminalView.module.css'
 
 /** Term faces injected by the plugin's apply (over the `term` RPC domain). */
@@ -29,6 +31,14 @@ export interface TerminalViewProps {
   themeTokens(): Record<string, string>
   /** The buffer's PTY session id; a missing id spawns a fresh session. */
   sessionId?: string | undefined
+  /** Broadcast-store read hook (bound from the hooks compartment). */
+  useBroadcast: SnapshotSelectorHook<BroadcastState>
+  /** Broadcast-store write face (the single instance's bound actions). */
+  broadcastActions: {
+    setBroadcast(on: boolean): void
+    join(sessionId: string): void
+    leave(sessionId: string): void
+  }
 }
 
 /**
@@ -40,6 +50,12 @@ export function TerminalView(props: TerminalViewProps) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const facesRef = useRef(props)
   facesRef.current = props
+  // Broadcast share: subscribed for the overlay render, mirrored into a ref
+  // for the term.onData callback (hooks cannot run inside event callbacks).
+  const broadcast = props.useBroadcast(s => s)
+  const broadcastRef = useRef({ on: broadcast.broadcast, sessions: broadcast.sessions })
+  broadcastRef.current = { on: broadcast.broadcast, sessions: broadcast.sessions }
+  const toggleBroadcast = (): void => { props.broadcastActions.setBroadcast(!broadcastRef.current.on) }
 
   useEffect(() => {
     const host = hostRef.current
@@ -129,8 +145,19 @@ export function TerminalView(props: TerminalViewProps) {
         liveRows = term.rows
         void facesRef.current.resize(liveSession, term.cols, term.rows)
       }
-      term.onData((data) => { if (liveSession !== undefined) void facesRef.current.input(liveSession, data) })
+      term.onData((data) => {
+        if (liveSession === undefined) return
+        if (broadcastRef.current.on) {
+          // Multi-cursor: echo the keystrokes into every joined terminal.
+          for (const sid of broadcastRef.current.sessions) {
+            void facesRef.current.input(sid, data)
+          }
+          return
+        }
+        void facesRef.current.input(liveSession, data)
+      })
       term.onResize(pushResize)
+      facesRef.current.broadcastActions.join(liveSession)
 
       const ro = new ResizeObserver(() => {
         try {
@@ -171,11 +198,23 @@ export function TerminalView(props: TerminalViewProps) {
     return () => {
       disposed = true
       if (poll !== undefined) window.clearInterval(poll)
+      facesRef.current.broadcastActions.leave(props.sessionId ?? liveSession ?? '')
       void facesRef.current.dispose(props.sessionId ?? '')
       host.innerHTML = ''
     }
     // One lifecycle per buffer session identity.
   }, [props.sessionId])
 
-  return <div ref={hostRef} className={css.host} data-terminal-view />
+  return (
+    <div ref={hostRef} className={css.host} data-terminal-view data-broadcast={broadcast.broadcast || undefined}>
+      <button
+        type="button"
+        className={css.broadcastToggle}
+        data-active={broadcast.broadcast || undefined}
+        aria-label="Broadcast keystrokes to all terminals"
+        title={broadcast.broadcast ? 'Multi-cursor ON — keystrokes go to every terminal' : 'Multi-cursor OFF'}
+        onClick={toggleBroadcast}
+      >⧉</button>
+    </div>
+  )
 }
