@@ -519,6 +519,8 @@ function CodeGrid(props: {
   runCommand: (command: WmCommand) => void
 }) {
   const terminals = props.buffers.filter(b => b.kind === 'terminal')
+  // Focused card gets the same accent treatment as a focused WM pane.
+  const [focusedCard, setFocusedCard] = useState<string | undefined>(undefined)
   if (terminals.length === 0) {
     return (
       <div className={css.codeEmpty} data-code-grid>
@@ -530,15 +532,26 @@ function CodeGrid(props: {
     )
   }
   return (
-    <div className={css.codeGrid} data-code-grid>
-      {terminals.map(buffer => (
-        <section key={buffer.id} className={css.codeCard}>
-          <div className={css.modeLine}>
-            <span className={css.bufferName}>{bufferTitle(buffer)}</span>
-          </div>
-          {props.renderSlot('terminal.view', { sessionId: buffer.sessionId })}
-        </section>
-      ))}
+    <div data-code-grid>
+      <div className={css.codeToolbar}>
+        <span className={css.bufferName}>{terminals.length} terminal{terminals.length === 1 ? '' : 's'}</span>
+        <button type="button" className={css.codeSpawn} onClick={() => { props.runCommand('term') }}>+ Terminal</button>
+      </div>
+      <div className={css.codeGrid}>
+        {terminals.map(buffer => (
+          <section
+            key={buffer.id}
+            className={css.codeCard}
+            data-focused={focusedCard === buffer.id || undefined}
+            onFocusCapture={() => { setFocusedCard(buffer.id) }}
+          >
+            <div className={css.modeLine}>
+              <span className={css.bufferName}>{bufferTitle(buffer)}</span>
+            </div>
+            {props.renderSlot('terminal.view', { sessionId: buffer.sessionId })}
+          </section>
+        ))}
+      </div>
     </div>
   )
 }
@@ -1255,7 +1268,6 @@ export function WmFrame({
             </button>
           ))}
         </div>
-        {renderSlot('shell.topbar.right', {})}
         {panels.mode !== 'code' && (
           <button
             type="button"
@@ -1263,12 +1275,12 @@ export function WmFrame({
             aria-label="Toggle context panel"
             title="Toggle context panel"
             data-active={findLeaf(tree, WM_LEAF_DETAILS) !== undefined || undefined}
-            style={{ marginLeft: 'auto' }}
             onClick={onContextToggle}
           >
             <ContextIcon />
           </button>
         )}
+        <div className={css.topbarRight}>{renderSlot('shell.topbar.right', {})}</div>
       </div>
       <div className={css.treeArea}>
         {panels.mode === 'code'

@@ -68,7 +68,6 @@
 }
 
 .host :global(.xterm-viewport) {
-  scroll-behavior: smooth;
   overflow-y: scroll;
   cursor: default;
   position: absolute;
@@ -85,7 +84,7 @@
 }
 
 .host[data-broadcast] {
-  outline: 1px solid var(--dsw-alias-brand-primary);
+  outline: 1px solid var(--dsw-static-deepseek-450);
   outline-offset: -1px;
 }
 
@@ -95,13 +94,13 @@
   right: 10px;
   z-index: 5;
   appearance: none;
-  border: 1px solid var(--dsw-alias-border-subtle);
+  border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 6px;
   padding: 2px 7px;
   font-size: 12px;
   line-height: 1.4;
   color: var(--dsw-alias-label-secondary);
-  background: var(--dsw-alias-bg-raised);
+  background: var(--dsw-alias-button-tool-bar-fill);
   cursor: pointer;
   opacity: 0.55;
 }
@@ -111,7 +110,7 @@
 }
 
 .broadcastToggle[data-active] {
-  color: var(--dsw-alias-brand-primary);
-  border-color: var(--dsw-alias-brand-primary);
+  color: var(--dsw-static-deepseek-450);
+  border-color: var(--dsw-static-deepseek-450);
   opacity: 1;
 }
