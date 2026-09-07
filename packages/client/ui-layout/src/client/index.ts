@@ -14,6 +14,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { PanelActions } from './service.ts'
 import { TopbarChrome, WmFrame } from './WmFrame.tsx'
 import { createLayoutStore, createScratchStore, createWmStore } from './stores.ts'
+import { watchHarnessBoot } from './bridge.ts'
 import { LayoutController } from './service.ts'
 import { ThemePresenter } from './theme-presenter.ts'
 import { LAYOUT_THEMES, THEME_STORAGE_KEY } from './themes.ts'
@@ -231,6 +232,11 @@ export function apply(ctx: ClientContext): void {
       for (const d of disposers) d()
     }
   }, 'ui-layout: theme presenter')
+
+  // Restart detection: reload the page when the managed harness PID changes,
+  // so every restart path (M-x, supervisor tool, macOS menu) lands the
+  // browser on the new process without a manual refresh.
+  ctx.effect(() => watchHarnessBoot(), 'ui-layout: harness boot watcher')
   // Brand-row chrome placeholders: notifications and account occupy the
   // right slot until ui-jobs / identity ship richer occupants (the slot is
   // the seam — these are layout-owned stand-ins, not ad-hoc chrome).
