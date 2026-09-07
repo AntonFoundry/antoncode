@@ -76,6 +76,15 @@ const PAGED_ONLY_INSTRUCTION = `Tools are paged: the catalog below lists names a
  * (the call fails) and the route (inside the program), because a rule the
  * model can only discover by being denied is one it corrects too late.
  */
+/**
+ * The universal working-discipline directive: emitted in every session
+ * regardless of tool mode, because the todo_write tool description is only
+ * visible after a paged grant and a description cannot carry a standing
+ * order. Names the general cases (investigation, bug fixing) explicitly so
+ * the tree is not read as a feature-implementation ritual.
+ */
+const TODO_TREE_DISCIPLINE = 'Working discipline: before executing any multi-step work — a feature, an investigation, a bug fix, a diagnosis, any task with more than one step — write a todo tree with todo_write FIRST and execute against it, updating statuses as you go (mark a node completed the moment it is done). The tree is a general-purpose nested plan, not a feature-implementation ritual: investigations and debugging get one too. Only a genuinely trivial single-step request may skip it.'
+
 const CODE_ONLY_INSTRUCTION = `\`${RUN_CODE_NAME}\` is the only tool you can call directly — a tool call naming any other tool fails. Reach every tool the SDK declares below from inside the program.`
 
 const SDK_RENDERERS: Record<string, (schemas: ToolSdkSchema[]) => string> = {
@@ -894,6 +903,9 @@ export class ToolRuntime extends Service {
     this.maxParallelSubCalls = resolveMaxParallelSubCalls(config.maxParallelSubCalls)
     this.pinned = new Set(config.pinned ?? [])
     ctx.systemPrompt.tools(context => this.wireSchemas(context.scope))
+    // Unconditional: the todo-tree discipline applies to every session in
+    // every tool mode — it must not depend on paged mode being active.
+    ctx.systemPrompt.section(this.todoDisciplineSection())
     if (this.defaultMode === 'code' || this.defaultMode === 'both') {
       ctx.systemPrompt.section(this.collapseSection())
       ctx.systemPrompt.section(this.sdkSection())
@@ -975,6 +987,11 @@ export class ToolRuntime extends Service {
    * guidance band rather than after it.
    * @returns the section registration.
    */
+  /** The always-on working-discipline section (see {@link TODO_TREE_DISCIPLINE}). */
+  private todoDisciplineSection(): { name: string; order: number; text: string } {
+    return { name: 'tools:todo-discipline', order: PAGED_RULE_SECTION_ORDER - 1, text: TODO_TREE_DISCIPLINE }
+  }
+
   private pagedRuleSection(): { name: string; order: number; text: (context: { scope?: ScopeKey }) => string } {
     return {
       name: 'tools:paged-only',
