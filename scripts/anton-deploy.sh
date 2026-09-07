@@ -1,12 +1,14 @@
 #!/bin/bash
-# anton-deploy.sh — detached deploy daemon.
+# anton-deploy.sh — in-place bundle installer.
 #
-# Installs dist/Anton.next.app as the live Anton.app and relaunches it, then
-# verifies the whole stack. Designed to be run detached (nohup ... &) so it
-# survives the Harness session going down during the restart.
+# Swaps dist/Anton.next.app into dist/Anton.app WITHOUT quitting the running
+# app. The running processes keep their open file handles; the NEXT runtime
+# start (menu-bar "Restart Harness", the anton_restart tool, or a fresh app
+# launch) picks up the new bundle. This replaces the old quit-swap-relaunch
+# flow, whose `open` relaunch never came up reliably — the app shut down and
+# had to be started by hand every time.
 #
-# Usage:
-#   nohup bash scripts/anton-deploy.sh >> "$HOME/Library/Application Support/Anton/deploy.log" 2>&1 &
+# Set ANTON_DEPLOY_RELAUNCH=1 to restore the legacy quit+relaunch behavior.
 
 set -u
 
@@ -24,37 +26,36 @@ if [ ! -d "$NEXT_BUNDLE" ]; then
   exit 1
 fi
 
-# Grace period so the launching agent's final message flushes before the app
-# (and the Harness session running it) is torn down.
-sleep 6
-
-log "deploy: quitting Anton gracefully"
-osascript -e 'quit app "Anton"' >> "$LOG" 2>&1 || log "deploy: osascript quit returned non-zero (continuing)"
-
-log "deploy: waiting for processes to exit"
-for _ in $(seq 1 30); do
-  if ! pgrep -f 'deepseek-harness/dist/Anton.app/Contents/(MacOS/Anton|Resources/bin/anton-bridge|Resources/node/bin/node)' >/dev/null 2>&1; then
-    break
-  fi
+if [ "${ANTON_DEPLOY_RELAUNCH:-0}" = "1" ]; then
+  log "deploy: legacy relaunch mode — quitting Anton"
+  osascript -e 'quit app "Anton"' >> "$LOG" 2>&1 || log "deploy: osascript quit returned non-zero (continuing)"
+  for _ in $(seq 1 30); do
+    pgrep -f 'deepseek-harness/dist/Anton.app/Contents/(MacOS/Anton|Resources/bin/anton-bridge|Resources/node/bin/node)' >/dev/null 2>&1 || break
+    sleep 1
+  done
+  for p in $(pgrep -f 'deepseek-harness/dist/Anton.app/Contents/(MacOS/Anton|Resources/bin/anton-bridge|Resources/node/bin/node)' 2>/dev/null); do
+    kill -9 "$p" 2>/dev/null || true
+  done
   sleep 1
-done
-for p in $(pgrep -f 'deepseek-harness/dist/Anton.app/Contents/(MacOS/Anton|Resources/bin/anton-bridge|Resources/node/bin/node)' 2>/dev/null); do
-  kill -9 "$p" 2>/dev/null || true
-done
-sleep 1
+fi
 
-log "deploy: swapping bundle"
+log "deploy: swapping bundle in place"
 if [ -d "$APP_BUNDLE" ]; then
   rm -rf "$APP_BUNDLE.old"
   mv "$APP_BUNDLE" "$APP_BUNDLE.old" || { log "deploy: ABORT — cannot move old bundle"; exit 1; }
 fi
-mv "$NEXT_BUNDLE" "$APP_BUNDLE" || { log "deploy: ABORT — cannot install next bundle"; exit 1; }
-log "deploy: installed $APP_BUNDLE"
+mv "$NEXT_BUNDLE" "$APP_BUNDLE" || { log "deploy: ABORT — cannot install new bundle"; exit 1; }
+log "deploy: installed $APP_BUNDLE (in place)"
 
-log "deploy: launching"
-open "$APP_BUNDLE"
+if [ "${ANTON_DEPLOY_RELAUNCH:-0}" = "1" ]; then
+  log "deploy: launching"
+  open "$APP_BUNDLE"
+else
+  log "deploy: bundle installed; waiting for the in-app restart (Restart Harness / anton_restart) to activate it"
+fi
 
 log "deploy: waiting for services"
+web=000 bridge=000
 for _ in $(seq 1 60); do
   web=$(curl -fsS --max-time 2 -o /dev/null -w '%{http_code}' http://127.0.0.1:3080/ 2>/dev/null || echo 000)
   bridge=$(curl -fsS --max-time 2 -o /dev/null -w '%{http_code}' http://antoncode.localhost:3742/bridge 2>/dev/null || echo 000)

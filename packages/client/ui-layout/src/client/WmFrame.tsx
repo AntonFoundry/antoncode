@@ -36,7 +36,7 @@ import { clampWidth, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN } from './columns
 const SIDEBAR_SHARE = 0.18
 /** Sidebar share ceiling for dragged preferences. */
 const SIDEBAR_SHARE_MAX = 0.2
-import type { createLayoutStore, ScratchState, WmState } from './stores.ts'
+import type { createLayoutStore, LayoutMode, ScratchState, WmState } from './stores.ts'
 import { COMMANDS, PREFIX_HINTS, parseChord, type ArmedPrefix, type WmCommand } from './keymap.ts'
 import { Minibuffer, type MinibufferCandidate } from './Minibuffer.tsx'
 import { IdoFind } from './IdoFind.tsx'
@@ -81,6 +81,8 @@ export interface WmFrameInjected {
   setFocus: (leafId: string | undefined) => void
   /** Write the buffer registry. */
   setBuffers: (buffers: WmBuffer[]) => void
+  /** Set the frame's viewing mode ('agent' | 'code' | 'chat') and persist it. */
+  setMode: (mode: LayoutMode) => void
   /** Heal a pre-registry persisted snapshot (seed the singleton buffers). */
   reconcileBuffers: () => void
   /** Write the sidebar width preference (px) — the pinned sidebar pane resizes through it. */
@@ -630,6 +632,7 @@ export function WmFrame({
   themeList,
   loadTheme,
   setBuffers,
+  setMode,
   reconcileBuffers,
   writeScratch,
   openWorkspace,
@@ -655,7 +658,7 @@ export function WmFrame({
   // Chord prefix + minibuffer prompt are frame-local runtime state (keymap.ts
   // owns the pure parsing; the armed prefix is the cross-keypress state).
   const [prefixArmed, setPrefixArmed] = useState<ArmedPrefix>(undefined)
-  const [prompt, setPrompt] = useState<'buffer' | 'workspace' | 'find-file' | 'kill-buffer' | 'commands' | 'themes' | null>(null)
+  const [prompt, setPrompt] = useState<'buffer' | 'workspace' | 'find-file' | 'kill-buffer' | 'commands' | 'themes' | 'save-layout' | 'restore-layout' | null>(null)
   // Restart-in-progress banner: shown while the poll waits for the host.
   const [restarting, setRestarting] = useState(false)
   const [expanded, setExpanded] = useState(false)
@@ -997,47 +1000,143 @@ export function WmFrame({
       .sort((a, b) => b.updatedAt - a.updatedAt)
   }, [workspaceSnapshot.items, sessionsListSnapshot, activeWorkspaceId])
 
-  // Per-workspace arrangements: the window tree is a workspace fact. On an
-  // active-workspace change the outgoing snapshot is stashed under the old
-  // workspace's key and the incoming one loaded (first visit keeps the
-  // store's persisted default). Mid-workspace edits persist on switch.
+  // Per-workspace arrangements: the window tree (and viewing mode) are
+  // workspace facts. Three persistence semantics, all keyed by workspace:
+  // (1) mid-workspace edits debounce-save into the workspace's stash, so a
+  // refresh restores THAT workspace's latest layout, not the global
+  // last-written tree; (2) switching stashes the outgoing snapshot and loads
+  // the incoming one; (3) a workspace with no stash gets the clean default
+  // (chat + left sidebar + right details), except for the one-time migration
+  // which keeps the pre-existing global layout for the first workspace seen.
   const prevWsRef = useRef<string | undefined>(undefined)
+  const wsSaveTimerRef = useRef<number | null>(null)
+  const modeRef = useRef<LayoutMode>(panels.mode)
+  modeRef.current = panels.mode
+  const wsLabelRef = useRef<string>('')
+  const stashWs = useCallback((target: string): void => {
+    try {
+      window.localStorage.setItem(`dsh.layout.wm:${target}`, JSON.stringify({
+        tree: treeRef.current,
+        buffers: buffersRef.current,
+        focusedLeafId: focusedIdRef.current,
+        mode: modeRef.current,
+        savedAt: Date.now(),
+      }))
+    } catch { /* private mode */ }
+  }, [])
   useEffect(() => {
     const ws = activeWorkspaceId
     if (ws === undefined) return
     const prev = prevWsRef.current
     if (prev === ws) return
-    const stash = (target: string): void => {
-      try {
-        window.localStorage.setItem(`dsh.layout.wm:${target}`, JSON.stringify({
-          tree: treeRef.current,
-          buffers: buffersRef.current,
-          focusedLeafId: focusedIdRef.current,
-        }))
-      } catch { /* private mode */ }
-    }
-    if (prev !== undefined) stash(prev)
+    if (prev !== undefined) stashWs(prev)
     prevWsRef.current = ws
-    let parsed: { tree?: WmNode; buffers?: WmBuffer[] } | undefined
+    let parsed: { tree?: WmNode; buffers?: WmBuffer[]; mode?: LayoutMode } | undefined
     try {
       const raw = window.localStorage.getItem(`dsh.layout.wm:${ws}`)
       parsed = raw === null ? undefined : JSON.parse(raw)
     } catch { parsed = undefined }
-    if (parsed?.tree !== undefined) {
+    if (parsed?.tree === undefined) {
+      // One-time migration: the pre-per-workspace global layout belongs to
+      // the first workspace seen, not to no workspace at all.
+      let migrated = false
+      try { migrated = window.localStorage.getItem('dsh.layout.wm:migrated-v2') === '1' } catch { migrated = true }
+      if (!migrated) {
+        stashWs(ws)
+        try { window.localStorage.setItem('dsh.layout.wm:migrated-v2', '1') } catch { /* private mode */ }
+      } else {
+        // Clean default for a first-visit workspace: chat + sidebar + details.
+        setTree(defaultTree())
+        setBuffers([...SINGLETON_BUFFERS])
+        setMode('chat')
+        setFocus(undefined)
+        preExpandRef.current = undefined
+        setExpanded(false)
+      }
+    } else {
       setTree(parsed.tree)
       if (parsed.buffers !== undefined) setBuffers(parsed.buffers)
+      if (parsed.mode !== undefined) setMode(parsed.mode)
       setFocus(undefined)
       preExpandRef.current = undefined
       setExpanded(false)
     }
+    const view = workspaceSnapshot.items.find(w => w.workspaceId === ws)
+    wsLabelRef.current = view?.title ?? ws
     // Runs on workspace change only; the prev guard makes re-runs no-ops.
-  }, [activeWorkspaceId, setTree, setBuffers, setFocus])
+  }, [activeWorkspaceId, workspaceSnapshot.items, setTree, setBuffers, setFocus, setMode, stashWs])
+  // Mid-workspace edits: debounce-save into the CURRENT workspace's stash, so
+  // refresh (not just workspace switches) restores the latest arrangement.
+  // Runs after the load effect above; the prev guard there ran first.
+  useEffect(() => {
+    const ws = activeWorkspaceId
+    if (ws === undefined || prevWsRef.current !== ws) return
+    if (wsSaveTimerRef.current !== null) window.clearTimeout(wsSaveTimerRef.current)
+    wsSaveTimerRef.current = window.setTimeout(() => { stashWs(ws) }, 400)
+    return () => {
+      if (wsSaveTimerRef.current !== null) window.clearTimeout(wsSaveTimerRef.current)
+    }
+  }, [tree, buffers, panels.mode, activeWorkspaceId, stashWs])
 
   // load-theme candidates: the frame palette (compos load-theme), the id as
   // the completion and the color scheme as the hint.
   const themeCandidates = useMemo<MinibufferCandidate[]>(() => (
     themeList().map(t => ({ id: t.id, label: t.id, hint: t.colorScheme }))
   ), [themeList])
+
+  // Layout snapshots: named copies (global, restorable on any workspace) and
+  // every workspace's own stash. `dsh.layout.wm:named` maps name -> snapshot.
+  const readNamedLayouts = useCallback((): Record<string, { tree?: WmNode; buffers?: WmBuffer[]; mode?: LayoutMode; savedAt?: number }> => {
+    try {
+      const raw = window.localStorage.getItem('dsh.layout.wm:named')
+      type NamedLayouts = Record<string, { tree?: WmNode; buffers?: WmBuffer[]; mode?: LayoutMode; savedAt?: number }>
+      const parsed: NamedLayouts = raw === null ? {} : JSON.parse(raw) as NamedLayouts
+      return parsed
+    } catch { return {} }
+  }, [])
+  const writeNamedLayout = useCallback((name: string, snapshot: { tree: WmNode; buffers: WmBuffer[]; mode: LayoutMode }): void => {
+    try {
+      const named = readNamedLayouts()
+      named[name] = { ...snapshot, savedAt: Date.now() }
+      window.localStorage.setItem('dsh.layout.wm:named', JSON.stringify(named))
+    } catch { /* private mode */ }
+  }, [readNamedLayouts])
+  const readWsStash = useCallback((ws: string): { tree?: WmNode; buffers?: WmBuffer[]; mode?: LayoutMode } | undefined => {
+    try {
+      const raw = window.localStorage.getItem(`dsh.layout.wm:${ws}`)
+      return raw === null ? undefined : JSON.parse(raw) as { tree?: WmNode; buffers?: WmBuffer[]; mode?: LayoutMode }
+    } catch { return undefined }
+  }, [])
+  // restore-layout candidates: named layouts first (workspace-independent),
+  // then each workspace's own saved arrangement.
+  const layoutRestoreCandidates = useMemo<MinibufferCandidate[]>(() => {
+    const named = readNamedLayouts()
+    const candidates = Object.entries(named)
+      .sort((a, b) => (b[1].savedAt ?? 0) - (a[1].savedAt ?? 0))
+      .map(([name, snap]) => ({
+        id: `named:${name}`,
+        label: name,
+        hint: snap.savedAt === undefined ? '' : new Date(snap.savedAt).toLocaleString(),
+      }))
+    for (const w of workspaceSnapshot.items) {
+      const stash = readWsStash(w.workspaceId as string)
+      if (stash?.tree !== undefined) {
+        candidates.push({ id: `ws:${w.workspaceId}`, label: `${w.title} (workspace)`, hint: stash.mode ?? '' })
+      }
+    }
+    return candidates
+  }, [readNamedLayouts, readWsStash, workspaceSnapshot.items])
+  // save-layout candidates: existing named copies (an Enter on one overwrites
+  // it); a fresh name is free-typed.
+  const layoutSaveCandidates = useMemo<MinibufferCandidate[]>(() => (
+    Object.entries(readNamedLayouts())
+      .sort((a, b) => (b[1].savedAt ?? 0) - (a[1].savedAt ?? 0))
+      .map(([name, snap]) => ({
+        id: name,
+        label: name,
+        hint: snap.savedAt === undefined ? '' : new Date(snap.savedAt).toLocaleString(),
+      }))
+  ), [readNamedLayouts])
 
   // M-x palette candidates: every registered command, its Emacs name, and
   // its binding as the hint. Execution dispatches the id as a command.
@@ -1056,6 +1155,45 @@ export function WmFrame({
     }
     if (kind === 'themes') {
       loadTheme(id)
+      return
+    }
+    if (kind === 'save-layout') {
+      const name = id.trim() === '' ? (wsLabelRef.current || 'workspace') : id.trim()
+      writeNamedLayout(name, { tree: treeRef.current, buffers: buffersRef.current, mode: modeRef.current })
+      if (activeWorkspaceId !== undefined) stashWs(activeWorkspaceId)
+      notify(`Layout saved as "${name}"`)
+      return
+    }
+    if (kind === 'restore-layout') {
+      if (id.startsWith('named:')) {
+        const name = id.slice('named:'.length)
+        const snap = readNamedLayouts()[name]
+        if (snap?.tree !== undefined) {
+          setTree(snap.tree)
+          if (snap.buffers !== undefined) setBuffers(snap.buffers)
+          if (snap.mode !== undefined) setMode(snap.mode)
+          setFocus(undefined)
+          preExpandRef.current = undefined
+          setExpanded(false)
+          notify(`Restored layout "${name}"`)
+        }
+        return
+      }
+      if (id.startsWith('ws:')) {
+        const wsId = id.slice('ws:'.length)
+        const snap = readWsStash(wsId)
+        if (snap?.tree !== undefined) {
+          setTree(snap.tree)
+          if (snap.buffers !== undefined) setBuffers(snap.buffers)
+          if (snap.mode !== undefined) setMode(snap.mode)
+          setFocus(undefined)
+          preExpandRef.current = undefined
+          setExpanded(false)
+          const label = workspaceSnapshot.items.find(w => w.workspaceId === wsId)?.title ?? wsId
+          notify(`Restored ${label}'s layout`)
+        }
+        return
+      }
       return
     }
     if (kind === 'kill-buffer') {
@@ -1189,11 +1327,20 @@ export function WmFrame({
         }
         return
       }
-      case 'restore-layout':
       case 'multi-cursor': {
         // The broadcast state lives in ui-terminal's store; the frame only
         // raises the toggle event (same seam as the c0ntext open-map event).
         window.dispatchEvent(new CustomEvent('ui-terminal:toggle-broadcast'))
+        return
+      }
+      case 'restore-layout':
+        setPrompt('restore-layout')
+        return
+      case 'save-layout': {
+        // Flush the workspace stash now (the debounced save would land in
+        // 400ms), then prompt for an optional named copy.
+        if (activeWorkspaceId !== undefined) stashWs(activeWorkspaceId)
+        setPrompt('save-layout')
         return
       }
       case 'save-scratch':
@@ -1250,7 +1397,7 @@ export function WmFrame({
       }
     }
   }, [buffers, cycleBuffer, listDirectory, loadTheme, notify, onClose, onSplit,
-    sessionsListSnapshot, setBuffers, setFocus, setTree, writeScratch, writeTree])
+    sessionsListSnapshot, setBuffers, setFocus, setTree, writeScratch, writeTree, stashWs, activeWorkspaceId])
   // The minibuffer's execute callback precedes this declaration; the mirror
   // lets it dispatch palette picks without a dependency cycle.
   const runCommandRef = useRef(runCommand)
@@ -1437,13 +1584,19 @@ export function WmFrame({
             : prompt === 'workspace' ? 'Switch workspace'
               : prompt === 'commands' ? 'M-x'
                 : prompt === 'themes' ? 'Load theme'
-                  : 'Kill buffer'}
+                  : prompt === 'save-layout' ? 'Save layout as'
+                    : prompt === 'restore-layout' ? 'Restore layout'
+                      : 'Kill buffer'}
           candidates={prompt === 'buffer' ? bufferCandidates
             : prompt === 'workspace' ? workspaceCandidates
               : prompt === 'commands' ? commandCandidates
                 : prompt === 'themes' ? themeCandidates
-                  : killCandidates}
+                  : prompt === 'save-layout' ? layoutSaveCandidates
+                    : prompt === 'restore-layout' ? layoutRestoreCandidates
+                      : killCandidates}
           onExecute={onMinibufferExecute}
+          freeEntry={prompt === 'save-layout'}
+          initialQuery={prompt === 'save-layout' ? wsLabelRef.current : ''}
           onCancel={() => { setPrompt(null) }}
         />
       )}

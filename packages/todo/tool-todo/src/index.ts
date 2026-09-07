@@ -60,7 +60,9 @@ export const Config: z<Config> = z.object({
 const DESCRIPTION_HEAD =
   'Create and manage a structured task tree for the current work. Send the ENTIRE '
   + 'tree every call — it REPLACES the previous tree (there are no partial updates, no per-node '
-  + 'edits). Use it to plan multi-step work and show progress.'
+  + 'edits). Use it to plan multi-step work and show progress. Using this tool is the DEFAULT, '
+  + 'not an opt-in: before executing any work with more than one step, write the tree FIRST and '
+  + 'execute against it — do not wait for the user to ask for a plan.'
 
 const DESCRIPTION_WORKFLOW = `
 Workflow: plan first, then encode the plan as a todo tree, then execute it one node at a time:
@@ -82,7 +84,8 @@ const DESCRIPTION_LIFECYCLE =
   '\nNode fields: \`status\` is pending (not started) | in_progress (being worked on now) | '
   + 'completed (done) | cancelled (no longer needed); \`priority\` optionally ranks nodes '
   + '(high | medium | low). Mark a parent completed only after all of its children are completed '
-  + 'or cancelled. Skip the tree entirely for trivial single-step tasks.'
+  + 'or cancelled. Only a trivial single-step request (one obvious action, no phases) may skip '
+  + 'the tree; when in doubt, write it.'
 
 const DESCRIPTION_PARALLEL =
   '\nParallelism: mark every node being actively worked `in_progress` — several at once when work '

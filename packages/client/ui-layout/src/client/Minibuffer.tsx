@@ -26,6 +26,16 @@ export interface MinibufferProps {
   candidates: MinibufferCandidate[]
   /** Execute the candidate with this id — or the raw query in free-entry mode. */
   onExecute: (id: string) => void
+  /**
+   * Free-entry mode: Enter with a typed query executes the RAW query text
+   * when no candidate matches (save-layout names a new snapshot). With an
+   * empty query it executes the empty string, so the caller can substitute
+   * its default. False (every filter prompt) keeps the old contract: Enter
+   * only fires on a candidate hit.
+   */
+  freeEntry?: boolean
+  /** Prefill the query (save-layout seeds the auto name so Enter just works). */
+  initialQuery?: string
   /** Cancel the prompt (Esc / C-g). */
   onCancel: () => void
 }
@@ -35,8 +45,8 @@ export interface MinibufferProps {
  * @param props - prompt, candidates, execute/cancel callbacks.
  * @returns the strip element, or null when there is nothing to prompt for.
  */
-export function Minibuffer({ prompt, candidates, onExecute, onCancel }: MinibufferProps) {
-  const [query, setQuery] = useState('')
+export function Minibuffer({ prompt, candidates, onExecute, onCancel, freeEntry = false, initialQuery = '' }: MinibufferProps) {
+  const [query, setQuery] = useState(initialQuery)
   const [index, setIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
@@ -72,7 +82,13 @@ export function Minibuffer({ prompt, candidates, onExecute, onCancel }: Minibuff
     if (e.key === 'Enter') {
       e.preventDefault()
       const hit = filtered[clamped]
-      if (hit !== undefined) onExecute(hit.id)
+      if (hit !== undefined) {
+        onExecute(hit.id)
+        return
+      }
+      // Free-entry prompts: the typed text IS the answer (a new snapshot
+      // name); the empty string delegates the default to the caller.
+      if (freeEntry) onExecute(query.trim())
     }
   }
 
