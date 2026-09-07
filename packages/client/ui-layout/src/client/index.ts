@@ -174,6 +174,7 @@ export function apply(ctx: ClientContext): void {
           setTree: (tree: Parameters<typeof wm.actions.setTree>[0]) => { wm.actions.setTree(tree) },
           setFocus: (leafId: string | undefined) => { wm.actions.setFocus(leafId) },
           setBuffers: (buffers: Parameters<typeof wm.actions.setBuffers>[0]) => { wm.actions.setBuffers(buffers) },
+          setMode: (mode: Parameters<typeof actions.setMode>[0]) => { actions.setMode(mode) },
           setSidebarWidth: (px: number) => { actions.setSidebar(px) },
           themeList: () => LAYOUT_THEMES.map(t => ({ id: t.id, colorScheme: t.colorScheme })),
           loadTheme: (id: string) => {
