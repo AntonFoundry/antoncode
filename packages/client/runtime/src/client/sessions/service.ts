@@ -366,6 +366,17 @@ export class SessionRuntime implements ISessions {
   }
 
   /**
+   * Interrupt one session's active turn by id without selecting it (see
+   * {@link ISessions.interruptSession}); the manager shares this wire path
+   * with the session's own stop control.
+   * @param id - the session whose active turn stops.
+   * @returns the wire result.
+   */
+  interruptSession(id: SessionId): Promise<RpcResult<{ accepted: true }>> {
+    return this.manager.cancelSession(id)
+  }
+
+  /**
    * Select a listed or retained catalog-addressed session as current.
    * @param id - listed or addressed session id.
    */

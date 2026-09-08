@@ -48,8 +48,21 @@ streams, not processes. A pty mode stays a separate future decision.
 ## Consequences
 
 - Pane bodies are status-plus-chips, not live transcripts; the streaming
-  tail per pane is the next phase and needs per-session event subscription
+  tail per pane is a follow-up phase and needs per-session event subscription
   through the object layer, not the summary mirror.
 - The builder reads the whole session list every workspace change; session
   counts are small, but a deployment with hundreds of sessions would need
   memoized per-workspace indexes.
+
+## Phase 2 addendum (control semantics)
+
+- `ISessions.interruptSession(id)` exposes the raw `sessions.cancel` wire
+  call by id, without selecting the session; the board pane's Stop control
+  uses it (nested in the pane, `stopPropagation` keeps the open-on-click).
+- Zoom is render-level: a zoomed board renders only the focused pane (full
+  grid span); the pane's zoom toggle and Esc leave zoom (tmux `z` semantics).
+- Board viewing preferences — pane order (`recent` / `status`) and minimum
+  pane width — live in the owning workspace's `dsh.layout.wm:<ws>` stash
+  (`agentBoard` key), so each workspace keeps its own board arrangement;
+  the preference bar writes them through `onPrefsChange`.
+- Pane click remains the attach action: it opens the session as current.

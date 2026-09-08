@@ -74,7 +74,7 @@ describe('ui-layout client apply', () => {
     // The injected face: the wm + scratch hooks sources, the write callbacks,
     // and the workspace/host resolvers.
     expect(Object.keys(injected).sort()).toEqual([
-      'hooks', 'listDirectory', 'loadTheme', 'openPath', 'openSession', 'openWorkspace',
+      'hooks', 'interruptSession', 'listDirectory', 'loadTheme', 'openPath', 'openSession', 'openWorkspace',
       'reconcileBuffers', 'setBuffers', 'setFocus', 'setMode', 'setSidebarWidth', 'setTree', 'themeList', 'writeScratch',
     ])
     expect((injected as { hooks: { wm: unknown; scratch: unknown } }).hooks.wm).toHaveProperty('getSnapshot')

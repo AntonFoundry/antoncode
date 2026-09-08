@@ -9,6 +9,7 @@
  * @module
  */
 import { useEffect, useState } from 'react'
+import type { CSSProperties } from 'react'
 import css from './WmFrame.module.css'
 
 /** The one session summary fact the board needs, per pane. */
@@ -161,7 +162,10 @@ function WorkspaceSection(props: {
   group: AgentWorkspaceGroup
   currentSessionId: string | undefined
   now: number
+  zoomed: string | undefined
+  onZoom: (sessionId: string | undefined) => void
   onOpen: (sessionId: string) => void
+  onInterrupt: (sessionId: string) => void
 }) {
   return (
     <>
@@ -172,19 +176,34 @@ function WorkspaceSection(props: {
         <span className={css.agentWsTitle}>{props.group.title}</span>
         <span className={css.agentWsCount}>{props.group.sessions.length}</span>
       </div>
-      {props.group.sessions.map(session => (
-        <SessionPane key={session.id} pane={session} currentSessionId={props.currentSessionId} now={props.now} onOpen={props.onOpen} />
+      {(props.zoomed === undefined
+        ? props.group.sessions
+        : props.group.sessions.filter(session => session.id === props.zoomed)
+      ).map(session => (
+        <SessionPane
+          key={session.id}
+          pane={session}
+          currentSessionId={props.currentSessionId}
+          now={props.now}
+          zoomed={props.zoomed === session.id}
+          onZoom={props.onZoom}
+          onOpen={props.onOpen}
+          onInterrupt={props.onInterrupt}
+        />
       ))}
     </>
   )
 }
 
-/** One session pane: status header, subagent chips, updated line. */
+/** One session pane: status header, zoom, stop, subagent chips, updated line. */
 function SessionPane(props: {
   pane: AgentSessionPane
   currentSessionId: string | undefined
   now: number
+  zoomed: boolean
+  onZoom: (sessionId: string | undefined) => void
   onOpen: (sessionId: string) => void
+  onInterrupt: (sessionId: string) => void
 }) {
   const status = paneStatus(props.pane)
   const runningSubagents = props.pane.subagents.filter(subagent => subagent.running).length
@@ -193,6 +212,7 @@ function SessionPane(props: {
       type="button"
       className={css.agentPane}
       data-status={status}
+      data-zoomed={props.zoomed || undefined}
       data-current={props.pane.id === props.currentSessionId || undefined}
       onClick={() => { props.onOpen(props.pane.id) }}
     >
@@ -202,6 +222,24 @@ function SessionPane(props: {
         {props.pane.agentPreset === undefined ? null : <span className={css.agentPanePreset}>{props.pane.agentPreset}</span>}
         <span className={css.agentPaneClock}>
           {status === 'running' ? elapsedLabel(props.pane.updatedAt, props.now) : new Date(props.pane.updatedAt).toLocaleTimeString()}
+        </span>
+        <span
+          role="button"
+          tabIndex={0}
+          className={css.agentPaneAction}
+          aria-label={props.zoomed ? 'Unzoom' : 'Zoom'}
+          title={props.zoomed ? 'Unzoom (Esc)' : 'Zoom pane'}
+          onClick={(event) => {
+            event.stopPropagation()
+            props.onZoom(props.zoomed ? undefined : props.pane.id)
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return
+            event.stopPropagation()
+            props.onZoom(props.zoomed ? undefined : props.pane.id)
+          }}
+        >
+          {props.zoomed ? '⤡' : '⤢'}
         </span>
       </span>
       {props.pane.subagents.length === 0
@@ -223,6 +261,28 @@ function SessionPane(props: {
         )}
       <span className={css.agentPaneFoot}>
         {props.pane.pendingInteraction !== undefined ? <span className={css.agentPaneWait}>{props.pane.pendingInteraction}</span> : null}
+        {status === 'running' || status === 'pending'
+          ? (
+            <span
+              role="button"
+              tabIndex={0}
+              className={css.agentPaneStop}
+              aria-label="Stop"
+              title="Interrupt the active turn"
+              onClick={(event) => {
+                event.stopPropagation()
+                props.onInterrupt(props.pane.id)
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return
+                event.stopPropagation()
+                props.onInterrupt(props.pane.id)
+              }}
+            >
+              Stop
+            </span>
+          )
+          : null}
         <span className={css.agentPaneUpdated}>{`updated ${new Date(props.pane.updatedAt).toLocaleTimeString()}`}</span>
       </span>
     </button>
@@ -236,11 +296,39 @@ function SessionPane(props: {
  * @param props - the derived board, the focused session, and the open action.
  * @returns the board element tree.
  */
+/** Sort a section's panes by the board preference. */
+function sortPanes(panes: readonly AgentSessionPane[], sort: 'recent' | 'status'): AgentSessionPane[] {
+  const weight = (pane: AgentSessionPane): number =>
+    paneStatus(pane) === 'running' || paneStatus(pane) === 'pending' ? 0 : 1
+  return [...panes].sort((a, b) => {
+    if (sort === 'status' && weight(a) !== weight(b)) return weight(a) - weight(b)
+    return b.updatedAt - a.updatedAt
+  })
+}
+
 export function AgentGrid(props: {
   groups: readonly AgentWorkspaceGroup[]
   currentSessionId: string | undefined
   onOpen: (sessionId: string) => void
+  /** Interrupt one session's active turn (the pane stop control). */
+  onInterrupt: (sessionId: string) => void
+  /** Pane order within each section. */
+  sort: 'recent' | 'status'
+  /** Minimum pane width driving the auto-fit column count. */
+  paneWidth: number
+  /** Viewing-preference writes (persisted with the owning workspace's stash). */
+  onPrefsChange: (next: { sort?: 'recent' | 'status'; paneWidth?: number }) => void
 }) {
+  const [zoomed, setZoomed] = useState<string | undefined>(undefined)
+  // Esc leaves zoom (tmux z semantics); the keydown listener is frame-local.
+  useEffect(() => {
+    if (zoomed === undefined) return
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setZoomed(undefined)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('keydown', onKey) }
+  }, [zoomed])
   const anyRunning = props.groups.some(group => group.sessions.some(paneActive))
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -252,10 +340,56 @@ export function AgentGrid(props: {
   if (empty) {
     return <div className={css.codeEmpty}><p>No sessions in this workspace yet.</p></div>
   }
+  const sorted = props.groups.map(group => ({ ...group, sessions: sortPanes(group.sessions, props.sort) }))
   return (
-    <div className={css.agentBoard} data-agent-board>
-      {props.groups.map(group => (
-        <WorkspaceSection key={group.workspaceId} group={group} currentSessionId={props.currentSessionId} now={now} onOpen={props.onOpen} />
+    <div
+      className={css.agentBoard}
+      data-agent-board
+      data-zoom={zoomed !== undefined || undefined}
+      style={{ '--agent-pane-min': `${props.paneWidth}px` } as CSSProperties}
+    >
+      <div className={css.agentBoardBar}>
+        <span className={css.agentBoardBarLabel}>Board</span>
+        <span
+          role="button"
+          tabIndex={0}
+          className={css.agentPaneAction}
+          aria-label="Toggle sort"
+          title={`Sort: ${props.sort === 'recent' ? 'newest first' : 'active first'}`}
+          onClick={() => { props.onPrefsChange({ sort: props.sort === 'recent' ? 'status' : 'recent' }) }}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return
+            props.onPrefsChange({ sort: props.sort === 'recent' ? 'status' : 'recent' })
+          }}
+        >
+          {props.sort === 'recent' ? '↕ newest' : '↕ active'}
+        </span>
+        <span
+          role="button"
+          tabIndex={0}
+          className={css.agentPaneAction}
+          aria-label="Pane width"
+          title={props.paneWidth <= 340 ? 'Wider panes' : 'Narrower panes'}
+          onClick={() => { props.onPrefsChange({ paneWidth: props.paneWidth <= 340 ? 480 : 340 }) }}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return
+            props.onPrefsChange({ paneWidth: props.paneWidth <= 340 ? 480 : 340 })
+          }}
+        >
+          {props.paneWidth <= 340 ? '⊞ wide' : '⊞ compact'}
+        </span>
+      </div>
+      {sorted.map(group => (
+        <WorkspaceSection
+          key={group.workspaceId}
+          group={group}
+          currentSessionId={props.currentSessionId}
+          now={now}
+          zoomed={zoomed}
+          onZoom={setZoomed}
+          onOpen={props.onOpen}
+          onInterrupt={props.onInterrupt}
+        />
       ))}
     </div>
   )

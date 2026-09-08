@@ -80,6 +80,20 @@ describe('paneStatus', () => {
   })
 })
 
+/** Default render props: every call site gets the full required face. */
+function gridProps(overrides: Partial<Parameters<typeof AgentGrid>[0]> = {}): Parameters<typeof AgentGrid>[0] {
+  return {
+    groups: [],
+    currentSessionId: undefined,
+    onOpen: vi.fn(),
+    onInterrupt: vi.fn(),
+    sort: 'recent',
+    paneWidth: 340,
+    onPrefsChange: vi.fn(),
+    ...overrides,
+  }
+}
+
 describe('AgentGrid rendering', () => {
   const groups = buildAgentBoard(
     [{ workspaceId: 'ws', title: 'Alpha', sessionIds: ['a', 'b'] }],
@@ -91,7 +105,7 @@ describe('AgentGrid rendering', () => {
 
   it('tiles a pane per session with workspace header and status attributes', () => {
     const onOpen = vi.fn()
-    const { container } = render(<AgentGrid groups={groups} currentSessionId="a" onOpen={onOpen} />)
+    const { container } = render(<AgentGrid {...gridProps({ groups, currentSessionId: 'a', onOpen })} />)
     expect(screen.getByText('Alpha')).toBeTruthy()
     expect(screen.getByText('Builder')).toBeTruthy()
     const running = container.querySelector('[data-status="running"]')
@@ -105,15 +119,61 @@ describe('AgentGrid rendering', () => {
 
   it('opens the clicked session', () => {
     const onOpen = vi.fn()
-    render(<AgentGrid groups={groups} currentSessionId={undefined} onOpen={onOpen} />)
+    render(<AgentGrid {...gridProps({ groups, onOpen })} />)
     fireEvent.click(screen.getByText('Idle one'))
     expect(onOpen).toHaveBeenCalledWith('b')
     cleanup()
   })
 
   it('explains an empty board', () => {
-    render(<AgentGrid groups={[]} currentSessionId={undefined} onOpen={vi.fn()} />)
+    render(<AgentGrid {...gridProps()} />)
     expect(screen.getByText('No sessions in this workspace yet.')).toBeTruthy()
     cleanup()
+  })
+})
+
+describe('AgentGrid controls', () => {
+  const groups = buildAgentBoard(
+    [{ workspaceId: 'ws', title: 'Alpha', sessionIds: ['a', 'b'] }],
+    {
+      a: session({ id: 'a', displayTitle: 'Builder', running: true, updatedAt: Date.now() }),
+      b: session({ id: 'b', displayTitle: 'Idle one', updatedAt: Date.now() - 1000 }),
+    },
+  )
+
+  it('stop appears only on active panes and interrupts without opening', () => {
+    const onOpen = vi.fn()
+    const onInterrupt = vi.fn()
+    const { container } = render(<AgentGrid {...gridProps({ groups, onOpen, onInterrupt })} />)
+    const stops = [...container.querySelectorAll('[aria-label="Stop"]')]
+    expect(stops).toHaveLength(1)
+    fireEvent.click(stops[0]!)
+    expect(onInterrupt).toHaveBeenCalledWith('a')
+    expect(onOpen).not.toHaveBeenCalled()
+  })
+
+  it('zoom shows one pane; Esc leaves zoom', () => {
+    const { container } = render(<AgentGrid {...gridProps({ groups })} />)
+    fireEvent.click(container.querySelector('[aria-label="Zoom"]')!)
+    expect(container.querySelector('[data-zoom]')).not.toBeNull()
+    expect(container.querySelectorAll('[class*="agentPane"][data-status]')).toHaveLength(1)
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(container.querySelector('[data-zoom]')).toBeNull()
+  })
+
+  it('the preference bar reports writes to the workspace stash', () => {
+    const onPrefsChange = vi.fn()
+    const { container, unmount } = render(<AgentGrid {...gridProps({ groups, onPrefsChange })} />)
+    const buttons = [...container.querySelectorAll('[aria-label="Toggle sort"]')]
+    expect(buttons).toHaveLength(1)
+    fireEvent.click(buttons[0]!)
+    expect(onPrefsChange).toHaveBeenCalledWith({ sort: 'status' })
+    unmount()
+  })
+
+  it('status sort puts active panes first', () => {
+    const { container } = render(<AgentGrid {...gridProps({ groups, sort: 'status' })} />)
+    const titles = [...container.querySelectorAll('[class*="agentPaneTitle"]')].map(node => node.textContent)
+    expect(titles.indexOf('Builder')).toBeLessThan(titles.indexOf('Idle one'))
   })
 })

@@ -648,6 +648,16 @@ export class SessionManager {
   }
 
   /**
+   * Interrupt one session's active turn by id, without selecting it: the raw
+   * `sessions.cancel` wire call, shared with the session's own stop control.
+   * @param sessionId - the session whose active turn stops.
+   * @returns the wire result; failures carry the transport or rejection error.
+   */
+  async cancelSession(sessionId: SessionId): Promise<RpcResult<{ accepted: true }>> {
+    return (await this.api.sessions.cancel({ sessionId })).result
+  }
+
+  /**
    * Record a host-confirmed composition switch (see ISessions.noteAgentPreset).
    * @param sessionId - the switched session.
    * @param agentPreset - the preset id the host confirmed.
