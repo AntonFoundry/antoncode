@@ -8,6 +8,7 @@ import type {
 } from '@deepseek-ai/dsh-api-remotes/client'
 // Value import from the inline-safe wire layer (not the connection plugin):
 // plugin-to-plugin value imports are a bundle purity error.
+import { resolvedClientTimeZone } from '../time-zone.ts'
 import { transportError } from '@deepseek-ai/dsh-host-apiproxy/api'
 import { mergeOrderedBaseline } from '../ordered-baseline.ts'
 import type { ConversationRuntime } from './conversation-assembler.ts'
@@ -655,6 +656,24 @@ export class SessionManager {
    */
   async cancelSession(sessionId: SessionId): Promise<RpcResult<{ accepted: true }>> {
     return (await this.api.sessions.cancel({ sessionId })).result
+  }
+
+  /**
+   * Prompt one session by id, without selecting it (the board's per-pane
+   * composer): the same `sessions.prompt` wire call the Session face issues,
+   * with a single text content part.
+   * @param sessionId - the session to prompt.
+   * @param text - the user's message text.
+   * @param mode - 'queue' appends or starts; 'steer' redirects a running turn.
+   * @returns the wire result; failures carry the transport or rejection error.
+   */
+  async promptSession(sessionId: SessionId, text: string, mode: 'queue' | 'steer'): Promise<RpcResult<{ accepted: true }>> {
+    return (await this.api.sessions.prompt({
+      sessionId,
+      mode,
+      content: [{ type: 'text', text }],
+      clientTimeZone: resolvedClientTimeZone(),
+    })).result
   }
 
   /**

@@ -372,6 +372,18 @@ export class SessionRuntime implements ISessions {
    * @param id - the session whose active turn stops.
    * @returns the wire result.
    */
+  /**
+   * Prompt one session by id without selecting it (see
+   * {@link ISessions.promptSession}).
+   * @param id - the session to prompt.
+   * @param text - the user's message text.
+   * @param mode - 'queue' appends or starts; 'steer' redirects a running turn.
+   * @returns the wire result.
+   */
+  promptSession(id: SessionId, text: string, mode: 'queue' | 'steer'): Promise<RpcResult<{ accepted: true }>> {
+    return this.manager.promptSession(id, text, mode)
+  }
+
   interruptSession(id: SessionId): Promise<RpcResult<{ accepted: true }>> {
     return this.manager.cancelSession(id)
   }

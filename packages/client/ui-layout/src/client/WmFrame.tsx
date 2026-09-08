@@ -98,6 +98,8 @@ export interface WmFrameInjected {
   openSession: (sessionId: string) => void
   /** Interrupt one session's active turn by id (the board pane stop button). */
   interruptSession: (sessionId: string) => void
+  /** Prompt one session by id (the board pane composer); steer while running. */
+  promptSession: (sessionId: string, text: string, mode: 'queue' | 'steer') => void
   /** The frame's theme palette (compos load-theme's candidates). */
   themeList: () => { id: string; colorScheme: string }[]
   /** Load one palette theme by id and persist the choice. */
@@ -621,6 +623,7 @@ export function WmFrame({
   openWorkspace,
   openSession,
   interruptSession,
+  promptSession,
   listDirectory,
   openPath,
 }: WmFrameProps) {
@@ -1551,6 +1554,7 @@ export function WmFrame({
               currentSessionId={sessionsListSnapshot.current}
               onOpen={(sessionId) => { openSession(sessionId) }}
               onInterrupt={(sessionId) => { interruptSession(sessionId) }}
+              onPrompt={(sessionId, text, mode) => { promptSession(sessionId, text, mode) }}
             />
           )
           : panels.mode === 'code'

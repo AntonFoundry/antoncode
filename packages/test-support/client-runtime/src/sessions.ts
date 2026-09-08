@@ -190,7 +190,7 @@ export class TestSessions implements ISessions {
 
   /** Calls observed on the service-level face, newest last. */
   readonly calls: {
-    method: 'open' | 'openSubagent' | 'setSubagentCatalogOpen' | 'refreshSubagents' | 'interruptSession'
+    method: 'open' | 'openSubagent' | 'setSubagentCatalogOpen' | 'refreshSubagents' | 'interruptSession' | 'promptSession'
       | 'clear' | 'search' | 'fork' | 'forkExcluding'
     args: unknown[]
   }[] = []
@@ -429,6 +429,11 @@ export class TestSessions implements ISessions {
 
   async interruptSession(id: SessionId): Promise<RpcResult<{ accepted: true }>> {
     this.calls.push({ method: 'interruptSession', args: [id] })
+    return { ok: true, value: { accepted: true } }
+  }
+
+  async promptSession(id: SessionId, text: string, mode: 'queue' | 'steer'): Promise<RpcResult<{ accepted: true }>> {
+    this.calls.push({ method: 'promptSession', args: [id, text, mode] })
     return { ok: true, value: { accepted: true } }
   }
 

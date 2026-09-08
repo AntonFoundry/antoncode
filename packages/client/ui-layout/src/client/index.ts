@@ -189,6 +189,10 @@ export function apply(ctx: ClientContext): void {
             (ctx.sessions as unknown as {
               interruptSession(id: string): Promise<{ ok: boolean; error?: { message: string } }>
             }).interruptSession(sessionId),
+          promptSession: (sessionId: string, text: string, mode: 'queue' | 'steer') =>
+            (ctx.sessions as unknown as {
+              promptSession(id: string, text: string, mode: 'queue' | 'steer'): Promise<{ ok: boolean; error?: { message: string } }>
+            }).promptSession(sessionId, text, mode),
           openWorkspace: (workspaceId: string) => {
             const view = ctx.workspaces.list.getSnapshot().items.find(w => w.workspaceId === workspaceId)
             const list = ctx.sessions.list.getSnapshot()
