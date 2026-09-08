@@ -16,6 +16,8 @@ import css from './WmFrame.module.css'
 export interface AgentSessionView {
   id: string
   displayTitle: string
+  /** Session working directory — the footer strip's path half. */
+  cwd?: string
   /** Agent preset the session runs, absent when the deployment composes none. */
   agentPreset?: string
   running: boolean
@@ -166,6 +168,7 @@ function WorkspaceSection(props: {
   onZoom: (sessionId: string | undefined) => void
   onOpen: (sessionId: string) => void
   onInterrupt: (sessionId: string) => void
+  onPrompt: (sessionId: string, text: string, mode: 'queue' | 'steer') => void
 }) {
   return (
     <>
@@ -189,6 +192,7 @@ function WorkspaceSection(props: {
           onZoom={props.onZoom}
           onOpen={props.onOpen}
           onInterrupt={props.onInterrupt}
+          onPrompt={props.onPrompt}
         />
       ))}
     </>
@@ -204,24 +208,40 @@ function SessionPane(props: {
   onZoom: (sessionId: string | undefined) => void
   onOpen: (sessionId: string) => void
   onInterrupt: (sessionId: string) => void
+  onPrompt: (sessionId: string, text: string, mode: 'queue' | 'steer') => void
 }) {
   const status = paneStatus(props.pane)
   const runningSubagents = props.pane.subagents.filter(subagent => subagent.running).length
+  const active = status === 'running' || status === 'pending'
+  // Pane-local composer draft. The pane is a div (it hosts an input), so
+  // click-to-open lives on the header only; typing here must not navigate.
+  const [draft, setDraft] = useState('')
+  const send = (): void => {
+    const text = draft.trim()
+    if (text.length === 0) return
+    props.onPrompt(props.pane.id, text, active ? 'steer' : 'queue')
+    setDraft('')
+  }
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       className={css.agentPane}
       data-status={status}
       data-zoomed={props.zoomed || undefined}
       data-current={props.pane.id === props.currentSessionId || undefined}
       onClick={() => { props.onOpen(props.pane.id) }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter') return
+        props.onOpen(props.pane.id)
+      }}
     >
       <span className={css.agentPaneHead}>
         <span className={css.agentStatusDot} aria-label={status} />
         <span className={css.agentPaneTitle}>{props.pane.displayTitle || props.pane.id}</span>
         {props.pane.agentPreset === undefined ? null : <span className={css.agentPanePreset}>{props.pane.agentPreset}</span>}
         <span className={css.agentPaneClock}>
-          {status === 'running' ? elapsedLabel(props.pane.updatedAt, props.now) : new Date(props.pane.updatedAt).toLocaleTimeString()}
+          {status === 'running' ? `Working · ${elapsedLabel(props.pane.updatedAt, props.now)}` : new Date(props.pane.updatedAt).toLocaleTimeString()}
         </span>
         <span
           role="button"
@@ -285,7 +305,27 @@ function SessionPane(props: {
           : null}
         <span className={css.agentPaneUpdated}>{`updated ${new Date(props.pane.updatedAt).toLocaleTimeString()}`}</span>
       </span>
-    </button>
+      <input
+        type="text"
+        className={css.agentPaneInput}
+        value={draft}
+        placeholder={active ? 'Steer the running turn…' : 'Ask anything…'}
+        aria-label={`Prompt ${props.pane.displayTitle || props.pane.id}`}
+        onClick={(event) => { event.stopPropagation() }}
+        onKeyDown={(event) => {
+          event.stopPropagation()
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            send()
+          }
+        }}
+        onChange={(event) => { setDraft(event.target.value) }}
+      />
+      <span className={css.agentPaneStrip} title={props.pane.cwd ?? undefined}>
+        <span className={css.agentPaneStripModel}>{props.pane.agentPreset ?? 'default'}</span>
+        {props.pane.cwd === undefined ? null : <span className={css.agentPaneStripCwd}>{`· ${props.pane.cwd}`}</span>}
+      </span>
+    </div>
   )
 }
 
@@ -318,6 +358,8 @@ export function AgentGrid(props: {
   paneWidth: number
   /** Viewing-preference writes (persisted with the owning workspace's stash). */
   onPrefsChange: (next: { sort?: 'recent' | 'status'; paneWidth?: number }) => void
+  /** Prompt one session by id (the pane composer); steer while running. */
+  onPrompt: (sessionId: string, text: string, mode: 'queue' | 'steer') => void
 }) {
   const [zoomed, setZoomed] = useState<string | undefined>(undefined)
   // Esc leaves zoom (tmux z semantics); the keydown listener is frame-local.
@@ -389,6 +431,7 @@ export function AgentGrid(props: {
           onZoom={setZoomed}
           onOpen={props.onOpen}
           onInterrupt={props.onInterrupt}
+          onPrompt={props.onPrompt}
         />
       ))}
     </div>

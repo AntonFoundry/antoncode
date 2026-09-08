@@ -26,7 +26,10 @@ Agent 模式此前把 `AgentGrid` 渲染成一行行卡片——只有会话标�
 - 窗格主体是状态加芯片，不是实时转写；每窗格的流式尾部是后续阶段，需要通过对象层订阅每会话事件，而非摘要镜像。
 - 构建器在每次工作区变化时读取整个会话列表；会话数量小，但拥有数百会话的部署需要按工作区记忆化的索引。
 
-## Phase 2 补充（控制语义）
+## Phase 2.6 补充（Codex 式窗格外观）
+
+- `ISessions.promptSession(id, text, mode)` 暴露按 id 的 `sessions.prompt` 调用；每个窗格带输入框（Enter 发送），模式跟随窗格实时状态——运行中为 `steer`，否则 `queue`——且不选中该会话。
+- 窗格主体加入参考样式：底部条（agent preset · cwd）与运行中的 `Working · 计时` 标签；窗格本身改为 div（容纳输入框），保留点击打开（role=button），交互子元素阻止冒泡。
 
 - `ISessions.interruptSession(id)` 暴露按 id 的原始 `sessions.cancel` 调用，无需选中该会话；面板的 Stop 控件使用它（嵌套在窗格内，`stopPropagation` 防止触发打开）。
 - 缩放是渲染级的：缩放后的 board 只渲染聚焦窗格（占满整个网格）；窗格的缩放按钮与 Esc 退出缩放（tmux `z` 语义）。

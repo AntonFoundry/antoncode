@@ -90,6 +90,7 @@ function gridProps(overrides: Partial<Parameters<typeof AgentGrid>[0]> = {}): Pa
     sort: 'recent',
     paneWidth: 340,
     onPrefsChange: vi.fn(),
+    onPrompt: vi.fn(),
     ...overrides,
   }
 }
@@ -175,5 +176,43 @@ describe('AgentGrid controls', () => {
     const { container } = render(<AgentGrid {...gridProps({ groups, sort: 'status' })} />)
     const titles = [...container.querySelectorAll('[class*="agentPaneTitle"]')].map(node => node.textContent)
     expect(titles.indexOf('Builder')).toBeLessThan(titles.indexOf('Idle one'))
+  })
+})
+
+describe('AgentGrid pane composer', () => {
+  const groups = buildAgentBoard(
+    [{ workspaceId: 'ws', title: 'Alpha', sessionIds: ['a', 'b'] }],
+    {
+      a: session({ id: 'a', displayTitle: 'Builder', running: true, agentPreset: 'code', cwd: '/repo', updatedAt: Date.now() }),
+      b: session({ id: 'b', displayTitle: 'Idle one', updatedAt: Date.now() - 1000 }),
+    },
+  )
+
+  it('sends queued prompts from an idle pane and clears the draft', () => {
+    const onPrompt = vi.fn()
+    const onOpen = vi.fn()
+    const { container } = render(<AgentGrid {...gridProps({ groups, onPrompt, onOpen })} />)
+    const input = container.querySelector('[aria-label="Prompt Idle one"]') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'fix the lint' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(onPrompt).toHaveBeenCalledWith('b', 'fix the lint', 'queue')
+    expect(input.value).toBe('')
+    expect(onOpen).not.toHaveBeenCalled()
+  })
+
+  it('steers a running pane', () => {
+    const onPrompt = vi.fn()
+    const { container } = render(<AgentGrid {...gridProps({ groups, onPrompt })} />)
+    const input = container.querySelector('[aria-label="Prompt Builder"]') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'also run the e2e' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(onPrompt).toHaveBeenCalledWith('a', 'also run the e2e', 'steer')
+  })
+
+  it('shows the model·cwd strip and a Working label on running panes', () => {
+    const { container } = render(<AgentGrid {...gridProps({ groups })} />)
+    expect(container.textContent).toContain('code')
+    expect(container.textContent).toContain('/repo')
+    expect(container.textContent).toMatch(/Working · /)
   })
 })

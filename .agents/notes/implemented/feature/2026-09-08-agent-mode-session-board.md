@@ -54,7 +54,16 @@ streams, not processes. A pty mode stays a separate future decision.
   counts are small, but a deployment with hundreds of sessions would need
   memoized per-workspace indexes.
 
-## Phase 2 addendum (control semantics)
+## Phase 2.6 addendum (Codex-style pane chrome)
+
+- `ISessions.promptSession(id, text, mode)` exposes the by-id `sessions.prompt`
+  wire call; each pane carries a composer (Enter sends) whose mode follows the
+  pane's live state — `steer` while running, `queue` otherwise — without
+  selecting the session.
+- The pane body gains the reference chrome: a footer strip (`agent preset ·
+  cwd`) and a running `Working · elapsed` label; the pane itself became a div
+  (it hosts the input) with the open-on-click kept on the pane role=button,
+  and interactive children stop propagation.
 
 - `ISessions.interruptSession(id)` exposes the raw `sessions.cancel` wire
   call by id, without selecting the session; the board pane's Stop control

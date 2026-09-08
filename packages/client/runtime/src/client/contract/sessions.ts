@@ -44,6 +44,16 @@ export interface ISessions {
    */
   interruptSession(id: SessionId): Promise<RpcResult<{ accepted: true }>>
   /**
+   * Prompt one session by id without selecting it: the board's per-pane
+   * composer. `mode` follows the session's live state — `steer` interrupts a
+   * running turn; `queue` appends or starts one.
+   * @param id - the session to prompt.
+   * @param text - the user's message text (single text part).
+   * @param mode - 'queue' appends or starts; 'steer' redirects a running turn.
+   * @returns the wire result; `ok: false` names why the prompt did not land.
+   */
+  promptSession(id: SessionId, text: string, mode: 'queue' | 'steer'): Promise<RpcResult<{ accepted: true }>>
+  /**
    * Select a session as current.
    * @param id - session id (must exist in the list; unknown ids fail loud).
    */
