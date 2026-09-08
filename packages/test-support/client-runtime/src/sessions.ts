@@ -1,5 +1,6 @@
 /** Test-owned sessions face: the SlotRegistry host contract over declarative fixtures. */
 import type { Context } from '@deepseek-ai/cordis'
+import type { RpcResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type { AttachmentIdType } from '@deepseek-ai/dsh-attachment'
 import { createScope, scopeOf, SessionProvideChannel } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
@@ -189,7 +190,7 @@ export class TestSessions implements ISessions {
 
   /** Calls observed on the service-level face, newest last. */
   readonly calls: {
-    method: 'open' | 'openSubagent' | 'setSubagentCatalogOpen' | 'refreshSubagents'
+    method: 'open' | 'openSubagent' | 'setSubagentCatalogOpen' | 'refreshSubagents' | 'interruptSession'
       | 'clear' | 'search' | 'fork' | 'forkExcluding'
     args: unknown[]
   }[] = []
@@ -424,6 +425,11 @@ export class TestSessions implements ISessions {
       draft.current = id
       draft.currentAddress = undefined
     })
+  }
+
+  async interruptSession(id: SessionId): Promise<RpcResult<{ accepted: true }>> {
+    this.calls.push({ method: 'interruptSession', args: [id] })
+    return { ok: true, value: { accepted: true } }
   }
 
   /** Open an existing fixture through its catalog address. */
