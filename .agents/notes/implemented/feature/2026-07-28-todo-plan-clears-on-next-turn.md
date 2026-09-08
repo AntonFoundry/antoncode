@@ -1,4 +1,4 @@
-# Agent Note: Todo plan strip clears on the next turn
+# Agent Note: Todo plan strip clears on the next turn (REVERSED — the plan now persists across turns)
 
 Status: implemented
 
@@ -10,11 +10,15 @@ English | [中文](2026-07-28-todo-plan-clears-on-next-turn.zh.md)
 
 ## Decision
 
-The standing plan is the latest `todo/write` that is not followed by a later `turn/start`. `turn/end` keeps the list visible so the finished checklist remains while the user reads the answer; the next `turn/start` clears it until the model writes again.
+**Reversed (2026-09-08): the standing plan persists across turns.** The `todos` projection is now the latest `todo/write` anywhere in the log; no event clears it. The clearing rule below shipped first and was reverted for product reasons.
+
+Reversal rationale: the clear fired the moment the user sent any message — including "proceed with phase 2" — so the plan vanished exactly when follow-up work began, and users read the empty dock as the todo system having lost their plan. The tree is a standing plan the user monitors across turns, not a per-turn scratchpad; the model rewrites the whole tree per request (the tool description now says so and instructs leaving follow-on phases `pending` rather than reporting all-completed), so staleness is corrected by the next write, not by clearance.
+
+Original decision (no longer shipped): the standing plan is the latest `todo/write` that is not followed by a later `turn/start`. `turn/end` keeps the list visible so the finished checklist remains while the user reads the answer; the next `turn/start` clears it until the model writes again.
 
 ### Host projection (web)
 
-`dsh-tool-todo`'s `todos` projection unit folds the rule: `apply` takes the whole list from each `todo/write` and returns `null` on each `turn/start` (`stateVersion` 2). Carriers (`dsh-host-apiproxy`) serve that value on the history tail `projections` block and push `session/projection` frames; the web dock reads it through `useProjection('todos')`. The keyless fixture mirrors the same fold for assembled snapshots.
+`dsh-tool-todo`'s `todos` projection unit folds the reversed rule: `apply` takes the whole list from each `todo/write` and no event clears it (`stateVersion` 4; the original clear fold shipped as `stateVersion` 2). Carriers (`dsh-host-apiproxy`) serve that value on the history tail `projections` block and push `session/projection` frames; the web dock reads it through `useProjection('todos')`. The keyless fixture mirrors the same fold for assembled snapshots.
 
 ### TUI live path
 
@@ -28,4 +32,4 @@ The former TUI's `renderEvent` switch cleared its local plan panel on `turn/star
 
 ## Consequences
 
-The host projection and the TUI panel share one lifetime rule; reopening a session restores a plan only when no later turn has started. Partial supersession of the session-long standing-plan wording in [web todo display](2026-07-23-web-todo-display.md) and [`todo_write` tool](2026-06-29-todo-write-tool.md): event-sourcing, last-write-wins replacement, and the two render surfaces stay there; this note owns turn-boundary clearance. Coverage: tool-todo projection specs for turn/start clear + turn/end keep, fixture push-frame clearance for the assembled web snapshot, plus the TUI snapshot that starts the next turn and pins the strip gone.
+The host projection and the TUI panel shared one lifetime rule; reopening a session restored a plan only when no later turn had started. Under the reversal, reopening always restores the latest plan. Partial supersession of the session-long standing-plan wording in [web todo display](2026-07-23-web-todo-display.md) and [`todo_write` tool](2026-06-29-todo-write-tool.md): event-sourcing, last-write-wins replacement, and the two render surfaces stay there; this note owns turn-boundary clearance. Coverage: tool-todo projection specs for turn/start clear + turn/end keep, fixture push-frame clearance for the assembled web snapshot, plus the TUI snapshot that starts the next turn and pins the strip gone.

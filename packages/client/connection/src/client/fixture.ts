@@ -508,9 +508,6 @@ function buildAlphaLog(): SessionEvent[] {
   // the keyed toolview row (turn 60's `fx-bash` covers the render-site fallback
   // row) — the two chat-row shapes the terminal card renders in.
   //
-  // Ordered BEFORE the todo turn deliberately: the standing plan retires at the
-  // next `turn/start`, so a turn appended after it would leave the dock's plan
-  // strip empty and take the todo surfaces' own coverage with it.
   toolTurn(66, 'bash', '{"command":"pnpm run check","cwd":"/tmp/fixture/deep/nested"}', TERMINAL_OUTPUT_FIXTURE)
 
   // Turns 67-68: the search card's two shapes. `grep` emits a `card: 'search'`
@@ -1354,14 +1351,14 @@ function compareSearchCandidates(a: FixtureSearchCandidate, b: FixtureSearchCand
 }
 
 /**
- * Current plan projection over the full log (host parallel: latest todo/write
- * with no later turn/start; a new turn retires the previous plan).
+ * Current plan projection over the full log (host parallel: the latest
+ * todo/write anywhere in the log — the standing plan persists across turns,
+ * matching dsh-tool-todo's projection fold).
  */
 function backscanTodos(log: readonly SessionEvent[]): TodoItem[] | undefined {
   for (let i = log.length - 1; i >= 0; i--) {
     const event = log[i]
     if (event === undefined) continue
-    if (event.type === 'turn/start') return undefined
     if (event.type === 'todo/write') return event.data.todos
   }
   return undefined

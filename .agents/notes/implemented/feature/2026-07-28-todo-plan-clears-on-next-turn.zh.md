@@ -1,4 +1,4 @@
-# Agent Note: 下一轮次开始时清空 todo 计划条
+# Agent Note: 下一轮次开始时清空 todo 计划条（已反转——计划现跨轮保留）
 
 Status: implemented
 
@@ -10,11 +10,15 @@ Status: implemented
 
 ## 决策
 
-常驻计划是其后没有更晚 `turn/start` 的最近一次 `todo/write`。`turn/end` 保留列表可见，以便用户阅读回答时仍能看到刚完成的清单；下一次 `turn/start` 将其清空，直至模型再次写入。
+**已反转（2026-09-08）：常驻计划跨轮保留。** `todos` 投影现为日志中最近一条 `todo/write`；没有任何事件将其清除。下方的清除规则曾先行发布，因产品原因被回退。
+
+反转理由：清除在用户发送任何消息的瞬间触发——包括"继续第二阶段"——计划恰在后续工作开始时消失，用户会把空面板读成待办系统丢了计划。这棵树是用户跨轮监控的常驻计划，不是单轮草稿；模型会在每个新请求时重写整棵树（工具描述已如此说明，并要求把后续阶段保持为 `pending` 而非全部上报完成），陈旧由下一次写入纠正，而非清除。
+
+原始决策（已不再发布）：常驻计划是其后没有更晚 `turn/start` 的最近一次 `todo/write`。`turn/end` 保留列表可见，以便用户阅读回答时仍能看到刚完成的清单；下一次 `turn/start` 将其清空，直至模型再次写入。
 
 ### 宿主投影（web）
 
-`dsh-tool-todo` 的 `todos` 投影单元折叠该规则：`apply` 从每个 `todo/write` 取完整列表，并在每个 `turn/start` 返回 `null`（`stateVersion` 2）。载体（`dsh-host-apiproxy`）在历史记录尾部的 `projections` 块中提供该值，并以 `session/projection` 帧推送；web dock 经 `useProjection('todos')` 读取。无密钥 fixture（测试前置数据）镜像同一折叠，供组装后的快照使用。
+`dsh-tool-todo` 的 `todos` 投影单元折叠反转后的规则：`apply` 从每个 `todo/write` 取完整列表，没有任何事件将其清除（`stateVersion` 4；原始清除折叠以 `stateVersion` 2 发布）。载体（`dsh-host-apiproxy`）在历史记录尾部的 `projections` 块中提供该值，并以 `session/projection` 帧推送；web dock 经 `useProjection('todos')` 读取。无密钥 fixture（测试前置数据）镜像同一折叠，供组装后的快照使用。
 
 ### TUI 实时路径
 
