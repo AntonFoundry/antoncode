@@ -39,6 +39,7 @@ const SIDEBAR_SHARE_MAX = 0.2
 import type { createLayoutStore, LayoutMode, ScratchState, WmState } from './stores.ts'
 import { COMMANDS, PREFIX_HINTS, parseChord, type ArmedPrefix, type WmCommand } from './keymap.ts'
 import { Minibuffer, type MinibufferCandidate } from './Minibuffer.tsx'
+import { AgentGrid, buildAgentBoard } from './AgentGrid.tsx'
 import { IdoFind } from './IdoFind.tsx'
 import { StatusLine } from './StatusLine.tsx'
 import { ScratchBuffer } from './ScratchBuffer.tsx'
@@ -585,34 +586,6 @@ function CodeGrid(props: {
  * tiled arrangement needs per-card session contexts (a framework seam that
  * does not exist yet); this grid is the honest first cut.
  */
-function AgentGrid(props: {
-  sessions: ReadonlyArray<{ id: string; displayTitle: string; updatedAt: number }>
-  currentSessionId: string | undefined
-  onOpen: (sessionId: string) => void
-}) {
-  if (props.sessions.length === 0) {
-    return <div className={css.codeEmpty}><p>No sessions in this workspace yet.</p></div>
-  }
-  return (
-    <div className={css.codeGrid} data-agent-grid>
-      {props.sessions.map(session => (
-        <button
-          key={session.id}
-          type="button"
-          className={css.codeCard}
-          data-current={session.id === props.currentSessionId || undefined}
-          onClick={() => { props.onOpen(session.id) }}
-        >
-          <span className={css.modeLine}>
-            <span className={css.bufferName}>{session.displayTitle || session.id}</span>
-          </span>
-          <span className={css.agentCardMeta}>updated {new Date(session.updatedAt).toLocaleTimeString()}</span>
-        </button>
-      ))}
-    </div>
-  )
-}
-
 /**
  * The window-manager frame (see module doc).
  * @param props - the four shares plus the injected wm face.
@@ -984,6 +957,15 @@ export function WmFrame({
     })
   ), [workspaceSnapshot, sessionsListSnapshot])
 
+  // Agent mode board: every workspace as a section, each session a live
+  // pane with its subagents nested. Built from plain summaries; AgentGrid
+  // owns the rendering.
+  const agentBoard = useMemo(() => (
+    buildAgentBoard(
+      workspaceSnapshot.items.map(w => ({ workspaceId: w.workspaceId as string, title: w.title, sessionIds: w.sessionIds })),
+      sessionsListSnapshot.byId,
+    )
+  ), [workspaceSnapshot.items, sessionsListSnapshot.byId])
   // Agent mode: the active workspace's sessions (the current session's
   // workspace owns the frame's arrangement).
   const activeWorkspaceId = useMemo(() => {
@@ -991,14 +973,6 @@ export function WmFrame({
     if (current === undefined) return undefined
     return workspaceSnapshot.items.find(w => w.sessionIds.includes(current))?.workspaceId
   }, [workspaceSnapshot.items, sessionsListSnapshot.current])
-  const workspaceSessions = useMemo(() => {
-    const ws = workspaceSnapshot.items.find(w => w.workspaceId === activeWorkspaceId)
-    if (ws === undefined) return []
-    return ws.sessionIds
-      .map(id => sessionsListSnapshot.byId[id])
-      .filter(session => session !== undefined)
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-  }, [workspaceSnapshot.items, sessionsListSnapshot, activeWorkspaceId])
 
   // Per-workspace arrangements: the window tree (and viewing mode) are
   // workspace facts. Three persistence semantics, all keyed by workspace:
@@ -1550,7 +1524,7 @@ export function WmFrame({
         {panels.mode === 'agent'
           ? (
             <AgentGrid
-              sessions={workspaceSessions}
+              groups={agentBoard}
               currentSessionId={sessionsListSnapshot.current}
               onOpen={(sessionId) => { openSession(sessionId) }}
             />

@@ -397,3 +397,177 @@
 .pane[data-focused] .modeLine [class*='bufferName'] {
   color: var(--dsw-static-deepseek-450);
 }
+
+/* Agent board: workspace-grouped session panes tiling the tree area. The
+   grid is the frame's whole content in agent mode, so every pane stretches
+   to share the space and the board itself never scrolls — panes clip their
+   own overflow instead. */
+.agentBoard {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  grid-auto-rows: minmax(160px, 1fr);
+  gap: 1px;
+  height: 100%;
+  background: var(--dsw-alias-border-l1);
+  overflow: auto;
+}
+
+.agentWsHeader {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--dsw-alias-interactive-bg-hover-accent);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.agentWsTitle {
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.agentWsCount {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.agentPane {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  min-height: 0;
+  padding: 10px 12px;
+  text-align: left;
+  background: var(--dsw-alias-bg-base);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.agentPane:hover {
+  background: var(--dsw-alias-interactive-bg-hover-accent);
+}
+
+.agentPane[data-current] {
+  border-color: var(--dsw-static-deepseek-450);
+}
+
+.agentPaneHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.agentStatusDot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dsw-alias-label-tertiary);
+}
+
+.agentPane[data-status='running'] .agentStatusDot {
+  background: var(--dsw-static-green-500);
+  animation: agentPulse 1.2s ease-in-out infinite;
+}
+
+.agentPane[data-status='pending'] .agentStatusDot {
+  background: var(--dsw-static-amber-500);
+}
+
+.agentPane[data-status='done'] .agentStatusDot {
+  background: var(--dsw-static-deepseek-450);
+}
+
+@keyframes agentPulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.agentPaneTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.agentPanePreset {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  background: var(--dsw-alias-interactive-bg-hover-accent);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.agentPaneClock {
+  flex: none;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.agentPaneSubs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.agentSubChip {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  background: var(--dsw-alias-interactive-bg-hover-accent);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.agentSubChip[data-running] {
+  color: var(--dsw-alias-label-primary);
+}
+
+.agentSubRun {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.agentPaneFoot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  min-width: 0;
+}
+
+.agentPaneWait {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  background: var(--dsw-static-amber-500);
+  color: var(--dsw-static-neutral-bluish-00);
+}
+
+.agentPaneUpdated {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
