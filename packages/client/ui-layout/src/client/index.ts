@@ -189,6 +189,14 @@ export function apply(ctx: ClientContext): void {
             (ctx.sessions as unknown as {
               interruptSession(id: string): Promise<{ ok: boolean; error?: { message: string } }>
             }).interruptSession(sessionId),
+          fetchSessionTail: async (sessionId: string) => {
+            type WireTail = { ok: boolean; value?: { lines: readonly { kind: string; label: string }[] } }
+            const result = await (ctx.sessions as unknown as {
+              sessionTail(id: string): Promise<WireTail>
+            }).sessionTail(sessionId)
+            if (!result.ok || result.value === undefined) return undefined
+            return result.value.lines.map(line => ({ kind: line.kind as 'user' | 'tool' | 'assistant' | 'error', label: line.label }))
+          },
           promptSession: (sessionId: string, text: string, mode: 'queue' | 'steer') =>
             (ctx.sessions as unknown as {
               promptSession(id: string, text: string, mode: 'queue' | 'steer'): Promise<{ ok: boolean; error?: { message: string } }>

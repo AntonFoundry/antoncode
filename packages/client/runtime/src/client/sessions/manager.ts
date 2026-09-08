@@ -9,6 +9,7 @@ import type {
 // Value import from the inline-safe wire layer (not the connection plugin):
 // plugin-to-plugin value imports are a bundle purity error.
 import { resolvedClientTimeZone } from '../time-zone.ts'
+import { deriveSessionTail, type SessionTail, type TailEvent } from './tail.ts'
 import { transportError } from '@deepseek-ai/dsh-host-apiproxy/api'
 import { mergeOrderedBaseline } from '../ordered-baseline.ts'
 import type { ConversationRuntime } from './conversation-assembler.ts'
@@ -656,6 +657,20 @@ export class SessionManager {
    */
   async cancelSession(sessionId: SessionId): Promise<RpcResult<{ accepted: true }>> {
     return (await this.api.sessions.cancel({ sessionId })).result
+  }
+
+  /**
+   * Derive a session's board-pane activity tail from its history tail page
+   * (see {@link deriveSessionTail}): one bounded wire read, display lines out.
+   * @param sessionId - the session whose tail derives.
+   * @returns the tail, or the wire failure.
+   */
+  async sessionTail(sessionId: SessionId): Promise<RpcResult<SessionTail>> {
+    const page = await this.api.sessions.history({ sessionId, maxMessages: 32 })
+    if (!page.result.ok) return page.result
+    // The derivation reads the discriminator view of each raw event; the
+    // union narrows by type at runtime.
+    return { ok: true, value: deriveSessionTail(page.result.value.events.map(entry => entry.event as unknown as TailEvent)) }
   }
 
   /**

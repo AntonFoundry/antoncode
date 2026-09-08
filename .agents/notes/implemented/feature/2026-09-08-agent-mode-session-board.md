@@ -54,6 +54,22 @@ streams, not processes. A pty mode stays a separate future decision.
   counts are small, but a deployment with hundreds of sessions would need
   memoized per-workspace indexes.
 
+## Phase 2.7 addendum (activity tails)
+
+- Each pane body renders a derived activity tail (up to four lines: user
+  prompt, `Ran <tool> <detail>`, assistant text, failures) fetched from the
+  session's history tail page — the board polls every 4s for active panes
+  only, plus one read per pane on mount.
+- The derivation (`sessions/tail.ts`) is self-contained in the runtime with
+  its own value types; the contract imports them from there. First attempt
+  broke the host aggregate twice for two unrelated reasons worth keeping:
+  (1) the host lane globs `packages/*/*/tests/**/*.ts` and EXCLUDES
+  `packages/client/*/src/**`, so a runtime test named without `.client.`
+  importing client src is a lane violation — runtime specs naming client
+  sources must be `*.client.spec.ts`; (2) every intermediate bisect state
+  must still compile, because a failing runtime project makes the host
+  program fall back to client source and cascade TS6307.
+
 ## Phase 2.6 addendum (Codex-style pane chrome)
 
 - `ISessions.promptSession(id, text, mode)` exposes the by-id `sessions.prompt`

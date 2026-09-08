@@ -100,6 +100,8 @@ export interface WmFrameInjected {
   interruptSession: (sessionId: string) => void
   /** Prompt one session by id (the board pane composer); steer while running. */
   promptSession: (sessionId: string, text: string, mode: 'queue' | 'steer') => void
+  /** Fetch one session's activity tail lines (undefined when unavailable). */
+  fetchSessionTail: (sessionId: string) => Promise<readonly { kind: 'user' | 'tool' | 'assistant' | 'error'; label: string }[] | undefined>
   /** The frame's theme palette (compos load-theme's candidates). */
   themeList: () => { id: string; colorScheme: string }[]
   /** Load one palette theme by id and persist the choice. */
@@ -624,6 +626,7 @@ export function WmFrame({
   openSession,
   interruptSession,
   promptSession,
+  fetchSessionTail,
   listDirectory,
   openPath,
 }: WmFrameProps) {
@@ -1555,6 +1558,7 @@ export function WmFrame({
               onOpen={(sessionId) => { openSession(sessionId) }}
               onInterrupt={(sessionId) => { interruptSession(sessionId) }}
               onPrompt={(sessionId, text, mode) => { promptSession(sessionId, text, mode) }}
+              fetchTail={fetchSessionTail}
             />
           )
           : panels.mode === 'code'
