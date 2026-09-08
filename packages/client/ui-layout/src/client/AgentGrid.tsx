@@ -8,9 +8,15 @@
  * subscription machinery of its own.
  * @module
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import css from './WmFrame.module.css'
+
+/** One derived activity line (structural twin of the runtime wire value). */
+export interface AgentTailLine {
+  kind: 'user' | 'tool' | 'assistant' | 'error'
+  label: string
+}
 
 /** The one session summary fact the board needs, per pane. */
 export interface AgentSessionView {
@@ -169,6 +175,9 @@ function WorkspaceSection(props: {
   onOpen: (sessionId: string) => void
   onInterrupt: (sessionId: string) => void
   onPrompt: (sessionId: string, text: string, mode: 'queue' | 'steer') => void
+  fetchTail: (sessionId: string) => Promise<readonly AgentTailLine[] | undefined>
+  /** Tail lines by session id, fetched at the board level. */
+  tails: Readonly<Record<string, readonly AgentTailLine[]>>
 }) {
   return (
     <>
@@ -193,6 +202,8 @@ function WorkspaceSection(props: {
           onOpen={props.onOpen}
           onInterrupt={props.onInterrupt}
           onPrompt={props.onPrompt}
+          fetchTail={props.fetchTail}
+          tail={props.tails[session.id]}
         />
       ))}
     </>
@@ -209,6 +220,10 @@ function SessionPane(props: {
   onOpen: (sessionId: string) => void
   onInterrupt: (sessionId: string) => void
   onPrompt: (sessionId: string, text: string, mode: 'queue' | 'steer') => void
+  /** Fetch this pane's activity tail (undefined = unavailable this round). */
+  fetchTail: (sessionId: string) => Promise<readonly AgentTailLine[] | undefined>
+  /** This pane's current tail lines (fetched at the board level). */
+  tail: readonly AgentTailLine[] | undefined
 }) {
   const status = paneStatus(props.pane)
   const runningSubagents = props.pane.subagents.filter(subagent => subagent.running).length
@@ -279,6 +294,15 @@ function SessionPane(props: {
             {runningSubagents > 0 ? <span className={css.agentSubRun}>{`${runningSubagents} running`}</span> : null}
           </span>
         )}
+      {(props.tail ?? []).length > 0 && (
+        <span className={css.agentPaneTail} data-testid={`tail-${props.pane.id}`}>
+          {(props.tail ?? []).map((line, index) => (
+            <span key={index} className={css.agentTailLine} data-kind={line.kind} title={line.label}>
+              {line.label}
+            </span>
+          ))}
+        </span>
+      )}
       <span className={css.agentPaneFoot}>
         {props.pane.pendingInteraction !== undefined ? <span className={css.agentPaneWait}>{props.pane.pendingInteraction}</span> : null}
         {status === 'running' || status === 'pending'
@@ -360,6 +384,8 @@ export function AgentGrid(props: {
   onPrefsChange: (next: { sort?: 'recent' | 'status'; paneWidth?: number }) => void
   /** Prompt one session by id (the pane composer); steer while running. */
   onPrompt: (sessionId: string, text: string, mode: 'queue' | 'steer') => void
+  /** Fetch one pane's activity tail (undefined = unavailable this round). */
+  fetchTail: (sessionId: string) => Promise<readonly AgentTailLine[] | undefined>
 }) {
   const [zoomed, setZoomed] = useState<string | undefined>(undefined)
   // Esc leaves zoom (tmux z semantics); the keydown listener is frame-local.
@@ -378,6 +404,42 @@ export function AgentGrid(props: {
     const timer = window.setInterval(() => { setNow(Date.now()) }, 1000)
     return () => { window.clearInterval(timer) }
   }, [anyRunning])
+
+  // Activity tails: fetch every pane on mount (and as the pane set changes),
+  // then refresh on an interval — active panes only, so idle sessions cost
+  // nothing after their first read.
+  const [tails, setTails] = useState<Record<string, readonly AgentTailLine[]>>({})
+  const paneIds = useMemo(
+    () => props.groups.flatMap(group => group.sessions.map(session => session.id)),
+    [props.groups],
+  )
+  const activeIds = useMemo(
+    () => new Set(props.groups.flatMap(group => group.sessions.filter(paneActive).map(session => session.id))),
+    [props.groups],
+  )
+  const fetchRef = useRef(props.fetchTail)
+  fetchRef.current = props.fetchTail
+  const idsKey = paneIds.join(',')
+  useEffect(() => {
+    let cancelled = false
+    const ids = idsKey.length === 0 ? [] : idsKey.split(',')
+    const pull = (id: string): void => {
+      void fetchRef.current(id).then((tail) => {
+        if (cancelled || tail === undefined) return
+        setTails(current => ({ ...current, [id]: tail }))
+      })
+    }
+    for (const id of ids) pull(id)
+    const timer = window.setInterval(() => {
+      for (const id of ids) {
+        if (activeIds.has(id)) pull(id)
+      }
+    }, 4000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [idsKey, activeIds])
   const empty = props.groups.every(group => group.sessions.length === 0)
   if (empty) {
     return <div className={css.codeEmpty}><p>No sessions in this workspace yet.</p></div>
@@ -432,6 +494,8 @@ export function AgentGrid(props: {
           onOpen={props.onOpen}
           onInterrupt={props.onInterrupt}
           onPrompt={props.onPrompt}
+          fetchTail={props.fetchTail}
+          tails={tails}
         />
       ))}
     </div>

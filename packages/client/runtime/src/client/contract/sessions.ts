@@ -19,11 +19,22 @@ import type {
 } from '../sessions/service.ts'
 import type { SessionFace } from './session.ts'
 import type { ObservableSnapshot } from './store.ts'
+import type { SessionTail } from '../sessions/tail.ts'
 
 export type { AgentContext } from '../agents/scope.ts'
 
 /** The sessions-service face injected as `ctx.sessions`. */
 export interface ISessions {
+  /**
+   * Derive a compact activity tail for one session from its history tail
+   * page — what the agent board's pane body renders. The derivation walks
+   * the newest events backward and keeps at most a handful of display lines
+   * (user prompt, tool runs, assistant text, failures).
+   * @param id - the session whose tail derives.
+   * @returns the tail, or the wire failure (unknown session, transport).
+   */
+  sessionTail(id: SessionId): Promise<RpcResult<SessionTail>>
+
   /** The useSessions standard feed (list rows + current selection; read face — writes stay inside the domain). */
   readonly list: ObservableSnapshot<SessionListState>
   /** Atomic current-session provide projection (the renderer host's `sessions.provideInfo` feed). */

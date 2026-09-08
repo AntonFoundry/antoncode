@@ -2,6 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { RpcResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type { AttachmentIdType } from '@deepseek-ai/dsh-attachment'
+import type { SessionTail } from '@deepseek-ai/dsh-client-runtime/client'
 import { createScope, scopeOf, SessionProvideChannel } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
@@ -190,7 +191,7 @@ export class TestSessions implements ISessions {
 
   /** Calls observed on the service-level face, newest last. */
   readonly calls: {
-    method: 'open' | 'openSubagent' | 'setSubagentCatalogOpen' | 'refreshSubagents' | 'interruptSession' | 'promptSession'
+    method: 'open' | 'openSubagent' | 'setSubagentCatalogOpen' | 'refreshSubagents' | 'interruptSession' | 'promptSession' | 'sessionTail'
       | 'clear' | 'search' | 'fork' | 'forkExcluding'
     args: unknown[]
   }[] = []
@@ -436,6 +437,14 @@ export class TestSessions implements ISessions {
     this.calls.push({ method: 'promptSession', args: [id, text, mode] })
     return { ok: true, value: { accepted: true } }
   }
+
+  async sessionTail(id: SessionId): Promise<RpcResult<SessionTail>> {
+    this.calls.push({ method: 'sessionTail', args: [id] })
+    return { ok: true, value: this.sessionTailResult ?? { lines: [], lastSeq: -1 } }
+  }
+
+  /** Configurable tail the double serves; bench-only surface. */
+  sessionTailResult: SessionTail | null = null
 
   /** Open an existing fixture through its catalog address. */
   openSubagent(address: SubagentAddress): void {

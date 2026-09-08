@@ -292,9 +292,15 @@
 /* Code mode: every terminal buffer tiled as a card. */
 .codeGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+  /* min() keeps small windows tiling (one full-width column) instead of
+     overflowing horizontally. */
+  grid-template-columns: repeat(auto-fit, minmax(min(480px, 100%), 1fr));
   gap: 1px;
   align-content: stretch;
+  /* Fill the flex-row tree area rather than collapsing to min-content. */
+  flex: 1;
+  width: 100%;
+  min-width: 0;
   height: 100%;
   background: var(--dsw-alias-border-l1);
   overflow: auto;
@@ -324,6 +330,8 @@
   gap: 12px;
   align-items: center;
   justify-content: center;
+  flex: 1;
+  width: 100%;
   height: 100%;
   color: var(--dsw-alias-label-secondary);
 }
@@ -404,9 +412,16 @@
    own overflow instead. */
 .agentBoard {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(var(--agent-pane-min, 340px), 1fr));
+  /* min() lets panes shrink below the preferred width in small windows, so
+     the board tiles at any size instead of overflowing horizontally. */
+  grid-template-columns: repeat(auto-fit, minmax(min(var(--agent-pane-min, 340px), 100%), 1fr));
   grid-auto-rows: minmax(160px, 1fr);
   gap: 1px;
+  /* The tree area is a flex ROW: without an explicit fill the grid item
+     collapses to its min-content track (one narrow column) — claim the row. */
+  flex: 1;
+  width: 100%;
+  min-width: 0;
   height: 100%;
   background: var(--dsw-alias-border-l1);
   overflow: auto;
@@ -674,4 +689,30 @@
   font-variant-numeric: tabular-nums;
   font-size: 11px;
   color: var(--dsw-static-green-500);
+}
+
+/* Activity tail: the pane's last few derived lines, newest last. */
+.agentPaneTail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow: hidden;
+  flex: 1;
+}
+
+.agentTailLine {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.agentTailLine[data-kind='user'] {
+  color: var(--dsw-alias-label-primary);
+}
+
+.agentTailLine[data-kind='error'] {
+  color: var(--dsw-static-amber-600);
 }

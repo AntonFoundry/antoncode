@@ -91,6 +91,7 @@ function gridProps(overrides: Partial<Parameters<typeof AgentGrid>[0]> = {}): Pa
     paneWidth: 340,
     onPrefsChange: vi.fn(),
     onPrompt: vi.fn(),
+    fetchTail: vi.fn(async () => undefined),
     ...overrides,
   }
 }
@@ -214,5 +215,34 @@ describe('AgentGrid pane composer', () => {
     expect(container.textContent).toContain('code')
     expect(container.textContent).toContain('/repo')
     expect(container.textContent).toMatch(/Working · /)
+  })
+})
+
+describe('AgentGrid activity tails', () => {
+  it('renders fetched tail lines in the pane body', async () => {
+    const groups = buildAgentBoard(
+      [{ workspaceId: 'ws', title: 'Alpha', sessionIds: ['a'] }],
+      { a: session({ id: 'a', displayTitle: 'Builder', running: true, updatedAt: Date.now() }) },
+    )
+    const fetchTail = vi.fn(async () => ([
+      { kind: 'tool' as const, label: 'Ran bash pnpm test' },
+      { kind: 'assistant' as const, label: 'All green.' },
+    ]))
+    const { container } = render(<AgentGrid {...gridProps({ groups, fetchTail })} />)
+    await vi.waitFor(() => {
+      const tail = container.querySelector('[data-testid="tail-a"]')
+      expect(tail).not.toBeNull()
+      expect(tail!.textContent).toContain('Ran bash pnpm test')
+      expect(tail!.textContent).toContain('All green.')
+    })
+  })
+
+  it('never renders a tail when the fetch is unavailable', () => {
+    const groups = buildAgentBoard(
+      [{ workspaceId: 'ws', title: 'Alpha', sessionIds: ['a'] }],
+      { a: session({ id: 'a', displayTitle: 'Builder', updatedAt: Date.now() }) },
+    )
+    const { container } = render(<AgentGrid {...gridProps({ groups, fetchTail: async () => undefined })} />)
+    expect(container.querySelector('[data-testid="tail-a"]')).toBeNull()
   })
 })
