@@ -186,6 +186,37 @@ function flat(todos: readonly TodoItem[]): readonly TodoItem[] {
   return todos.flatMap(todo => [todo, ...flat(todo.children ?? [])])
 }
 
+/** Status glyphs for the standing-plan section, checklist style. */
+const SECTION_GLYPH: Record<TodoItem['status'], string> = {
+  completed: '[x]',
+  in_progress: '[~]',
+  pending: '[ ]',
+  cancelled: '[-]',
+}
+
+/**
+ * Render the standing plan as the model-facing section body: the whole tree
+ * as a checklist plus the continuation contract (extend, never partially
+ * replace). Exported for the section spec.
+ * @param todos - the latest todo/write tree.
+ * @returns the section text.
+ */
+export function standingPlanSection(todos: readonly TodoItem[]): string {
+  const lines: string[] = []
+  const walk = (nodes: readonly TodoItem[], depth: number): void => {
+    for (const node of nodes) {
+      lines.push(`${'  '.repeat(depth)}- ${SECTION_GLYPH[node.status]} ${node.content}`)
+      if (node.children?.length) walk(node.children, depth + 1)
+    }
+  }
+  walk(todos, 0)
+  return [
+    'Standing todo plan (the todo_write tree currently in force — it persists across turns):',
+    ...lines,
+    'When the user asks to continue this plan: keep finished nodes completed, mark the next work in_progress, and extend the tree with todo_write — never replace it with a partial tree. Only a whole new plan replaces it, via one todo_write carrying the complete new tree.',
+  ].join('\n')
+}
+
 /** Wire payload schema of the `todos` projection (whole tree or pre-first-write null). */
 // zod models `.optional()` outputs as `T | undefined` properties, which
 // exactOptionalPropertyTypes cannot relate to TodoItem's absent-key optionals;
@@ -244,6 +275,28 @@ export function apply(ctx: Context, config: Config): void {
   // can still see while follow-up work runs, not a per-turn scratchpad a new
   // turn/start wipes. Only the next todo/write replaces it; null before the
   // first write; every other event returns the same state reference.
+  // Standing-plan section: the latest todo/write tree rides every model
+  // request, so "continue" extends the real plan instead of replacing it
+  // with whatever survived compaction. Replay-pure: a backward walk for the
+  // latest todo/write — the projection fold without the projection dep.
+  ctx.inject(['systemPrompt'], (promptCtx) => {
+    promptCtx.systemPrompt.section({
+      name: 'todo:standing-plan',
+      order: 51,
+      text: (context) => {
+        if (context.agent === undefined) return ''
+        const events = context.agent.session.events
+        for (let i = events.length - 1; i >= 0; i--) {
+          const event = events[i]
+          if (event !== undefined && event.type === 'todo/write') {
+            return standingPlanSection(event.data.todos)
+          }
+        }
+        return ''
+      },
+    })
+  })
+
   ctx.inject(['sessionProjections'], (projectionCtx) => {
     projectionCtx.sessionProjections.register<'todos', TodoItem[] | null>({
       key: 'todos',

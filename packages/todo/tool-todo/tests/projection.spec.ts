@@ -122,3 +122,41 @@ describe('todos projection provider', () => {
     expect('todos' in ((await bench.tailProjections())?.values ?? {})).toBe(false)
   })
 })
+
+describe('standing-plan prompt section', () => {
+  it('renders the latest tree with statuses and the continuation contract', async () => {
+    const bench = await harness(true)
+    const list: TodoItem[] = [
+      { content: 'Phase 1: tiles', status: 'completed', children: [] },
+      { content: 'Phase 2: control', status: 'completed', children: [] },
+      { content: 'Phase 3: ptys', status: 'pending', children: [] },
+    ]
+    bench.session.append('todo/write', { todos: list })
+    const agent = { session: bench.session }
+    const assembly = await bench.ctx.systemPrompt.assemble({ agent, scope: agent } as never)
+    const section = assembly.sections.find(candidate => candidate.name === 'todo:standing-plan')
+    expect(section).toBeDefined()
+    expect(section?.text).toContain('- [x] Phase 1: tiles')
+    expect(section?.text).toContain('- [x] Phase 2: control')
+    expect(section?.text).toContain('- [ ] Phase 3: ptys')
+    expect(section?.text).toContain('never replace it with a partial tree')
+  })
+
+  it('renders nothing before the first write', async () => {
+    const bench = await harness(true)
+    const agent = { session: bench.session }
+    const assembly = await bench.ctx.systemPrompt.assemble({ agent, scope: agent } as never)
+    expect(assembly.sections.find(candidate => candidate.name === 'todo:standing-plan')?.text).toBe('')
+  })
+
+  it('reflects the latest write after a replacement tree', async () => {
+    const bench = await harness(true)
+    bench.session.append('todo/write', { todos: [{ content: 'old', status: 'pending', children: [] }] })
+    bench.session.append('todo/write', { todos: [{ content: 'new plan', status: 'in_progress', children: [] }] })
+    const agent = { session: bench.session }
+    const assembly = await bench.ctx.systemPrompt.assemble({ agent, scope: agent } as never)
+    const text = assembly.sections.find(candidate => candidate.name === 'todo:standing-plan')?.text ?? ''
+    expect(text).toContain('- [~] new plan')
+    expect(text).not.toContain('old')
+  })
+})
