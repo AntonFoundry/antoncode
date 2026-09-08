@@ -54,6 +54,18 @@ streams, not processes. A pty mode stays a separate future decision.
   counts are small, but a deployment with hundreds of sessions would need
   memoized per-workspace indexes.
 
+## Phase 3 addendum (real-pty terminal tiles)
+
+- The board hosts real node-pty terminal tiles alongside session panes: the
+  board bar's `+ terminal` action runs the existing WM `term` command
+  (spawn + terminal buffer), and the board renders every terminal buffer as
+  a tile — mode line plus the `terminal.view` slot occupant, under a
+  Terminals section header. Tiles hide while a pane is zoomed.
+- Deliberately thin: spawn/kill/resize stay owned by the WM buffer
+  lifecycle (`C-x t` spawn, `C-x k` kill); the board adds no second pty
+  lifecycle. Tiles run a login shell — launching the `anton` CLI inside one
+  is a user action, not a spawn flag.
+
 ## Phase 2.7 addendum (activity tails)
 
 - Each pane body renders a derived activity tail (up to four lines: user
