@@ -386,8 +386,8 @@ describe('workspaces', () => {
     // The recorded signal seat mirrors the production face (undefined here;
     // cancellation tests pass and observe a real one).
     expect(runtime.workspaces.calls).toEqual([
-      { method: 'listDirectory', args: [undefined, undefined] },
-      { method: 'listDirectory', args: ['/home/test', undefined] },
+      { method: 'listDirectory', args: [undefined, undefined, undefined] },
+      { method: 'listDirectory', args: ['/home/test', undefined, undefined] },
       { method: 'createDirectory', args: ['/home/test', 'fresh'] },
     ])
     // Stubs replace the defaults like every sibling method.
@@ -396,9 +396,9 @@ describe('workspaces', () => {
     runtime.workspaces.stub('listDirectory', listStub)
     runtime.workspaces.stub('createDirectory', vi.fn(() => Promise.resolve('/x/made' as never)))
     const scan = new AbortController()
-    await expect(runtime.workspaces.listDirectory('/x', scan.signal)).resolves.toBe(listing)
-    // The stub receives the signal too, like the production face gives the wire.
-    expect(listStub).toHaveBeenLastCalledWith('/x', scan.signal)
+    await expect(runtime.workspaces.listDirectory('/x', undefined, scan.signal)).resolves.toBe(listing)
+    // The stub receives the trailing signal seat too, like the production face gives the wire.
+    expect(listStub).toHaveBeenLastCalledWith('/x', undefined, scan.signal)
     await expect(runtime.workspaces.createDirectory('/x', 'made')).resolves.toBe('/x/made')
     await runtime.dispose()
   })
