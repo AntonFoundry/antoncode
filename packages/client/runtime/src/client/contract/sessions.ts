@@ -35,6 +35,15 @@ export interface ISessions {
    */
   readonly searchResultLimit: number
   /**
+   * Interrupt one session's active turn by id, without selecting it. The
+   * same cancellation the session's own stop control issues (`sessions.cancel`
+   * for normal sessions; continuable subagent addresses route through
+   * `subagents.interrupt` when the board holds only the child id).
+   * @param id - the session whose active turn stops.
+   * @returns the wire result; `ok: false` names why the stop did not land.
+   */
+  interruptSession(id: SessionId): Promise<RpcResult<{ accepted: true }>>
+  /**
    * Select a session as current.
    * @param id - session id (must exist in the list; unknown ids fail loud).
    */

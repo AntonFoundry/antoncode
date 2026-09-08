@@ -96,6 +96,8 @@ export interface WmFrameInjected {
    */
   openWorkspace: (workspaceId: string) => void
   openSession: (sessionId: string) => void
+  /** Interrupt one session's active turn by id (the board pane stop button). */
+  interruptSession: (sessionId: string) => void
   /** The frame's theme palette (compos load-theme's candidates). */
   themeList: () => { id: string; colorScheme: string }[]
   /** Load one palette theme by id and persist the choice. */
@@ -138,6 +140,14 @@ function minPxOf(node: WmNode): number {
  * @param dir - the parent split's orientation.
  * @returns true when the child is the pinned home sidebar pane.
  */
+/** Agent-board viewing preferences persisted per workspace. */
+interface BoardPrefs {
+  /** Pane order within a section: newest first, or active panes first. */
+  sort: 'recent' | 'status'
+  /** Minimum pane width driving the auto-fit column count. */
+  paneWidth: number
+}
+
 function isHomeSidebar(child: WmNode, dir: WmDirection): boolean {
   return child.kind === 'leaf' && child.id === WM_LEAF_SIDEBAR && child.buffer === 'sidebar' && dir === 'row'
 }
@@ -610,6 +620,7 @@ export function WmFrame({
   writeScratch,
   openWorkspace,
   openSession,
+  interruptSession,
   listDirectory,
   openPath,
 }: WmFrameProps) {
@@ -987,6 +998,12 @@ export function WmFrame({
   const modeRef = useRef<LayoutMode>(panels.mode)
   modeRef.current = panels.mode
   const wsLabelRef = useRef<string>('')
+  // Agent-board viewing preferences: part of the per-workspace stash, seeded
+  // on switch and saved with it. Component state, not the layout store — the
+  // board is a mode-local view, not a panel geometry fact.
+  const [boardPrefs, setBoardPrefs] = useState<BoardPrefs>(() => ({ sort: 'recent', paneWidth: 340 }))
+  const boardPrefsRef = useRef(boardPrefs)
+  boardPrefsRef.current = boardPrefs
   const stashWs = useCallback((target: string): void => {
     try {
       window.localStorage.setItem(`dsh.layout.wm:${target}`, JSON.stringify({
@@ -994,6 +1011,7 @@ export function WmFrame({
         buffers: buffersRef.current,
         focusedLeafId: focusedIdRef.current,
         mode: modeRef.current,
+        agentBoard: boardPrefsRef.current,
         savedAt: Date.now(),
       }))
     } catch { /* private mode */ }
@@ -1005,7 +1023,7 @@ export function WmFrame({
     if (prev === ws) return
     if (prev !== undefined) stashWs(prev)
     prevWsRef.current = ws
-    let parsed: { tree?: WmNode; buffers?: WmBuffer[]; mode?: LayoutMode } | undefined
+    let parsed: { tree?: WmNode; buffers?: WmBuffer[]; mode?: LayoutMode; agentBoard?: BoardPrefs } | undefined
     try {
       const raw = window.localStorage.getItem(`dsh.layout.wm:${ws}`)
       parsed = raw === null ? undefined : JSON.parse(raw)
@@ -1023,6 +1041,7 @@ export function WmFrame({
         setTree(defaultTree())
         setBuffers([...SINGLETON_BUFFERS])
         setMode('chat')
+        setBoardPrefs({ sort: 'recent', paneWidth: 340 })
         setFocus(undefined)
         preExpandRef.current = undefined
         setExpanded(false)
@@ -1031,6 +1050,7 @@ export function WmFrame({
       setTree(parsed.tree)
       if (parsed.buffers !== undefined) setBuffers(parsed.buffers)
       if (parsed.mode !== undefined) setMode(parsed.mode)
+      if (parsed.agentBoard !== undefined) setBoardPrefs(parsed.agentBoard)
       setFocus(undefined)
       preExpandRef.current = undefined
       setExpanded(false)
@@ -1525,8 +1545,12 @@ export function WmFrame({
           ? (
             <AgentGrid
               groups={agentBoard}
+              sort={boardPrefs.sort}
+              paneWidth={boardPrefs.paneWidth}
+              onPrefsChange={(next) => { setBoardPrefs(current => ({ ...current, ...next })) }}
               currentSessionId={sessionsListSnapshot.current}
               onOpen={(sessionId) => { openSession(sessionId) }}
+              onInterrupt={(sessionId) => { interruptSession(sessionId) }}
             />
           )
           : panels.mode === 'code'
