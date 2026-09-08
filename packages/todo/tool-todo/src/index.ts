@@ -72,7 +72,14 @@ Workflow: plan first, then encode the plan as a todo tree, then execute it one n
    grandchild); never deeper, and keep simple work flat rather than nesting for its own sake.
 3. Execute sequentially: keep exactly one branch of work \`in_progress\`, finish it, mark it
    \`completed\`, and move to the next. Update statuses in real time — mark a node completed the
-   moment it is done, never batch completions.`
+   moment it is done, never batch completions.
+
+Persistence: the tree OUTLIVES the turn — the user sees it between and across messages, so it
+is the standing plan, not a per-turn scratchpad. At the start of any new user request that
+involves multi-step work, write the tree FIRST (rewriting or extending the standing one) before
+any other tool call. When later phases or follow-ups remain, leave them \`pending\` on the tree
+rather than reporting everything completed; an all-settled tree is only correct when the whole
+request is genuinely finished.`
 
 const DESCRIPTION_DELEGATION =
   '\nDelegation: every agent session owns its own tree. As the orchestrator, keep the top-level '
@@ -233,9 +240,10 @@ export function apply(ctx: Context, config: Config): void {
   const allowParallel = config.allowParallelInProgress
   // The unit child activates only when a projection registry is composed
   // (headless assemblies without the seam stay unaffected). Standing-plan fold:
-  // latest whole todo/write tree, cleared by the next turn/start (turn/end keeps
-  // the finished checklist visible); null before the first write or after a
-  // later turn begins; every other event returns the same state reference.
+  // the latest whole todo/write tree persists across turns — a plan the user
+  // can still see while follow-up work runs, not a per-turn scratchpad a new
+  // turn/start wipes. Only the next todo/write replaces it; null before the
+  // first write; every other event returns the same state reference.
   ctx.inject(['sessionProjections'], (projectionCtx) => {
     projectionCtx.sessionProjections.register<'todos', TodoItem[] | null>({
       key: 'todos',
@@ -243,11 +251,10 @@ export function apply(ctx: Context, config: Config): void {
       init: () => null,
       apply: (state, event) => {
         if (event.type === 'todo/write') return event.data.todos
-        if (event.type === 'turn/start') return null
         return state
       },
       view: state => state,
-      stateVersion: 3,
+      stateVersion: 4,
     })
   })
   ctx.tools.register(defineTool({

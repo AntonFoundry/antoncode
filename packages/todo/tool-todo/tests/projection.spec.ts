@@ -91,7 +91,7 @@ describe('todos projection provider', () => {
     expect(projections?.asOfSeq).toBe(session.seq - 1)
   })
 
-  it('clears the standing plan on the next turn/start (turn/end keeps it)', async () => {
+  it('keeps the standing plan across turn/end and the next turn/start', async () => {
     const bench = await harness(true)
     const session = bench.session
     seedMessage(session)
@@ -100,9 +100,9 @@ describe('todos projection provider', () => {
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     expect((await bench.tailProjections())?.values.todos).toEqual(list)
     session.append('turn/start', { turn: 1 })
-    const cleared = await bench.tailProjections()
-    expect(cleared?.values.todos).toBeNull()
-    expect(cleared?.asOfSeq).toBe(session.seq - 1)
+    // The tree is a standing plan: only the next todo/write replaces it, so
+    // the user keeps seeing the plan while follow-up work runs.
+    expect((await bench.tailProjections())?.values.todos).toEqual(list)
   })
 
   it('has no todos key when tool-todo is not composed', async () => {
