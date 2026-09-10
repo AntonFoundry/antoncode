@@ -138,10 +138,16 @@ describe('terminal card assembly', () => {
     ])
     const view = runtime.renderRoot()
 
-    // Keyed BashRow: collapsed by default, the whole summary row is the toggle.
+    // Keyed BashRow and the fallback row both reach the terminal card through
+    // the whole-row toggle: default-expanded (command + output visible), one
+    // click collapses, one click re-opens.
     const keyedRow = view.container.querySelector('[data-sample="bash"]')
     const keyed = keyedRow?.parentElement
-    expect(keyed?.querySelector('[data-terminal]')).toBeNull()
+    expect(keyed!.querySelector('[data-terminal]')).not.toBeNull()
+    fireEvent.click(keyedRow!)
+    await waitFor(() => {
+      expect(keyed!.querySelector('[data-terminal]')).toBeNull()
+    })
     fireEvent.click(keyedRow!)
     await waitFor(() => {
       expect(keyed!.querySelector('[data-terminal]')).not.toBeNull()
@@ -150,7 +156,11 @@ describe('terminal card assembly', () => {
     // Fallback row: same unified expand interaction.
     const fallback = view.container.querySelector('[data-tool="fx-bash"]')
     expect(fallback).not.toBeNull()
-    expect(fallback!.querySelector('[data-terminal]')).toBeNull()
+    expect(fallback!.querySelector('[data-terminal]')).not.toBeNull()
+    fireEvent.click(fallback!.querySelector('[data-expandable]')!)
+    await waitFor(() => {
+      expect(fallback!.querySelector('[data-terminal]')).toBeNull()
+    })
     fireEvent.click(fallback!.querySelector('[data-expandable]')!)
     await waitFor(() => {
       expect(fallback!.querySelector('[data-terminal]')).not.toBeNull()

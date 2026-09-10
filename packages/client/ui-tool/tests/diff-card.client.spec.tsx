@@ -123,17 +123,16 @@ describe('chat row diff body', () => {
   it('the expanded body is the applied diff, capped tighter than the panel', () => {
     expect(CHAT_DIFF_MAX_LINES).toBeLessThan(16)
     const view = render(<GenericToolCard {...ownerProps(settled())} />)
-    // Collapsed: the summary row (path) only, no diff body.
-    expect(view.queryByText('hello fixture')).toBeNull()
-    // The path link is not the expand control; the leading toggle is.
-    fireEvent.click(view.container.querySelector('[data-expandable]')!)
+    // Default-expanded: the applied diff IS the row's content.
     expect(view.container.querySelector('[data-diff]')).not.toBeNull()
     expect(view.getByText('hello fixture')).toBeTruthy()
+    // The whole row toggles back to the collapsed summary.
+    fireEvent.click(view.container.querySelector('[data-expandable]')!)
+    expect(view.queryByText('hello fixture')).toBeNull()
   })
 
-  it('a running diff call expands to its intended change', () => {
+  it('a running diff call shows its intended change without a click', () => {
     const view = render(<GenericToolCard {...ownerProps(running())} />)
-    fireEvent.click(view.container.querySelector('[data-expandable]')!)
     expect(view.container.querySelector('[data-diff]')).not.toBeNull()
   })
 
@@ -174,15 +173,15 @@ describe('FileMutationRow diff card', () => {
     fireEvent.click(view.container.querySelector('[data-expandable]')!)
   }
 
-  it('collapses to the summary row; expanding reveals the applied diff card', () => {
+  it('renders the applied diff card by default; the row toggles it away', () => {
     const view = render(<FileMutationRow {...rowProps(settled())} />)
-    // The diff card is collapsed by default — not in the DOM until expanded.
-    expect(view.container.querySelector('[data-diff]')).toBeNull()
-    expect(view.queryByText('hello fixture')).toBeNull()
-    toggleRow(view)
+    // Default-expanded: the change is visible without a click per edit.
     expect(view.container.querySelector('[data-diff]')).not.toBeNull()
     expect(view.getByText('hello fixture')).toBeTruthy()
     expect(view.getByText('复制')).toBeTruthy()
+    toggleRow(view)
+    expect(view.container.querySelector('[data-diff]')).toBeNull()
+    expect(view.queryByText('hello fixture')).toBeNull()
   })
 
   it('the summary is a path link that opens the tool path through the host', () => {
@@ -202,8 +201,7 @@ describe('FileMutationRow diff card', () => {
       callView: { card: 'diff', title: 'Write notes/new.txt', diffs: [{ path: 'notes/new.txt', oldText: null, newText: 'hello fixture' }] },
       resultView: { card: 'diff', title: 'Write notes/new.txt', diffs: [{ path: 'notes/new.txt', oldText: null, newText: 'hello fixture' }] },
     }), 'write')} />)
-    // The footer counts live inside the collapsed diff card.
-    toggleRow(view)
+    // The footer counts live inside the default-expanded diff card.
     expect(view.getByText('└ +1 -0 · 1 file')).toBeTruthy()
   })
 
