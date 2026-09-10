@@ -64,7 +64,9 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
             mermaidLabels={{
               rendering: t('mermaid.rendering'),
               failed: t('mermaid.failed'),
-              source: t('copy'),
+              copyImage: t('mermaid.copyImage'),
+              copied: t('mermaid.copied'),
+              copiedFailed: t('mermaid.copiedFailed'),
             }}
             fileMentions={mentions}
           />,
