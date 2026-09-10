@@ -379,7 +379,7 @@ function SessionPane(props: {
             <span className={css.agentSubRun}>{`${props.pane.subagents.length} sub-agent${props.pane.subagents.length === 1 ? '' : 's'}`}</span>
           </span>
         )}
-      {(props.tail ?? []).length > 0 && (
+      {(props.tail ?? []).length > 0 ? (
         <span className={css.agentPaneTail} data-testid={`tail-${props.pane.id}`} data-mode={props.cli ? 'cli' : undefined}>
           {(props.tail ?? []).map((line, index) => (
             <span key={index} className={css.agentTailLine} data-kind={line.kind} title={line.label}>
@@ -387,7 +387,11 @@ function SessionPane(props: {
             </span>
           ))}
         </span>
-      )}
+      ) : props.tail !== undefined ? (
+        /* A completed fetch with no lines: the session's true empty state,
+           shown rather than left as an indistinguishable blank. */
+        <span className={css.agentPaneTailEmpty}>No activity recorded</span>
+      ) : null}
       <span className={css.agentPaneFoot}>
         {props.pane.pendingInteraction !== undefined ? <span className={css.agentPaneWait}>{props.pane.pendingInteraction}</span> : null}
         {status === 'running' || status === 'pending'
@@ -544,14 +548,25 @@ export function AgentGrid(props: {
   const cliRef = useRef<ReadonlySet<string>>(cliPanes)
   cliRef.current = cliPanes
   const idsKey = paneIds.join(',')
+  // A fetch that fails (or lands before the RPC face is warm) must not leave
+  // the pane silently blank forever: record the attempt either way, so the
+  // pane renders its true state and later rounds can overwrite it.
+  const pullTail = (id: string): void => {
+    const cli = cliRef.current
+    void fetchRef.current(id, cli.has(id) ? 'cli' : 'brief')
+      .then((tail) => { setTails(current => ({ ...current, [id]: tail ?? [] })) })
+      .catch(() => { setTails(current => ({ ...current, [id]: [] })) })
+  }
   useEffect(() => {
     let cancelled = false
     const ids = idsKey.length === 0 ? [] : idsKey.split(',')
-    const cli = new Set(cliKey.length === 0 ? [] : cliKey.split(','))
     const pull = (id: string): void => {
-      void fetchRef.current(id, cli.has(id) ? 'cli' : 'brief').then((tail) => {
-        if (cancelled || tail === undefined) return
-        setTails(current => ({ ...current, [id]: tail }))
+      void fetchRef.current(id, cliRef.current.has(id) ? 'cli' : 'brief').then((tail) => {
+        if (cancelled) return
+        setTails(current => ({ ...current, [id]: tail ?? [] }))
+      }).catch(() => {
+        if (cancelled) return
+        setTails(current => ({ ...current, [id]: [] }))
       })
     }
     for (const id of ids) pull(id)
@@ -565,6 +580,24 @@ export function AgentGrid(props: {
       window.clearInterval(timer)
     }
   }, [idsKey, activeIds, cliKey])
+
+  // Open-space tail refresh: opening a space re-pulls every pane it owns (a
+  // failed initial fetch must not outlive the navigation), and a slow
+  // interval keeps the open space's tails moving while you watch it.
+  const groupsRef = useRef(props.groups)
+  groupsRef.current = props.groups
+  useEffect(() => {
+    if (workspace === undefined) return
+    const idsOf = (): string[] => {
+      const group = groupsRef.current.find(g => g.workspaceId === workspace)
+      return group === undefined ? [] : group.sessions.flatMap(s => [s.id, ...s.subagents.map(x => x.id)])
+    }
+    for (const id of idsOf()) pullTail(id)
+    const timer = window.setInterval(() => {
+      for (const id of idsOf()) pullTail(id)
+    }, 10_000)
+    return () => { window.clearInterval(timer) }
+  }, [workspace, idsKey])
 
   // Pane model routes: one fetch per pane on mount (and as the pane set
   // changes) — the swarm visibility fact in each pane's strip. No interval:
