@@ -65,7 +65,9 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
     ? 'error'
     : model.state
   const status = stateStatus(state, t)
-  const [expanded, setExpanded] = useState(false)
+  // The command and its output ARE the row's content: start expanded so the
+  // transcript is readable without a click per call (collapse stays one click).
+  const [expanded, setExpanded] = useState(true)
   // Execution failures (for example cancellation before the process reports a
   // terminal result) use the generic presenter. Keep their recorded args and
   // full error reachable instead of collapsing the row to the first line.

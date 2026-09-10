@@ -99,6 +99,13 @@ export interface ToolRowProps {
    * over the expanded body. Absent = no affordance.
    */
   inspect?: (() => void) | undefined
+  /**
+   * Start the row expanded. Rows default collapsed so a run of tool calls
+   * stays compact; the substantive card rows (terminal, diff) pass true —
+   * the command with its output and the applied change are the row's content,
+   * not a hidden detail.
+   */
+  defaultExpanded?: boolean | undefined
 }
 
 /** Leading-slot state substitution: the tool icon yields to the terminal state
@@ -147,8 +154,9 @@ export function ToolRow({
   filePath,
   onOpenFile,
   inspect,
+  defaultExpanded,
 }: ToolRowProps) {
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(defaultExpanded === true)
   const terminalBody = terminal ?? null
   const diffBody = diff ?? null
   const readBody = read ?? null

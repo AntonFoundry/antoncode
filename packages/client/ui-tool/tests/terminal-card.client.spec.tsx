@@ -252,14 +252,15 @@ describe('chat row terminal body', () => {
 
   it('the expanded body is the command output inside the row scroll container', () => {
     const view = render(<GenericToolCard {...ownerProps(settled())} />)
-    // Collapsed: the one-line summary row only, no output.
+    // Default-expanded: the command and its output ARE the row's content.
     expect(view.getByText('List files')).toBeTruthy()
-    expect(view.queryByText(/a\.ts/)).toBeNull()
-    toggleRow(view)
     expect(view.getByText('a.ts  b.ts', RAW)).toBeTruthy()
     expect(view.getByText('ls -la')).toBeTruthy()
     // The args JSON body the generic path would have shown is gone.
     expect(view.queryByText(/"command"/)).toBeNull()
+    // The whole row toggles back to the collapsed summary.
+    toggleRow(view)
+    expect(view.queryByText(/a\.ts/)).toBeNull()
   })
 
   it('a long output renders in full — the scroll container replaces the middle collapse', () => {
@@ -267,7 +268,6 @@ describe('chat row terminal body', () => {
     const view = render(<GenericToolCard {...ownerProps(settled({
       resultView: resultTerminal({ output: `${lines.join('\n')}\n` }),
     }))} />)
-    toggleRow(view)
     expect(view.getByText('line-5')).toBeTruthy()
     expect(view.getByText('line-19')).toBeTruthy()
     expect(view.queryByText(/其余/)).toBeNull()
@@ -277,7 +277,6 @@ describe('chat row terminal body', () => {
     const view = render(<GenericToolCard {...ownerProps(settled({
       callView: callTerminal({ title: 'ls -la\necho done' }),
     }))} />)
-    toggleRow(view)
     const rows = view.container.querySelectorAll('[class^="_promptLine_"]')
     expect([...rows].map(row => row.textContent)).toEqual(['$ls -la', '$echo done'])
     // Still one dot for the call, on the first row.
@@ -302,14 +301,12 @@ describe('chat row terminal body', () => {
       callView: callTerminal({ description: 'Terminal 3' }),
     }))} />)
     expect(view.getByText('Terminal 3')).toBeTruthy()
-    toggleRow(view)
     expect(view.container.querySelector('[data-terminal]')).not.toBeNull()
     expect(view.getByText('Terminal 3')).toBeTruthy()
   })
 
-  it('a running terminal call expands to the prompt line with no output yet', () => {
+  it('a running terminal call shows the prompt line with no output yet', () => {
     const view = render(<GenericToolCard {...ownerProps(running())} />)
-    toggleRow(view)
     expect(view.getByText('ls -la')).toBeTruthy()
     expect(view.queryByText('复制')).toBeNull()
     // The card states its own run state: a running command reads as running
@@ -330,7 +327,6 @@ describe('chat row terminal body', () => {
     const view = render(<GenericToolCard {...ownerProps(settled({
       call: { name: 'bash', argsRaw: '' },
     }))} />)
-    toggleRow(view)
     expect(view.getByText('a.ts  b.ts', RAW)).toBeTruthy()
   })
 
@@ -358,17 +354,19 @@ describe('BashRow terminal card', () => {
     t,
   } as unknown as BashRowProps)
 
-  it('collapses to the summary row; the whole row toggles the command output', () => {
+  it('shows the command output by default; the whole row toggles it away', () => {
     const view = render(<BashRow {...rowProps(settled())} />)
+    // Default-expanded: the command and its output ARE the row's content.
     expect(view.getByText('List files')).toBeTruthy()
-    expect(view.queryByText(/a\.ts/)).toBeNull()
-    fireEvent.click(view.container.querySelector('[data-expandable]')!)
     expect(view.getByText('a.ts  b.ts', RAW)).toBeTruthy()
     expect(view.getByText('复制')).toBeTruthy()
-    // Collapse back in place: the summary row returns, the card unmounts.
+    // Collapse in place: the summary row returns, the card unmounts.
     fireEvent.click(view.container.querySelector('[data-expandable]')!)
     expect(view.queryByText(/a\.ts/)).toBeNull()
     expect(view.getByText('List files')).toBeTruthy()
+    // Expand again.
+    fireEvent.click(view.container.querySelector('[data-expandable]')!)
+    expect(view.getByText('a.ts  b.ts', RAW)).toBeTruthy()
   })
 
   // The row's leading StateDot and the card's run-state dot describe the same
@@ -377,12 +375,10 @@ describe('BashRow terminal card', () => {
   it('agrees with the summary row about the run state', () => {
     const runningView = render(<BashRow {...rowProps(running())} />)
     expect(runningView.container.querySelector('[data-variant="bash"]')?.getAttribute('data-state')).toBe('running')
-    fireEvent.click(runningView.container.querySelector('[data-expandable]')!)
     expect(runStateOf(runningView.container)).toBe('ongoing')
     cleanup()
     const settledView = render(<BashRow {...rowProps(settled())} />)
     expect(settledView.container.querySelector('[data-variant="bash"]')?.getAttribute('data-state')).toBe('ok')
-    fireEvent.click(settledView.container.querySelector('[data-expandable]')!)
     expect(runStateOf(settledView.container)).toBe('done')
   })
 
@@ -429,16 +425,17 @@ describe('BashRow terminal card', () => {
     }))} />)
     const row = view.container.querySelector('[data-sample="bash"]')!
     expect(row.getAttribute('role')).toBe('button')
-    expect(row.getAttribute('aria-expanded')).toBe('false')
-    expect(view.queryByText(/"command": "ls -la"/)).toBeNull()
-
-    fireEvent.click(row)
-
+    // Default-expanded: the failure's args and full error text are visible.
     expect(row.getAttribute('aria-expanded')).toBe('true')
     expect(view.getByText('IN')).toBeTruthy()
     expect(view.getByText('OUT')).toBeTruthy()
     expect(view.getByText(/"command": "ls -la"/)).toBeTruthy()
     expect(view.container.querySelector('[data-error]')?.textContent).toBe('Error: command aborted')
+
+    fireEvent.click(row)
+
+    expect(row.getAttribute('aria-expanded')).toBe('false')
+    expect(view.queryByText(/"command": "ls -la"/)).toBeNull()
   })
 })
 
