@@ -105,7 +105,7 @@ describe('dsh-tool-subagent', () => {
     const schema = ctx.tools.schemas().find(s => s.name === 'subagent')
     expect(schema).toBeDefined()
     const props = (schema!.parameters as { properties?: Record<string, unknown> }).properties ?? {}
-    expect(Object.keys(props).sort()).toEqual(['description', 'prompt', 'run_in_background'])
+    expect(Object.keys(props).sort()).toEqual(['description', 'model', 'prompt', 'run_in_background'])
     expect(schema!.description).toContain('job_output')
   })
 
@@ -113,7 +113,7 @@ describe('dsh-tool-subagent', () => {
     const ctx = await setup({ provider: 'mock', enableRunInBackground: false })
     const schema = ctx.tools.schemas().find(s => s.name === 'subagent')
     const props = (schema!.parameters as { properties?: Record<string, unknown> }).properties ?? {}
-    expect(Object.keys(props).sort()).toEqual(['description', 'prompt'])
+    expect(Object.keys(props).sort()).toEqual(['description', 'model', 'prompt'])
     expect(schema!.description).not.toContain('job_output')
   })
 
@@ -258,6 +258,23 @@ describe('dsh-tool-subagent', () => {
 
     await callSubagent(ctx, { description: 'd', prompt: 'p' })
     expect(seen?.agentOptions).toEqual({ model: 'child-model' })
+  })
+
+  it('resolves the child model route: call arg > per-session section > global default > config', () => {
+    // The swarm default chain, each layer overriding the next; a
+    // "provider/model" route names the child provider too.
+    const empty = { defaultModel: '', bySession: {} }
+    expect(tool.resolveChildModelRoute(empty, 's1', undefined, undefined)).toBeUndefined()
+    expect(tool.resolveChildModelRoute(empty, 's1', undefined, 'config-model')).toEqual({ model: 'config-model' })
+    expect(tool.resolveChildModelRoute({ defaultModel: 'openrouter/strong', bySession: {} }, 's1', undefined, undefined))
+      .toEqual({ provider: 'openrouter', model: 'strong' })
+    expect(tool.resolveChildModelRoute({ defaultModel: 'openrouter/strong', bySession: { s1: 'fallback/other' } }, 's1', undefined, undefined))
+      .toEqual({ provider: 'fallback', model: 'other' })
+    // The call's own argument outranks every default; a bare id names the model only.
+    expect(tool.resolveChildModelRoute({ defaultModel: 'openrouter/strong', bySession: { s1: 'fallback/other' } }, 's1', 'call-model', 'config-model'))
+      .toEqual({ model: 'call-model' })
+    // Blank strings never route.
+    expect(tool.resolveChildModelRoute({ defaultModel: '  ', bySession: { s1: '' } }, 's1', '  ', undefined)).toBeUndefined()
   })
 
   it('defaults toolName and omits agentOptions when apply() is called directly (schema bypass)', async () => {
