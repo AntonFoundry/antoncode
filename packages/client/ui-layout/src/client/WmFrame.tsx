@@ -1536,7 +1536,7 @@ export function WmFrame({
               data-active={panels.mode === m || undefined}
               onClick={() => { actions.setMode(m) }}
             >
-              {m === 'agent' ? 'Agent' : m === 'code' ? 'Code' : 'Chat'}
+              {m === 'agent' ? 'Orchestrator' : m === 'code' ? 'Code' : 'Chat'}
             </button>
           ))}
         </div>

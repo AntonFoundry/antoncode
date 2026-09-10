@@ -200,28 +200,37 @@ function WorkspaceSection(props: {
       {(props.zoomed === undefined
         ? props.group.sessions
         : props.group.sessions.filter(session => session.id === props.zoomed)
-      ).map(session => (
-        <SessionPane
-          key={session.id}
-          pane={session}
-          currentSessionId={props.currentSessionId}
-          now={props.now}
-          zoomed={props.zoomed === session.id}
-          onZoom={props.onZoom}
-          onOpen={props.onOpen}
-          onInterrupt={props.onInterrupt}
-          onPrompt={props.onPrompt}
-          fetchTail={props.fetchTail}
-          tail={props.tails[session.id]}
-        />
-      ))}
+      ).flatMap((session) => {
+        // The session is one pane; each subagent it spawned is its own live
+        // pane directly after it — first-class windows, not a chip row. In
+        // zoom only the focused pane (whatever its origin) stays visible.
+        const panes: AgentSessionPane[] = [session, ...session.subagents.map(subagent => ({ ...subagent, subagents: [] }))]
+        return panes.map(pane => (
+          <SessionPane
+            key={pane.id}
+            pane={pane}
+            nested={pane.id !== session.id}
+            currentSessionId={props.currentSessionId}
+            now={props.now}
+            zoomed={props.zoomed === pane.id}
+            onZoom={props.onZoom}
+            onOpen={props.onOpen}
+            onInterrupt={props.onInterrupt}
+            onPrompt={props.onPrompt}
+            fetchTail={props.fetchTail}
+            tail={props.tails[pane.id]}
+          />
+        ))
+      })}
     </>
   )
 }
 
-/** One session pane: status header, zoom, stop, subagent chips, updated line. */
+/** One session pane: status header, zoom, stop, updated line, steer composer. */
 function SessionPane(props: {
   pane: AgentSessionPane
+  /** A spawned subagent pane: visually nested under its parent session. */
+  nested: boolean
   currentSessionId: string | undefined
   now: number
   zoomed: boolean
@@ -235,7 +244,6 @@ function SessionPane(props: {
   tail: readonly AgentTailLine[] | undefined
 }) {
   const status = paneStatus(props.pane)
-  const runningSubagents = props.pane.subagents.filter(subagent => subagent.running).length
   const active = status === 'running' || status === 'pending'
   // Pane-local composer draft. The pane is a div (it hosts an input), so
   // click-to-open lives on the header only; typing here must not navigate.
@@ -252,6 +260,7 @@ function SessionPane(props: {
       tabIndex={0}
       className={css.agentPane}
       data-status={status}
+      data-nested={props.nested || undefined}
       data-zoomed={props.zoomed || undefined}
       data-current={props.pane.id === props.currentSessionId || undefined}
       onClick={() => { props.onOpen(props.pane.id) }}
@@ -289,18 +298,8 @@ function SessionPane(props: {
       {props.pane.subagents.length === 0
         ? null
         : (
-          <span className={css.agentPaneSubs}>
-            {props.pane.subagents.map(subagent => (
-              <span
-                key={subagent.id}
-                className={css.agentSubChip}
-                data-running={subagent.running || undefined}
-                title={subagent.displayTitle}
-              >
-                {subagent.running ? '●' : '○'} {subagent.displayTitle}
-              </span>
-            ))}
-            {runningSubagents > 0 ? <span className={css.agentSubRun}>{`${runningSubagents} running`}</span> : null}
+          <span className={css.agentPaneSubs} title={`${props.pane.subagents.length} sub-agent panes follow`}>
+            <span className={css.agentSubRun}>{`${props.pane.subagents.length} sub-agent${props.pane.subagents.length === 1 ? '' : 's'}`}</span>
           </span>
         )}
       {(props.tail ?? []).length > 0 && (
