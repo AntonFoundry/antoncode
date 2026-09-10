@@ -212,6 +212,17 @@ export function apply(ctx: ClientContext): void {
             if (!result.ok || result.value === undefined) return undefined
             return result.value.lines.map(line => ({ kind: line.kind as 'user' | 'tool' | 'assistant' | 'error', label: line.label }))
           },
+          fetchSessionModel: async (sessionId: string) => {
+            // The same `session.models` advisory RPC the model picker uses:
+            // the routed provider/model is the swarm fact the pane strip shows.
+            type WireModels = { ok: boolean; value?: { current?: { provider?: string; model?: string } | null } }
+            const result = await (ctx.sessions as unknown as {
+              models(payload: { sessionId: string }): Promise<WireModels>
+            }).models({ sessionId })
+            const current = result.ok ? result.value?.current : undefined
+            if (current?.provider === undefined || current.model === undefined) return undefined
+            return `${current.provider}/${current.model}`
+          },
           promptSession: (sessionId: string, text: string, mode: 'queue' | 'steer') =>
             (ctx.sessions as unknown as {
               promptSession(id: string, text: string, mode: 'queue' | 'steer'): Promise<{ ok: boolean; error?: { message: string } }>

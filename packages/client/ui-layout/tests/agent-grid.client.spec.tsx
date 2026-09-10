@@ -94,6 +94,7 @@ function gridProps(overrides: Partial<Parameters<typeof AgentGrid>[0]> = {}): Pa
     onPrefsChange: vi.fn(),
     onPrompt: vi.fn(),
     fetchTail: vi.fn(async () => undefined),
+    fetchModel: vi.fn(async () => undefined),
     terminals: [],
     renderTerminal: vi.fn(() => null),
     onSpawnTerminal: vi.fn(),

@@ -235,6 +235,8 @@ function WorkspaceSection(props: {
   fetchTail: (sessionId: string, depth?: 'brief' | 'cli') => Promise<readonly AgentTailLine[] | undefined>
   /** Tail lines by session id, fetched at the board level. */
   tails: Readonly<Record<string, readonly AgentTailLine[]>>
+  /** Current model route by session id (the pane strip's swarm fact). */
+  models: Readonly<Record<string, string>>
 }) {
   return (
     <>
@@ -269,6 +271,7 @@ function WorkspaceSection(props: {
             onPrompt={props.onPrompt}
             fetchTail={props.fetchTail}
             tail={props.tails[pane.id]}
+            model={props.models[pane.id]}
           />
         ))
       })}
@@ -295,6 +298,8 @@ function SessionPane(props: {
   fetchTail: (sessionId: string, depth?: 'brief' | 'cli') => Promise<readonly AgentTailLine[] | undefined>
   /** This pane's current tail lines (fetched at the board level). */
   tail: readonly AgentTailLine[] | undefined
+  /** The pane's current model route (`provider/model`); undefined = unknown. */
+  model?: string | undefined
 }) {
   const status = paneStatus(props.pane)
   const active = status === 'running' || status === 'pending'
@@ -329,6 +334,7 @@ function SessionPane(props: {
         <span className={css.agentPaneClock}>
           {status === 'running' ? `Working · ${elapsedLabel(props.pane.updatedAt, props.now)}` : new Date(props.pane.updatedAt).toLocaleTimeString()}
         </span>
+        {props.model === undefined ? null : <span className={css.agentPaneModel} title={props.model}>{props.model.split('/').pop()}</span>}
         <span
           role="button"
           tabIndex={0}
@@ -473,6 +479,8 @@ export function AgentGrid(props: {
   onPrompt: (sessionId: string, text: string, mode: 'queue' | 'steer') => void
   /** Fetch one pane's activity tail (undefined = unavailable this round). */
   fetchTail: (sessionId: string, depth?: 'brief' | 'cli') => Promise<readonly AgentTailLine[] | undefined>
+  /** Fetch one pane's current model route (`provider/model`; undefined = unknown). */
+  fetchModel: (sessionId: string) => Promise<string | undefined>
   /** Real-pty terminal tiles (WM terminal buffers), rendered after sessions. */
   terminals: readonly AgentTerminalTile[]
   /** The terminal.view slot occupant renderer, bound by the frame. */
@@ -557,6 +565,22 @@ export function AgentGrid(props: {
       window.clearInterval(timer)
     }
   }, [idsKey, activeIds, cliKey])
+
+  // Pane model routes: one fetch per pane on mount (and as the pane set
+  // changes) — the swarm visibility fact in each pane's strip. No interval:
+  // a route changes only through an explicit selection, and the board
+  // remounts the pane set long before a stale label matters.
+  const [models, setModels] = useState<Record<string, string>>({})
+  useEffect(() => {
+    let cancelled = false
+    for (const id of paneIds) {
+      void props.fetchModel(id).then((model) => {
+        if (cancelled || model === undefined) return
+        setModels(current => ({ ...current, [id]: model }))
+      })
+    }
+    return () => { cancelled = true }
+  }, [idsKey])
   const empty = props.groups.every(group => group.sessions.length === 0)
   if (empty) {
     return <div className={css.codeEmpty}><p>No sessions in this workspace yet.</p></div>
@@ -648,6 +672,7 @@ export function AgentGrid(props: {
             onPrompt={props.onPrompt}
             fetchTail={props.fetchTail}
             tails={tails}
+            models={models}
           />
         </section>
       ) : (
