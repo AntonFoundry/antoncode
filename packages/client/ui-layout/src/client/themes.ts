@@ -162,8 +162,11 @@ const tokyoNight: Palette = {
   '--dsw-alias-mode-line-active': '#7aa2f7',
 }
 
-/** The palette the M-x load-theme lists. */
-export const LAYOUT_THEMES: readonly ThemeDefinition[] = [
+/** The doom-emacs library ported from this machine (65 palettes). */
+import { DOOM_THEMES } from './doom-themes.ts'
+
+/** The curated compos palettes, plus the ported doom library. */
+const CURATED_THEMES: readonly ThemeDefinition[] = [
   { id: 'anton-dark', colorScheme: 'dark', tokens: {} },
   { id: 'paper', colorScheme: 'light', tokens: paper },
   { id: 'sepia', colorScheme: 'light', tokens: sepia },
@@ -174,6 +177,14 @@ export const LAYOUT_THEMES: readonly ThemeDefinition[] = [
   { id: 'doom-one', colorScheme: 'dark', tokens: doomOne },
   { id: 'dracula', colorScheme: 'dark', tokens: dracula },
   { id: 'tokyo-night', colorScheme: 'dark', tokens: tokyoNight },
+]
+
+/** The palette the M-x load-theme lists. */
+export const LAYOUT_THEMES: readonly ThemeDefinition[] = [
+  ...CURATED_THEMES,
+  // Doom themes whose id collides with a curated one (doom-one) are skipped —
+  // the curated palette wins its name.
+  ...DOOM_THEMES.filter(doom => !CURATED_THEMES.some(theme => theme.id === doom.id)),
 ]
 
 /** The localStorage key holding the chosen theme id across loads. */
