@@ -156,6 +156,8 @@ interface BoardPrefs {
   paneWidth: number
   /** The zoomed pane's session id (tmux-z focus), persisted with the stash. */
   zoomed?: string | undefined
+  /** The opened workspace space (Panorama level 2); absent = overview. */
+  workspace?: string | undefined
 }
 
 function isHomeSidebar(child: WmNode, dir: WmDirection): boolean {
@@ -1578,6 +1580,7 @@ export function WmFrame({
               sort={boardPrefs.sort}
               paneWidth={boardPrefs.paneWidth}
               zoomed={boardPrefs.zoomed}
+              workspace={boardPrefs.workspace}
               pin={pinnedWorkspace}
               onPrefsChange={(next) => { setBoardPrefs(current => ({ ...current, ...next })) }}
               onClearPin={() => { history.replaceState(null, '', location.pathname + location.search) ; setPinnedWorkspace(undefined) }}

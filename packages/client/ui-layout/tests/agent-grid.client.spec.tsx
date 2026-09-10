@@ -80,9 +80,11 @@ describe('paneStatus', () => {
   })
 })
 
-/** Default render props: every call site gets the full required face. */
+/** Default render props: every call site gets the full required face. Pane
+ *  level specs render inside the first group's space (the overview shows only
+ *  workspace preview cards). */
 function gridProps(overrides: Partial<Parameters<typeof AgentGrid>[0]> = {}): Parameters<typeof AgentGrid>[0] {
-  return {
+  const base = {
     groups: [],
     currentSessionId: undefined,
     onOpen: vi.fn(),
@@ -97,6 +99,7 @@ function gridProps(overrides: Partial<Parameters<typeof AgentGrid>[0]> = {}): Pa
     onSpawnTerminal: vi.fn(),
     ...overrides,
   }
+  return { workspace: base.groups[0]?.workspaceId, ...base }
 }
 
 describe('AgentGrid rendering', () => {
@@ -134,6 +137,64 @@ describe('AgentGrid rendering', () => {
     render(<AgentGrid {...gridProps()} />)
     expect(screen.getByText('No sessions in this workspace yet.')).toBeTruthy()
     cleanup()
+  })
+})
+
+describe('AgentGrid overview level', () => {
+  const groups = buildAgentBoard(
+    [
+      { workspaceId: 'ws-a', title: 'Alpha', sessionIds: ['a', 'b'] },
+      { workspaceId: 'ws-b', title: 'Beta', sessionIds: ['c'] },
+    ],
+    {
+      a: session({ id: 'a', displayTitle: 'Builder', running: true, updatedAt: Date.now() }),
+      b: session({ id: 'b', displayTitle: 'Idle one', updatedAt: Date.now() - 1000 }),
+      c: session({ id: 'c', displayTitle: 'Loner', updatedAt: Date.now() - 2000 }),
+    },
+  )
+
+  it('the overview shows every workspace as one preview card with mini tiles, no panes', () => {
+    const { container } = render(<AgentGrid {...gridProps({ groups, workspace: undefined })} />)
+    expect(screen.getByText('Alpha')).toBeTruthy()
+    expect(screen.getByText('Beta')).toBeTruthy()
+    // Running marker rides the card count, and mini tiles carry titles + dots.
+    expect(container.querySelector('[data-level="overview"]')).not.toBeNull()
+    expect(container.querySelectorAll('[class*="miniDot"]')).toHaveLength(3)
+    // No full panes at this level: nothing expandable, no composer inputs.
+    expect(container.querySelectorAll('[class*="agentPane"][data-status]')).toHaveLength(0)
+  })
+
+  it('clicking a preview card zooms into that workspace through the prefs write', () => {
+    const onPrefsChange = vi.fn()
+    render(<AgentGrid {...gridProps({ groups, onPrefsChange, workspace: undefined })} />)
+    fireEvent.click(screen.getByText('Beta'))
+    expect(onPrefsChange).toHaveBeenCalledWith({ workspace: 'ws-b' })
+    cleanup()
+  })
+
+  it('Esc backs out one level: pane zoom, then workspace, then nothing', () => {
+    const onPrefsChange = vi.fn()
+    const one = render(<AgentGrid {...gridProps({ groups, onPrefsChange, workspace: 'ws-a', zoomed: 'a' })} />)
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(onPrefsChange).toHaveBeenLastCalledWith({ zoomed: undefined })
+    one.unmount()
+    onPrefsChange.mockClear()
+    const two = render(<AgentGrid {...gridProps({ groups, onPrefsChange, workspace: 'ws-a' })} />)
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(onPrefsChange).toHaveBeenCalledWith({ workspace: undefined })
+    two.unmount()
+    onPrefsChange.mockClear()
+    const three = render(<AgentGrid {...gridProps({ groups, onPrefsChange, workspace: undefined })} />)
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(onPrefsChange).not.toHaveBeenCalled()
+    three.unmount()
+  })
+
+  it('the space level shows the max-out control that returns to every space', () => {
+    const onPrefsChange = vi.fn()
+    const { container } = render(<AgentGrid {...gridProps({ groups, onPrefsChange, workspace: 'ws-a' })} />)
+    fireEvent.click(container.querySelector('[aria-label="Show every space"]')!)
+    expect(onPrefsChange).toHaveBeenCalledWith({ workspace: undefined })
   })
 })
 
