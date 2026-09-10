@@ -101,8 +101,9 @@ export interface WmFrameInjected {
   interruptSession: (sessionId: string) => void
   /** Prompt one session by id (the board pane composer); steer while running. */
   promptSession: (sessionId: string, text: string, mode: 'queue' | 'steer') => void
-  /** Fetch one session's activity tail lines (undefined when unavailable). */
-  fetchSessionTail: (sessionId: string) => Promise<readonly { kind: 'user' | 'tool' | 'assistant' | 'error'; label: string }[] | undefined>
+  /** Fetch one session's activity tail lines (undefined when unavailable).
+   *  `depth: 'cli'` asks for the taller raw-style transcript. */
+  fetchSessionTail: (sessionId: string, depth?: 'brief' | 'cli') => Promise<readonly { kind: 'user' | 'tool' | 'assistant' | 'error'; label: string }[] | undefined>
   /** Read one text file inline (the file-viewer buffer's body). */
   readTextFile: (path: string) => Promise<{ content: string; truncated: boolean } | undefined>
   /** The frame's theme palette (compos load-theme's candidates). */
@@ -153,6 +154,8 @@ interface BoardPrefs {
   sort: 'recent' | 'status'
   /** Minimum pane width driving the auto-fit column count. */
   paneWidth: number
+  /** The zoomed pane's session id (tmux-z focus), persisted with the stash. */
+  zoomed?: string | undefined
 }
 
 function isHomeSidebar(child: WmNode, dir: WmDirection): boolean {
@@ -1015,6 +1018,19 @@ export function WmFrame({
   // on switch and saved with it. Component state, not the layout store — the
   // board is a mode-local view, not a panel geometry fact.
   const [boardPrefs, setBoardPrefs] = useState<BoardPrefs>(() => ({ sort: 'recent', paneWidth: 340 }))
+  // One space per window: `#ws=<workspaceId>` pins the board to that
+  // workspace's section (multi-monitor targeting). hashchange follows manual
+  // edits and other windows; replaceState clears without re-triggering.
+  const readPinned = (): string | undefined => {
+    const match = /[#&]ws=([^&]+)/.exec(location.hash)
+    return match?.[1]
+  }
+  const [pinnedWorkspace, setPinnedWorkspace] = useState<string | undefined>(readPinned)
+  useEffect(() => {
+    const onHash = (): void => { setPinnedWorkspace(readPinned()) }
+    window.addEventListener('hashchange', onHash)
+    return () => { window.removeEventListener('hashchange', onHash) }
+  }, [])
   const boardPrefsRef = useRef(boardPrefs)
   boardPrefsRef.current = boardPrefs
   const stashWs = useCallback((target: string): void => {
@@ -1561,7 +1577,10 @@ export function WmFrame({
               groups={agentBoard}
               sort={boardPrefs.sort}
               paneWidth={boardPrefs.paneWidth}
+              zoomed={boardPrefs.zoomed}
+              pin={pinnedWorkspace}
               onPrefsChange={(next) => { setBoardPrefs(current => ({ ...current, ...next })) }}
+              onClearPin={() => { history.replaceState(null, '', location.pathname + location.search) ; setPinnedWorkspace(undefined) }}
               currentSessionId={sessionsListSnapshot.current}
               onOpen={(sessionId) => { openSession(sessionId) }}
               onInterrupt={(sessionId) => { interruptSession(sessionId) }}

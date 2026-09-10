@@ -157,13 +157,15 @@ describe('AgentGrid controls', () => {
     expect(onOpen).not.toHaveBeenCalled()
   })
 
-  it('zoom shows one pane; Esc leaves zoom', () => {
-    const { container } = render(<AgentGrid {...gridProps({ groups })} />)
-    fireEvent.click(container.querySelector('[aria-label="Zoom"]')!)
+  it('zoom shows one pane; Esc leaves zoom through the prefs write', () => {
+    // Zoom is a persisted preference: the board renders zoomed from props and
+    // unzoom asks the prefs owner (the workspace stash) to clear it.
+    const onPrefsChange = vi.fn()
+    const { container } = render(<AgentGrid {...gridProps({ groups, onPrefsChange, zoomed: 'a' })} />)
     expect(container.querySelector('[data-zoom]')).not.toBeNull()
     expect(container.querySelectorAll('[class*="agentPane"][data-status]')).toHaveLength(1)
     fireEvent.keyDown(window, { key: 'Escape' })
-    expect(container.querySelector('[data-zoom]')).toBeNull()
+    expect(onPrefsChange).toHaveBeenCalledWith({ zoomed: undefined })
   })
 
   it('the preference bar reports writes to the workspace stash', () => {
@@ -279,10 +281,10 @@ describe('AgentGrid terminal tiles', () => {
   })
 
   it('hides the terminals section when zoomed', () => {
+    // Zoom arrives as a prop (the persisted preference), not local state.
     const { container } = render(
-      <AgentGrid {...gridProps({ groups, terminals })} />,
+      <AgentGrid {...gridProps({ groups, terminals, zoomed: 'a' })} />,
     )
-    fireEvent.click(container.querySelector('[aria-label="Zoom"]')!)
     expect(container.querySelector('[data-terminal-tile]')).toBeNull()
   })
 })

@@ -485,6 +485,10 @@
   background: var(--dsw-alias-bg-base);
   border: 1px solid transparent;
   cursor: pointer;
+  /* Windowed rendering: the browser skips layout/paint for offscreen panes,
+     so a 56-session wall stays as cheap as the visible rows. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 170px;
 }
 
 .agentPane:hover {
@@ -749,6 +753,18 @@
   white-space: nowrap;
   font-size: 11px;
   color: var(--dsw-alias-label-secondary);
+}
+
+/* CLI tail mode: the terminal-style projection — monospace, taller, tool
+   output lines rendered as raw text instead of one summary line. */
+.agentPaneTail[data-mode='cli'] {
+  overflow-y: auto;
+  font-family: var(--dsw-alias-font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+}
+
+.agentPaneTail[data-mode='cli'] .agentTailLine[data-kind='user'] {
+  color: var(--dsw-alias-label-primary);
 }
 
 .agentTailLine[data-kind='user'] {
