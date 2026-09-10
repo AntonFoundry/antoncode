@@ -12,6 +12,7 @@
  */
 
 import { memo, useMemo, useRef } from 'react'
+import type { MermaidLabels } from './mermaid.tsx'
 import type { ReactNode } from 'react'
 import { IncrementalMarkdownParser } from './incremental.ts'
 import { parseGfm, parseGfmWithMath } from './parse.ts'
@@ -30,7 +31,7 @@ function renderSettled(
   text: string,
   codeLabels: MarkdownCodeLabels | undefined,
   fileMentions: MarkdownFileMentions | undefined,
-  mermaidLabels: { rendering: string; failed: string; source: string } | undefined,
+  mermaidLabels: { rendering: string; failed: string; copyImage: string; copied: string; copiedFailed: string } | undefined,
 ): ReactNode[] {
   const root = parseGfmWithMath(text)
   const targets = createReferenceTargets()
@@ -72,7 +73,7 @@ class StreamingRenderer {
   /** @param codeLabels - Fence copy labels baked into cached elements; the owner replaces the renderer when they change. */
   constructor(
     private readonly codeLabels: MarkdownCodeLabels | undefined,
-    private readonly mermaidLabels: { rendering: string; failed: string; source: string } | undefined,
+    private readonly mermaidLabels: MermaidLabels | undefined,
   ) {}
 
   /**
@@ -165,7 +166,7 @@ export const MarkdownText = memo(function MarkdownText({ text, streaming = false
   streaming?: boolean
   codeLabels?: MarkdownCodeLabels | undefined
   fileMentions?: MarkdownFileMentions | undefined
-  mermaidLabels?: { rendering: string; failed: string; source: string } | undefined
+  mermaidLabels?: MermaidLabels | undefined
 }) {
   const streamRef = useRef<StreamingRenderer | null>(null)
   const streamLabelsRef = useRef<MarkdownCodeLabels | undefined>(codeLabels)

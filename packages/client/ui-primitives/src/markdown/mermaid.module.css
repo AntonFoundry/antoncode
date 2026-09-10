@@ -1,6 +1,7 @@
 .diagram {
+  position: relative;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
   padding: 8px;
   margin: 4px 0;
   border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.08));
@@ -9,7 +10,30 @@
   overflow-x: auto;
 }
 
-.diagram svg {
+.copyButton {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  padding: 2px 8px;
+  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.08));
+  border-radius: 6px;
+  font-size: 11px;
+  background: var(--dsw-alias-bg-base, transparent);
+  color: var(--dsw-alias-label-secondary, gray);
+  cursor: pointer;
+}
+
+.copyButton:hover {
+  color: var(--dsw-alias-label-primary, black);
+}
+
+.diagramBody {
+  display: flex;
+  justify-content: center;
+}
+
+.diagramBody svg {
   max-width: 100%;
   height: auto;
 }
@@ -29,4 +53,10 @@
   margin: 0 0 4px;
   font-size: 12px;
   color: var(--dsw-static-amber-600, #a16207);
+}
+
+.copyNote {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, gray);
 }
