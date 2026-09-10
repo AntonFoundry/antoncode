@@ -130,3 +130,22 @@ describe('MermaidDiagram', () => {
     expect(container.textContent).toContain('bad diagram')
   })
 })
+
+describe('activeMermaidTheme', () => {
+  it('reads the document colorScheme stamp', async () => {
+    const { activeMermaidTheme } = await import('@deepseek-ai/dsh-client-ui-primitives/src/markdown/mermaid.tsx')
+    document.documentElement.style.colorScheme = 'dark'
+    expect(activeMermaidTheme()).toBe('dark')
+    document.documentElement.style.colorScheme = 'light'
+    expect(activeMermaidTheme()).toBe('default')
+    document.documentElement.style.colorScheme = ''
+  })
+
+  it('the body dark attribute alone means dark', async () => {
+    const { activeMermaidTheme } = await import('@deepseek-ai/dsh-client-ui-primitives/src/markdown/mermaid.tsx')
+    document.body.toggleAttribute('data-ds-dark-theme', true)
+    expect(activeMermaidTheme()).toBe('dark')
+    document.body.removeAttribute('data-ds-dark-theme')
+    expect(activeMermaidTheme()).toBe('default')
+  })
+})

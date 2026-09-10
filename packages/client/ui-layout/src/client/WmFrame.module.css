@@ -386,24 +386,37 @@
 }
 
 .codeCard[data-focused] > [class*='modeLine'] {
-  background: var(--dsw-alias-interactive-bg-hover-accent);
+  /* Prominent active fill: the theme's brand accent at ~84% opacity, so the
+     focused window reads instantly in every load-theme palette. */
+  background: var(--dsw-alias-mode-line-active);
   box-shadow: inset 0 2px 0 0 var(--dsw-static-deepseek-450);
+  color: var(--dsw-static-neutral-bluish-00);
 }
 
 .codeCard[data-focused] > [class*='modeLine'] [class*='bufferName'] {
-  color: var(--dsw-static-deepseek-450);
+  color: var(--dsw-static-neutral-bluish-00);
 }
 
 /* Focused pane's mode line: the theme accent (brand fill + subtle accent
    background) so the active window reads at a glance. Appended after the
    legacy focused rules so it wins the cascade. */
 .pane[data-focused] .modeLine {
-  background: var(--dsw-alias-interactive-bg-hover-accent);
+  background: var(--dsw-alias-mode-line-active);
   box-shadow: inset 0 2px 0 0 var(--dsw-static-deepseek-450);
+  color: var(--dsw-static-neutral-bluish-00);
 }
 
 .pane[data-focused] .modeLine [class*='bufferName'] {
-  color: var(--dsw-static-deepseek-450);
+  color: var(--dsw-static-neutral-bluish-00);
+}
+
+/* Mode-line controls (split/flip/close/expand) sit on the brand fill when
+   focused: light ink keeps them readable in every palette. */
+.pane[data-focused] .modeLine button,
+.pane[data-focused] .modeLine [class*='modeButton'],
+.pane[data-focused] .modeLine [class*='paneAction'],
+.pane[data-focused] .modeLine [class*='bufferName'] [class*='Icon'] {
+  color: var(--dsw-static-neutral-bluish-00);
 }
 
 /* Agent board: workspace-grouped session panes tiling the tree area. The
