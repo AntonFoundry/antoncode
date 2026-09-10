@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  Button, IconCloseFill14, IconPersonalizationOutline16,
+  Button, IconArchiveOutline20, IconCloseFill14, IconPersonalizationOutline16,
   IconProjectAddOutline16, IconSearchOutline16, Menu, Modal, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
@@ -22,6 +22,7 @@ import type { WorkspaceBrowserProps } from './contract/slots.ts'
 import type { GroupNode, SessionNode, SessionOrderBy } from './tree.ts'
 import { deriveFlat, deriveGroups, deriveSearchResults, UNGROUPED_KEY } from './tree.ts'
 import { ProjectRowItem, SearchResultItem, SessionNodeItem } from './rows/Rows.tsx'
+import rowCss from './rows/Rows.module.css'
 import { orderWorkspacesByActivity } from './workspace-activity.ts'
 import { FLAT_SESSION_ORDER_KEY } from './stores.ts'
 import { WorkspacePickFlow } from './WorkspacePicker.tsx'
@@ -564,11 +565,18 @@ function SessionTree({
           <div>
             <button
               type="button"
-              className={css.sessionOverflowButton}
+              className={clsx(rowCss.projectRow, css.archiveRow)}
               aria-expanded={archivedExpanded}
               onClick={() => { setArchivedExpanded(value => !value) }}
             >
-              {archivedExpanded ? t('archive.hide') : t('archive.show', { n: archivedGroups.length })}
+              <span className={clsx(rowCss.slot, rowCss.folder)}>
+                <IconArchiveOutline20 size={16} />
+              </span>
+              <span className={rowCss.projectText}>
+                <span className={rowCss.title}>
+                  {archivedExpanded ? t('archive.hide') : t('archive.show', { n: archivedGroups.length })}
+                </span>
+              </span>
             </button>
             {archivedExpanded && archivedGroups.map(renderGroup)}
           </div>
