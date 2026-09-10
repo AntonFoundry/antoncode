@@ -2,9 +2,11 @@
  * Register a {@link ModelsDevAdapter} serving the free tiers of models.dev
  * catalog providers — the native port of the free-model pickers in OpenCode
  * and OpenRouter. Discovery reads `https://models.dev/api.json` (the same
- * catalog OpenCode itself bundles) and lists each route's zero-cost,
- * non-deprecated chat models; streaming rides each provider's own
- * OpenAI-compatible gateway through the inherited llm-openai transport.
+ * catalog OpenCode itself bundles) and lists each route's zero-cost chat
+ * models, keeping deprecated entries exactly as OpenCode's picker does;
+ * streaming rides each provider's own OpenAI-compatible gateway through the
+ * inherited llm-openai transport, stamped with the client identity facts
+ * OpenCode Zen's free tier requires (see {@link ZEN_CLIENT_USER_AGENT}).
  *
  * Two routes ship live: `opencode-free` (OpenCode Zen, anonymous access with
  * the gateway's literal `public` key, exactly as opencode itself falls back)
@@ -50,6 +52,16 @@ export const DEFAULT_CATALOG_URL = 'https://models.dev'
 export const DEFAULT_CATALOG_REFRESH_MS = 3_600_000
 /** The literal anonymous key OpenCode Zen accepts for its free tier. */
 const ZEN_ANONYMOUS_KEY = 'public'
+/**
+ * The client identity OpenCode Zen's free tier demands: requests without an
+ * `opencode/*` User-Agent and a session id fail `MissingSessionID` before the
+ * model is ever consulted. This plugin is the port of OpenCode's own free
+ * picker, so it presents the same client facts. The User-Agent value is an
+ * external wire requirement of the gateway, not a deployment tunable.
+ */
+const ZEN_CLIENT_USER_AGENT = 'opencode/1.0'
+/** Session-id fallback for a request that carries no conversation session. */
+const fallbackSessionId = crypto.randomUUID()
 
 /** One shipped route with the external facts that never vary per deployment. */
 interface DeclaredRoute {
@@ -296,6 +308,15 @@ export function apply(ctx: Context, config: Config): void {
     resolveApiKey,
     resolveUserId,
     catalog,
+    // The anonymous Zen free tier is client-gated: without these facts the
+    // gateway answers MissingSessionID regardless of model or key. Sent on
+    // every route in this family — OpenCode itself stamps them regardless of
+    // authentication — and the conversation session id scopes the gateway's
+    // per-session free-quota bucket to this conversation.
+    extraHeaders: (_provider, _connection, sessionId) => ({
+      'user-agent': ZEN_CLIENT_USER_AGENT,
+      'x-session-id': sessionId ?? fallbackSessionId,
+    }),
     onCatalogError: (error) => {
       ctx.logger.warn('llm-models-dev: serving the last good catalog snapshot after a failed refresh')
       ctx.logger.warn(error)
