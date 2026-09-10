@@ -25,6 +25,14 @@ export interface CatalogModel {
   readonly inputModalities: readonly ('text' | 'image')[]
   /** Positive combined request/response context capacity when advertised. */
   readonly contextWindow?: number
+  /**
+   * The wire protocol the gateway serves this model through. `responses`
+   * when the catalog declares the OpenAI Responses provider
+   * (`provider.npm: "@ai-sdk/openai"`) — OpenCode Zen's Muse Spark family
+   * rejects chat-completions for these models with a bare 500 — and the
+   * field's absence means chat-completions.
+   */
+  readonly protocol?: 'responses'
 }
 
 interface WireCost {
@@ -39,7 +47,11 @@ interface WireModel {
   cost?: WireCost
   modalities?: { input?: unknown }
   limit?: { context?: unknown }
+  provider?: { npm?: unknown }
 }
+
+/** The catalog marker of the OpenAI Responses wire protocol for one model. */
+const RESPONSES_PROVIDER_NPM = '@ai-sdk/openai'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -121,6 +133,7 @@ export function parseFreeModels(payload: unknown, provider: string): Map<string,
         : {}),
       inputModalities: modalities,
       ...contextWindow === undefined ? {} : { contextWindow },
+      ...(model.provider?.npm === RESPONSES_PROVIDER_NPM ? { protocol: 'responses' as const } : {}),
     })
   }
   return models

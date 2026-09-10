@@ -317,6 +317,14 @@ export function apply(ctx: Context, config: Config): void {
       'user-agent': ZEN_CLIENT_USER_AGENT,
       'x-session-id': sessionId ?? fallbackSessionId,
     }),
+    // The catalog declares each model's wire protocol (`provider.npm`):
+    // Muse Spark on Zen serves only the OpenAI Responses protocol, and
+    // chat-completions for it is a hard 500.
+    modelProtocol: (provider, model) => catalog
+      .peekCached(options(provider).catalogProvider)
+      ?.get(model)?.protocol === 'responses'
+      ? 'responses'
+      : 'chat-completions',
     onCatalogError: (error) => {
       ctx.logger.warn('llm-models-dev: serving the last good catalog snapshot after a failed refresh')
       ctx.logger.warn(error)
