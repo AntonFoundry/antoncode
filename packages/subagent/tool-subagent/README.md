@@ -23,9 +23,14 @@ A foreground call passes the execution signal through startup and execution, awa
 | `enableRunInBackground` | Exposes background mode, default `true`; disabling also rejects forced background calls. |
 | `backgroundMode` | Background lifecycle policy, default `one-shot`. `one-shot` defaults calls to foreground; `continuable` defaults them to background, requires the provider's `prepareContinuable` capability, and returns a durable child id without requiring the follow-up tool. |
 | `agentOptions` | Provider-specific child `provider`, `model`, and positive `maxTokens`; the in-process provider treats explicit values as overrides of inherited parent options. |
+| `model` (call argument) | Optional per-delegation child model route (`provider/model` or bare id); overrides the configured default for that call only. |
 | `persona` | Per-child persona; requires provider `persona` capability. |
 | `toolFilter` | Per-child global-tool restriction; requires `toolFilter` capability. |
 | `maxDepth` | Absolute delegation-depth cap, default `3` (`0` forbids delegation); a numeric cap requires the `depthLimit` capability and fails the mount without it. `'provider-managed'` sends no cap for an out-of-process provider whose budget belongs to the child harness. The tool stays visible at the cap; each attempted start checks the calling agent's current depth and returns an errored tool result when rejected. |
+
+## Child model routing (swarm defaults)
+
+Each delegation names its child's model through a four-layer chain — the call's own `model` argument (`provider/model` or a bare model id), the `subagent-child-model` settings section's `bySession` row for the calling session, that section's `defaultModel`, then this plugin's `agentOptions.model` — and `undefined` at every layer lets the child inherit the parent model. A route naming a provider overrides the child provider for that start; every later delegation re-projects the section, so a committed change reaches the next call without re-registration. This is the swarm pattern's control surface: a cheap parent model orchestrating while children run stronger models on narrow, standalone prompts.
 
 ## Concurrency
 

@@ -11,6 +11,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { AgentOptions } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
@@ -97,6 +98,46 @@ export const Config: z<Config> = z.object({
   }).default(undefined as unknown as { allow: string[]; deny: string[] }),
   maxDepth: z.union([z.natural().max(Number.MAX_SAFE_INTEGER), z.const('provider-managed' as const)]).default(3),
 })
+
+/** Settings namespace carrying the swarm defaults: which model children run. */
+export const SUBAGENT_MODEL_SETTINGS_NAMESPACE = settingsNamespace('subagent-child-model')
+
+/** Section schema: one global default plus optional per-parent-session routes. */
+const ChildModelSection: z<{ defaultModel: string; bySession: Record<string, string> }> = z.object({
+  defaultModel: z.string().default(''),
+  bySession: z.dict(z.string()).default({}),
+})
+
+/** Split a `provider/model` (or bare `model`) route string into agent options. */
+export function splitModelRoute(route: string): AgentOptions {
+  const slash = route.lastIndexOf('/')
+  if (slash <= 0 || slash === route.length - 1) return { model: route }
+  return { provider: route.slice(0, slash), model: route.slice(slash + 1) }
+}
+
+/**
+ * Resolve one delegation's child model route from the swarm defaults: the
+ * call's own `model` argument wins, then the parent session's section route,
+ * then the section's global default, then the plugin-configured
+ * `agentOptions.model`. `undefined` = the child inherits the parent model.
+ * @param section - the currently authoritative settings section.
+ * @param parentSessionId - the calling session's id (the by-session key).
+ * @param callModel - the delegation call's optional `model` argument.
+ * @param configuredModel - the plugin config's `agentOptions.model`.
+ * @returns the agent-options override naming the route, when one applies.
+ */
+export function resolveChildModelRoute(
+  section: { defaultModel: string; bySession: Record<string, string> },
+  parentSessionId: string,
+  callModel: string | undefined,
+  configuredModel: string | undefined,
+): AgentOptions | undefined {
+  if (callModel !== undefined && callModel.trim().length > 0) return splitModelRoute(callModel.trim())
+  const sessionRoute = section.bySession[parentSessionId]
+  if (typeof sessionRoute === 'string' && sessionRoute.trim().length > 0) return splitModelRoute(sessionRoute.trim())
+  if (section.defaultModel.trim().length > 0) return splitModelRoute(section.defaultModel.trim())
+  return configuredModel !== undefined ? { model: configuredModel } : undefined
+}
 
 /** Render text blocks from the canonical JSON block array without trusting arbitrary values. */
 function outputValueText(values: JsonValue[]): string {
@@ -274,6 +315,16 @@ export function apply(ctx: Context, config: Config): void {
   if (config.toolFilter !== undefined && config.toolFilter.allow === undefined && config.toolFilter.deny === undefined) {
     throw new Error('tool-subagent: `toolFilter` is configured but names neither `allow` nor `deny` — remove the key or fill the filter')
   }
+  // Swarm defaults: a settings section (editable from the settings plane or
+  // file) projects per call — the call's own `model` argument wins, then the
+  // parent session's route, then the global default, then this plugin's
+  // configured `agentOptions.model`, then the child inherits the parent model.
+  let sectionSource: () => { defaultModel: string; bySession: Record<string, string> } =
+    () => ({ defaultModel: '', bySession: {} })
+  installSettingsSection(ctx, SUBAGENT_MODEL_SETTINGS_NAMESPACE, ChildModelSection, { defaultModel: '', bySession: {} }, {
+    setSource: (source) => { sectionSource = source },
+    onChange: () => {},
+  })
   const backgroundEnabled = config.enableRunInBackground !== false
   const continuable = (config.backgroundMode ?? 'one-shot') === 'continuable'
   const toolName = config.toolName ?? 'subagent'
@@ -316,6 +367,10 @@ export function apply(ctx: Context, config: Config): void {
           type: 'string',
           required: true,
           description: wording.promptDescription,
+        },
+        model: {
+          type: 'string' as const,
+          description: 'Optional model route for this child: "provider/model" or a bare model id. Overrides the configured default for this delegation only.',
         },
         ...backgroundEnabled ? {
           run_in_background: {
@@ -376,11 +431,24 @@ export function apply(ctx: Context, config: Config): void {
         }
 
         const maxDepth = typeof config.maxDepth === 'number' ? config.maxDepth : undefined
+        // Route resolution: the call's `model` argument, the settings section
+        // (per-session, then global), then the configured agentOptions model —
+        // merged OVER the configured agent options so a route overrides only
+        // the provider/model fields it names.
+        const route = resolveChildModelRoute(
+          sectionSource(),
+          parent.id,
+          typeof args.model === 'string' ? args.model : undefined,
+          config.agentOptions?.model,
+        )
+        const agentOptions: AgentOptions | undefined = route !== undefined || config.agentOptions !== undefined
+          ? { ...config.agentOptions, ...route }
+          : undefined
         const request = {
           label: args.description,
           prompt: [{ type: 'text', text: args.prompt }] as ContentBlock[],
           parent,
-          ...config.agentOptions !== undefined ? { agentOptions: config.agentOptions } : {},
+          ...agentOptions !== undefined ? { agentOptions } : {},
           ...config.persona !== undefined ? { persona: config.persona } : {},
           ...config.toolFilter !== undefined ? { toolFilter: config.toolFilter } : {},
           ...maxDepth !== undefined ? { maxDepth } : {},

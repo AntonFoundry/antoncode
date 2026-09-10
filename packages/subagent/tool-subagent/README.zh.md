@@ -23,9 +23,14 @@
 | `enableRunInBackground` | 公开后台模式，默认 `true`；禁用时也会拒绝强制后台调用。 |
 | `backgroundMode` | 后台生命周期策略，默认 `one-shot`。`one-shot` 默认前台调用；`continuable` 默认后台调用，要求提供方具备 `prepareContinuable` 能力，并返回持久化子 agent ID，且不要求加载后续消息工具。 |
 | `agentOptions` | 传给具体提供方的子 agent `provider`、`model` 和正整数 `maxTokens`；进程内提供方会用显式值覆盖继承的父级选项。 |
+| `model`（调用参数） | 可选的按次委派子 agent 模型路由（`provider/model` 或裸 ID）；仅对这一次调用覆盖已配置的默认值。 |
 | `persona` | 每个子 agent 独立的 persona；要求提供方具备 `persona` 能力。 |
 | `toolFilter` | 每个子 agent 独立的全局工具限制；要求提供方具备 `toolFilter` 能力。 |
 | `maxDepth` | 绝对委派深度上限，默认 `3`（`0` 禁止委派）；数值上限要求 `depthLimit` 能力，缺失时挂载失败。对于预算由子 harness 拥有的进程外提供方，`'provider-managed'` 不发送上限。工具在达到上限时仍然可见；每次尝试启动都会检查调用 agent 的当前深度，被拒绝时返回出错的工具结果。 |
+
+## 子 agent 模型路由（集群默认）
+
+每次委派通过四层链路确定子 agent 的模型——调用自身的 `model` 参数（`provider/model` 或裸模型 ID）、`subagent-child-model` 设置段中调用会话的 `bySession` 行、该设置段的 `defaultModel`、再到本插件的 `agentOptions.model`——任何一层都未提供时，子 agent 继承父级模型。命名了提供方的路由会在该次启动时覆盖子 agent 的提供方；每次后续委派都会重新投影设置段，因此已提交的变更无需重新注册即可作用于下一次调用。这正是集群模式的控制面：廉价的父级模型负责编排，而子 agent 在狭窄的独立提示词上运行更强的模型。
 
 ## 并发
 
