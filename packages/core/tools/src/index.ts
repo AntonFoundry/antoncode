@@ -77,6 +77,15 @@ const PAGED_ONLY_INSTRUCTION = `Tools are paged: the catalog below lists names a
  * model can only discover by being denied is one it corrects too late.
  */
 /**
+ * Token-efficiency framing: small-budget framing measurably changes model
+ * behavior (budget-told agents pick cheaper tools and spend less on prose),
+ * so the discipline section states scarcity and the concrete behaviors it
+ * produces. Deliberately no hard numeric cap: the claim shapes style, and a
+ * number would invite early stopping on legitimately long tasks.
+ */
+const TOKEN_EFFICIENCY = 'Token discipline: this session runs on a tight token budget — assume an order of magnitude less headroom than you would want, and spend like it is scarce, because it is. The cheap tool first: grep or ripgrep before reading files, a targeted read with offset and limit before a whole file, one batched command before several round-trips, the smallest output that answers the question. Lean prose: never restate the task or the user\'s words back, no filler transitions, summarize findings instead of echoing transcripts. When a step would be expensive, ask what a budget-pressured engineer would do instead — they almost always know a cheaper path.'
+
+/**
  * The plugin-vs-shared-layer decision rule, universal because the failure it
  * prevents is universal: capabilities scattered into premature packages (a
  * new plugin skeleton, slot declarations, bundle rows) when they were
@@ -728,6 +737,14 @@ export interface Config {
    * `code`, and `both` ignore this field.
    */
   pinned?: string[]
+  /**
+   * Token-efficiency framing in the standing discipline section (default
+   * true): the model is told the session runs under a tight budget and is
+   * steered toward the cheap-tool behaviors that budget pressure produces
+   * (targeted reads over whole files, batched commands, lean prose). A
+   * deployment running long-horizon, output-heavy tasks may turn it off.
+   */
+  efficiencyDiscipline?: boolean
 }
 
 /**
@@ -881,6 +898,7 @@ export class ToolRuntime extends Service {
   )
   /** Presentation for scopes that declare none; {@link presentAs} shadows it per scope. */
   private readonly defaultMode: ToolPresentationMode
+  private readonly efficiencyDiscipline: boolean
   private readonly maxParallelSubCalls: number
   /**
    * Deployment-level names always granted under `paged` — wired with full
@@ -908,6 +926,9 @@ export class ToolRuntime extends Service {
     // The schema already defaulted an omitted mode; the ?? narrows the
     // optional-input type for direct (non-Loader) construction in tests.
     this.defaultMode = config.mode ?? 'native'
+    // The framing is the deployment's call: on by default (budget-told
+    // agents measurably pick cheaper tools), off for long-horizon tasks.
+    this.efficiencyDiscipline = config.efficiencyDiscipline ?? true
     this.maxParallelSubCalls = resolveMaxParallelSubCalls(config.maxParallelSubCalls)
     this.pinned = new Set(config.pinned ?? [])
     ctx.systemPrompt.tools(context => this.wireSchemas(context.scope))
@@ -1000,7 +1021,11 @@ export class ToolRuntime extends Service {
     return {
       name: 'tools:working-discipline',
       order: PAGED_RULE_SECTION_ORDER - 1,
-      text: `${TODO_TREE_DISCIPLINE}\n\n${PLUGIN_DISCIPLINE}`,
+      text: [
+        TODO_TREE_DISCIPLINE,
+        ...(this.efficiencyDiscipline ? [TOKEN_EFFICIENCY] : []),
+        PLUGIN_DISCIPLINE,
+      ].join('\n\n'),
     }
   }
 
