@@ -4,7 +4,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { mkdir, stat } from 'node:fs/promises'
+import { mkdir, readFile, stat } from 'node:fs/promises'
 import { basename, dirname } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
@@ -3100,6 +3100,32 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
       async openPath(request, signal) {
         return openPath(request, request.payload.path, signal)
+      },
+
+      async readTextFile(request, signal) {
+        // The browse capability gates listing and creation; inline text
+        // reads belong to the same fence.
+        const capability = ctx.directoryPicker.capability()
+        if (capability.kind !== 'browse') {
+          return err(request, {
+            code: 'directory-picker-unavailable',
+            message: `host.readTextFile needs the browse capability; the composed picker serves "${capability.kind}"`,
+            details: { capability: capability.kind },
+          })
+        }
+        try {
+          const buffer = await readFile(request.payload.path, { signal })
+          const cap = 512 * 1024
+          const truncated = buffer.byteLength > cap
+          const content = (truncated ? buffer.subarray(0, cap) : buffer).toString('utf-8')
+          return ok(request, { content, truncated })
+        } catch (error: unknown) {
+          return err(request, {
+            code: 'directory-unreadable',
+            message: error instanceof Error ? error.message : String(error),
+            details: { path: request.payload.path },
+          })
+        }
       },
     },
 

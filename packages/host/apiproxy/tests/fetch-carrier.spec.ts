@@ -150,6 +150,12 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
           },
         }
       },
+      async readTextFile(request) {
+        return {
+          rpcId: request.rpcId,
+          result: { ok: true, value: { content: '// fixture', truncated: false } },
+        }
+      },
       async pickDirectory(request) {
         return { rpcId: request.rpcId, result: { ok: true, value: { path: null } } }
       },

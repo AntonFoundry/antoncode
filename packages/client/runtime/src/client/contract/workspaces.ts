@@ -59,6 +59,14 @@ export interface IWorkspaces {
    * @param path - absolute or host-resolvable path.
    */
   openPath(path: string): Promise<void>
+
+  /**
+   * Read one text file inline (the browser's file viewer). UTF-8; a file
+   * larger than the host byte cap returns its head with `truncated: true`.
+   * @param path - absolute or host-resolvable path.
+   * @returns the content and truncation flag.
+   */
+  readTextFile(path: string): Promise<{ content: string; truncated: boolean }>
   /**
    * Rename a Workspace.
    * @param workspaceId - target workspace.

@@ -2573,6 +2573,10 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       describe: request => ok(request, {
         version: '0.0.0-fixture', cwd: '/tmp/fixture', attachedSessions, canOpenPath: true,
       }),
+      readTextFile: (request) => {
+        const payload = request.payload as { path: string }
+        return Promise.resolve(ok(request, { content: `// fixture text for ${payload.path}`, truncated: false }))
+      },
       // Deterministic native pick: the keyless lanes drive the full
       // pick-then-adopt path without an OS chooser (design-mock content,
       // same tree the browse primitives serve).
@@ -3157,6 +3161,7 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'subagent.prompt': return this.api.subagents.prompt(request, signal)
       case 'subagent.interrupt': return this.api.subagents.interrupt(request)
       case 'host.describe': return this.api.host.describe(request)
+      case 'host.readTextFile': return this.api.host.readTextFile(request, new AbortController().signal)
       case 'host.pickDirectory': return this.api.host.pickDirectory(request, new AbortController().signal)
       case 'host.listDirectory': return this.api.host.listDirectory(request, new AbortController().signal)
       case 'host.createDirectory': return this.api.host.createDirectory(request)

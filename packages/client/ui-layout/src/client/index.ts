@@ -14,6 +14,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { PanelActions } from './service.ts'
 import { TopbarChrome, WmFrame } from './WmFrame.tsx'
 import { createLayoutStore, createScratchStore, createWmStore } from './stores.ts'
+import { ensureBuffer, firstLeafId, splitLeaf } from './wm.ts'
 import { watchHarnessBoot } from './bridge.ts'
 import { LayoutController } from './service.ts'
 import { ThemePresenter } from './theme-presenter.ts'
@@ -170,6 +171,19 @@ export function apply(ctx: ClientContext): void {
         const wm = wmStore.create()
         layout.attachWm(wm)
         const scratch = scratchStore.create()
+        // Inline text-file open: the same buffer-beside-the-focused-leaf flow
+        // the term command runs, driven from the inject closure over the wm
+        // store. Image extensions never land here (openPath routes first).
+        const openInline = (path: string): void => {
+          const snapshot = wm.store.getSnapshot()
+          const anchor = snapshot.focusedLeafId ?? firstLeafId(snapshot.tree)
+          if (anchor === undefined) return
+          const bufferId = `buffer:file:${path}`
+          const leafId = `leaf:${bufferId}`
+          wm.actions.setBuffers(ensureBuffer(snapshot.buffers, { id: bufferId, kind: 'file', path }))
+          wm.actions.setTree(splitLeaf(snapshot.tree, anchor, 'row', bufferId, leafId))
+          wm.actions.setFocus(leafId)
+        }
         return {
           hooks: { wm, scratch },
           setTree: (tree: Parameters<typeof wm.actions.setTree>[0]) => { wm.actions.setTree(tree) },
@@ -189,6 +203,7 @@ export function apply(ctx: ClientContext): void {
             (ctx.sessions as unknown as {
               interruptSession(id: string): Promise<{ ok: boolean; error?: { message: string } }>
             }).interruptSession(sessionId),
+          readTextFile: (path: string) => ctx.workspaces.readTextFile(path),
           fetchSessionTail: async (sessionId: string) => {
             type WireTail = { ok: boolean; value?: { lines: readonly { kind: string; label: string }[] } }
             const result = await (ctx.sessions as unknown as {
@@ -215,7 +230,22 @@ export function apply(ctx: ClientContext): void {
           // capability's client seam — ctx has no direct 'host' service).
           listDirectory: (path?: string, opts?: { includeFiles?: boolean }, signal?: AbortSignal) =>
             ctx.workspaces.listDirectory(path, opts, signal),
-          openPath: (path: string) => ctx.workspaces.openPath(path),
+          openPath: (path: string): Promise<void> => {
+            // Routing contract: images open with the OS default application;
+            // text-family files open inline as a file buffer beside the
+            // focused window. Unknown extensions fall back to the OS.
+            const externalExtensions = [
+              'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif', 'tiff',
+              'pdf', 'zip', 'gz', 'mp4', 'mov', 'mp3', 'wav', 'woff2', 'woff', 'ttf', 'otf',
+              'bin', 'wasm', 'sqlite3', 'db',
+            ]
+            const external = new RegExp(`\\.(${externalExtensions.join('|')})$`, 'i')
+            if (external.test(path)) {
+              return ctx.workspaces.openPath(path)
+            }
+            openInline(path)
+            return Promise.resolve()
+          },
           // The api client returns the RpcResponse envelope: the business
           // result sits under `result` ({ ok: true, value } | { ok: false }).
         }

@@ -97,6 +97,12 @@ export class TestWorkspaces implements IWorkspaces {
     await (this.stubs.get('openPath')?.(path) as Promise<void> | undefined)
   }
 
+  async readTextFile(path: string): Promise<{ content: string; truncated: boolean }> {
+    this.calls.push({ method: 'readTextFile', args: [path] })
+    const stub = this.stubs.get('readTextFile') as ((p: string) => Promise<{ content: string; truncated: boolean }>) | undefined
+    return stub ? stub(path) : { content: '', truncated: false }
+  }
+
   /**
    * Directory picker (recorded). The default cancels (null); stub to select.
    * @returns the picked path, or null.

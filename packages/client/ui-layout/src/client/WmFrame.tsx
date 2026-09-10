@@ -40,6 +40,7 @@ import type { createLayoutStore, LayoutMode, ScratchState, WmState } from './sto
 import { COMMANDS, PREFIX_HINTS, parseChord, type ArmedPrefix, type WmCommand } from './keymap.ts'
 import { Minibuffer, type MinibufferCandidate } from './Minibuffer.tsx'
 import { AgentGrid, buildAgentBoard } from './AgentGrid.tsx'
+import { FileViewer } from './FileViewer.tsx'
 import { IdoFind } from './IdoFind.tsx'
 import { StatusLine } from './StatusLine.tsx'
 import { ScratchBuffer } from './ScratchBuffer.tsx'
@@ -102,6 +103,8 @@ export interface WmFrameInjected {
   promptSession: (sessionId: string, text: string, mode: 'queue' | 'steer') => void
   /** Fetch one session's activity tail lines (undefined when unavailable). */
   fetchSessionTail: (sessionId: string) => Promise<readonly { kind: 'user' | 'tool' | 'assistant' | 'error'; label: string }[] | undefined>
+  /** Read one text file inline (the file-viewer buffer's body). */
+  readTextFile: (path: string) => Promise<{ content: string; truncated: boolean } | undefined>
   /** The frame's theme palette (compos load-theme's candidates). */
   themeList: () => { id: string; colorScheme: string }[]
   /** Load one palette theme by id and persist the choice. */
@@ -305,6 +308,7 @@ interface NodeRenderProps {
   sidebarOwner: SidebarOwnerProps & { brandInFrame: true }
   scratch: ScratchBufferShared
   files: FilesBufferShared
+  readTextFile: WmFrameProps['readTextFile']
   onFocus: (leafId: string) => void
   onSplit: (leafId: string, dir: WmDirection) => void
   onClose: (leafId: string) => void
@@ -336,7 +340,7 @@ interface SashDragBase {
  */
 function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf' }> }) {
   const {
-    node, tree, focusedId, buffers, renderSlot, sidebarOwner, scratch, files,
+    node, tree, focusedId, buffers, renderSlot, sidebarOwner, scratch, files, readTextFile,
     onFocus, onSplit, onClose, onFlip, onToggleExpand, expanded, onTidy,
   } = props
   const buffer = findBuffer(buffers, node.buffer)
@@ -359,9 +363,11 @@ function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf
           onKill={() => { files.onKill(node.buffer) }}
         />
       )
-      : bufferKind === 'terminal'
-        ? renderSlot('terminal.view', { sessionId: findBuffer(buffers, node.buffer)?.sessionId })
-        : renderSlot(bufferKind as 'sidebar' | 'conversation' | 'details', owner)
+      : bufferKind === 'file'
+        ? <FileViewer path={buffer?.path ?? node.buffer} readText={readTextFile} />
+        : bufferKind === 'terminal'
+          ? renderSlot('terminal.view', { sessionId: findBuffer(buffers, node.buffer)?.sessionId })
+          : renderSlot(bufferKind as 'sidebar' | 'conversation' | 'details', owner)
   const title = buffer !== undefined ? bufferTitle(buffer) : '(unnamed)'
   // A focused terminal buffer must receive keyboard input immediately: the
   // xterm capture textarea inside the slot occupant takes DOM focus.
@@ -627,6 +633,7 @@ export function WmFrame({
   interruptSession,
   promptSession,
   fetchSessionTail,
+  readTextFile,
   listDirectory,
   openPath,
 }: WmFrameProps) {
@@ -1492,6 +1499,7 @@ export function WmFrame({
     sidebarOwner,
     scratch: scratchShared,
     files: filesShared,
+    readTextFile,
     onFocus: setFocus,
     onSplit,
     onClose,

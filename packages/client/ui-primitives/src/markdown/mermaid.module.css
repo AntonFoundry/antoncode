@@ -1,0 +1,32 @@
+.diagram {
+  display: flex;
+  justify-content: center;
+  padding: 8px;
+  margin: 4px 0;
+  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.08));
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base, transparent);
+  overflow-x: auto;
+}
+
+.diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.pending {
+  padding: 8px;
+  margin: 4px 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary, gray);
+}
+
+.failed {
+  margin: 4px 0;
+}
+
+.failedNote {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: var(--dsw-static-amber-600, #a16207);
+}
