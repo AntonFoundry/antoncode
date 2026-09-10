@@ -174,6 +174,51 @@ function elapsedLabel(from: number, now: number): string {
   return minutes > 0 ? `${minutes}m ${String(seconds).padStart(2, '0')}s` : `${seconds}s`
 }
 
+/** One workspace preview card: the overview-level tile for one space. */
+function WorkspaceCard(props: {
+  group: AgentWorkspaceGroup
+  currentSessionId: string | undefined
+  onOpen: (workspaceId: string) => void
+}) {
+  const running = props.group.sessions.filter(paneActive).length
+  const previews = props.group.sessions.slice(0, 8)
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      className={css.agentWsCard}
+      data-current-section={props.group.sessions.some(s => s.id === props.currentSessionId) || undefined}
+      onClick={() => { props.onOpen(props.group.workspaceId) }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter') return
+        props.onOpen(props.group.workspaceId)
+      }}
+    >
+      <span className={css.agentWsHeader}>
+        <span className={css.agentWsTitle}>{props.group.title}</span>
+        <span className={css.agentWsCount}>
+          {props.group.sessions.length}
+          {running > 0 ? <span className={css.agentSubRun}>{` · ${running} ▶`}</span> : null}
+        </span>
+      </span>
+      <span className={css.miniTiles}>
+        {previews.map(session => (
+          <span key={session.id} className={css.miniTile} title={session.displayTitle}>
+            <span
+              className={css.miniDot}
+              data-status={paneStatus({ ...session, subagents: [] })}
+            />
+            <span className={css.miniTitle}>{session.displayTitle || session.id}</span>
+            {session.subagents.length > 0 ? (
+              <span className={css.miniSubs}>{`+${session.subagents.length}`}</span>
+            ) : null}
+          </span>
+        ))}
+      </span>
+    </div>
+  )
+}
+
 /** One workspace section: its header row plus the session panes. */
 function WorkspaceSection(props: {
   group: AgentWorkspaceGroup
@@ -416,12 +461,14 @@ export function AgentGrid(props: {
   paneWidth: number
   /** The zoomed pane's session id (persisted with the workspace prefs). */
   zoomed?: string | undefined
+  /** The opened workspace's id: undefined renders the overview preview grid. */
+  workspace?: string | undefined
   /** Workspace id pinning the board to one space (`#ws=` multi-monitor). */
   pin?: string | undefined
   /** Clear the space pin (leaves the pinned window back at every space). */
   onClearPin?: () => void
   /** Viewing-preference writes (persisted with the owning workspace's stash). */
-  onPrefsChange: (next: { sort?: 'recent' | 'status'; paneWidth?: number; zoomed?: string | undefined }) => void
+  onPrefsChange: (next: { sort?: 'recent' | 'status'; paneWidth?: number; zoomed?: string | undefined; workspace?: string | undefined }) => void
   /** Prompt one session by id (the pane composer); steer while running. */
   onPrompt: (sessionId: string, text: string, mode: 'queue' | 'steer') => void
   /** Fetch one pane's activity tail (undefined = unavailable this round). */
@@ -435,15 +482,23 @@ export function AgentGrid(props: {
 }) {
   const zoomed = props.zoomed
   const setZoomed = (id: string | undefined): void => { props.onPrefsChange({ zoomed: id }) }
-  // Esc leaves zoom (tmux z semantics); the keydown listener is frame-local.
+  // Two-level Panorama navigation: pane zoom → workspace space → overview.
+  // Esc backs out one level per press; the workspace level is the prefs'
+  // `workspace` field (persisted), merged with the `#ws=` pin.
+  const workspace = props.workspace ?? props.pin
+  const setWorkspace = (id: string | undefined): void => {
+    if (id === undefined) props.onClearPin?.()
+    props.onPrefsChange({ workspace: id })
+  }
   useEffect(() => {
-    if (zoomed === undefined) return
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setZoomed(undefined)
+      if (event.key !== 'Escape') return
+      if (zoomed !== undefined) setZoomed(undefined)
+      else if (workspace !== undefined) setWorkspace(undefined)
     }
     window.addEventListener('keydown', onKey)
     return () => { window.removeEventListener('keydown', onKey) }
-  }, [zoomed])
+  }, [zoomed, workspace])
   const anyRunning = props.groups.some(group => group.sessions.some(paneActive))
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -507,30 +562,31 @@ export function AgentGrid(props: {
     return <div className={css.codeEmpty}><p>No sessions in this workspace yet.</p></div>
   }
   const sorted = props.groups.map(group => ({ ...group, sessions: sortPanes(group.sessions, props.sort) }))
-    .filter(group => props.pin === undefined || group.workspaceId === props.pin)
+  const opened = workspace === undefined ? undefined : sorted.find(group => group.workspaceId === workspace)
   return (
     <div
       className={css.agentBoard}
       data-agent-board
+      data-level={workspace !== undefined ? 'space' : 'overview'}
       data-zoom={zoomed !== undefined || undefined}
       style={{ '--agent-pane-min': `${props.paneWidth}px` } as CSSProperties}
     >
       <div className={css.agentBoardBar}>
         <span className={css.agentBoardBarLabel}>Board</span>
-        {props.pin !== undefined && (
+        {opened !== undefined && (
           <span
             role="button"
             tabIndex={0}
             className={css.agentPaneAction}
             aria-label="Show every space"
-            title="This window is pinned to one workspace space (#ws=); release the pin"
-            onClick={() => { props.onClearPin?.() }}
+            title="Max out: back to every workspace's preview (Esc)"
+            onClick={() => { setWorkspace(undefined) }}
             onKeyDown={(event) => {
               if (event.key !== 'Enter' && event.key !== ' ') return
-              props.onClearPin?.()
+              setWorkspace(undefined)
             }}
           >
-            ⊙ pinned — show all
+            ⤡ all spaces
           </span>
         )}
         <span
@@ -576,10 +632,11 @@ export function AgentGrid(props: {
           {props.paneWidth <= 340 ? '⊞ wide' : '⊞ compact'}
         </span>
       </div>
-      {sorted.map(group => (
-        <section key={group.workspaceId} className={css.agentWs}>
+      {opened !== undefined ? (
+        /* Workspace level: the opened space's session + subagent panes tiled. */
+        <section className={css.agentWs}>
           <WorkspaceSection
-            group={group}
+            group={opened}
             currentSessionId={props.currentSessionId}
             now={now}
             zoomed={zoomed}
@@ -593,7 +650,19 @@ export function AgentGrid(props: {
             tails={tails}
           />
         </section>
-      ))}
+      ) : (
+        /* Overview level: every workspace as a square-ish preview card. */
+        <div className={css.agentOverview}>
+          {sorted.map(group => (
+            <WorkspaceCard
+              key={group.workspaceId}
+              group={group}
+              currentSessionId={props.currentSessionId}
+              onOpen={setWorkspace}
+            />
+          ))}
+        </div>
+      )}
       {props.terminals.length > 0 && zoomed === undefined && (
         <section className={css.agentWs}>
           <div className={css.agentWsHeader}>
