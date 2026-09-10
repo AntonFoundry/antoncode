@@ -97,8 +97,8 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
   }
   const view = render(<WorkspaceBrowser {...props} />)
   // Week-idle workspaces (every no-session fixture) render under the collapsed
-  // Archived section; tests exercising main-list mechanics expand it first.
-  const archiveToggle = view.queryByText(/已归档工作区/)
+  // Archive section; tests exercising main-list mechanics expand it first.
+  const archiveToggle = view.queryByText(/归档工作区/)
   if (archiveToggle !== null) fireEvent.click(archiveToggle)
   return { view, props, store }
 }
