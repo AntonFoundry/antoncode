@@ -702,6 +702,20 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* Pane header model chip: the swarm fact — which route this pane runs. */
+.agentPaneModel {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Pane header/foot actions: zoom toggle and stop control. Nested role=button
    spans must not trigger the pane's open-on-click. */
 .agentPaneAction,

@@ -104,6 +104,9 @@ export interface WmFrameInjected {
   /** Fetch one session's activity tail lines (undefined when unavailable).
    *  `depth: 'cli'` asks for the taller raw-style transcript. */
   fetchSessionTail: (sessionId: string, depth?: 'brief' | 'cli') => Promise<readonly { kind: 'user' | 'tool' | 'assistant' | 'error'; label: string }[] | undefined>
+  /** Fetch one session's current model route (`provider/model`; undefined when
+   *  unavailable or unrouted) — the pane strip's swarm visibility. */
+  fetchSessionModel: (sessionId: string) => Promise<string | undefined>
   /** Read one text file inline (the file-viewer buffer's body). */
   readTextFile: (path: string) => Promise<{ content: string; truncated: boolean } | undefined>
   /** The frame's theme palette (compos load-theme's candidates). */
@@ -638,6 +641,7 @@ export function WmFrame({
   interruptSession,
   promptSession,
   fetchSessionTail,
+  fetchSessionModel,
   readTextFile,
   listDirectory,
   openPath,
@@ -1589,6 +1593,7 @@ export function WmFrame({
               onInterrupt={(sessionId) => { interruptSession(sessionId) }}
               onPrompt={(sessionId, text, mode) => { promptSession(sessionId, text, mode) }}
               fetchTail={fetchSessionTail}
+              fetchModel={fetchSessionModel}
               terminals={buffers
                 .filter(b => b.kind === 'terminal')
                 .map(b => ({ id: b.id, kind: 'terminal' as const, sessionId: b.sessionId, title: bufferTitle(b) }))}
