@@ -90,6 +90,21 @@ export interface OpenAIAdapterOptions {
    * `MISSING_CREDENTIAL` when no key is available anywhere.
    */
   resolveApiKey: (provider: string, connection: OpenAIConnectionOptions) => Promise<string>
+  /**
+   * Route-scoped request headers merged under the fixed transport headers of
+   * every chat-completions request for that provider route, or `undefined`
+   * to send none. Gateways that fingerprint their client supply their
+   * emulation facts here — OpenCode Zen's anonymous free tier answers
+   * `MissingSessionID` to any request without a session id and an
+   * `opencode/*` User-Agent, facts no other configuration field can carry.
+   * The conversation's session id arrives so a gateway-side per-session
+   * quota bucket can mirror the caller's own conversation.
+   */
+  extraHeaders?: (
+    provider: string,
+    connection: OpenAIConnectionOptions,
+    sessionId: string | undefined,
+  ) => Record<string, string>
   /** Resolve the harness-home anonymous id shared with telemetry and feedback. */
   resolveUserId: () => AnonymousUserId
 }
@@ -279,6 +294,9 @@ export class OpenAIAdapter extends LlmAdapter {
     // transport boundary, never a serialization failure.
     const payload = JSON.stringify(body)
     const headers = {
+      // Route-scoped headers resolve first so the fixed transport headers
+      // below always win a name collision (authorization, content-type).
+      ...this.config.extraHeaders?.(options.provider, connection, options.sessionId === undefined ? undefined : String(options.sessionId)),
       'authorization': `Bearer ${apiKey}`,
       'content-type': 'application/json',
       'accept': 'text/event-stream',

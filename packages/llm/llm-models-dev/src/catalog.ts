@@ -6,8 +6,9 @@
  * provider id to its advertised models, each carrying per-token `cost`
  * metadata, input modalities, a context limit, and an optional deprecation
  * status. A model counts as free exactly when its input and output costs are
- * both zero — the predicate OpenCode's own pickers apply — and deprecated or
- * non-chat entries never qualify.
+ * both zero — mirroring OpenCode's `cost.input === 0` picker (which keeps
+ * deprecated free models listed) — and non-chat entries (no text modality)
+ * never qualify.
  *
  * @module dsh-llm-models-dev/catalog
  */
@@ -57,11 +58,19 @@ function wireOutput(model: WireModel): number {
 
 /**
  * The freeness predicate, mirroring OpenCode's picker rule
- * (`provider === "opencode" && (!cost || cost.input === 0)`) tightened to
- * both cost directions so a zero-input/paid-output entry never qualifies.
+ * (`provider === "opencode" && (!cost || cost.input === 0)`).
+ * OpenCode keeps deprecated free models (e.g. kimi-k2.5-free, glm-4.7-free)
+ * listed — 24 of its 31 free models are marked deprecated — so this predicate
+ * does NOT filter by status. Deprecated entries are often retired upstream:
+ * the gateway no longer advertises them or answers `not supported` /
+ * `unavailable` per request. This listing is the picker-parity surface, not a
+ * servability guarantee; a retired model fails at request time like any
+ * other provider-side outage.
+ * It keeps the harness tightened check on output cost as well so a
+ * zero-input/paid-output entry never qualifies (no such entry exists
+ * today, so the visible set stays identical to OpenCode's input-only rule).
  */
 function isFreeModel(model: WireModel): boolean {
-  if (model.status === 'deprecated') return false
   return wireInput(model) === 0 && wireOutput(model) === 0
 }
 
@@ -172,7 +181,11 @@ export class ModelsDevCatalog {
 
   async #fetch(provider: string): Promise<Map<string, CatalogModel>> {
     const base = this.#catalogURL.endsWith('/') ? this.#catalogURL : `${this.#catalogURL}/`
-    const response = await fetch(new URL('api.json', base), { method: 'GET', signal: AbortSignal.timeout(30_000) })
+    const response = await fetch(new URL('api.json', base), {
+      method: 'GET',
+      headers: { 'User-Agent': 'deepseek-harness/llm-models-dev', Accept: 'application/json' },
+      signal: AbortSignal.timeout(30_000),
+    })
     if (!response.ok) {
       throw new Error(`llm-models-dev: catalog fetch from ${base}api.json failed with ${response.status}`)
     }
