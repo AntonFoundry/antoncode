@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CallId, createMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { CallId, createMessage, createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, Message, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { serializeResponsesRequest, translateResponses } from '../src/responses.ts'
 
@@ -11,6 +11,10 @@ async function collect(chunks: AsyncIterable<StreamChunk>): Promise<StreamChunk[
   const out: StreamChunk[] = []
   for await (const chunk of chunks) out.push(chunk)
   return out
+}
+
+async function* payloadStream(payloads: string[]): AsyncGenerator<string> {
+  yield* payloads
 }
 
 describe('serializeResponsesRequest', () => {
@@ -48,7 +52,7 @@ describe('serializeResponsesRequest', () => {
   it('maps tools, reasoning effort, and the output cap onto the Responses fields', () => {
     const wire = serializeResponsesRequest(request({
       tools: [{ name: 'grep', description: 'search', parameters: { type: 'object' } }],
-      reasoningEffort: 'high',
+      reasoningEffort: ReasoningEffortId('high'),
       maxTokens: 1234,
     }))
     expect(wire.tools).toEqual([{ type: 'function', name: 'grep', description: 'search', parameters: { type: 'object' } }])
@@ -71,7 +75,7 @@ describe('translateResponses', () => {
         },
       }),
     ]
-    const chunks = await collect(translateResponses(payloads))
+    const chunks = await collect(translateResponses(payloadStream(payloads)))
     expect(chunks).toContainEqual({ type: 'block-start', index: 0, blockType: 'text' })
     expect(chunks).toContainEqual({ type: 'text-delta', index: 0, text: 'hello ' })
     expect(chunks).toContainEqual({ type: 'text-delta', index: 0, text: 'world' })
@@ -89,7 +93,7 @@ describe('translateResponses', () => {
       }),
       JSON.stringify({ type: 'response.completed', response: { status: 'completed', usage: { input_tokens: 5, output_tokens: 6 } } }),
     ]
-    const chunks = await collect(translateResponses(payloads))
+    const chunks = await collect(translateResponses(payloadStream(payloads)))
     expect(chunks).toContainEqual({
       type: 'block-end',
       index: 0,
@@ -105,12 +109,12 @@ describe('translateResponses', () => {
         response: { status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' } },
       }),
     ]
-    const chunks = await collect(translateResponses(payloads))
+    const chunks = await collect(translateResponses(payloadStream(payloads)))
     expect(chunks.at(-1)).toMatchObject({ reason: { kind: 'max-tokens' } })
   })
 
   it('aborts on the terminal error event', async () => {
     const payloads = [JSON.stringify({ type: 'error', code: 'server_error', message: 'boom' })]
-    await expect(collect(translateResponses(payloads))).rejects.toThrow('boom')
+    await expect(collect(translateResponses(payloadStream(payloads)))).rejects.toThrow('boom')
   })
 })
