@@ -513,22 +513,23 @@ export function AgentGrid(props: {
         </span>
       </div>
       {sorted.map(group => (
-        <WorkspaceSection
-          key={group.workspaceId}
-          group={group}
-          currentSessionId={props.currentSessionId}
-          now={now}
-          zoomed={zoomed}
-          onZoom={setZoomed}
-          onOpen={props.onOpen}
-          onInterrupt={props.onInterrupt}
-          onPrompt={props.onPrompt}
-          fetchTail={props.fetchTail}
-          tails={tails}
-        />
+        <section key={group.workspaceId} className={css.agentWs}>
+          <WorkspaceSection
+            group={group}
+            currentSessionId={props.currentSessionId}
+            now={now}
+            zoomed={zoomed}
+            onZoom={setZoomed}
+            onOpen={props.onOpen}
+            onInterrupt={props.onInterrupt}
+            onPrompt={props.onPrompt}
+            fetchTail={props.fetchTail}
+            tails={tails}
+          />
+        </section>
       ))}
       {props.terminals.length > 0 && zoomed === undefined && (
-        <>
+        <section className={css.agentWs}>
           <div className={css.agentWsHeader}>
             <span className={css.agentWsTitle}>Terminals</span>
             <span className={css.agentWsCount}>{props.terminals.length}</span>
@@ -542,7 +543,7 @@ export function AgentGrid(props: {
               <div className={css.agentTerminalBody}>{props.renderTerminal(tile.sessionId)}</div>
             </section>
           ))}
-        </>
+        </section>
       )}
     </div>
   )
