@@ -100,7 +100,7 @@ const PLUGIN_DISCIPLINE = 'Plugin and package decisions: before creating a new p
  * order. Names the general cases (investigation, bug fixing) explicitly so
  * the tree is not read as a feature-implementation ritual.
  */
-const TODO_TREE_DISCIPLINE = 'Working discipline: before executing any multi-step work — a feature, an investigation, a bug fix, a diagnosis, any task with more than one step — write a todo tree with todo_write FIRST and execute against it, updating statuses as you go (mark a node completed the moment it is done). The tree is a general-purpose nested plan, not a feature-implementation ritual: investigations and debugging get one too. Only a genuinely trivial single-step request may skip it.'
+const TODO_TREE_DISCIPLINE = 'Working discipline: before executing any multi-step work — a feature, an investigation, a bug fix, a diagnosis, any task with more than one step — write a todo tree with todo_write FIRST and execute against it, updating statuses as you go (mark a node completed the moment it is done). The tree is a general-purpose nested plan, not a feature-implementation ritual: investigations and debugging get one too. Only a genuinely trivial single-step request may skip it. A long phased plan encodes EVERY phase and sub-task in the tree up front — including low-priority, optional, and deferred items (leave them pending and set their priority); nothing stays off the tree, and a partial tree is never the plan. When later phases or follow-ups remain, leave them pending on the tree rather than reporting everything completed.'
 
 const CODE_ONLY_INSTRUCTION = `\`${RUN_CODE_NAME}\` is the only tool you can call directly — a tool call naming any other tool fails. Reach every tool the SDK declares below from inside the program.`
 

@@ -180,11 +180,14 @@ function WorkspaceSection(props: {
   currentSessionId: string | undefined
   now: number
   zoomed: string | undefined
+  /** Session ids rendering the raw CLI transcript tail. */
+  cliPanes: ReadonlySet<string>
+  onToggleCli: (sessionId: string) => void
   onZoom: (sessionId: string | undefined) => void
   onOpen: (sessionId: string) => void
   onInterrupt: (sessionId: string) => void
   onPrompt: (sessionId: string, text: string, mode: 'queue' | 'steer') => void
-  fetchTail: (sessionId: string) => Promise<readonly AgentTailLine[] | undefined>
+  fetchTail: (sessionId: string, depth?: 'brief' | 'cli') => Promise<readonly AgentTailLine[] | undefined>
   /** Tail lines by session id, fetched at the board level. */
   tails: Readonly<Record<string, readonly AgentTailLine[]>>
 }) {
@@ -213,6 +216,8 @@ function WorkspaceSection(props: {
             currentSessionId={props.currentSessionId}
             now={props.now}
             zoomed={props.zoomed === pane.id}
+            cli={props.cliPanes.has(pane.id)}
+            onToggleCli={props.onToggleCli}
             onZoom={props.onZoom}
             onOpen={props.onOpen}
             onInterrupt={props.onInterrupt}
@@ -234,12 +239,15 @@ function SessionPane(props: {
   currentSessionId: string | undefined
   now: number
   zoomed: boolean
+  /** Raw-style transcript mode: monospace, tool output lines, deeper tail. */
+  cli: boolean
+  onToggleCli: (sessionId: string) => void
   onZoom: (sessionId: string | undefined) => void
   onOpen: (sessionId: string) => void
   onInterrupt: (sessionId: string) => void
   onPrompt: (sessionId: string, text: string, mode: 'queue' | 'steer') => void
   /** Fetch this pane's activity tail (undefined = unavailable this round). */
-  fetchTail: (sessionId: string) => Promise<readonly AgentTailLine[] | undefined>
+  fetchTail: (sessionId: string, depth?: 'brief' | 'cli') => Promise<readonly AgentTailLine[] | undefined>
   /** This pane's current tail lines (fetched at the board level). */
   tail: readonly AgentTailLine[] | undefined
 }) {
@@ -280,6 +288,24 @@ function SessionPane(props: {
           role="button"
           tabIndex={0}
           className={css.agentPaneAction}
+          aria-label={props.cli ? 'Rich tail' : 'CLI tail'}
+          title={props.cli ? 'Summary tail' : 'Raw CLI transcript (deeper tail, tool output)'}
+          onClick={(event) => {
+            event.stopPropagation()
+            props.onToggleCli(props.pane.id)
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return
+            event.stopPropagation()
+            props.onToggleCli(props.pane.id)
+          }}
+        >
+          {props.cli ? ' ¶' : '⌨'}
+        </span>
+        <span
+          role="button"
+          tabIndex={0}
+          className={css.agentPaneAction}
           aria-label={props.zoomed ? 'Unzoom' : 'Zoom'}
           title={props.zoomed ? 'Unzoom (Esc)' : 'Zoom pane'}
           onClick={(event) => {
@@ -303,7 +329,7 @@ function SessionPane(props: {
           </span>
         )}
       {(props.tail ?? []).length > 0 && (
-        <span className={css.agentPaneTail} data-testid={`tail-${props.pane.id}`}>
+        <span className={css.agentPaneTail} data-testid={`tail-${props.pane.id}`} data-mode={props.cli ? 'cli' : undefined}>
           {(props.tail ?? []).map((line, index) => (
             <span key={index} className={css.agentTailLine} data-kind={line.kind} title={line.label}>
               {line.label}
@@ -388,12 +414,18 @@ export function AgentGrid(props: {
   sort: 'recent' | 'status'
   /** Minimum pane width driving the auto-fit column count. */
   paneWidth: number
+  /** The zoomed pane's session id (persisted with the workspace prefs). */
+  zoomed?: string | undefined
+  /** Workspace id pinning the board to one space (`#ws=` multi-monitor). */
+  pin?: string | undefined
+  /** Clear the space pin (leaves the pinned window back at every space). */
+  onClearPin?: () => void
   /** Viewing-preference writes (persisted with the owning workspace's stash). */
-  onPrefsChange: (next: { sort?: 'recent' | 'status'; paneWidth?: number }) => void
+  onPrefsChange: (next: { sort?: 'recent' | 'status'; paneWidth?: number; zoomed?: string | undefined }) => void
   /** Prompt one session by id (the pane composer); steer while running. */
   onPrompt: (sessionId: string, text: string, mode: 'queue' | 'steer') => void
   /** Fetch one pane's activity tail (undefined = unavailable this round). */
-  fetchTail: (sessionId: string) => Promise<readonly AgentTailLine[] | undefined>
+  fetchTail: (sessionId: string, depth?: 'brief' | 'cli') => Promise<readonly AgentTailLine[] | undefined>
   /** Real-pty terminal tiles (WM terminal buffers), rendered after sessions. */
   terminals: readonly AgentTerminalTile[]
   /** The terminal.view slot occupant renderer, bound by the frame. */
@@ -401,7 +433,8 @@ export function AgentGrid(props: {
   /** WM command runner — the tile spawn action opens a new pty. */
   onSpawnTerminal: () => void
 }) {
-  const [zoomed, setZoomed] = useState<string | undefined>(undefined)
+  const zoomed = props.zoomed
+  const setZoomed = (id: string | undefined): void => { props.onPrefsChange({ zoomed: id }) }
   // Esc leaves zoom (tmux z semantics); the keydown listener is frame-local.
   useEffect(() => {
     if (zoomed === undefined) return
@@ -419,10 +452,22 @@ export function AgentGrid(props: {
     return () => { window.clearInterval(timer) }
   }, [anyRunning])
 
-  // Activity tails: fetch every pane on mount (and as the pane set changes),
-  // then refresh on an interval — active panes only, so idle sessions cost
-  // nothing after their first read.
+  // Activity tails: fetch every pane on mount (and as the pane set or a
+  // pane's tail depth changes), then refresh on an interval — active panes
+  // only, so idle sessions cost nothing after their first read.
   const [tails, setTails] = useState<Record<string, readonly AgentTailLine[]>>({})
+  const [cliPanes, setCliPanes] = useState<ReadonlySet<string>>(new Set())
+  const toggleCli = (id: string): void => {
+    // Drop the cached brief tail so the refetch below lands the cli one.
+    setTails(current => ({ ...current, [id]: [] }))
+    setCliPanes((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  const cliKey = [...cliPanes].sort().join(',')
   const paneIds = useMemo(
     () => props.groups.flatMap(group => group.sessions.map(session => session.id)),
     [props.groups],
@@ -433,12 +478,15 @@ export function AgentGrid(props: {
   )
   const fetchRef = useRef(props.fetchTail)
   fetchRef.current = props.fetchTail
+  const cliRef = useRef<ReadonlySet<string>>(cliPanes)
+  cliRef.current = cliPanes
   const idsKey = paneIds.join(',')
   useEffect(() => {
     let cancelled = false
     const ids = idsKey.length === 0 ? [] : idsKey.split(',')
+    const cli = new Set(cliKey.length === 0 ? [] : cliKey.split(','))
     const pull = (id: string): void => {
-      void fetchRef.current(id).then((tail) => {
+      void fetchRef.current(id, cli.has(id) ? 'cli' : 'brief').then((tail) => {
         if (cancelled || tail === undefined) return
         setTails(current => ({ ...current, [id]: tail }))
       })
@@ -453,12 +501,13 @@ export function AgentGrid(props: {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [idsKey, activeIds])
+  }, [idsKey, activeIds, cliKey])
   const empty = props.groups.every(group => group.sessions.length === 0)
   if (empty) {
     return <div className={css.codeEmpty}><p>No sessions in this workspace yet.</p></div>
   }
   const sorted = props.groups.map(group => ({ ...group, sessions: sortPanes(group.sessions, props.sort) }))
+    .filter(group => props.pin === undefined || group.workspaceId === props.pin)
   return (
     <div
       className={css.agentBoard}
@@ -468,6 +517,22 @@ export function AgentGrid(props: {
     >
       <div className={css.agentBoardBar}>
         <span className={css.agentBoardBarLabel}>Board</span>
+        {props.pin !== undefined && (
+          <span
+            role="button"
+            tabIndex={0}
+            className={css.agentPaneAction}
+            aria-label="Show every space"
+            title="This window is pinned to one workspace space (#ws=); release the pin"
+            onClick={() => { props.onClearPin?.() }}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return
+              props.onClearPin?.()
+            }}
+          >
+            ⊙ pinned — show all
+          </span>
+        )}
         <span
           role="button"
           tabIndex={0}
@@ -518,6 +583,8 @@ export function AgentGrid(props: {
             currentSessionId={props.currentSessionId}
             now={now}
             zoomed={zoomed}
+            cliPanes={cliPanes}
+            onToggleCli={toggleCli}
             onZoom={setZoomed}
             onOpen={props.onOpen}
             onInterrupt={props.onInterrupt}

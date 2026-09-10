@@ -29,7 +29,7 @@ import type { SnapshotStore } from '../contract/store.ts'
 import { createSnapshotStore } from '../contract/store.ts'
 import type { SessionFace } from '../contract/session.ts'
 import type { AgentContext, ISessions } from '../contract/sessions.ts'
-import type { SessionTail } from './tail.ts'
+import type { SessionTail, TailDepth } from './tail.ts'
 import { createScope, scopeOf as scopeTagOf } from '../agents/scope.ts'
 import type { ConversationRuntime } from './conversation-assembler.ts'
 import { SessionManager } from './manager.ts'
@@ -386,8 +386,8 @@ export class SessionRuntime implements ISessions {
   }
 
   /** {@inheritdoc ISessions.sessionTail} */
-  sessionTail(id: SessionId): Promise<RpcResult<SessionTail>> {
-    return this.manager.sessionTail(id)
+  sessionTail(id: SessionId, depth: TailDepth = 'brief'): Promise<RpcResult<SessionTail>> {
+    return this.manager.sessionTail(id, depth)
   }
 
   interruptSession(id: SessionId): Promise<RpcResult<{ accepted: true }>> {

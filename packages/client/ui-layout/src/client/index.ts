@@ -204,11 +204,11 @@ export function apply(ctx: ClientContext): void {
               interruptSession(id: string): Promise<{ ok: boolean; error?: { message: string } }>
             }).interruptSession(sessionId),
           readTextFile: (path: string) => ctx.workspaces.readTextFile(path),
-          fetchSessionTail: async (sessionId: string) => {
+          fetchSessionTail: async (sessionId: string, depth?: 'brief' | 'cli') => {
             type WireTail = { ok: boolean; value?: { lines: readonly { kind: string; label: string }[] } }
             const result = await (ctx.sessions as unknown as {
-              sessionTail(id: string): Promise<WireTail>
-            }).sessionTail(sessionId)
+              sessionTail(id: string, depth?: 'brief' | 'cli'): Promise<WireTail>
+            }).sessionTail(sessionId, depth)
             if (!result.ok || result.value === undefined) return undefined
             return result.value.lines.map(line => ({ kind: line.kind as 'user' | 'tool' | 'assistant' | 'error', label: line.label }))
           },

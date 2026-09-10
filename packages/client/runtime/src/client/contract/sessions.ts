@@ -19,7 +19,7 @@ import type {
 } from '../sessions/service.ts'
 import type { SessionFace } from './session.ts'
 import type { ObservableSnapshot } from './store.ts'
-import type { SessionTail } from '../sessions/tail.ts'
+import type { SessionTail, TailDepth } from '../sessions/tail.ts'
 
 export type { AgentContext } from '../agents/scope.ts'
 
@@ -33,7 +33,7 @@ export interface ISessions {
    * @param id - the session whose tail derives.
    * @returns the tail, or the wire failure (unknown session, transport).
    */
-  sessionTail(id: SessionId): Promise<RpcResult<SessionTail>>
+  sessionTail(id: SessionId, depth?: TailDepth): Promise<RpcResult<SessionTail>>
 
   /** The useSessions standard feed (list rows + current selection; read face — writes stay inside the domain). */
   readonly list: ObservableSnapshot<SessionListState>
