@@ -36,6 +36,21 @@ type Render =
   | { phase: 'ready'; svg: string }
   | { phase: 'failed'; message: string }
 
+/**
+ * The harness color scheme mermaid should match: the theme presenter stamps
+ * `colorScheme` on the document element (and `data-ds-dark-theme` on body),
+ * so no cordis knowledge is needed this deep in the render tree.
+ * @returns 'dark' for dark schemes, 'default' (mermaid's light) otherwise.
+ */
+export function activeMermaidTheme(): 'dark' | 'default' {
+  const inline = document.documentElement.style.colorScheme
+  if (inline === 'dark' || inline === 'light') return inline === 'dark' ? 'dark' : 'default'
+  // toggleAttribute sets a bare boolean attribute when dark.
+  if (document.body?.hasAttribute('data-ds-dark-theme') === true) return 'dark'
+  if (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark'
+  return 'default'
+}
+
 /** Raster dimensions derived from the SVG's own width/height or viewBox. */
 export function svgDimensions(svg: string, scale: number): { width: number; height: number } | undefined {
   const doc = new DOMParser().parseFromString(svg, 'image/svg+xml')
@@ -118,9 +133,27 @@ export const MermaidDiagram = memo(function MermaidDiagram({
   const [render, setRender] = useState<Render>({ phase: 'idle' })
   const mermaidRef = useRef<typeof import('mermaid').default | undefined>(undefined)
   const renderIndex = useRef(0)
+  const [theme, setTheme] = useState<'dark' | 'default'>(() => activeMermaidTheme())
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const copyTimer = useRef<number | undefined>(undefined)
   useEffect(() => () => { window.clearTimeout(copyTimer.current) }, [])
+
+  // Theme switches re-render the diagram: the theme presenter stamps
+  // `colorScheme` on the document element and `data-ds-dark-theme` on body,
+  // and either attribute flip means the baked SVG colors no longer match.
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setTheme((current) => {
+        const next = activeMermaidTheme()
+        return next === current ? current : next
+      })
+    })
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'data-ds-dark-theme', 'class'] })
+    if (document.body !== null) {
+      observer.observe(document.body, { attributes: true, attributeFilter: ['data-ds-dark-theme', 'class'] })
+    }
+    return () => { observer.disconnect() }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -128,9 +161,14 @@ export const MermaidDiagram = memo(function MermaidDiagram({
       setRender({ phase: 'pending' })
       try {
         mermaidRef.current ??= (await import('mermaid')).default
-        mermaidRef.current.initialize({ startOnLoad: false, securityLevel: 'strict' })
+        mermaidRef.current.initialize({
+          startOnLoad: false,
+          securityLevel: 'strict',
+          theme,
+          themeVariables: { background: 'transparent', fontFamily: 'inherit' },
+        })
         renderIndex.current += 1
-        const { svg } = await mermaidRef.current.render(`dsh-mermaid-${renderIndex.current}`, code)
+        const { svg } = await mermaidRef.current.render(`dsh-mermaid-${theme}-${renderIndex.current}`, code)
         if (!cancelled) setRender({ phase: 'ready', svg })
       } catch (error: unknown) {
         if (!cancelled) {
@@ -140,7 +178,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({
     }
     void run()
     return () => { cancelled = true }
-  }, [code])
+  }, [code, theme])
 
   const copyImage = (svg: string): void => {
     void (async () => {
