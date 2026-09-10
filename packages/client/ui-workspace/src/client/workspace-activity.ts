@@ -10,9 +10,12 @@ import type { SessionId, SessionListState, WorkspaceView } from '@deepseek-ai/ds
 /**
  * A Workspace with no running Session still counts as active while its latest
  * session activity (`updatedAt`: the later of creation and the latest
- * human-authored prompt) is younger than this window.
+ * human-authored prompt) is younger than this window. The same threshold
+ * archives: a Workspace whose latest activity is older floats no more —
+ * the browser moves it under the collapsed Archived section until new
+ * activity brings it back.
  */
-export const WORKSPACE_ACTIVITY_WINDOW_MS = 2 * 60 * 60 * 1000
+export const WORKSPACE_ACTIVITY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 
 /** One ordered Workspace plus the activity fact its row renders. */
 export interface WorkspaceActivityEntry {

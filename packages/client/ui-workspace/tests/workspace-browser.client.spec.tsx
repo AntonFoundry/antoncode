@@ -22,8 +22,11 @@ const t: WorkspaceBrowserProps['t'] = makeTranslate(zh, commonZh)
 
 const sid = (id: string) => id as SessionId
 const wid = (id: string) => id as WorkspaceId
+// The number keeps its historical meaning (bigger = newer) but anchors to
+// now: fixtures stay inside the 7-day activity window (so they render in the
+// main list, not the archive section) while preserving recency ordering.
 const summary = (id: string, updatedAt: number, overrides: Partial<SessionSummary> = {}): SessionSummary => ({
-  id: sid(id), displayTitle: id, running: false, blank: false, updatedAt, ...overrides,
+  id: sid(id), displayTitle: id, running: false, blank: false, updatedAt: Date.now() + updatedAt, ...overrides,
 })
 const sessionState = (items: readonly SessionSummary[], overrides: Partial<SessionListState> = {}): SessionListState => ({
   ids: items.map(item => item.id),
@@ -52,6 +55,14 @@ function fireDrag(row: HTMLElement, kind: 'dragOver' | 'drop', clientY: number):
   Object.defineProperty(event, 'clientY', { value: clientY })
   Object.defineProperty(event, 'dataTransfer', { value: { effectAllowed: '', dropEffect: '' } })
   fireEvent(row, event)
+}
+
+/** The draggable workspace section (groupSection) owning the titled row. */
+function sectionOf(title: string): HTMLElement {
+  let node = screen.getByText(title).closest('[role="treeitem"]') as HTMLElement | null
+  while (node !== null && !node.className.includes('groupSection')) node = node.parentElement as HTMLElement
+  if (node === null) throw new Error(`no groupSection for ${title}`)
+  return node
 }
 
 function dragData(): Pick<DataTransfer, 'effectAllowed' | 'dropEffect' | 'setData'> {
@@ -85,6 +96,10 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     ...overrides,
   }
   const view = render(<WorkspaceBrowser {...props} />)
+  // Week-idle workspaces (every no-session fixture) render under the collapsed
+  // Archived section; tests exercising main-list mechanics expand it first.
+  const archiveToggle = view.queryByText(/已归档工作区/)
+  if (archiveToggle !== null) fireEvent.click(archiveToggle)
   return { view, props, store }
 }
 
@@ -283,7 +298,9 @@ describe('WorkspaceBrowser', () => {
     const updated = sessionState([summary('one', 4), summary('two', 2)])
     rerender(b, { useSessions: hook(updated) })
     await waitFor(() => {
-      expect(b.store.getSnapshot().sessionUpdatedAtByAccount.alpha).toEqual({ one: 4, two: 2 })
+      // Fixtures anchor to Date.now(); assert the stored values preserve the fixture offsets (bigger = newer), not absolute epochs.
+      const stored = b.store.getSnapshot().sessionUpdatedAtByAccount.alpha!
+      expect(stored.one - stored.two).toBe(2)
     })
     expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['two', 'one'])
     expect(screen.getAllByRole('treeitem').slice(1)[0]?.textContent).toContain('two')
@@ -761,17 +778,15 @@ describe('WorkspaceBrowser', () => {
       ])),
     })
     const source = screen.getByText('beta').closest('[role="treeitem"]') as HTMLElement
-    let firstSection = screen.getByText('alpha').closest('[role="treeitem"]')?.parentElement as HTMLElement
-    while (firstSection.parentElement?.getAttribute('role') !== 'tree') {
-      firstSection = firstSection.parentElement as HTMLElement
-    }
+    const firstSection = sectionOf('alpha')
     firstSection.getBoundingClientRect = () => ({
       top: 100, bottom: 134, left: 0, right: 200, width: 200, height: 34, x: 0, y: 100, toJSON: () => ({}),
     })
     fireEvent.dragStart(source, { dataTransfer: dragData() })
     fireDrag(firstSection, 'dragOver', 105)
-    expect(firstSection.parentElement?.className).toContain('listTopDropActive')
-    const marker = firstSection.parentElement?.previousElementSibling
+    const list = firstSection.closest('[role="tree"]') as HTMLElement
+    expect(list.className).toContain('listTopDropActive')
+    const marker = list.previousElementSibling
     expect(marker?.className).toContain('listTopDropIndicator')
   })
 
@@ -786,10 +801,7 @@ describe('WorkspaceBrowser', () => {
       insertWorkspaceBefore,
     })
     const source = screen.getByText('tail').closest('[role="treeitem"]') as HTMLElement
-    let target = screen.getByText('beta').closest('[role="treeitem"]')?.parentElement as HTMLElement
-    while (target.parentElement?.getAttribute('role') !== 'tree') {
-      target = target.parentElement as HTMLElement
-    }
+    const target = sectionOf('beta')
     target.getBoundingClientRect = () => ({
       top: 100, bottom: 134, left: 0, right: 200, width: 200, height: 34, x: 0, y: 100, toJSON: () => ({}),
     })

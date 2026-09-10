@@ -10,6 +10,7 @@ import { deriveGroups } from '../src/client/tree.ts'
 const sid = (id: string) => id as SessionId
 const wid = (id: string) => id as WorkspaceId
 const HOUR = 3_600_000
+const DAY = 24 * HOUR
 
 const summary = (id: string, updatedAt: number, running = false): SessionSummary => ({
   id: sid(id), displayTitle: id, running, blank: false, updatedAt,
@@ -33,7 +34,7 @@ const workspace = (id: string, sessionIds: string[], title = id): WorkspaceView 
 describe('orderWorkspacesByActivity', () => {
   it('floats a running-session workspace above inactive ones regardless of Host order', () => {
     const now = 10_000 * HOUR
-    const sessions = list(summary('a', now - 5 * HOUR), summary('b', now - 5 * HOUR, true))
+    const sessions = list(summary('a', now - 10 * DAY), summary('b', now - 10 * DAY, true))
     const entries = orderWorkspacesByActivity(
       [workspace('w1', ['a']), workspace('w2', ['b'])], sessions, now,
     )
@@ -48,9 +49,9 @@ describe('orderWorkspacesByActivity', () => {
     expect(entries[0]!.active).toBe(true)
   })
 
-  it('keeps a workspace with 3h-old activity and nothing running in Host order', () => {
+  it('keeps a workspace with 10-day-old activity and nothing running in Host order', () => {
     const now = 10_000 * HOUR
-    const sessions = list(summary('a', now - 3 * HOUR), summary('b', now - 9 * HOUR))
+    const sessions = list(summary('a', now - 10 * DAY), summary('b', now - 20 * DAY))
     const entries = orderWorkspacesByActivity(
       [workspace('w1', ['a']), workspace('w2', ['b'])], sessions, now,
     )
@@ -58,7 +59,7 @@ describe('orderWorkspacesByActivity', () => {
     expect(entries.map(entry => entry.active)).toEqual([false, false])
   })
 
-  it('treats the window boundary as expired at exactly 2h', () => {
+  it('treats the window boundary as expired at exactly 7d', () => {
     const now = 10_000 * HOUR
     const sessions = list(summary('a', now - WORKSPACE_ACTIVITY_WINDOW_MS))
     expect(isWorkspaceActive(workspace('w1', ['a']), sessions, now)).toBe(false)
@@ -100,7 +101,7 @@ describe('orderWorkspacesByActivity', () => {
 
   it('ignores settled jobs for both the float and the counter', () => {
     const now = 10_000 * HOUR
-    const sessions = withJobs(list(summary('a', now - 3 * HOUR)), { a: [job('completed'), job('failed')] })
+    const sessions = withJobs(list(summary('a', now - 10 * DAY)), { a: [job('completed'), job('failed')] })
     expect(isWorkspaceActive(workspace('w1', ['a']), sessions, now)).toBe(false)
     expect(liveJobCounts(sessions.jobsBySession).size).toBe(0)
   })
