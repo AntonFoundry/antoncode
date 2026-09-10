@@ -61,6 +61,11 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
             text={block.text}
             streaming={streaming}
             codeLabels={codeLabels}
+            mermaidLabels={{
+              rendering: t('mermaid.rendering'),
+              failed: t('mermaid.failed'),
+              source: t('copy'),
+            }}
             fileMentions={mentions}
           />,
         )

@@ -22,6 +22,7 @@ import type * as Md from 'mdast'
 import type {} from 'mdast-util-math'
 import { normalizeUri } from 'micromark-util-sanitize-uri'
 import { CodeBlock } from './CodeBlock.tsx'
+import { MermaidDiagram } from './mermaid.tsx'
 import { renderTexToReact } from './katex.tsx'
 import type { PositionedBlock } from './incremental.ts'
 import css from './MarkdownText.module.css'
@@ -123,6 +124,8 @@ export interface MarkdownRenderContext {
   readonly streaming: boolean
   /** Localized fence copy-button labels. */
   readonly codeLabels: MarkdownCodeLabels | undefined
+  /** Localized mermaid labels; absent falls back to English defaults. */
+  readonly mermaidLabels?: { rendering: string; failed: string; source: string } | undefined
   /** Inline-code file mentions; absent wherever no opener vocabulary exists. */
   readonly fileMentions: MarkdownFileMentions | undefined
   /** Inside an anchor's children: interactive mentions must not nest there. */
@@ -314,6 +317,24 @@ function renderCode(node: Md.Code, key: Key, context: MarkdownRenderContext): Re
     // ```math fences render as display TeX once settled (rehype-katex parity);
     // its text extraction saw the code block's trailing newline.
     return <Fragment key={key}>{renderTexToReact(`${node.value}\n`, true)}</Fragment>
+  }
+  if (!context.streaming && lang === 'mermaid') {
+    // ```mermaid fences render as diagrams once settled, the same settled-only
+    // rule as ```math; while streaming the fence stays a plain code block.
+    // Render failures fall back to the fenced source inside the component.
+    return (
+      <MermaidDiagram
+        key={key}
+        code={node.value}
+        copyLabel={context.codeLabels?.copyLabel}
+        copiedLabel={context.codeLabels?.copiedLabel}
+        labels={{
+          rendering: context.mermaidLabels?.rendering ?? 'Rendering diagram…',
+          failed: context.mermaidLabels?.failed ?? 'Diagram failed to render',
+          source: context.mermaidLabels?.source ?? 'Source',
+        }}
+      />
+    )
   }
   return (
     <CodeBlock

@@ -77,3 +77,14 @@ export const hostOpenPathRequestSchema = z.object({
 export const hostOpenPathValueSchema = z.object({
   opened: z.literal(true),
 }) satisfies z.ZodType<Wire<ResponseValue<'host.openPath'>>>
+
+/** host.readTextFile request payload. */
+export const hostReadTextFileRequestSchema = z.object({
+  path: z.string().min(1),
+}) satisfies z.ZodType<Wire<RequestPayload<'host.readTextFile'>>>
+
+/** host.readTextFile response value. */
+export const hostReadTextFileValueSchema = z.object({
+  content: z.string(),
+  truncated: z.boolean(),
+}) satisfies z.ZodType<Wire<ResponseValue<'host.readTextFile'>>>

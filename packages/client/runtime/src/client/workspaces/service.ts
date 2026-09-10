@@ -256,6 +256,19 @@ export class WorkspaceRuntime implements IWorkspaces {
   }
 
   /**
+   * Read one text file inline (see the contract); one bounded wire read.
+   * @param path - absolute or host-resolvable path.
+   * @returns the content and truncation flag.
+   */
+  async readTextFile(path: string): Promise<{ content: string; truncated: boolean }> {
+    const response = await this.api.host.readTextFile({ path })
+    if (!response.result.ok) {
+      throw new Error(`text read failed: ${response.result.error.message}`)
+    }
+    return response.result.value
+  }
+
+  /**
    * Rename a Workspace.
    * @param workspaceId - target workspace.
    * @param title - new display title (trimmed non-empty by the Host).

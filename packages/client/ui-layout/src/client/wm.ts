@@ -16,7 +16,7 @@
 export type WmDirection = 'row' | 'column'
 
 /** The buffer kinds the registry knows. */
-export type WmBufferKind = 'sidebar' | 'conversation' | 'details' | 'scratch' | 'files' | 'terminal'
+export type WmBufferKind = 'sidebar' | 'conversation' | 'details' | 'scratch' | 'files' | 'terminal' | 'file'
 
 /**
  * One registry entry. `path` is present only on `files` buffers (the
@@ -96,6 +96,7 @@ export function bufferTitle(buffer: WmBuffer): string {
     case 'scratch': return '*scratch*'
     case 'files': return `Dired: ${buffer.path ?? '?'}`
     case 'terminal': return 'Terminal'
+    case 'file': return buffer.path ?? '(file)'
   }
 }
 

@@ -101,4 +101,15 @@ export interface HostApi {
     request: RpcRequest<{ path: string }>,
     signal: AbortSignal,
   ): Promise<RpcResponse<{ opened: true }>>
+
+  /**
+   * Read one text file inline (the browser's file viewer). UTF-8 only; a
+   * file larger than the byte cap returns its head with `truncated: true`.
+   * Only served under the `browse` capability; missing targets fail with
+   * `not-found`, every other read failure with `file-unreadable`.
+   */
+  readTextFile(
+    request: RpcRequest<{ path: string }>,
+    signal: AbortSignal,
+  ): Promise<RpcResponse<{ content: string; truncated: boolean }>>
 }
