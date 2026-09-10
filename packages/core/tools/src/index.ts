@@ -77,6 +77,14 @@ const PAGED_ONLY_INSTRUCTION = `Tools are paged: the catalog below lists names a
  * model can only discover by being denied is one it corrects too late.
  */
 /**
+ * The plugin-vs-shared-layer decision rule, universal because the failure it
+ * prevents is universal: capabilities scattered into premature packages (a
+ * new plugin skeleton, slot declarations, bundle rows) when they were
+ * presentation details of a surface that already exists.
+ */
+const PLUGIN_DISCIPLINE = 'Plugin and package decisions: before creating a new plugin or package, NAME the capability seam it would own — a service other consumers depend on, a tool surface, its own state lifetime, its own wire or protocol vocabulary, or independently evolvable providers. If you can name the seam, the plugin is justified. If you cannot — if the change is a presentation detail of a surface that already exists (rendering, chrome, labels inside an existing view or shared engine) — extend that surface\'s shared layer instead and add zero new packages. When the user asks for a visible behavior change, prefer the smallest existing extension point that reaches the surface. Precedents: diagram rendering extended the shared markdown engine rather than becoming a chat plugin, while the agent window-manager board was a real plugin because it owns slots, layout state, and injected faces.'
+
+/**
  * The universal working-discipline directive: emitted in every session
  * regardless of tool mode, because the todo_write tool description is only
  * visible after a paged grant and a description cannot carry a standing
@@ -989,7 +997,11 @@ export class ToolRuntime extends Service {
    */
   /** The always-on working-discipline section (see {@link TODO_TREE_DISCIPLINE}). */
   private todoDisciplineSection(): { name: string; order: number; text: string } {
-    return { name: 'tools:todo-discipline', order: PAGED_RULE_SECTION_ORDER - 1, text: TODO_TREE_DISCIPLINE }
+    return {
+      name: 'tools:working-discipline',
+      order: PAGED_RULE_SECTION_ORDER - 1,
+      text: `${TODO_TREE_DISCIPLINE}\n\n${PLUGIN_DISCIPLINE}`,
+    }
   }
 
   private pagedRuleSection(): { name: string; order: number; text: (context: { scope?: ScopeKey }) => string } {
