@@ -25,6 +25,7 @@ import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import { serializeRequest } from './serialize.ts'
 import type { RequestDefaults } from './serialize.ts'
+import { serializeResponsesRequest, translateResponses } from './responses.ts'
 import { parseSse } from './sse.ts'
 import { translate } from './translate.ts'
 import type { WireError } from './types.ts'
@@ -90,6 +91,15 @@ export interface OpenAIAdapterOptions {
    * `MISSING_CREDENTIAL` when no key is available anywhere.
    */
   resolveApiKey: (provider: string, connection: OpenAIConnectionOptions) => Promise<string>
+  /**
+   * The wire protocol one model speaks on this route, or `undefined` for the
+   * chat-completions default. Some gateways serve specific models only
+   * through the OpenAI Responses protocol and reject chat-completions for
+   * them (OpenCode Zen's Muse Spark family 500s on `/chat/completions` and
+   * completes on `/responses`); the declaring plugin owns that fact because
+   * it owns the catalog the protocol is declared in.
+   */
+  modelProtocol?: (provider: string, model: string) => 'chat-completions' | 'responses'
   /**
    * Route-scoped request headers merged under the fixed transport headers of
    * every chat-completions request for that provider route, or `undefined`
@@ -238,13 +248,27 @@ export class OpenAIAdapter extends LlmAdapter {
       ? consumer.signal
       : AbortSignal.any([options.signal, consumer.signal])
     using watchdog = idleWatchdog(upstream, connection.streamIdleTimeoutMs, STREAM_IDLE_TIMEOUT_CODE)
-    const iterator = this.request(
-      options,
-      watchdog.signal,
-      connection,
-      apiKey,
-      userId,
-      () => { watchdog.pulse() },
+    // The protocol fact resolves per request like every other connection
+    // fact, so a catalog change reaches the next call without re-registration.
+    const protocol = this.config.modelProtocol?.(options.provider, options.model) ?? 'chat-completions'
+    const iterator = (
+      protocol === 'responses'
+        ? this.requestResponses(
+          options,
+          watchdog.signal,
+          connection,
+          apiKey,
+          userId,
+          () => { watchdog.pulse() },
+        )
+        : this.request(
+          options,
+          watchdog.signal,
+          connection,
+          apiKey,
+          userId,
+          () => { watchdog.pulse() },
+        )
     )[Symbol.asyncIterator]()
     let exhausted = false
     try {
@@ -356,5 +380,85 @@ export class OpenAIAdapter extends LlmAdapter {
     }
 
     yield* translate(parseSse(response.body, onComment))
+  }
+
+  /**
+   * The Responses-protocol twin of {@link request}: same transport envelope
+   * (fixed headers plus route-scoped extras, error mapping, abort semantics)
+   * against `{baseURL}/responses`, with the Responses body and stream
+   * translation. Chat-completions and Responses never share a model, so no
+   * response-shape ambiguity can arise.
+   */
+  private async * requestResponses(
+    options: GenerateOptions,
+    signal: AbortSignal,
+    connection: OpenAIConnectionOptions,
+    apiKey: string,
+    userId: AnonymousUserId,
+    onComment: () => void,
+  ): AsyncIterable<StreamChunk> {
+    const body = serializeResponsesRequest(options, connection.defaults)
+    // Prepared outside the try so the TRANSPORT label below covers exactly the
+    // transport boundary, never a serialization failure.
+    const payload = JSON.stringify(body)
+    const headers = {
+      // Route-scoped headers resolve first so the fixed transport headers
+      // below always win a name collision (authorization, content-type).
+      ...this.config.extraHeaders?.(options.provider, connection, options.sessionId === undefined ? undefined : String(options.sessionId)),
+      'authorization': `Bearer ${apiKey}`,
+      'content-type': 'application/json',
+      'accept': 'text/event-stream',
+      ...attributionHeaders(),
+      'x-deepseek-harness-user-id': String(userId),
+      ...options.sessionId !== undefined
+        ? { 'x-deepseek-harness-session-id': String(options.sessionId) }
+        : {},
+      ...options.purpose === 'compaction'
+        ? { 'x-deepseek-harness-compact': '1' }
+        : {},
+    }
+
+    let response: Response
+    try {
+      response = await fetch(`${connection.baseURL}/responses`, {
+        method: 'POST',
+        headers,
+        body: payload,
+        signal,
+      })
+    } catch (error: unknown) {
+      // The outer stream distinguishes caller cancellation and watchdog expiry.
+      if (signal.aborted) throw error
+      throw new LlmError(
+        `OpenAI Responses request to ${connection.baseURL} failed`,
+        'TRANSPORT',
+        { cause: error },
+      )
+    }
+
+    if (!response.ok) {
+      let message = `OpenAI API error (HTTP ${response.status})`
+      let providerError: WireError['error']
+      try {
+        const parsed = await response.json() as WireError
+        providerError = parsed.error
+        if (providerError?.message) message = providerError.message
+      } catch {
+        // Only swallow error-body parsing: the HTTP status still identifies the
+        // failure, so malformed gateway JSON must not mask it.
+      }
+      const delay = providerRetryAfterMs(response.headers.get('retry-after'))
+      const id = requestId(response.headers)
+      throw new LlmError(message, httpErrorCode(response.status, providerError), {
+        status: response.status,
+        ...delay === undefined ? {} : { providerRetryAfterMs: delay },
+        ...id === undefined ? {} : { requestId: id },
+      })
+    }
+    if (!response.body) {
+      throw new LlmError('OpenAI API returned no response body', 'EMPTY_RESPONSE')
+    }
+
+    yield* translateResponses(parseSse(response.body, onComment))
   }
 }
