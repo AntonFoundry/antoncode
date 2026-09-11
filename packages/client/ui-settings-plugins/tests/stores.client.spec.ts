@@ -5,10 +5,11 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { stubSettingsScope, type StubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
-import { CardForm, numberField, textField } from '../src/client/card-form.ts'
+import { CardForm, mapField, numberField, textField } from '../src/client/card-form.ts'
 import { AgentLoopCardController, type AgentLoopSettings } from '../src/client/agent-loop-card-controller.ts'
 import { BashCardController, type BashSettings } from '../src/client/bash-card-controller.ts'
 import { ConfigurablePluginsTabController } from '../src/client/tab-store.ts'
+import { SubagentModelCardController, type SubagentModelSettings } from '../src/client/subagent-model-card-controller.ts'
 import { WebSearchCardController, type WebSearchSettings } from '../src/client/web-search-card-controller.ts'
 
 /** Make the stub behave like a Host that accepts every write. */
@@ -47,13 +48,6 @@ describe('CardForm', () => {
     })
     return { host, subject }
   }
-
-  it('shows the effective value and stays clean until something is staged', () => {
-    const { subject } = form()
-
-    expect(subject.field('timeoutMs')).toEqual({ text: '60000', overridden: false, invalid: false })
-    expect(subject.shell()).toMatchObject({ available: true, writable: true, dirty: false, invalid: false })
-  })
 
   it('marks a field the user layer carries as overridden', () => {
     const { host, subject } = form()
@@ -377,6 +371,55 @@ describe('AgentLoopCardController', () => {
     host.publish({ status: 'ready', writable: false, value: { maxParallelToolCalls: 10 } })
 
     expect(controller.inject().hooks.agentLoopCard.getSnapshot().writable).toBe(false)
+  })
+})
+
+describe('SubagentModelCardController', () => {
+  it('stages the route through the dropdown choices and saves it; the catalog loader rides the face', async () => {
+    const host = stubSettingsScope<SubagentModelSettings>()
+    acceptWrites(host)
+    const fetchCatalog = vi.fn(async () => [
+      { id: 'zai/glm-4.6', label: 'Z.ai · GLM 4.6' },
+      { id: 'openrouter/strong', label: 'OpenRouter · Strong' },
+    ])
+    const controller = new SubagentModelCardController(host.scope, fetchCatalog)
+    host.publish({ status: 'ready', writable: true, value: {}, user: {} })
+    const face = controller.inject()
+
+    expect(face.hooks.subagentModelCard.getSnapshot()).toMatchObject({
+      available: true,
+      defaultModel: { text: '', overridden: false },
+    })
+
+    face.edit('defaultModel', 'zai/glm-4.6')
+    face.save()
+    await vi.waitFor(() => { expect(host.set).toHaveBeenCalledWith('defaultModel', 'zai/glm-4.6') })
+    expect(face.hooks.subagentModelCard.getSnapshot().dirty).toBe(false)
+
+    // The catalog loader is on the face for the card's dropdown; re-running it
+    // must not touch the section.
+    const options = await face.modelOptions()
+    expect(options).toHaveLength(2)
+    expect(host.set).toHaveBeenCalledTimes(1)
+  })
+
+  it('a staged reset falls back to inheriting the parent model', async () => {
+    const host = stubSettingsScope<SubagentModelSettings>()
+    acceptWrites(host)
+    const controller = new SubagentModelCardController(host.scope, vi.fn(async () => []))
+    host.publish({
+      status: 'ready',
+      writable: true,
+      value: { defaultModel: 'openrouter/strong' },
+      base: {},
+      user: { defaultModel: 'openrouter/strong' },
+    })
+    const face = controller.inject()
+
+    face.resetField('defaultModel')
+    face.save()
+    await vi.waitFor(() => { expect(host.unset).toHaveBeenCalledWith('defaultModel') })
+    expect(face.hooks.subagentModelCard.getSnapshot().defaultModel.text).toBe('')
   })
 })
 

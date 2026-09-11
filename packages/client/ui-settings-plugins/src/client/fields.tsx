@@ -121,3 +121,53 @@ export function SecretField(props: Pick<FieldProps, 'id' | 'label' | 'hint' | 't
     </div>
   )
 }
+
+/**
+ * A staged select field: the control renders the options its caller passes;
+ * acceptance is the field spec's job.
+ * @param props - the field's copy, its staged value, and the edit actions.
+ * @returns the labelled control.
+ */
+export function SelectField(props: Omit<FieldProps, 'text'> & {
+  /** The staged value (the selected option's id). */
+  value: string
+  /** The options to render, in display order. */
+  options: readonly { id: string; label: string }[]
+}) {
+  return (
+    <div className={css.field}>
+      <div className={css.head}>
+        <label className={css.label} htmlFor={props.id}>{props.label}</label>
+        {props.overridden
+          ? (
+            <span className={css.badges}>
+              <span className={css.badge}>{props.overriddenLabel}</span>
+              <button
+                type="button"
+                className={css.reset}
+                disabled={props.disabled}
+                onClick={props.onReset}
+              >
+                {props.resetLabel}
+              </button>
+            </span>
+          )
+          : null}
+      </div>
+      <select
+        id={props.id}
+        className={props.invalid ? css.inputInvalid : css.input}
+        value={props.value}
+        disabled={props.disabled}
+        onChange={(event) => { props.onEdit(event.target.value) }}
+      >
+        {props.options.map(option => (
+          <option key={option.id} value={option.id}>{option.label}</option>
+        ))}
+      </select>
+      <p className={props.invalid ? css.invalid : css.hint}>
+        {props.invalid ? props.invalidLabel : props.hint}
+      </p>
+    </div>
+  )
+}

@@ -98,6 +98,17 @@
   border-color: var(--dsw-alias-label-error);
 }
 
+/* Map fields draft one key=value line per entry, so the control is a
+   monospace textarea over the shared input chrome. */
+.mapInput {
+  height: auto;
+  padding: 8px 12px;
+  resize: vertical;
+  font-family: var(--dsw-alias-font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  white-space: pre;
+}
+
 .invalid {
   margin: 0;
   font-size: 12px;

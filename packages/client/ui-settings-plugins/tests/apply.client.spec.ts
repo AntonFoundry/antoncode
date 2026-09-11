@@ -45,6 +45,11 @@ async function bench(served?: string[]) {
   // forwarded Host events reach it through the same `$dispatch` handoff the
   // connection sink makes.
   new TestRemote(ctx)
+  // The subagent-model card's catalog loader reads the session list (and, on
+  // demand, one session's advisory model directory) — a stub is enough here.
+  ctx.provide('sessions', {
+    list: { getSnapshot: () => ({ ids: [], byId: {}, current: undefined }) },
+  } as never)
   ctx.provide('connection', {
     isLoopback: true,
     api: {
@@ -65,7 +70,7 @@ function declareRoot(slots: SlotRegistry): () => void {
 
 describe('ui-settings-plugins apply', () => {
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'settingsScope'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'sessions', 'settingsScope'])
   })
 
   it('registers one Plugins section and declares the tab and card slots', async () => {
@@ -125,7 +130,7 @@ describe('ui-settings-plugins apply', () => {
     await ctx.plugin({ inject: [...inject], apply }).await()
 
     expect(slots.entries('settings.plugin.item').map(entry => entry.options.key))
-      .toEqual(['shell', 'agent-loop', 'web-search-deepseek', 'c0ntext-context'])
+      .toEqual(['shell', 'agent-loop', 'web-search-deepseek', 'c0ntext-context', 'subagent-child-model'])
   })
 
   it('dispatches the served namespaces its cards claim, and no others', async () => {
@@ -211,7 +216,7 @@ describe('ui-settings-plugins apply', () => {
     declareRoot(slots)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    expect(slots.entries('settings.plugin.item')).toHaveLength(4)
+    expect(slots.entries('settings.plugin.item')).toHaveLength(5)
 
     await fiber.dispose()
 
