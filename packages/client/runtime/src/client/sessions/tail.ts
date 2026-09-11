@@ -28,14 +28,15 @@ const TAIL_LINES = 4
 /** Character cap for one line's label; longer text truncates with an ellipsis. */
 const LABEL_CAP = 120
 
-/** Tail density: `brief` is the board's four-line summary; `cli` renders a
- *  taller, rawer transcript — every tool run with its argument, tool output
- *  text, and wider assistant lines — the pane's terminal-style projection. */
+/** Tail density: `brief` is the board's four-line summary; `cli` renders the
+ *  pane's live transcript — every tool run with its argument, tool output
+ *  text, and assistant lines at readable width — the actual text of the
+ *  session, newest at the bottom. */
 export type TailDepth = 'brief' | 'cli'
 
 /** Lines and caps for one depth. */
 function depthSpec(depth: TailDepth): { maxLines: number; labelCap: number } {
-  return depth === 'cli' ? { maxLines: 24, labelCap: 240 } : { maxLines: TAIL_LINES, labelCap: LABEL_CAP }
+  return depth === 'cli' ? { maxLines: 48, labelCap: 300 } : { maxLines: TAIL_LINES, labelCap: LABEL_CAP }
 }
 
 /** The narrow event view the derivation reads: type discriminator + seq + payload. */

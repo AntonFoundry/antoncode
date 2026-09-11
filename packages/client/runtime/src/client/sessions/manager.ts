@@ -668,7 +668,9 @@ export class SessionManager {
    * @returns the tail, or the wire failure.
    */
   async sessionTail(sessionId: SessionId, depth: TailDepth = 'brief'): Promise<RpcResult<SessionTail>> {
-    const page = await this.api.sessions.history({ sessionId, maxMessages: 32 })
+    // The transcript depth reads a deeper history page: 48 transcript lines
+    // need the events behind them, not the summary's 32-message page.
+    const page = await this.api.sessions.history({ sessionId, maxMessages: depth === 'cli' ? 72 : 32 })
     if (!page.result.ok) return page.result
     // The derivation reads the discriminator view of each raw event; the
     // union narrows by type at runtime.

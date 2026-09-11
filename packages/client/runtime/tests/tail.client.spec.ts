@@ -63,4 +63,28 @@ describe('deriveSessionTail', () => {
     const tail = deriveSessionTail([event('tool/call', { name: 'bash', arguments: 'not json' })])
     expect(tail.lines).toEqual([{ kind: 'tool', label: 'Ran bash' }])
   })
+
+  it('the transcript depth renders tool output text and taller lines', () => {
+    const tail = deriveSessionTail([
+      event('user/message', { content: [{ type: 'text', text: 'run the check' }] }),
+      event('tool/call', { name: 'bash', arguments: JSON.stringify({ command: 'pnpm check' }) }),
+      event('tool/result', { message: { content: [{ type: 'text', text: 'checks pass\nall 3 green' }] } }),
+      event('assistant/message', { message: { content: [{ type: 'text', text: 'Done.' }] } }),
+    ], 'cli')
+    expect(tail.lines.map(line => `${line.kind}:${line.label}`)).toEqual([
+      'user:» run the check',
+      'tool:$ bash pnpm check',
+      'tool:  checks pass ⏎ all 3 green',
+      'assistant:Done.',
+    ])
+  })
+
+  it('the transcript depth keeps the newest 48 lines', () => {
+    const entries = []
+    for (let i = 0; i < 60; i++) entries.push(event('tool/call', { name: `tool${i}`, arguments: '{}' }))
+    const tail = deriveSessionTail(entries, 'cli')
+    expect(tail.lines).toHaveLength(48)
+    expect(tail.lines[0]?.label).toBe('$ tool12')
+    expect(tail.lines[47]?.label).toBe('$ tool59')
+  })
 })
