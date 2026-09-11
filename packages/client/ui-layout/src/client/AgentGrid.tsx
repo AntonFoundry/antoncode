@@ -9,17 +9,8 @@
  * @module
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
 import type { CSSProperties } from 'react'
 import css from './WmFrame.module.css'
-
-/** One real-pty terminal tile on the board (structural subset of WmBuffer). */
-export interface AgentTerminalTile {
-  id: string
-  kind: 'terminal'
-  sessionId: string | undefined
-  title: string
-}
 
 /** One derived activity line (structural twin of the runtime wire value). */
 export interface AgentTailLine {
@@ -485,12 +476,6 @@ export function AgentGrid(props: {
   fetchTail: (sessionId: string, depth?: 'brief' | 'cli') => Promise<readonly AgentTailLine[] | undefined>
   /** Fetch one pane's current model route (`provider/model`; undefined = unknown). */
   fetchModel: (sessionId: string) => Promise<string | undefined>
-  /** Real-pty terminal tiles (WM terminal buffers), rendered after sessions. */
-  terminals: readonly AgentTerminalTile[]
-  /** The terminal.view slot occupant renderer, bound by the frame. */
-  renderTerminal: (sessionId: string | undefined) => ReactNode
-  /** WM command runner — the tile spawn action opens a new pty. */
-  onSpawnTerminal: () => void
 }) {
   const zoomed = props.zoomed
   const setZoomed = (id: string | undefined): void => { props.onPrefsChange({ zoomed: id }) }
@@ -664,20 +649,6 @@ export function AgentGrid(props: {
           role="button"
           tabIndex={0}
           className={css.agentPaneAction}
-          aria-label="New terminal"
-          title="Spawn a real-pty terminal tile"
-          onClick={() => { props.onSpawnTerminal() }}
-          onKeyDown={(event) => {
-            if (event.key !== 'Enter' && event.key !== ' ') return
-            props.onSpawnTerminal()
-          }}
-        >
-          + terminal
-        </span>
-        <span
-          role="button"
-          tabIndex={0}
-          className={css.agentPaneAction}
           aria-label="Pane width"
           title={props.paneWidth <= 340 ? 'Wider panes' : 'Narrower panes'}
           onClick={() => { props.onPrefsChange({ paneWidth: props.paneWidth <= 340 ? 480 : 340 }) }}
@@ -720,23 +691,6 @@ export function AgentGrid(props: {
             />
           ))}
         </div>
-      )}
-      {props.terminals.length > 0 && zoomed === undefined && (
-        <section className={css.agentWs}>
-          <div className={css.agentWsHeader}>
-            <span className={css.agentWsTitle}>Terminals</span>
-            <span className={css.agentWsCount}>{props.terminals.length}</span>
-          </div>
-          {props.terminals.map(tile => (
-            <section key={tile.id} className={css.agentTerminalTile} data-terminal-tile>
-              <div className={css.agentPaneHead}>
-                <span className={css.agentStatusDot} data-kind="terminal" />
-                <span className={css.agentPaneTitle}>{tile.title}</span>
-              </div>
-              <div className={css.agentTerminalBody}>{props.renderTerminal(tile.sessionId)}</div>
-            </section>
-          ))}
-        </section>
       )}
     </div>
   )

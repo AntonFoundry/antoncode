@@ -314,39 +314,3 @@ describe('AgentGrid activity tails', () => {
   })
 })
 
-describe('AgentGrid terminal tiles', () => {
-  const groups = buildAgentBoard(
-    [{ workspaceId: 'ws', title: 'Alpha', sessionIds: ['a'] }],
-    { a: session({ id: 'a', displayTitle: 'Builder', updatedAt: Date.now() }) },
-  )
-  const terminals = [{ id: 'term-1', kind: 'terminal' as const, sessionId: 'pty-1', title: 'bash' }]
-
-  it('renders a Terminals section with a view per tile', () => {
-    const renderTerminal = vi.fn(() => null)
-    const { container, getByText } = render(
-      <AgentGrid {...gridProps({ groups, terminals, renderTerminal })} />,
-    )
-    expect(getByText('Terminals')).toBeTruthy()
-    expect(getByText('bash')).toBeTruthy()
-    expect(renderTerminal).toHaveBeenCalledWith('pty-1')
-    expect(container.querySelector('[data-terminal-tile]')).not.toBeNull()
-  })
-
-  it('the board bar spawns a terminal through the WM command', () => {
-    const onSpawnTerminal = vi.fn()
-    const { container, getByText } = render(
-      <AgentGrid {...gridProps({ groups, terminals, onSpawnTerminal })} />,
-    )
-    fireEvent.click(container.querySelector('[aria-label="New terminal"]')!)
-    expect(onSpawnTerminal).toHaveBeenCalledTimes(1)
-    expect(getByText('Terminals')).toBeTruthy()
-  })
-
-  it('hides the terminals section when zoomed', () => {
-    // Zoom arrives as a prop (the persisted preference), not local state.
-    const { container } = render(
-      <AgentGrid {...gridProps({ groups, terminals, zoomed: 'a' })} />,
-    )
-    expect(container.querySelector('[data-terminal-tile]')).toBeNull()
-  })
-})

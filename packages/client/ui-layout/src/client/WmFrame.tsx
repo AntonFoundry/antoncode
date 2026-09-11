@@ -1594,11 +1594,6 @@ export function WmFrame({
               onPrompt={(sessionId, text, mode) => { promptSession(sessionId, text, mode) }}
               fetchTail={fetchSessionTail}
               fetchModel={fetchSessionModel}
-              terminals={buffers
-                .filter(b => b.kind === 'terminal')
-                .map(b => ({ id: b.id, kind: 'terminal' as const, sessionId: b.sessionId, title: bufferTitle(b) }))}
-              renderTerminal={sessionId => renderSlot('terminal.view', { sessionId })}
-              onSpawnTerminal={() => { runCommand('term') }}
             />
           )
           : panels.mode === 'code'
