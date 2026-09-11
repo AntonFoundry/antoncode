@@ -18,11 +18,11 @@ import {
 } from './wm.ts'
 
 /**
- * The frame's viewing mode: 'agent' is the standard sidebar+conversation+
- * details composition, 'chat' is the conversation alone, 'code' tiles every
- * terminal buffer and hides the panels. Persisted at `dsh.layout.mode`.
+ * The frame's viewing mode: 'chat' is the standard per-workspace layout
+ * (sidebar + conversation + details, user-arranged splits), 'agent' is the
+ * tiled multi-session launcher. Persisted at `dsh.layout.mode`.
  */
-export type LayoutMode = 'agent' | 'code' | 'chat'
+export type LayoutMode = 'agent' | 'chat'
 
 const MODE_KEY = 'dsh.layout.mode'
 
@@ -31,8 +31,9 @@ function seedMode(): LayoutMode {
     const stored = window.localStorage.getItem(MODE_KEY)
     // Migration: the pre-rework default 'agent' IS today's 'chat' (the
     // per-workspace conversation layout).
-    if (stored === 'code' || stored === 'chat') return stored
-    if (stored === 'agent') return 'chat'
+    // 'code' (the retired terminal-grid mode) folds into 'chat': terminals
+    // live in ordinary splits there.
+    if (stored === 'chat') return 'chat'
     return 'chat'
   } catch { return 'chat' }
 }

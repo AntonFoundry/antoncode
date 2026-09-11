@@ -560,54 +560,6 @@ export function TopbarChrome() {
 }
 
 /**
- * Code mode body: every terminal buffer tiled as a card (mode line + the
- * terminal.view slot occupant), in a wrapping grid. Without terminals an
- * empty state offers the spawn keybinding.
- */
-function CodeGrid(props: {
-  buffers: WmBuffer[]
-  renderSlot: NodeRenderProps['renderSlot']
-  runCommand: (command: WmCommand) => void
-}) {
-  const terminals = props.buffers.filter(b => b.kind === 'terminal')
-  // Focused card gets the same accent treatment as a focused WM pane.
-  const [focusedCard, setFocusedCard] = useState<string | undefined>(undefined)
-  if (terminals.length === 0) {
-    return (
-      <div className={css.codeEmpty} data-code-grid>
-        <p>No terminals yet.</p>
-        <button type="button" className={css.modeButton} onClick={() => { props.runCommand('term') }}>
-          Open a terminal (C-x t)
-        </button>
-      </div>
-    )
-  }
-  return (
-    <div data-code-grid>
-      <div className={css.codeToolbar}>
-        <span className={css.bufferName}>{terminals.length} terminal{terminals.length === 1 ? '' : 's'}</span>
-        <button type="button" className={css.codeSpawn} onClick={() => { props.runCommand('term') }}>+ Terminal</button>
-      </div>
-      <div className={css.codeGrid}>
-        {terminals.map(buffer => (
-          <section
-            key={buffer.id}
-            className={css.codeCard}
-            data-focused={focusedCard === buffer.id || undefined}
-            onFocusCapture={() => { setFocusedCard(buffer.id) }}
-          >
-            <div className={css.modeLine}>
-              <span className={css.bufferName}>{bufferTitle(buffer)}</span>
-            </div>
-            {props.renderSlot('terminal.view', { sessionId: buffer.sessionId })}
-          </section>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-/**
  * Agent mode body: every session of the active workspace as a launcher card
  * (title, recency, current marker). Clicking a card opens that session —
  * the frame's conversation windows then show it. A true N-conversation
@@ -1548,7 +1500,7 @@ export function WmFrame({
         </button>
         {renderSlot('shell.topbar.left', {})}
         <div className={css.modeSwitch} role="tablist" aria-label="Layout mode">
-          {(['agent', 'code', 'chat'] as const).map(m => (
+          {(['agent', 'chat'] as const).map(m => (
             <button
               key={m}
               type="button"
@@ -1558,11 +1510,11 @@ export function WmFrame({
               data-active={panels.mode === m || undefined}
               onClick={() => { actions.setMode(m) }}
             >
-              {m === 'agent' ? 'Orchestrator' : m === 'code' ? 'Code' : 'Chat'}
+              {m === 'agent' ? 'Orchestrator' : 'Chat'}
             </button>
           ))}
         </div>
-        {panels.mode !== 'code' && (
+        {(
           <button
             type="button"
             className={css.brandToggle}
@@ -1596,9 +1548,7 @@ export function WmFrame({
               fetchModel={fetchSessionModel}
             />
           )
-          : panels.mode === 'code'
-            ? <CodeGrid buffers={buffers} renderSlot={renderSlot} runCommand={runCommand} />
-            : <NodeView {...renderProps} node={tree} />}
+          : <NodeView {...renderProps} node={tree} />}
       </div>
       {prompt === 'find-file' && (() => {
         // Emacs C-x C-f over the workspace: the ido prompt seeds at the
