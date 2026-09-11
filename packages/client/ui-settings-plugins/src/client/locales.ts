@@ -14,6 +14,9 @@ export type PluginsSettingsLocaleKey =
   | 'contextTitle' | 'contextDescription' | 'contextEndpoint' | 'contextEndpointHint' | 'contextApiKey' | 'contextApiKeyHint'
   | 'contextProjectId' | 'contextProjectIdHint' | 'contextMaxSurfaceRatio' | 'contextMaxSurfaceRatioHint'
   | 'contextWindowTokens' | 'contextWindowTokensHint' | 'contextEvictorEnabled' | 'contextEvictorEnabledHint'
+  | 'subagentModelTitle' | 'subagentModelDescription'
+  | 'subagentModelDefault' | 'subagentModelDefaultHint'
+  | 'subagentModelInherit' | 'subagentModelCustom' | 'subagentModelLoading'
 
 /** English copy. */
 export const en: Record<PluginsSettingsLocaleKey, string> = {
@@ -68,6 +71,13 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   contextWindowTokensHint: 'Explicit model window; leave blank to resolve it from the selected model.',
   contextEvictorEnabled: 'Automatic eviction',
   contextEvictorEnabledHint: 'Disable this while actively developing to keep the live conversation unchanged.',
+  subagentModelTitle: 'Subagent model',
+  subagentModelDescription: 'Which model delegated children run when a delegation does not name its own.',
+  subagentModelDefault: 'Default child model',
+  subagentModelDefaultHint: 'Route children inherit, e.g. openrouter/strong-model. Leave blank to inherit the parent model.',
+  subagentModelInherit: 'Inherit the parent session\'s model',
+  subagentModelCustom: 'Custom route…',
+  subagentModelLoading: 'Loading models…',
 }
 
 /** Simplified Chinese copy. */
@@ -123,4 +133,11 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   contextWindowTokensHint: '显式模型窗口；留空则从当前模型解析。',
   contextEvictorEnabled: '自动驱逐',
   contextEvictorEnabledHint: '主动开发时可关闭，避免改写当前对话。',
+  subagentModelTitle: '子 Agent 模型',
+  subagentModelDescription: '委派调用未指定模型时，子 agent 使用哪个模型。',
+  subagentModelDefault: '默认子模型',
+  subagentModelDefaultHint: '子 agent 继承的路由，如 openrouter/strong-model；留空则继承父会话的模型。',
+  subagentModelInherit: '继承父会话的模型',
+  subagentModelCustom: '自定义路由…',
+  subagentModelLoading: '正在加载模型…',
 }

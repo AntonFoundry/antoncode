@@ -27,10 +27,12 @@ import { ConfigurablePluginsTab } from './ConfigurablePluginsTab.tsx'
 import { PluginsSettingsSection } from './PluginsSettingsSection.tsx'
 import type { PluginsSettingsSectionInjected, PluginsSettingsTabEntry } from './PluginsSettingsSection.tsx'
 import { WebSearchCard } from './WebSearchCard.tsx'
+import { SubagentModelCard } from './SubagentModelCard.tsx'
 import { AGENT_LOOP_NS, AgentLoopCardController } from './agent-loop-card-controller.ts'
 import { SHELL_NS, BashCardController } from './bash-card-controller.ts'
 import { C0ntextCardController, CONTEXT_NS } from './c0ntext-card-controller.ts'
 import { ConfigurablePluginsTabController } from './tab-store.ts'
+import { SUBAGENT_MODEL_NS, SubagentModelCardController } from './subagent-model-card-controller.ts'
 import { WEB_SEARCH_NS, WebSearchCardController } from './web-search-card-controller.ts'
 import { en, zh } from './locales.ts'
 
@@ -47,12 +49,13 @@ export type { AgentLoopCardFace, AgentLoopCardState } from './agent-loop-card-co
 export type { BashCardFace, BashCardState } from './bash-card-controller.ts'
 export type { C0ntextCardFace, C0ntextCardState } from './c0ntext-card-controller.ts'
 export type { WebSearchCardFace, WebSearchCardState } from './web-search-card-controller.ts'
+export type { SubagentModelCardFace, SubagentModelCardState } from './subagent-model-card-controller.ts'
 
 /** Dictionary namespace owned by this plugin. */
 const NS = 'settings.plugins'
 
 /** Required services (cordis fiber inject). */
-export const inject = ['slots', 'locale', 'connection', 'remote', 'settingsScope']
+export const inject = ['slots', 'locale', 'connection', 'remote', 'sessions', 'settingsScope']
 
 /**
  * Mount the plugin configuration section and the cards this package ships.
@@ -67,6 +70,25 @@ export function apply(ctx: ClientContext): void {
   const agentLoop = new AgentLoopCardController(ctx.settingsScope.bind({ namespace: AGENT_LOOP_NS }))
   const webSearch = new WebSearchCardController(ctx.settingsScope.bind({ namespace: WEB_SEARCH_NS }), api)
   const c0ntext = new C0ntextCardController(ctx.settingsScope.bind({ namespace: CONTEXT_NS }))
+  // The model dropdown's catalog comes from any live session's advisory
+  // directory — the deployment's providers and models are the same for every
+  // session, and the session used as the catalog source is never shown.
+  const subagentModel = new SubagentModelCardController(
+    ctx.settingsScope.bind({ namespace: SUBAGENT_MODEL_NS }),
+    async () => {
+      const list = ctx.sessions.list.getSnapshot()
+      const source = list.current ?? list.ids[0]
+      if (source === undefined) return []
+      const { result } = await api.sessions.models({ sessionId: source })
+      if (!result.ok) return []
+      const value = result.value as { groups?: readonly { id: string; name: string; models?: readonly { id: string; name?: string }[] }[] }
+      return (value.groups ?? []).flatMap(group =>
+        (group.models ?? []).map(model => ({
+          id: `${group.id}/${model.id}`,
+          label: `${group.name} · ${model.name ?? model.id}`,
+        })))
+    },
+  )
 
   // The credential a card reports is not part of any settings section, so its
   // scope publishes nothing when one is written. This is the only signal that
@@ -181,5 +203,11 @@ export function apply(ctx: ClientContext): void {
       locale: NS,
       inject: () => c0ntext.inject(),
     }, C0ntextCard)
+    yield ctx.slots.register({
+      name: 'settings.plugin.item',
+      key: SUBAGENT_MODEL_NS,
+      locale: NS,
+      inject: () => subagentModel.inject(),
+    }, SubagentModelCard)
   })
 }
