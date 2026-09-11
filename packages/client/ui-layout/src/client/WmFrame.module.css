@@ -892,30 +892,3 @@
   color: var(--dsw-static-amber-600);
 }
 
-/* Real-pty terminal tile: the board's CLI pane — head strip plus the
-   terminal.view occupant filling the rest. */
-.agentTerminalTile {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-  min-height: 0;
-  padding: 10px 12px;
-  background: var(--dsw-alias-bg-base);
-}
-
-.agentTerminalTile .agentStatusDot[data-kind='terminal'] {
-  background: var(--dsw-static-deepseek-450);
-}
-
-.agentTerminalBody {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.agentTerminalBody :global([data-terminal-view]) {
-  flex: 1;
-  min-height: 0;
-}
