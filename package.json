@@ -138,6 +138,8 @@
     "anton:dev": "bun run apps/anton-bridge/src/index.ts",
     "anton:build": "bun build --compile --outfile dist/anton-bridge apps/anton-bridge/src/index.ts",
     "anton:build:macos": "bun scripts/build-anton-macos.ts",
+    "anton:build:windows": "bun scripts/build-anton-windows.ts",
+    "anton:build:linux": "bun scripts/build-anton-linux.ts",
     "demo:code-mode": "node scripts/demo-code-mode.mjs",
     "demo:cordis": "node scripts/demo-cordis.mjs",
     "demo:acp": "node --import tsx packages/examples/acp-demo/src/bin.ts --config examples/acp-agent/cordis.yml",
