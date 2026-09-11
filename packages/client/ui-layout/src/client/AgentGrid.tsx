@@ -216,8 +216,8 @@ function WorkspaceSection(props: {
   currentSessionId: string | undefined
   now: number
   zoomed: string | undefined
-  /** Session ids rendering the raw CLI transcript tail. */
-  cliPanes: ReadonlySet<string>
+  /** Whether one pane renders the live transcript (space level: default yes). */
+  cliFor: (sessionId: string) => boolean
   onToggleCli: (sessionId: string) => void
   onZoom: (sessionId: string | undefined) => void
   onOpen: (sessionId: string) => void
@@ -254,7 +254,7 @@ function WorkspaceSection(props: {
             currentSessionId={props.currentSessionId}
             now={props.now}
             zoomed={props.zoomed === pane.id}
-            cli={props.cliPanes.has(pane.id)}
+            cli={props.cliFor(pane.id)}
             onToggleCli={props.onToggleCli}
             onZoom={props.onZoom}
             onOpen={props.onOpen}
@@ -294,6 +294,13 @@ function SessionPane(props: {
 }) {
   const status = paneStatus(props.pane)
   const active = status === 'running' || status === 'pending'
+  // Transcript panes read newest-at-the-bottom: every fresh tail pins the
+  // scroll to the newest line, the way a terminal does.
+  const tailRef = useRef<HTMLSpanElement | null>(null)
+  useEffect(() => {
+    const node = tailRef.current
+    if (node !== null && props.cli) node.scrollTop = node.scrollHeight
+  }, [props.tail, props.cli])
   // Pane-local composer draft. The pane is a div (it hosts an input), so
   // click-to-open lives on the header only; typing here must not navigate.
   const [draft, setDraft] = useState('')
@@ -371,7 +378,12 @@ function SessionPane(props: {
           </span>
         )}
       {(props.tail ?? []).length > 0 ? (
-        <span className={css.agentPaneTail} data-testid={`tail-${props.pane.id}`} data-mode={props.cli ? 'cli' : undefined}>
+        <span
+          ref={props.cli ? tailRef : undefined}
+          className={css.agentPaneTail}
+          data-testid={`tail-${props.pane.id}`}
+          data-mode={props.cli ? 'cli' : undefined}
+        >
           {(props.tail ?? []).map((line, index) => (
             <span key={index} className={css.agentTailLine} data-kind={line.kind} title={line.label}>
               {line.label}
@@ -508,18 +520,25 @@ export function AgentGrid(props: {
   // pane's tail depth changes), then refresh on an interval — active panes
   // only, so idle sessions cost nothing after their first read.
   const [tails, setTails] = useState<Record<string, readonly AgentTailLine[]>>({})
-  const [cliPanes, setCliPanes] = useState<ReadonlySet<string>>(new Set())
+  // Inside an open space, panes render the live transcript (cli depth) by
+  // default; the ⌨ toggle marks a pane brief. Outside a space the depth is
+  // brief everywhere (overview cards show no tails).
+  const [briefPanes, setBriefPanes] = useState<ReadonlySet<string>>(new Set())
+  const briefRef = useRef<ReadonlySet<string>>(briefPanes)
+  briefRef.current = briefPanes
+  const workspaceRef = useRef(workspace)
+  workspaceRef.current = workspace
+  const isTranscript = (id: string): boolean => workspaceRef.current !== undefined && !briefRef.current.has(id)
   const toggleCli = (id: string): void => {
-    // Drop the cached brief tail so the refetch below lands the cli one.
+    // Drop the cached tail so the refetch below lands the other depth.
     setTails(current => ({ ...current, [id]: [] }))
-    setCliPanes((current) => {
+    setBriefPanes((current) => {
       const next = new Set(current)
       if (next.has(id)) next.delete(id)
       else next.add(id)
       return next
     })
   }
-  const cliKey = [...cliPanes].sort().join(',')
   const paneIds = useMemo(
     () => props.groups.flatMap(group => group.sessions.map(session => session.id)),
     [props.groups],
@@ -530,23 +549,22 @@ export function AgentGrid(props: {
   )
   const fetchRef = useRef(props.fetchTail)
   fetchRef.current = props.fetchTail
-  const cliRef = useRef<ReadonlySet<string>>(cliPanes)
-  cliRef.current = cliPanes
   const idsKey = paneIds.join(',')
   // A fetch that fails (or lands before the RPC face is warm) must not leave
   // the pane silently blank forever: record the attempt either way, so the
   // pane renders its true state and later rounds can overwrite it.
   const pullTail = (id: string): void => {
-    const cli = cliRef.current
-    void fetchRef.current(id, cli.has(id) ? 'cli' : 'brief')
-      .then((tail) => { setTails(current => ({ ...current, [id]: tail ?? [] })) })
+    const depth = isTranscript(id) ? 'cli' : 'brief'
+    void fetchRef.current(id, depth)
+      .then(tail => { setTails(current => ({ ...current, [id]: tail ?? [] })) })
       .catch(() => { setTails(current => ({ ...current, [id]: [] })) })
   }
   useEffect(() => {
     let cancelled = false
     const ids = idsKey.length === 0 ? [] : idsKey.split(',')
     const pull = (id: string): void => {
-      void fetchRef.current(id, cliRef.current.has(id) ? 'cli' : 'brief').then((tail) => {
+      const depth = workspaceRef.current !== undefined && !briefRef.current.has(id) ? 'cli' : 'brief'
+      void fetchRef.current(id, depth).then((tail) => {
         if (cancelled) return
         setTails(current => ({ ...current, [id]: tail ?? [] }))
       }).catch(() => {
@@ -564,11 +582,11 @@ export function AgentGrid(props: {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [idsKey, activeIds, cliKey])
+  }, [idsKey, activeIds, workspace, briefPanes])
 
   // Open-space tail refresh: opening a space re-pulls every pane it owns (a
-  // failed initial fetch must not outlive the navigation), and a slow
-  // interval keeps the open space's tails moving while you watch it.
+  // failed initial fetch must not outlive the navigation), and a fast
+  // interval keeps the open space's transcripts moving while you watch.
   const groupsRef = useRef(props.groups)
   groupsRef.current = props.groups
   useEffect(() => {
@@ -580,7 +598,7 @@ export function AgentGrid(props: {
     for (const id of idsOf()) pullTail(id)
     const timer = window.setInterval(() => {
       for (const id of idsOf()) pullTail(id)
-    }, 10_000)
+    }, 4000)
     return () => { window.clearInterval(timer) }
   }, [workspace, idsKey])
 
@@ -668,7 +686,7 @@ export function AgentGrid(props: {
             currentSessionId={props.currentSessionId}
             now={now}
             zoomed={zoomed}
-            cliPanes={cliPanes}
+            cliFor={isTranscript}
             onToggleCli={toggleCli}
             onZoom={setZoomed}
             onOpen={props.onOpen}
