@@ -15,6 +15,12 @@
  * `llm-models-dev:` settings section overrides endpoints, key references, or
  * the shipped route set without a restart.
  *
+ * Discovery freshness is push-based: the mount fetches every configured
+ * route's tier once up front and re-fetches on `catalogRefreshMs` (one hour
+ * by default) through a fiber-owned interval, so a restart always converges
+ * on the newest models.dev document without waiting for a picker query; a
+ * failed refresh keeps serving the last good snapshot.
+ *
  * @module @deepseek-ai/dsh-llm-models-dev
  */
 
@@ -132,7 +138,7 @@ export interface ModelDevProviderProfile {
 export interface Config {
   /** Catalog root fetched as `<catalogURL>/api.json`; defaults to models.dev. */
   catalogURL?: string
-  /** How long one fetched snapshot serves before the next discovery refreshes it. */
+  /** Re-fetch cadence: the mount fetches eagerly, then this interval re-fetches in the background. */
   catalogRefreshMs?: number
   /** Default per-request output cap; explicit request values win. */
   maxTokens?: number
@@ -299,6 +305,10 @@ export function apply(ctx: Context, config: Config): void {
 
   let userId: AnonymousUserId | undefined
   const resolveUserId = (): AnonymousUserId => userId ??= getOrCreateAnonymousUserId()
+  const onCatalogError = (error: unknown): void => {
+    ctx.logger.warn('llm-models-dev: serving the last good catalog snapshot after a failed refresh')
+    ctx.logger.warn(error)
+  }
   const catalog = new ModelsDevCatalog(
     config.catalogURL ?? DEFAULT_CATALOG_URL,
     config.catalogRefreshMs ?? DEFAULT_CATALOG_REFRESH_MS,
@@ -325,10 +335,7 @@ export function apply(ctx: Context, config: Config): void {
       ?.get(model)?.protocol === 'responses'
       ? 'responses'
       : 'chat-completions',
-    onCatalogError: (error) => {
-      ctx.logger.warn('llm-models-dev: serving the last good catalog snapshot after a failed refresh')
-      ctx.logger.warn(error)
-    },
+    onCatalogError,
   })
 
   ctx.llm.registerConfigurableProviders(DECLARED.map(({ provider, displayName }) => ({
@@ -366,6 +373,28 @@ export function apply(ctx: Context, config: Config): void {
     registeredFacts = facts
   }
   ensureRegistrationFacts()
+
+  /**
+   * Fetch every configured route's tier now, deduplicating routes that share
+   * one catalog identity. Called once at mount and on every interval tick: a
+   * restart — and each subsequent hour at the default `catalogRefreshMs` —
+   * converges on the newest models.dev document without waiting for a picker
+   * query. Every route here has already passed `assertServiceable` (mount and
+   * each validated settings generation), so resolution cannot throw; a failed
+   * refresh reports through {@link onCatalogError} and keeps the previous
+   * snapshot, and the next tick retries.
+   */
+  const refreshRoutes = (): void => {
+    const providers = new Set(
+      Object.keys(current().providers ?? {}).map(route => options(route).catalogProvider),
+    )
+    for (const provider of providers) void catalog.refresh(provider, onCatalogError)
+  }
+  refreshRoutes()
+  ctx.effect(() => {
+    const timer = setInterval(refreshRoutes, config.catalogRefreshMs ?? DEFAULT_CATALOG_REFRESH_MS)
+    return () => clearInterval(timer)
+  })
 
   installSettingsSection(ctx, NS, Config, config, {
     validate: assertServiceable,

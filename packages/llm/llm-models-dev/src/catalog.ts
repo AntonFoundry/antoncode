@@ -147,9 +147,10 @@ interface CacheEntry {
 
 /**
  * Fetch-and-cache client for the free tiers of models.dev providers. One
- * instance serves every route of the plugin; entries refresh after the
- * configured interval and a failed refresh keeps serving the previous
- * snapshot, so a catalog outage never empties a working picker.
+ * instance serves every route of the plugin; the plugin refreshes each entry
+ * eagerly at mount and re-fetches on the configured interval through
+ * {@link ModelsDevCatalog.refresh}, and a failed refresh keeps serving the
+ * previous snapshot, so a catalog outage never empties a working picker.
  */
 export class ModelsDevCatalog {
   readonly #catalogURL: string
@@ -190,6 +191,24 @@ export class ModelsDevCatalog {
    */
   peekCached(provider: string): ReadonlyMap<string, CatalogModel> | undefined {
     return this.#cache.get(provider)?.models
+  }
+
+  /**
+   * Fetch now and replace the cached snapshot regardless of its age; a failed
+   * fetch keeps the previous snapshot and reports through `onError` instead of
+   * rejecting. The mount-time and scheduled refreshes call this so a restart
+   * and every interval tick converge on the newest catalog without waiting
+   * for a consumer query.
+   * @param provider - the catalog provider id.
+   * @param onError - receives the fetch failure when a stale snapshot serves.
+   */
+  async refresh(provider: string, onError?: (error: unknown) => void): Promise<void> {
+    try {
+      const models = await this.#fetch(provider)
+      this.#cache.set(provider, { at: Date.now(), models })
+    } catch (error) {
+      onError?.(error)
+    }
   }
 
   async #fetch(provider: string): Promise<Map<string, CatalogModel>> {
