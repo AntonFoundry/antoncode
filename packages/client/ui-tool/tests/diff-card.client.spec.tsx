@@ -4,7 +4,7 @@
 // — the chat tool row's expanded body (GenericToolCard / FileMutationRow) and
 // the details panel's Output section.
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render } from '@testing-library/react'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
 import {
@@ -59,6 +59,10 @@ const settled = (over?: Partial<ToolResultNode>): ToolResultNode => ({
   callTime: 1_000,
   content: [{ type: 'text', text: 'The file notes/demo.txt has been updated successfully.' }], isError: false,
   callView: callDiff(), resultView: resultDiff(), subCalls: [], ...over,
+})
+
+beforeEach(() => {
+  window.localStorage.setItem('dsh.tool.cards.expanded', 'expanded')
 })
 
 describe('diffCardModel', () => {
@@ -137,6 +141,7 @@ describe('chat row diff body', () => {
   })
 
   it('a non-diff call keeps the args-JSON text body', () => {
+    window.localStorage.setItem('dsh.tool.cards.expanded', 'collapsed')
     // A non-file tool name so the row is not single-file (no path link), and its
     // args body is the fallback the diff card must not have replaced.
     const view = render(<GenericToolCard {...{
@@ -222,6 +227,7 @@ describe('FileMutationRow diff card', () => {
   })
 
   it('surfaces the result text when an errored mutation has no diff card', () => {
+    window.localStorage.setItem('dsh.tool.cards.expanded', 'collapsed')
     // write/edit return undefined from presentResult on isError, so the failure
     // has no diff — ToolRow shows the model-facing error text as the collapsed
     // summary's first line (errorSummary) instead of a bare red dot.
@@ -234,6 +240,7 @@ describe('FileMutationRow diff card', () => {
   })
 
   it('falls back to the error name/code when an errored result has no text block', () => {
+    window.localStorage.setItem('dsh.tool.cards.expanded', 'collapsed')
     const view = render(<FileMutationRow {...rowProps(settled({
       isError: true, callView: null, resultView: null, content: [],
       error: { name: 'ToolError', code: 'sandbox_denied' },
@@ -305,7 +312,9 @@ describe('fileMutationToolview registration', () => {
 
 describe('DetailsPanel diff Output section', () => {
   function mount(snapshot: ConversationSnapshot, selection: SelectionTarget | null, cwd?: string) {
+    const cardMode = localStorage.getItem('dsh.tool.cards.expanded')
     localStorage.clear()
+    if (cardMode !== null) localStorage.setItem('dsh.tool.cards.expanded', cardMode)
     const chat = createChatStore().create()
     if (selection !== null) chat.actions.select(selection)
     const sessions = createSnapshotStore<SessionListState>(cwd === undefined

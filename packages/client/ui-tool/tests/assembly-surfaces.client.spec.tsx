@@ -7,7 +7,7 @@ import type { ISession, SessionId, TodoItem, ToolResultNode } from '@deepseek-ai
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotTestRuntime, usePinnedBrowserLanguages, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply as applyConversation, inject as injectConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { apply as applyTool, inject as injectTool } from '../src/client/apply.ts'
+import { apply as applyTool, inject as injectTool } from '../src/client/apply.tsx'
 import { toolChatSnapshot } from './tool-details-render.client.tsx'
 
 // The service reads its initial locale from the browser; these specs assert
@@ -131,6 +131,7 @@ describe('todo_write assembly (product registrations, no outlet twins)', () => {
 
 describe('terminal card assembly', () => {
   it('both the keyed bash row and the fallback row reach the terminal card through the whole-row expand', async () => {
+    window.localStorage.setItem('dsh.tool.cards.expanded', 'expanded')
     const runtime = await bench([
       bashResult(3, 'c-keyed'),
       // An unregistered tool with terminal views: GenericToolCard fallback.

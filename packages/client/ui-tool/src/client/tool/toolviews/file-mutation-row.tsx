@@ -49,7 +49,7 @@ export function FileMutationRow({ toolName, block, cwd, openFile, inspect, t }: 
       filePath={model.filePath}
       onOpenFile={openFile}
       inspect={inspect}
-      defaultExpanded={diff !== null && model.state !== 'error'}
+      defaultExpanded={false}
     />
   )
 }

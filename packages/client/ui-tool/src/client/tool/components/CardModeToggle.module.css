@@ -1,0 +1,20 @@
+.toggle {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 4px;
+  border-radius: 6px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+
+.toggle:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.toggle[data-active] {
+  color: var(--dsw-static-deepseek-450);
+}

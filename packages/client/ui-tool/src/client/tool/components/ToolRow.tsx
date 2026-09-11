@@ -17,7 +17,8 @@
 // independent); an error row's collapsed summary is the failure's first line in
 // the error color.
 
-import { useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { CARD_MODE_EVENT, cardModeDefault } from '../../card-mode.ts'
 import clsx from 'clsx'
 import {
   CodeBlock, DiffBlock, DisclosureRow, IconInspectOutline12, ReadBlock, SearchBlock, StateDot, TerminalBlock, WebBlock,
@@ -156,7 +157,18 @@ export function ToolRow({
   inspect,
   defaultExpanded,
 }: ToolRowProps) {
-  const [expanded, setExpanded] = useState(defaultExpanded === true)
+  const [expanded, setExpanded] = useState(defaultExpanded === true || cardModeDefault())
+  // The global posture (chat-header toggle) overrides per-row state in one
+  // direction only at dispatch time; a later manual row toggle wins until
+  // the next global flip.
+  useEffect(() => {
+    const onMode = (event: Event): void => {
+      const detail = (event as CustomEvent<boolean>).detail
+      setExpanded(detail === true)
+    }
+    window.addEventListener(CARD_MODE_EVENT, onMode)
+    return () => { window.removeEventListener(CARD_MODE_EVENT, onMode) }
+  }, [])
   const terminalBody = terminal ?? null
   const diffBody = diff ?? null
   const readBody = read ?? null
