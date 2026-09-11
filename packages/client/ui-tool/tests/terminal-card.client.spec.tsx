@@ -22,6 +22,7 @@ import { createChatStore } from '@deepseek-ai/dsh-client-ui-conversation/src/cli
 import { GenericToolCard, type GenericToolCardProps } from '../src/client/tool/toolviews/GenericToolCard.tsx'
 import { DetailsPanel } from '@deepseek-ai/dsh-client-ui-conversation/src/client/skeleton/DetailsPanel.tsx'
 import { BashRow } from '../src/client/tool/toolviews/bash-sample.tsx'
+import { cardModeDefault } from '../src/client/card-mode.ts'
 import { renderToolDetails, SessionProviderStub, toolChatSnapshot } from './tool-details-render.client.tsx'
 import { zh } from '@deepseek-ai/dsh-client-ui-conversation/src/client/locales.ts'
 
@@ -30,7 +31,19 @@ type BashRowProps = Parameters<typeof BashRow>[0]
 // Mirrors the real lookup chain (conversation namespace, then common).
 const t: GenericToolCardProps['t'] = makeTranslate(zh, commonZh)
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  window.localStorage.removeItem('dsh.tool.cards.expanded')
+})
+
+/**
+ * Mount-time posture for specs that assert the expanded card's rendering:
+ * the product default is collapsed, so the expanded posture is seeded
+ * exactly the way the header toggle persists it.
+ */
+function seedExpandedPosture(): void {
+  window.localStorage.setItem('dsh.tool.cards.expanded', 'expanded')
+}
 
 /**
  * Match an output line with its interior whitespace intact: the column
@@ -251,6 +264,7 @@ describe('chat row terminal body', () => {
   }
 
   it('the expanded body is the command output inside the row scroll container', () => {
+    seedExpandedPosture()
     const view = render(<GenericToolCard {...ownerProps(settled())} />)
     // Default-expanded: the command and its output ARE the row's content.
     expect(view.getByText('List files')).toBeTruthy()
@@ -264,16 +278,19 @@ describe('chat row terminal body', () => {
   })
 
   it('a long output renders in full — the scroll container replaces the middle collapse', () => {
+    seedExpandedPosture()
     const lines = Array.from({ length: 20 }, (_, i) => `line-${i}`)
     const view = render(<GenericToolCard {...ownerProps(settled({
       resultView: resultTerminal({ output: `${lines.join('\n')}\n` }),
     }))} />)
+    console.log('DEBUG cardMode:', cardModeDefault(), 'expanded:', view.container.querySelector('[data-expandable]')?.getAttribute('aria-expanded'))
     expect(view.getByText('line-5')).toBeTruthy()
     expect(view.getByText('line-19')).toBeTruthy()
     expect(view.queryByText(/其余/)).toBeNull()
   })
 
   it('renders a multi-line command as one prompt row per line', () => {
+    seedExpandedPosture()
     const view = render(<GenericToolCard {...ownerProps(settled({
       callView: callTerminal({ title: 'ls -la\necho done' }),
     }))} />)
@@ -294,6 +311,7 @@ describe('chat row terminal body', () => {
   })
 
   it('keeps the presenter description visible once the terminal card is expanded', () => {
+    seedExpandedPosture()
     // The contract puts the description ABOVE the card. The collapsed summary is
     // hidden while a row is open, so an expanded terminal row has to draw it
     // itself or the description would only ever be visible collapsed.
@@ -306,6 +324,7 @@ describe('chat row terminal body', () => {
   })
 
   it('a running terminal call shows the prompt line with no output yet', () => {
+    seedExpandedPosture()
     const view = render(<GenericToolCard {...ownerProps(running())} />)
     expect(view.getByText('ls -la')).toBeTruthy()
     expect(view.queryByText('复制')).toBeNull()
@@ -323,6 +342,7 @@ describe('chat row terminal body', () => {
   })
 
   it('a terminal call with no args still expands, through its terminal body alone', () => {
+    seedExpandedPosture()
     // Empty args make the text body null; the terminal material carries the row.
     const view = render(<GenericToolCard {...ownerProps(settled({
       call: { name: 'bash', argsRaw: '' },
@@ -661,8 +681,11 @@ describe('DetailsPanel Output section', () => {
         t={t}
       />,
     )
-    fireEvent.click(view.getByRole('button', { name: '关闭详情' }))
-    expect(closeDetails).toHaveBeenCalledTimes(1)
+    // Closing is the WM pane's job (mode-line ✕ / C-x 0) since the Emacs WM
+    // rework: the panel renders no close control of its own. The pane-side
+    // close coverage lives in ui-layout's wm.client.spec.
+    expect(view.queryByRole('button', { name: '关闭详情' })).toBeNull()
+    expect(closeDetails).not.toHaveBeenCalled()
   })
 
   it('a non-text result block renders as JSON, and an empty result falls back to its error', () => {
