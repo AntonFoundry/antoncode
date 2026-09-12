@@ -226,8 +226,10 @@ export function formatGrepOutput(retained: RetainedItems<GrepMatch>, spillRef: S
 }
 
 /** Format one already-retained match list for the Native surface. */
-function formatRetainedGrep(retained: RetainedItems<GrepMatch>, spillRef?: SpillRef): string {
-  if (retained.seen === 0) return 'No matches found'
+function formatRetainedGrep(retained: RetainedItems<GrepMatch>, spillRef?: SpillRef, note?: string): string {
+  if (retained.seen === 0) {
+    return note !== undefined ? `No matches found\n\n(${note})` : 'No matches found'
+  }
   return formatGrepOutput(retained, spillRef)
 }
 
@@ -308,11 +310,12 @@ export function applyGrepTool(ctx: Context, caps: GrepToolCaps): void {
               },
             },
           },
+          note: { type: 'string' },
         },
       },
       render: (_args, value) => [{
         type: 'text',
-        text: formatRetainedGrep(retainGrepMatches(value.matches, caps.maxMatches, caps.maxLineBytes)),
+        text: formatRetainedGrep(retainGrepMatches(value.matches, caps.maxMatches, caps.maxLineBytes), undefined, value.note),
       }],
       presentationMeta: (_args, value) =>
         grepSearchMeta(retainGrepMatches(value.matches, caps.maxMatches, caps.maxLineBytes), caps.maxMetaBytes),
@@ -320,7 +323,7 @@ export function applyGrepTool(ctx: Context, caps: GrepToolCaps): void {
     async execute(args, exec) {
       const input = parseGrepArgs(args)
       const run = await runRipgrep(ctx, exec, 'grep', buildGrepCommand(input), caps.rawOutputMaxBytes, caps.graceMs, caps.stderrMaxBytes)
-      if (run.noMatches) return { matches: [] }
+      if (run.noMatches) return run.note !== undefined ? { matches: [], note: run.note } : { matches: [] }
 
       const all: GrepMatch[] = []
       for (const raw of parseGrepMatches(run.stdout)) {

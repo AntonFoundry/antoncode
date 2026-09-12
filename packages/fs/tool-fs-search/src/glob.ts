@@ -229,8 +229,10 @@ function formatGlobPage(items: readonly string[], seen: number, spillRef: SpillR
 }
 
 /** Bound and format one canonical path list for the Native surface relative to its search root. */
-function renderGlobPaths(paths: string[], caps: GlobToolCaps, root: string, spillRef?: SpillRef): string {
-  if (paths.length === 0) return 'No files found'
+function renderGlobPaths(paths: string[], caps: GlobToolCaps, root: string, spillRef?: SpillRef, note?: string): string {
+  if (paths.length === 0) {
+    return note !== undefined ? `No files found\n\n(${note})` : 'No files found'
+  }
   // A result that fits is shown whole, untouched: modification-time order is the
   // tool's contract, and over a complete result it is what answers age questions.
   if (paths.length <= caps.maxResults) return paths.join('\n')
@@ -331,9 +333,10 @@ export function applyGlobTool(ctx: Context, caps: GlobToolCaps): void {
         properties: {
           root: { type: 'string', required: true },
           paths: { type: 'array', required: true, items: { type: 'string' } },
+          note: { type: 'string' },
         },
       },
-      render: (_args, value) => [{ type: 'text', text: renderGlobPaths(value.paths, caps, value.root) }],
+      render: (_args, value) => [{ type: 'text', text: renderGlobPaths(value.paths, caps, value.root, undefined, value.note) }],
       presentationMeta: (_args, value) => {
         const page = globCardPage(value.paths, caps, value.root)
         return globSearchMeta({ items: page.items, truncated: page.truncated, seen: value.paths.length }, caps.maxMetaBytes)
@@ -343,7 +346,7 @@ export function applyGlobTool(ctx: Context, caps: GlobToolCaps): void {
       const input = parseGlobArgs(args)
       const run = await runRipgrep(ctx, exec, 'glob', buildGlobCommand(input), caps.rawOutputMaxBytes, caps.graceMs, caps.stderrMaxBytes)
       const root = input.path === undefined ? '.' : toWorkdirRelative(input.path, run.workdir)
-      if (run.noMatches) return { root, paths: [] }
+      if (run.noMatches) return run.note !== undefined ? { root, paths: [], note: run.note } : { root, paths: [] }
 
       const all: string[] = []
       for (const line of run.stdout.split('\n')) {
