@@ -67,6 +67,9 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
               copyImage: t('mermaid.copyImage'),
               copied: t('mermaid.copied'),
               copiedFailed: t('mermaid.copiedFailed'),
+              zoomIn: t('mermaid.zoomIn'),
+              zoomOut: t('mermaid.zoomOut'),
+              resetZoom: t('mermaid.resetZoom'),
             }}
             fileMentions={mentions}
           />,

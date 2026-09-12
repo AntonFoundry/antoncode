@@ -335,6 +335,9 @@ function renderCode(node: Md.Code, key: Key, context: MarkdownRenderContext): Re
           copyImage: context.mermaidLabels?.copyImage ?? 'Copy image',
           copied: context.mermaidLabels?.copied ?? 'Copied',
           copiedFailed: context.mermaidLabels?.copiedFailed ?? 'Clipboard refused — downloaded instead',
+          zoomIn: context.mermaidLabels?.zoomIn ?? 'Zoom in',
+          zoomOut: context.mermaidLabels?.zoomOut ?? 'Zoom out',
+          resetZoom: context.mermaidLabels?.resetZoom ?? 'Reset zoom',
         }}
       />
     )

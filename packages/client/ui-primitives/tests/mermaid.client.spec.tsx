@@ -25,6 +25,9 @@ const labels = {
   copyImage: 'Copy image',
   copied: 'Copied',
   copiedFailed: 'downloaded',
+  zoomIn: 'Zoom in',
+  zoomOut: 'Zoom out',
+  resetZoom: 'Reset zoom',
 }
 
 function pngBlob(): Blob {
@@ -147,5 +150,60 @@ describe('activeMermaidTheme', () => {
     expect(activeMermaidTheme()).toBe('dark')
     document.body.removeAttribute('data-ds-dark-theme')
     expect(activeMermaidTheme()).toBe('default')
+  })
+})
+
+describe('MermaidDiagram zoom', () => {
+  afterEach(() => {
+    cleanup()
+  })
+
+  async function renderReady(): Promise<ReturnType<typeof render>['container']> {
+    const rendered = render(
+      <MermaidDiagram code="graph TD; a-->b" copyLabel="Copy" copiedLabel="Copied" labels={labels} />,
+    )
+    await waitFor(() => expect(rendered.container.querySelector('[data-mermaid="ready"]')).not.toBeNull())
+    return rendered.container
+  }
+
+  function zoomedBody(container: Element): HTMLElement {
+    const body = container.querySelector('[class*=zoomed]')
+    expect(body).not.toBeNull()
+    return body as HTMLElement
+  }
+
+  it('zooms in and out in 50% steps and pans through the card overflow', async () => {
+    const container = await renderReady()
+    fireEvent.click(screen.getByLabelText('Zoom in'))
+    expect(zoomedBody(container).style.width).toBe('150%')
+    fireEvent.click(screen.getByLabelText('Zoom in'))
+    expect(zoomedBody(container).style.width).toBe('200%')
+    fireEvent.click(screen.getByLabelText('Zoom out'))
+    expect(zoomedBody(container).style.width).toBe('150%')
+  })
+
+  it('clamps zoom at the 50%–300% bounds', async () => {
+    const container = await renderReady()
+    for (let i = 0; i < 8; i += 1) fireEvent.click(screen.getByLabelText('Zoom in'))
+    expect(zoomedBody(container).style.width).toBe('300%')
+    for (let i = 0; i < 10; i += 1) fireEvent.click(screen.getByLabelText('Zoom out'))
+    expect(zoomedBody(container).style.width).toBe('50%')
+  })
+
+  it('the percentage button resets to fit', async () => {
+    const container = await renderReady()
+    fireEvent.click(screen.getByLabelText('Zoom in'))
+    fireEvent.click(screen.getByText('150%'))
+    expect(container.querySelector('[class*=zoomed]')).toBeNull()
+    expect(screen.getByText('100%')).toBeTruthy()
+  })
+
+  it('ctrl+wheel zooms; a plain wheel event does not', async () => {
+    const container = await renderReady()
+    const body = container.querySelector('[class*=diagramBody]') as HTMLElement
+    fireEvent.wheel(body, { ctrlKey: true, deltaY: -100 })
+    expect(zoomedBody(container).style.width).toBe('150%')
+    fireEvent.wheel(body, { deltaY: -100 })
+    expect(zoomedBody(container).style.width).toBe('150%')
   })
 })
