@@ -10,11 +10,17 @@
   overflow-x: auto;
 }
 
-.copyButton {
+.controls {
   position: absolute;
   top: 6px;
   right: 6px;
   z-index: 1;
+  display: flex;
+  gap: 4px;
+}
+
+.copyButton,
+.zoomButton {
   padding: 2px 8px;
   border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.08));
   border-radius: 6px;
@@ -24,18 +30,32 @@
   cursor: pointer;
 }
 
-.copyButton:hover {
+.copyButton:hover,
+.zoomButton:hover {
   color: var(--dsw-alias-label-primary, black);
+}
+
+.zoomButton {
+  min-width: 38px;
+  font-variant-numeric: tabular-nums;
 }
 
 .diagramBody {
   display: flex;
   justify-content: center;
+  margin: 0 auto;
 }
 
 .diagramBody svg {
   max-width: 100%;
   height: auto;
+}
+
+/* Zoomed: the wrapper takes a percentage width, so the diagram grows past
+   the card and the card's own overflow-x provides the pan. */
+.zoomed svg {
+  max-width: none;
+  width: 100%;
 }
 
 .pending {

@@ -31,7 +31,7 @@ function renderSettled(
   text: string,
   codeLabels: MarkdownCodeLabels | undefined,
   fileMentions: MarkdownFileMentions | undefined,
-  mermaidLabels: { rendering: string; failed: string; copyImage: string; copied: string; copiedFailed: string } | undefined,
+  mermaidLabels: MermaidLabels | undefined,
 ): ReactNode[] {
   const root = parseGfmWithMath(text)
   const targets = createReferenceTargets()

@@ -9,7 +9,7 @@
 // (a download falls out where the clipboard refuses).
 
 import { memo, useEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { ReactNode, WheelEvent } from 'react'
 import { CodeBlock } from './CodeBlock.tsx'
 import css from './mermaid.module.css'
 
@@ -19,6 +19,9 @@ export interface MermaidLabels {
   copyImage: string
   copied: string
   copiedFailed: string
+  zoomIn: string
+  zoomOut: string
+  resetZoom: string
 }
 
 export interface MermaidDiagramProps {
@@ -30,6 +33,11 @@ export interface MermaidDiagramProps {
   /** Localized labels. */
   labels: MermaidLabels
 }
+
+/** Zoom bounds and step for the diagram controls. */
+const ZOOM_MIN = 0.5
+const ZOOM_MAX = 3
+const ZOOM_STEP = 0.5
 
 type Render =
   | { phase: 'idle' | 'pending' }
@@ -136,6 +144,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({
   const [theme, setTheme] = useState<'dark' | 'default'>(() => activeMermaidTheme())
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const copyTimer = useRef<number | undefined>(undefined)
+  const [zoom, setZoom] = useState(1)
   useEffect(() => () => { window.clearTimeout(copyTimer.current) }, [])
 
   // Theme switches re-render the diagram: the theme presenter stamps
@@ -197,18 +206,64 @@ export const MermaidDiagram = memo(function MermaidDiagram({
     })()
   }
 
+  /** Step the zoom one notch; clamped to the [ZOOM_MIN, ZOOM_MAX] range. */
+  const zoomBy = (direction: 1 | -1): void => {
+    setZoom((current) => {
+      const next = Math.round((current + direction * ZOOM_STEP) * 10) / 10
+      return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next))
+    })
+  }
+
+  /** Ctrl/Cmd + wheel zooms, matching the browser's own pinch gesture. */
+  const onDiagramWheel = (event: WheelEvent): void => {
+    if (!(event.ctrlKey || event.metaKey)) return
+    event.preventDefault()
+    zoomBy(event.deltaY < 0 ? 1 : -1)
+  }
+
   if (render.phase === 'ready') {
     return (
       <div className={css.diagram} data-mermaid="ready" data-copy={copyState === 'copied' ? 'copied' : undefined}>
-        <button
-          type="button"
-          className={css.copyButton}
-          onClick={() => { copyImage(render.svg) }}
-        >
-          {copyState === 'copied' ? labels.copied : labels.copyImage}
-        </button>
+        <div className={css.controls}>
+          <button
+            type="button"
+            className={css.zoomButton}
+            aria-label={labels.zoomOut}
+            title={labels.zoomOut}
+            onClick={() => { zoomBy(-1) }}
+          >
+            −
+          </button>
+          <button
+            type="button"
+            className={css.zoomButton}
+            aria-label={labels.resetZoom}
+            title={labels.resetZoom}
+            onClick={() => { setZoom(1) }}
+          >
+            {`${Math.round(zoom * 100)}%`}
+          </button>
+          <button
+            type="button"
+            className={css.zoomButton}
+            aria-label={labels.zoomIn}
+            title={labels.zoomIn}
+            onClick={() => { zoomBy(1) }}
+          >
+            +
+          </button>
+          <button
+            type="button"
+            className={css.copyButton}
+            onClick={() => { copyImage(render.svg) }}
+          >
+            {copyState === 'copied' ? labels.copied : labels.copyImage}
+          </button>
+        </div>
         <div
-          className={css.diagramBody}
+          className={`${css.diagramBody} ${zoom !== 1 ? css.zoomed : ''}`}
+          style={zoom !== 1 ? { width: `${zoom * 100}%` } : undefined}
+          onWheel={onDiagramWheel}
           // mermaid's SVG string is generated under securityLevel 'strict'
           // (text escaped), produced from the diagram grammar rather than the
           // raw model text.
