@@ -15,11 +15,6 @@
 # The PTY registry is an agent-owned service, so it lives in an entry-local
 # realm. The backend still consumes the host sandbox policy and subprocess
 # implementation, while the tool registers into this agent's scoped catalog.
-
-# Advisory loop-breaker: injects escalating reminders when the model repeats
-# the same tool call with identical arguments or ping-pongs between two calls.
-- id: repeat-tool-reminder
-  name: '@deepseek-ai/dsh-repeat-tool-reminder'
 - id: persistent-shell
   name: cordis:group
   group: true
