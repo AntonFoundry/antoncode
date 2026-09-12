@@ -70,6 +70,10 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
               zoomIn: t('mermaid.zoomIn'),
               zoomOut: t('mermaid.zoomOut'),
               resetZoom: t('mermaid.resetZoom'),
+              copySource: t('mermaid.copySource'),
+              copiedSource: t('mermaid.copiedSource'),
+              fullscreen: t('mermaid.fullscreen'),
+              exitFullscreen: t('mermaid.exitFullscreen'),
             }}
             fileMentions={mentions}
           />,

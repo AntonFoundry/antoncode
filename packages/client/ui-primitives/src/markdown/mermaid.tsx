@@ -22,6 +22,10 @@ export interface MermaidLabels {
   zoomIn: string
   zoomOut: string
   resetZoom: string
+  copySource: string
+  copiedSource: string
+  fullscreen: string
+  exitFullscreen: string
 }
 
 export interface MermaidDiagramProps {
@@ -121,6 +125,37 @@ async function copyPngToClipboard(png: Blob): Promise<void> {
   await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
 }
 
+/**
+ * Copy text where the async Clipboard API is unavailable or refuses: a hidden
+ * textarea plus the deprecated execCommand is the only synchronous fallback
+ * the platform offers. Returns false when even that is rejected.
+ */
+function copyTextViaExecCommand(text: string): boolean {
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+  try {
+    return document.execCommand('copy')
+  } catch {
+    return false
+  } finally {
+    textarea.remove()
+  }
+}
+
+/** Copy diagram source text: the async API first, execCommand as fallback. */
+async function copyTextToClipboard(text: string): Promise<void> {
+  if (typeof navigator.clipboard?.writeText === 'function') {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+  if (!copyTextViaExecCommand(text)) throw new Error('clipboard write rejected')
+}
+
 /** Download one blob as a timestamped PNG file (the clipboard's fallback). */
 function downloadPng(png: Blob, id: string): void {
   const anchor = document.createElement('a')
@@ -145,7 +180,24 @@ export const MermaidDiagram = memo(function MermaidDiagram({
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const copyTimer = useRef<number | undefined>(undefined)
   const [zoom, setZoom] = useState(1)
-  useEffect(() => () => { window.clearTimeout(copyTimer.current) }, [])
+  const [sourceState, setSourceState] = useState<'idle' | 'copied'>('idle')
+  const sourceTimer = useRef<number | undefined>(undefined)
+  const cardRef = useRef<HTMLDivElement>(null)
+  const [fullscreen, setFullscreen] = useState(false)
+  useEffect(() => {
+    const timers = [copyTimer, sourceTimer]
+    return () => { for (const timer of timers) window.clearTimeout(timer.current) }
+  }, [])
+
+  // Track the card's fullscreen state so the toggle label follows an exit
+  // made from outside the button (Esc, browser chrome).
+  useEffect(() => {
+    const onFullscreenChange = (): void => {
+      setFullscreen(document.fullscreenElement === cardRef.current)
+    }
+    document.addEventListener('fullscreenchange', onFullscreenChange)
+    return () => { document.removeEventListener('fullscreenchange', onFullscreenChange) }
+  }, [])
 
   // Theme switches re-render the diagram: the theme presenter stamps
   // `colorScheme` on the document element and `data-ds-dark-theme` on body,
@@ -206,6 +258,28 @@ export const MermaidDiagram = memo(function MermaidDiagram({
     })()
   }
 
+  const copySource = (source: string): void => {
+    void (async () => {
+      try {
+        await copyTextToClipboard(source)
+        setSourceState('copied')
+      } catch {
+        return // nothing else the platform offers; the button just stays
+      }
+      sourceTimer.current = window.setTimeout(() => { setSourceState('idle') }, 2000)
+    })()
+  }
+
+  const toggleFullscreen = (): void => {
+    const card = cardRef.current
+    if (card === null) return
+    if (document.fullscreenElement === card) {
+      void document.exitFullscreen()
+    } else {
+      void card.requestFullscreen()
+    }
+  }
+
   /** Step the zoom one notch; clamped to the [ZOOM_MIN, ZOOM_MAX] range. */
   const zoomBy = (direction: 1 | -1): void => {
     setZoom((current) => {
@@ -223,7 +297,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({
 
   if (render.phase === 'ready') {
     return (
-      <div className={css.diagram} data-mermaid="ready" data-copy={copyState === 'copied' ? 'copied' : undefined}>
+      <div ref={cardRef} className={`${css.diagram} ${fullscreen ? css.fullscreen : ''}`} data-mermaid="ready" data-copy={copyState === 'copied' ? 'copied' : undefined}>
         <div className={css.controls}>
           <button
             type="button"
@@ -255,9 +329,25 @@ export const MermaidDiagram = memo(function MermaidDiagram({
           <button
             type="button"
             className={css.copyButton}
+            onClick={() => { copySource(code) }}
+          >
+            {sourceState === 'copied' ? labels.copiedSource : labels.copySource}
+          </button>
+          <button
+            type="button"
+            className={css.copyButton}
             onClick={() => { copyImage(render.svg) }}
           >
             {copyState === 'copied' ? labels.copied : labels.copyImage}
+          </button>
+          <button
+            type="button"
+            className={css.copyButton}
+            aria-label={fullscreen ? labels.exitFullscreen : labels.fullscreen}
+            title={fullscreen ? labels.exitFullscreen : labels.fullscreen}
+            onClick={toggleFullscreen}
+          >
+            {fullscreen ? '⤡' : '⛶'}
           </button>
         </div>
         <div
