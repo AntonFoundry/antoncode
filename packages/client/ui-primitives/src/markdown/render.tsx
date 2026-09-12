@@ -338,6 +338,10 @@ function renderCode(node: Md.Code, key: Key, context: MarkdownRenderContext): Re
           zoomIn: context.mermaidLabels?.zoomIn ?? 'Zoom in',
           zoomOut: context.mermaidLabels?.zoomOut ?? 'Zoom out',
           resetZoom: context.mermaidLabels?.resetZoom ?? 'Reset zoom',
+          copySource: context.mermaidLabels?.copySource ?? 'Copy source',
+          copiedSource: context.mermaidLabels?.copiedSource ?? 'Source copied',
+          fullscreen: context.mermaidLabels?.fullscreen ?? 'Fullscreen',
+          exitFullscreen: context.mermaidLabels?.exitFullscreen ?? 'Exit fullscreen',
         }}
       />
     )

@@ -80,3 +80,9 @@
   font-size: 11px;
   color: var(--dsw-alias-label-tertiary, gray);
 }
+
+/* Fullscreen: the card fills the viewport and keeps its own scroll/pan. */
+.fullscreen {
+  overflow: auto;
+  background: var(--dsw-alias-bg-base, transparent);
+}

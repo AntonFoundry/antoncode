@@ -24,10 +24,14 @@ const labels = {
   failed: 'Failed',
   copyImage: 'Copy image',
   copied: 'Copied',
-  copiedFailed: 'downloaded',
+  copiedFailed: 'PNG downloaded instead',
   zoomIn: 'Zoom in',
   zoomOut: 'Zoom out',
   resetZoom: 'Reset zoom',
+  copySource: 'Copy source',
+  copiedSource: 'Source copied',
+  fullscreen: 'Fullscreen',
+  exitFullscreen: 'Exit fullscreen',
 }
 
 function pngBlob(): Blob {
@@ -86,11 +90,11 @@ describe('MermaidDiagram', () => {
     const { container } = render(
       <MermaidDiagram code="graph TD; a-->b" copyLabel="Copy" copiedLabel="Copied" labels={labels} />,
     )
-    await waitFor(() => expect(container.querySelector('[data-mermaid="ready"]')).not.toBeNull())
+    await waitFor(() => { expect(container.querySelector('[data-mermaid="ready"]')).not.toBeNull() })
     expect(initialize).toHaveBeenCalled()
     const button = screen.getByText('Copy image')
     fireEvent.click(button)
-    await waitFor(() => expect(write).toHaveBeenCalled())
+    await waitFor(() => { expect(write).toHaveBeenCalled() })
     const [items] = write.mock.calls[0] as [Array<{ types: string[] }>]
     expect(items[0]!.types).toContain('image/png')
   })
@@ -118,9 +122,9 @@ describe('MermaidDiagram', () => {
     const { container } = render(
       <MermaidDiagram code="graph TD; a-->b" copyLabel="Copy" copiedLabel="Copied" labels={labels} />,
     )
-    await waitFor(() => expect(container.querySelector('[data-mermaid="ready"]')).not.toBeNull())
+    await waitFor(() => { expect(container.querySelector('[data-mermaid="ready"]')).not.toBeNull() })
     fireEvent.click(screen.getByText('Copy image'))
-    await waitFor(() => expect(container.querySelector('[data-copy="copied"]')).toBeNull())
+    await waitFor(() => { expect(container.querySelector('[data-copy="copied"]')).toBeNull() })
     expect(URL.createObjectURL).toHaveBeenCalled()
   })
 
@@ -129,7 +133,7 @@ describe('MermaidDiagram', () => {
     const { container } = render(
       <MermaidDiagram code="graph TD; broken" copyLabel="Copy" copiedLabel="Copied" labels={labels} />,
     )
-    await waitFor(() => expect(container.querySelector('[data-mermaid="failed"]')).not.toBeNull())
+    await waitFor(() => { expect(container.querySelector('[data-mermaid="failed"]')).not.toBeNull() })
     expect(container.textContent).toContain('bad diagram')
   })
 })
@@ -162,7 +166,7 @@ describe('MermaidDiagram zoom', () => {
     const rendered = render(
       <MermaidDiagram code="graph TD; a-->b" copyLabel="Copy" copiedLabel="Copied" labels={labels} />,
     )
-    await waitFor(() => expect(rendered.container.querySelector('[data-mermaid="ready"]')).not.toBeNull())
+    await waitFor(() => { expect(rendered.container.querySelector('[data-mermaid="ready"]')).not.toBeNull() })
     return rendered.container
   }
 
@@ -205,5 +209,58 @@ describe('MermaidDiagram zoom', () => {
     expect(zoomedBody(container).style.width).toBe('150%')
     fireEvent.wheel(body, { deltaY: -100 })
     expect(zoomedBody(container).style.width).toBe('150%')
+  })
+})
+
+describe('MermaidDiagram copy source and fullscreen', () => {
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  async function renderReady() {
+    const rendered = render(
+      <MermaidDiagram code="graph TD; a-->b" copyLabel="Copy" copiedLabel="Copied" labels={labels} />,
+    )
+    await waitFor(() => { expect(rendered.container.querySelector('[data-mermaid="ready"]')).not.toBeNull() })
+    return rendered
+  }
+
+  it('copies the diagram source through the async clipboard', async () => {
+    const writeText = vi.fn(async () => undefined)
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+    await renderReady()
+    fireEvent.click(screen.getByText('Copy source'))
+    await waitFor(() => { expect(writeText).toHaveBeenCalledWith('graph TD; a-->b') })
+    expect(screen.getByText('Source copied')).toBeTruthy()
+  })
+
+  it('falls back to execCommand where the async clipboard is missing', async () => {
+    vi.stubGlobal('navigator', { clipboard: undefined })
+    // execCommand is the deprecated fallback under test; the defineProperty
+    // indirection both installs the stub and names why it is used here.
+    const execCommand = vi.fn(() => true)
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: execCommand })
+    await renderReady()
+    fireEvent.click(screen.getByText('Copy source'))
+    await waitFor(() => { expect(execCommand).toHaveBeenCalledWith('copy') })
+    expect(screen.getByText('Source copied')).toBeTruthy()
+  })
+
+  it('toggles fullscreen on the diagram card and follows external exits', async () => {
+    let active: Element | null = null
+    const changed = (): void => { document.dispatchEvent(new Event('fullscreenchange')) }
+    const { container } = await renderReady()
+    const cardEl = container.querySelector('[data-mermaid="ready"]') as HTMLElement
+    const requestFullscreen = vi.fn(async () => { active = cardEl; changed() })
+    const exitFullscreen = vi.fn(async () => { active = null; changed() })
+    Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => active })
+    document.exitFullscreen = exitFullscreen
+    cardEl.requestFullscreen = requestFullscreen
+    fireEvent.click(screen.getByLabelText('Fullscreen'))
+    await waitFor(() => { expect(requestFullscreen).toHaveBeenCalled() })
+    expect(screen.getByLabelText('Exit fullscreen')).toBeTruthy()
+    expect(container.querySelector('[class*=fullscreen]')).not.toBeNull()
   })
 })
