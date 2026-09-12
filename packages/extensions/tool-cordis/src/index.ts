@@ -31,6 +31,22 @@ function requireAgent(exec: ToolExecution): Agent {
   return exec.agent
 }
 
+/**
+ * Decode a stringified-JSON query input. Models sometimes emit `input` as a
+ * JSON-encoded string; parsing it here keeps the model/tool JSON boundary from
+ * rejecting a semantically valid payload before schema validation.
+ * @param input - raw `input` argument from the tool call.
+ * @returns the input as lossless JSON, or undefined when absent.
+ */
+function decodeQueryInput(input: JsonValue | undefined): JsonValue | undefined {
+  if (typeof input !== 'string') return input
+  try {
+    return JSON.parse(input) as JsonValue
+  } catch {
+    throw new Error('input was a string that is not valid JSON; pass the query input as a JSON object')
+  }
+}
+
 /** Register the Cordis tools and explicit `@pluginId` context injection. */
 export function apply(ctx: Context): void {
   ctx.systemPrompt.section({ name: 'tool:cordis', order: 115, text: CORDIS_SYSTEM_PROMPT })
@@ -84,7 +100,7 @@ export function apply(ctx: Context): void {
         args.platform,
         args.provider,
         args.method,
-        args.input,
+        decodeQueryInput(args.input),
         requireAgent(exec),
         exec.signal,
       )

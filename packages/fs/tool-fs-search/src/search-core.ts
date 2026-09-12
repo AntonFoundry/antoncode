@@ -101,6 +101,13 @@ export interface RipgrepRun {
   stdout: string
   /** True when ripgrep exited 1: a successful search with zero results. */
   noMatches: boolean
+  /**
+   * When set on a `noMatches` run, a diagnostic explaining WHY there are no
+   * results even though ripgrep searched nothing (exit 2 "No files were
+   * searched"): an empty directory, or a filter that excluded every file.
+   * Presentation appends it to the zero-result text.
+   */
+  note?: string
   /** The resolved working directory the command ran in (the display-relativization base). */
   workdir: string
 }
@@ -187,6 +194,14 @@ export function resolveRgPath(): Promise<string> {
 }
 
 /**
+ * The working directory a search runs in: the calling agent's session cwd
+ * when available, else the process cwd.
+ */
+export function searchWorkdir(exec: ToolExecution): string {
+  return exec.agent?.session.header.cwd ?? process.cwd()
+}
+
+/**
  * Run the packaged ripgrep binary with a plain argv vector and return its
  * complete raw stdout. The working directory is the calling agent's session
  * cwd (`exec.agent.session.header.cwd`) when available, else
@@ -233,8 +248,7 @@ export async function runRipgrep(
   if (exec.signal.aborted) {
     throw new SearchError(`${toolName} was aborted before completion (tool timeout or caller cancellation)`, 'SEARCH_ABORTED')
   }
-  const cwd = exec.agent?.session.header.cwd
-  const workdir = cwd ?? process.cwd()
+  const workdir = searchWorkdir(exec)
   let handle: SubprocessHandle
   try {
     handle = ctx.subprocess.spawn({
@@ -281,6 +295,28 @@ export async function runRipgrep(
     throw new SearchError(`${toolName} search command was killed by signal ${outcome.signal ?? '(unknown)'}`, 'SEARCH_FAILED')
   }
   if (outcome.exitCode !== 0 && outcome.exitCode !== 1) {
+    const excerpt = stderrExcerpt(stderr.text, stderr.lossy)
+    // A nonexistent target: ripgrep exits 2 with a raw filesystem error.
+    // Re-raise as an actionable typed failure instead of raw rg stderr.
+    if (/No such file or directory/.test(excerpt)) {
+      throw new SearchError(
+        `${toolName} search path does not exist. Pass an existing file or directory (relative paths resolve against the workspace).`,
+        'SEARCH_FAILED',
+      )
+    }
+    // ripgrep exits 2 with this specific stderr when it had ZERO candidate
+    // files: the target directory is empty (or contains only ignored files),
+    // or the include/type filter excluded every candidate. That is a benign
+    // zero-result search, not a failed one — surface it as `noMatches` with a
+    // diagnostic note instead of a raw `SEARCH_FAILED` error.
+    if (outcome.exitCode === 2 && /No files were searched/.test(excerpt)) {
+      return {
+        stdout: '',
+        noMatches: true,
+        workdir,
+        note: 'no candidate files were searched (the directory is empty or contains only ignored files, or the include filter excluded every file)',
+      }
+    }
     throw classifyRunFailure(toolName, outcome.exitCode, stderr.text, stderr.lossy)
   }
   const text = completeStdout(toolName, stdout, rawOutputMaxBytes)
