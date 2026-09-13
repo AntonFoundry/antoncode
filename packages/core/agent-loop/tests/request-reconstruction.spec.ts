@@ -111,6 +111,35 @@ describe('request stability across the loop', () => {
     expectPrefixExtension(adapter.requests[0]!, adapter.requests[1]!)
   })
 
+  it('seeds the first request header from AgentOptions.reasoningEffort on a fresh session', async () => {
+    // No persisted header exists yet, so the options are the only effort
+    // source; the first request logs it and later turns persist through the
+    // header (maxTokens symmetry). The model declares only the `high` effort,
+    // so a seeded value is the agent's, not an adapter default.
+    const reasoning: LlmModelReasoningInfo = {
+      efforts: [{ id: ReasoningEffortId('high'), name: 'High' }],
+    }
+    const adapter = new MockAdapter([textResponse('one'), textResponse('two')], reasoning)
+    const ctx = await harness(adapter)
+    const agent = ctx.agentLoop.create(SessionId('effort-seed'), {
+      provider: 'mock',
+      model: 'mock',
+      reasoningEffort: 'high',
+    })
+
+    send(agent, 'first')
+    await waitForIdle(ctx, agent)
+    send(agent, 'second')
+    await waitForIdle(ctx, agent)
+
+    expect(adapter.requests[0]?.reasoningEffort).toBe('high')
+    expect(adapter.requests[1]?.reasoningEffort).toBe('high')
+    const headerEvents = agent.session.events.filter(e => e.type === 'request/header')
+    expect(headerEvents).toHaveLength(1)
+    expect(headerEvents[0]?.type === 'request/header' && headerEvents[0].data.header.config.reasoningEffort)
+      .toBe(ReasoningEffortId('high'))
+  })
+
   it('logs adapter defaults, supports per-turn effort changes, and restores the effective value', async () => {
     const reasoning = {
       efforts: [

@@ -22,8 +22,9 @@ A foreground call passes the execution signal through startup and execution, awa
 | `toolName` | Model-facing name, default `subagent`; distinct for every loaded instance. |
 | `enableRunInBackground` | Exposes background mode, default `true`; disabling also rejects forced background calls. |
 | `backgroundMode` | Background lifecycle policy, default `one-shot`. `one-shot` defaults calls to foreground; `continuable` defaults them to background, requires the provider's `prepareContinuable` capability, and returns a durable child id without requiring the follow-up tool. |
-| `agentOptions` | Provider-specific child `provider`, `model`, and positive `maxTokens`; the in-process provider treats explicit values as overrides of inherited parent options. |
+| `agentOptions` | Provider-specific child `provider`, `model`, positive `maxTokens`, and `reasoningEffort`; the in-process provider treats explicit values as overrides of inherited parent options. |
 | `model` (call argument) | Optional per-delegation child model route (`provider/model` or bare id); overrides the configured default for that call only. |
+| `reasoningEffort` (call argument) | Optional per-delegation reasoning effort (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`); rides the child's agent options, and the selected provider validates the id per model — an unserviceable effort fails that child's request. Omitting it inherits the route default. |
 | `persona` | Per-child persona; requires provider `persona` capability. |
 | `toolFilter` | Per-child global-tool restriction; requires `toolFilter` capability. |
 | `maxDepth` | Absolute delegation-depth cap, default `3` (`0` forbids delegation); a numeric cap requires the `depthLimit` capability and fails the mount without it. `'provider-managed'` sends no cap for an out-of-process provider whose budget belongs to the child harness. The tool stays visible at the cap; each attempted start checks the calling agent's current depth and returns an errored tool result when rejected. |

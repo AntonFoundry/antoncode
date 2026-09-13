@@ -79,6 +79,13 @@ export interface Config {
   maxDepth?: number | 'provider-managed'
 }
 
+/**
+ * Reasoning-effort ids a delegation may name. The tool accepts the widest
+ * portable set; the child's selected provider validates the id per model and
+ * an unserviceable effort fails that child's request.
+ */
+const REASONING_EFFORT_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+
 export const Config: z<Config> = z.object({
   provider: z.string().required(),
   toolName: z.string().default('subagent'),
@@ -89,7 +96,10 @@ export const Config: z<Config> = z.object({
     provider: z.string(),
     model: z.string(),
     maxTokens: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER),
-  }).default(undefined as unknown as { provider: string; model: string; maxTokens: number }),
+    // Plain string: the config plane accepts any effort id (AgentOptions
+    // symmetry); the selected provider validates it per model at request time.
+    reasoningEffort: z.string(),
+  }).default(undefined as unknown as { provider: string; model: string; maxTokens: number; reasoningEffort: string }),
   persona: z.string(),
   // Preserve omission; Schemastery's `{ allow: [] }` default would deny every tool.
   toolFilter: z.object({
@@ -372,6 +382,11 @@ export function apply(ctx: Context, config: Config): void {
           type: 'string' as const,
           description: 'Optional model route for this child: "provider/model" or a bare model id. Overrides the configured default for this delegation only.',
         },
+        reasoningEffort: {
+          type: 'string' as const,
+          enum: [...REASONING_EFFORT_LEVELS],
+          description: 'Optional reasoning effort for this child\'s model calls. Omit to inherit the route default.',
+        },
         ...backgroundEnabled ? {
           run_in_background: {
             type: 'boolean' as const,
@@ -441,8 +456,14 @@ export function apply(ctx: Context, config: Config): void {
           typeof args.model === 'string' ? args.model : undefined,
           config.agentOptions?.model,
         )
-        const agentOptions: AgentOptions | undefined = route !== undefined || config.agentOptions !== undefined
-          ? { ...config.agentOptions, ...route }
+        // The call's `reasoningEffort` argument rides the agent options: it is
+        // per-child request configuration, not a route field.
+        const effort = typeof args.reasoningEffort === 'string' && args.reasoningEffort.length > 0
+          ? args.reasoningEffort
+          : undefined
+        const agentOptions: AgentOptions | undefined = route !== undefined || effort !== undefined
+          || config.agentOptions !== undefined
+          ? { ...config.agentOptions, ...route, ...effort === undefined ? {} : { reasoningEffort: effort } }
           : undefined
         const request = {
           label: args.description,
