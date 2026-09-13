@@ -139,6 +139,9 @@ function scriptedApi(overrides: {
       resize: () => { throw new Error('no term in this fixture') },
       dispose: () => { throw new Error('no term in this fixture') },
     },
+    jobs: {
+      kill: () => { throw new Error('no jobs in this fixture') },
+    },
     downloads: { sessionLog: async () => new Response('stub', { status: 404 }) },
   }
 }

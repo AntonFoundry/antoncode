@@ -1,14 +1,26 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import type { JobView } from '@deepseek-ai/dsh-client-runtime/client'
-import { IconChevronDownOutline14, StateDot, useDismissOnOutsidePointer, type StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutline14, IconStopFill16, StateDot, useDismissOnOutsidePointer, type StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { NS } from './locales.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import css from './JobListAction.module.css'
 
+/**
+ * Settled outcome of one stop request. The component reads only the failure —
+ * a successful kill settles the row through the next `session/jobs` push.
+ */
+export type JobStopResult = { ok: true } | { ok: false; message: string }
+
+/** Business actions supplied by the slot registration. */
+export interface JobActionsInjected {
+  /** Request cancellation of one live background job by registry id. */
+  killJob: (jobId: JobView['id']) => Promise<JobStopResult>
+}
+
 /** Full props for the session-header background-job action. */
 export type JobListActionProps =
-  PropsRuntime<'conversation.session.header.actions'> & PropsLocale<typeof NS>
+  PropsRuntime<'conversation.session.header.actions'> & JobActionsInjected & PropsLocale<typeof NS>
 
 /** Stable empty list so a session with no jobs keeps one array identity. */
 const NO_TASKS: readonly JobView[] = []
@@ -91,7 +103,7 @@ function ordered(jobs: readonly JobView[]): JobView[] {
  * @param props - runtime slot currency plus the namespace translator.
  * @returns the trigger and its popover list, or null when there is nothing to show.
  */
-export function JobListAction({ sessionId, useSessions, t }: JobListActionProps) {
+export function JobListAction({ sessionId, useSessions, killJob, t }: JobListActionProps) {
   const jobs = useSessions(state => state.jobsBySession[sessionId]) ?? NO_TASKS
   const [open, setOpen] = useState(false)
   const [now, setNow] = useState(() => Date.now())
@@ -100,6 +112,23 @@ export function JobListAction({ sessionId, useSessions, t }: JobListActionProps)
 
   const rows = useMemo(() => ordered(jobs), [jobs])
   const liveCount = useMemo(() => jobs.filter(isLive).length, [jobs])
+  // Per-job stop request state: 'pending' disables the row's button while the
+  // RPC is in flight; a string is the wire error, surfaced as the disabled
+  // retry button's tooltip (the failure also stays visible in the next push).
+  const [stopState, setStopState] = useState<ReadonlyMap<string, 'pending' | string>>(new Map())
+
+  const stopOne = (job: JobView): void => {
+    if (stopState.get(job.id) === 'pending') return
+    setStopState(current => new Map(current).set(job.id, 'pending'))
+    void killJob(job.id).then((result) => {
+      setStopState((current) => {
+        const next = new Map(current)
+        if (result.ok) next.delete(job.id)
+        else next.set(job.id, result.message)
+        return next
+      })
+    })
+  }
 
   useDismissOnOutsidePointer(rootRef, open, setOpen)
 
@@ -131,8 +160,33 @@ export function JobListAction({ sessionId, useSessions, t }: JobListActionProps)
     triggerRef.current?.focus()
   }
 
+  const liveJobs = rows.filter(isLive)
+  // One click stops everything still running for this session; per-job stops
+  // stay available in the open list.
+  const stopAll = (): void => {
+    for (const job of liveJobs) stopOne(job)
+  }
+
   return (
     <div ref={rootRef} className={css.root} onKeyDown={onKeyDown}>
+      {liveCount > 0
+        ? (
+          <button
+            type="button"
+            className={css.stop}
+            aria-label={t('stop.all', { count: liveCount })}
+            title={t('stop.all', { count: liveCount })}
+            onClick={(event) => {
+              // The stop sits beside the list toggle; stopping must not also
+              // toggle the popover.
+              event.stopPropagation()
+              stopAll()
+            }}
+          >
+            <IconStopFill16 className={css.stopIcon} />
+          </button>
+        )
+        : null}
       <button
         ref={triggerRef}
         type="button"
@@ -172,6 +226,22 @@ export function JobListAction({ sessionId, useSessions, t }: JobListActionProps)
                   >
                     {duration}
                   </span>
+                  {job.status === 'running'
+                    ? (
+                      <button
+                        type="button"
+                        className={css.rowStop}
+                        disabled={stopState.get(job.id) === 'pending'}
+                        aria-label={t('stop.one', { label: job.label })}
+                        title={stopState.get(job.id) !== undefined && stopState.get(job.id) !== 'pending'
+                          ? t('stop.failed', { message: stopState.get(job.id) })
+                          : t('stop.one', { label: job.label })}
+                        onClick={() => stopOne(job)}
+                      >
+                        <IconStopFill16 className={css.stopIcon} />
+                      </button>
+                    )
+                    : null}
                 </li>
               )
             })}

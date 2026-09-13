@@ -6,7 +6,7 @@ import type { SessionTail } from '@deepseek-ai/dsh-client-runtime/client'
 import { createScope, scopeOf, SessionProvideChannel } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
-  AgentContext, ConversationSnapshot, ISessions, ObservableSnapshot, ProjectionsFace, SessionFace, SessionId,
+  AgentContext, ConversationSnapshot, ISessions, JobView, ObservableSnapshot, ProjectionsFace, SessionFace, SessionId,
   SessionListState, SessionProvideDescriptor, SessionSearchResultItem, SessionSummary, SnapshotStore,
   SubagentAddress,
 } from '@deepseek-ai/dsh-client-runtime/client'
@@ -191,7 +191,7 @@ export class TestSessions implements ISessions {
 
   /** Calls observed on the service-level face, newest last. */
   readonly calls: {
-    method: 'open' | 'openSubagent' | 'setSubagentCatalogOpen' | 'refreshSubagents' | 'interruptSession' | 'promptSession' | 'sessionTail'
+    method: 'open' | 'openSubagent' | 'setSubagentCatalogOpen' | 'refreshSubagents' | 'interruptSession' | 'killJob' | 'promptSession' | 'sessionTail'
       | 'clear' | 'search' | 'fork' | 'forkExcluding'
     args: unknown[]
   }[] = []
@@ -431,6 +431,11 @@ export class TestSessions implements ISessions {
   async interruptSession(id: SessionId): Promise<RpcResult<{ accepted: true }>> {
     this.calls.push({ method: 'interruptSession', args: [id] })
     return { ok: true, value: { accepted: true } }
+  }
+
+  async killJob(jobId: JobView['id']): Promise<RpcResult<{ killed: 'requested' | 'already-finished' }>> {
+    this.calls.push({ method: 'killJob', args: [jobId] })
+    return { ok: true, value: { killed: 'requested' } }
   }
 
   async promptSession(id: SessionId, text: string, mode: 'queue' | 'steer'): Promise<RpcResult<{ accepted: true }>> {

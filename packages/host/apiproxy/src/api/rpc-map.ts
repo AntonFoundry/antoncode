@@ -15,6 +15,7 @@ import type { CredentialsApi } from './credentials.ts'
 import type { LlmApi } from './llm.ts'
 import type { SubagentsApi } from './subagents.ts'
 import type { TermApi } from './term.ts'
+import type { JobsApi } from './jobs.ts'
 import type { RpcResponse } from './rpc.ts'
 
 /**
@@ -82,6 +83,7 @@ export interface RpcMethodMap {
   'term.input': TermApi['input']
   'term.resize': TermApi['resize']
   'term.dispose': TermApi['dispose']
+  'jobs.kill': JobsApi['kill']
 }
 
 /** Business request payload of method K (reaches through the RpcRequest narrow form to payload). */

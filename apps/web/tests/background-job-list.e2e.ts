@@ -12,7 +12,6 @@ import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { JobId } from '@deepseek-ai/dsh-jobs'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
   launchWebScaffold, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
@@ -51,7 +50,6 @@ describe.skipIf(MODE === 'record')('web e2e: background job list', () => {
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
   let agent: Agent
-  let jobId: JobId
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
@@ -98,7 +96,6 @@ describe.skipIf(MODE === 'record')('web e2e: background job list', () => {
     const reported = started.content.map(block => block.type === 'text' ? block.text : '').join('')
     const matched = /\bbash-\d+\b/.exec(reported)
     if (matched === null) throw new Error(`background bash reported no job id: ${reported}`)
-    jobId = JobId(matched[0])
 
     await trigger.waitFor({ timeout: 15_000 })
     await trigger.click()
@@ -114,7 +111,10 @@ describe.skipIf(MODE === 'record')('web e2e: background job list', () => {
 
   it('flips the open list to the cancelled outcome when the registry settles it', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-background-job-settled'))
-    expect(scaffold.ctx.jobs.kill(jobId, agent, 'web e2e cancellation')).toBe('requested')
+    // The stop control itself drives the kill — UI → jobs.kill RPC → registry
+    // kill → change push — over the still-open list from the running test.
+    const row = page.getByRole('list', { name: 'Background jobs' }).getByRole('listitem').first()
+    await row.getByRole('button', { name: `Stop ${COMMAND}` }).click()
 
     // The trigger drops its live count once the task leaves running/stopping,
     // which is also the proof that settlement reached the browser unprompted.

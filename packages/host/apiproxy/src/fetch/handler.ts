@@ -74,6 +74,7 @@ import {
   subagentListRequestSchema,
   subagentPromptRequestSchema,
 } from '../api/subagents.schema.ts'
+import { jobKillRequestSchema } from '../api/jobs.schema.ts'
 
 /**
  * Unary dispatch table, keyed by (and compiler-locked to) RpcMethodMap: a map row without a
@@ -155,6 +156,7 @@ const UNARY_ROUTES: UnaryRoutes = {
   'term.input': { schema: termInputRequestSchema, invoke: (api, r) => api.term.input(r) },
   'term.resize': { schema: termResizeRequestSchema, invoke: (api, r) => api.term.resize(r) },
   'term.dispose': { schema: termDisposeRequestSchema, invoke: (api, r) => api.term.dispose(r) },
+  'jobs.kill': { schema: jobKillRequestSchema, invoke: (api, r) => api.jobs.kill(r) },
 }
 
 /** Route lookup that narrows an arbitrary path segment to a map key (single cast point for the string→key refinement). */

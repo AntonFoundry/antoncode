@@ -6,6 +6,7 @@
 import { z } from 'zod'
 import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
 import type { JobView } from './jobs.ts'
+import type { RequestPayload, ResponseValue } from './rpc-map.ts'
 import type { Wire } from './rpc.schema.ts'
 
 /** JobId: one brand cast after non-empty string validation. */
@@ -31,3 +32,13 @@ export const taskViewSchema = z.object({
   startedAt: z.number().int().nonnegative(),
   finishedAt: z.number().int().nonnegative().optional(),
 }) satisfies z.ZodType<Wire<JobView>>
+
+/** jobs.kill request payload. */
+export const jobKillRequestSchema = z.object({
+  jobId: taskIdSchema,
+}) satisfies z.ZodType<Wire<RequestPayload<'jobs.kill'>>>
+
+/** jobs.kill response value. */
+export const jobKillValueSchema = z.object({
+  killed: z.union([z.literal('requested'), z.literal('already-finished')]),
+}) satisfies z.ZodType<Wire<ResponseValue<'jobs.kill'>>>

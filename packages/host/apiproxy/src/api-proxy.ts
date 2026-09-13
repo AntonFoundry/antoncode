@@ -3629,6 +3629,47 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       },
     },
 
+    jobs: {
+      // Mutations only — the read side is the `session/jobs` mux frame. The
+      // browser is not a registry caller: an unowned job kills under the
+      // callerless fence, and an owned job resolves its owner among the live
+      // sessions' agents. The fence throws before any mutation (unknown id,
+      // foreign owner), so probing callers is side-effect-free.
+      async kill(request) {
+        const jobs = ctx.get('jobs')
+        if (jobs === undefined) {
+          return err(request, {
+            code: 'jobs-unavailable',
+            message: 'no background-job registry is composed in this deployment',
+            details: {},
+          })
+        }
+        const { jobId } = request.payload
+        const attempt = (caller?: Agent): 'requested' | 'already-finished' | undefined => {
+          try {
+            return jobs.kill(jobId, caller)
+          } catch {
+            // Fence rejection: not this caller's job, or no such job. The
+            // caller loop distinguishes them; a rejected kill is untouched.
+            return undefined
+          }
+        }
+        let killed = attempt(undefined)
+        for (const session of ctx.sessions.list()) {
+          if (killed !== undefined) break
+          killed = attempt(ctx.agents.get(session.id))
+        }
+        if (killed === undefined) {
+          return err(request, {
+            code: 'job-not-found',
+            message: `unknown job ${jobId}`,
+            details: { jobId },
+          })
+        }
+        return ok(request, { killed })
+      },
+    },
+
     events: {
       mux(_request, signal) {
         const queue = new FrameQueue<RpcRequest<MuxFrame>>()
