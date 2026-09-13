@@ -38,6 +38,18 @@ export interface GateRule {
 export interface Config {
   /** Gate rules; evaluated in order, and the first matching rule denies. */
   rules?: GateRule[]
+  /** Pre-fetch c0ntext guidebook recipes and append matching ones to denials. Defaults to `false`. */
+  verdictsEnabled?: boolean
+  /** Base URL of the c0ntext worker, e.g. `http://127.0.0.1:8090`. Verdicts are inert without it. */
+  verdictsEndpoint?: string
+  /** c0ntext API key sent as `X-API-Key`. Empty for a keyless local worker. */
+  verdictsApiKey?: string
+  /** Environment variable that overrides `verdictsApiKey`. Defaults to `ANTON_CONTEXT_API_KEY`. */
+  verdictsApiKeyEnv?: string
+  /** Per-request timeout for `GET /recipes/list`. Defaults to `4000`. */
+  verdictsTimeoutMs?: number
+  /** Refresh interval for the recipe cache. Defaults to `300000`. */
+  verdictsRefreshMs?: number
 }
 
 export const Config: z<Config> = z.object({
@@ -47,7 +59,19 @@ export const Config: z<Config> = z.object({
     commandPatterns: z.array(z.string()),
     checklist: z.string(),
   })).default([]),
+  verdictsEnabled: z.boolean().default(false),
+  verdictsEndpoint: z.string().default(''),
+  verdictsApiKey: z.string().default(''),
+  verdictsApiKeyEnv: z.string().default('ANTON_CONTEXT_API_KEY'),
+  verdictsTimeoutMs: z.number().default(4000),
+  verdictsRefreshMs: z.number().default(300000),
 })
+
+/** One cached guidebook recipe: only the id and intent reach the guard. */
+export interface RecipeSummary {
+  id: string
+  intent: string
+}
 
 /** Compile one `*`-wildcard pattern to an anchored RegExp (every other regex metacharacter is matched literally). */
 function wildcardToRegExp(pattern: string): RegExp {
@@ -56,10 +80,53 @@ function wildcardToRegExp(pattern: string): RegExp {
 }
 
 /** The model-facing denial: names the gate, lists the checks, orders the retry. */
-function denialText(ruleName: string, checklist: string): string {
-  return `Gate '${ruleName}' blocked this call. Before it can run, complete these checks:\n`
+function denialText(ruleName: string, checklist: string, guidebook: readonly RecipeSummary[]): string {
+  let text = `Gate '${ruleName}' blocked this call. Before it can run, complete these checks:\n`
     + `${checklist}\n`
     + 'Perform the checks now, state their outcome in your reply, then retry this exact call.'
+  if (guidebook.length > 0) {
+    text += '\n\nGuidebook — stored recipes whose intent matches this gate:\n'
+      + guidebook.map(recipe => `- ${recipe.intent}`).join('\n')
+  }
+  return text
+}
+
+/** Lowercase alphanumeric tokens of length ≥ 3 — the matcher vocabulary; shorter words are noise. */
+function keywords(text: string): Set<string> {
+  return new Set((text.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter(token => token.length >= 3))
+}
+
+/**
+ * Deterministic token-overlap matcher: a recipe matches when its intent shares
+ * at least one token with the rule name or the checklist. No scoring, no
+ * ranking — the c0ntext engine owns relevance; the guard only narrows.
+ */
+export function matchingRecipes(recipes: readonly RecipeSummary[], ruleName: string, checklist: string): RecipeSummary[] {
+  const gate = new Set([...keywords(ruleName), ...keywords(checklist)])
+  return recipes.filter(recipe => [...keywords(recipe.intent)].some(token => gate.has(token)))
+}
+
+/**
+ * Fetch the guidebook inventory from the c0ntext worker and reduce it to the
+ * id/intent pairs the matcher reads. Non-string entries are skipped; a failed
+ * or malformed response throws so the caller can decide the fallback.
+ */
+async function fetchRecipes(baseUrl: string, apiKey: string, timeoutMs: number): Promise<RecipeSummary[]> {
+  const response = await fetch(`${baseUrl}/recipes/list?project_id=global`, {
+    signal: AbortSignal.timeout(timeoutMs),
+    headers: apiKey === '' ? {} : { 'x-api-key': apiKey },
+  })
+  if (!response.ok) throw new Error(`recipes/list responded ${response.status}`)
+  const payload: unknown = await response.json()
+  if (!Array.isArray(payload)) throw new Error('recipes/list returned a non-array payload')
+  const recipes: RecipeSummary[] = []
+  for (const entry of payload) {
+    if (typeof entry !== 'object' || entry === null) continue
+    const id = (entry as { id?: unknown }).id
+    const intent = (entry as { intent?: unknown }).intent
+    if (typeof id === 'string' && typeof intent === 'string') recipes.push({ id, intent })
+  }
+  return recipes
 }
 
 /**
@@ -112,6 +179,34 @@ export function apply(ctx: Context, config: Config): void {
   const rules = compileRules(config.rules as GateRule[])
 
   /**
+   * The guidebook cache: verdicts are pre-fetched on an interval because the
+   * guard is synchronous. An empty or failed cache leaves denials unchanged —
+   * telemetry must never cost a run, so fetch failures are swallowed after
+   * logging.
+   */
+  let cache: RecipeSummary[] = []
+  if (config.verdictsEnabled === true && (config.verdictsEndpoint ?? '').trim() !== '') {
+    const baseUrl = (config.verdictsEndpoint ?? '').replace(/\/$/, '')
+    const override = process.env[config.verdictsApiKeyEnv ?? 'ANTON_CONTEXT_API_KEY']?.trim()
+    const apiKey = override === undefined || override === '' ? config.verdictsApiKey ?? '' : override
+    const timeoutMs = config.verdictsTimeoutMs ?? 4000
+    const refreshMs = config.verdictsRefreshMs ?? 300000
+    const refresh = (): void => {
+      fetchRecipes(baseUrl, apiKey, timeoutMs).then((recipes) => {
+        cache = recipes
+      }).catch((error: unknown) => {
+        // Keep the previous cache; a degraded engine must not break gating.
+        ctx.logger?.warn('gate-policy: guidebook refresh failed, keeping last cache: %s', error instanceof Error ? error.message : String(error))
+      })
+    }
+    refresh()
+    ctx.effect(() => {
+      const timer = setInterval(refresh, refreshMs)
+      return () => clearInterval(timer)
+    })
+  }
+
+  /**
    * The guard: first matching rule denies with its checklist; everything else
    * returns `undefined` and the call proceeds untouched. Registration returns
    * a disposer, so the effect disposes with the plugin fiber.
@@ -122,7 +217,7 @@ export function apply(ctx: Context, config: Config): void {
     for (const rule of rules) {
       if (!rule.tools.some(pattern => pattern.test(execution.name))) continue
       if (!rule.patterns.some(pattern => pattern.test(command))) continue
-      return denialText(rule.name, rule.checklist)
+      return denialText(rule.name, rule.checklist, matchingRecipes(cache, rule.name, rule.checklist))
     }
     return undefined
   }
