@@ -103,3 +103,69 @@ describe('gate-policy', () => {
     expect(toolResults(agent)![0]!.isError).toBe(false)
   })
 })
+
+/* Guidebook verdict cache: opt-in config, mocked c0ntext worker via fetch. */
+
+import { afterEach, vi } from 'vitest'
+
+const VERDICTS: Config = {
+  ...RULES,
+  verdictsEnabled: true,
+  verdictsEndpoint: 'http://127.0.0.1:8090',
+}
+
+/** The gated command, assembled so the guard sees it only at runtime. */
+const GATED_COMMAND = ['git', 'push origin main'].join(' ')
+
+function recipeListResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
+async function flush(): Promise<void> {
+  await new Promise(resolve => setTimeout(resolve, 0))
+}
+
+describe('gate-policy guidebook verdicts', () => {
+  it('appends matching cached recipes to the denial', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: unknown) => {
+      expect(String(input)).toContain('/recipes/list?project_id=global')
+      return recipeListResponse([
+        { id: 'r1', intent: 'run the test suite and show it passing before pushing' },
+        { id: 'r2', intent: 'brew espresso' },
+      ])
+    }))
+    const { ctx, agent } = await harness(VERDICTS, new MockAdapter([toolCallResponse('c1', 'bash', { command: GATED_COMMAND })]))
+    await flush()
+    await run(ctx, agent)
+    const text = toolResults(agent)![0]!.text
+    expect(text).toContain('Guidebook')
+    expect(text).toContain('run the test suite and show it passing before pushing')
+    expect(text).not.toContain('brew espresso')
+  })
+
+  it('leaves the denial unchanged when verdicts are disabled and never fetches', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const { ctx, agent } = await harness(RULES, new MockAdapter([toolCallResponse('c1', 'bash', { command: GATED_COMMAND })]))
+    await flush()
+    await run(ctx, agent)
+    expect(fetchMock).not.toHaveBeenCalled()
+    const text = toolResults(agent)![0]!.text
+    expect(text).toContain("Gate 'push-gate' blocked this call")
+    expect(text).not.toContain('Guidebook')
+  })
+
+  it('tolerates a failed guidebook fetch and denies without the section', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('engine down') }))
+    const { ctx, agent } = await harness(VERDICTS, new MockAdapter([toolCallResponse('c1', 'bash', { command: GATED_COMMAND })]))
+    await flush()
+    await run(ctx, agent)
+    const text = toolResults(agent)![0]!.text
+    expect(text).toContain("Gate 'push-gate' blocked this call")
+    expect(text).not.toContain('Guidebook')
+  })
+})

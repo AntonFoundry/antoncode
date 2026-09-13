@@ -38,6 +38,33 @@ fields:
 | `commandPatterns` | Anchored regex sources tested against the `command` string argument. First matching rule denies. |
 | `checklist` | Required, non-empty. The checks the model must perform before retrying. |
 
+### Guidebook verdicts (opt-in)
+
+The guard is synchronous, so c0ntext guidebook recipes are pre-fetched into an
+in-memory cache and refreshed on an interval. When enabled and a matching rule
+denies, the denial appends a `Guidebook` section listing stored recipes whose
+`intent` shares at least one token (lowercased, length ≥ 3) with the rule name
+or the checklist — a deterministic narrowing, no scoring. An empty cache, a
+disabled flag, or a failed refresh leaves the denial unchanged; fetch failures
+are logged and swallowed so telemetry never costs a run.
+
+```yaml
+config:
+  verdictsEnabled: true
+  verdictsEndpoint: http://127.0.0.1:8090
+  # verdictsApiKey: ctx_…            # or env ANTON_CONTEXT_API_KEY
+  # verdictsTimeoutMs: 4000
+  # verdictsRefreshMs: 300000
+```
+
+| Field | Meaning |
+|---|---|
+| `verdictsEnabled` | Defaults to `false` — opt-in, never shipped on. |
+| `verdictsEndpoint` | Base URL of the c0ntext worker; empty keeps verdicts inert. |
+| `verdictsApiKey` / `verdictsApiKeyEnv` | API key sent as `X-API-Key`; env override wins, default env `ANTON_CONTEXT_API_KEY`. |
+| `verdictsTimeoutMs` | Per-request timeout for `GET /recipes/list`; default `4000`. |
+| `verdictsRefreshMs` | Cache refresh interval; default `300000`. The timer is disposed with the plugin fiber. |
+
 Misconfiguration fails loud at plugin load: an invalid regex, an empty rule
 name, or an empty checklist throws. A call without a string `command`
 argument never matches — gates key on shell command text, not argument
@@ -59,3 +86,7 @@ is added.
   current enforcement relies on the model stating its checks in-transcript.
 - Only the `command` argument is inspected; tools whose dangerous arguments
   live elsewhere need their own gate surface.
+- Guidebook matching is deliberately naive token overlap between the gate text
+  and recipe intents: it may miss relevant recipes (synonyms) or surface loose
+  ones (shared generic words). Relevance ranking belongs to the c0ntext engine;
+  the guard only narrows its cached inventory.
