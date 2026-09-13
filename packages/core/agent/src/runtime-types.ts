@@ -28,6 +28,12 @@ export interface AgentOptions {
   model?: string
   /** Maximum output tokens for each conversation-model request. */
   maxTokens?: number
+  /**
+   * Reasoning effort this agent's model requests run at. The selected
+   * provider validates the id per model; an unserviceable effort fails at
+   * request time. Absent means the route's own default.
+   */
+  reasoningEffort?: string
 }
 
 /** Options for {@link Agent.cancel}. */

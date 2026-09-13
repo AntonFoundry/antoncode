@@ -105,7 +105,7 @@ describe('dsh-tool-subagent', () => {
     const schema = ctx.tools.schemas().find(s => s.name === 'subagent')
     expect(schema).toBeDefined()
     const props = (schema!.parameters as { properties?: Record<string, unknown> }).properties ?? {}
-    expect(Object.keys(props).sort()).toEqual(['description', 'model', 'prompt', 'run_in_background'])
+    expect(Object.keys(props).sort()).toEqual(['description', 'model', 'prompt', 'reasoningEffort', 'run_in_background'])
     expect(schema!.description).toContain('job_output')
   })
 
@@ -113,7 +113,7 @@ describe('dsh-tool-subagent', () => {
     const ctx = await setup({ provider: 'mock', enableRunInBackground: false })
     const schema = ctx.tools.schemas().find(s => s.name === 'subagent')
     const props = (schema!.parameters as { properties?: Record<string, unknown> }).properties ?? {}
-    expect(Object.keys(props).sort()).toEqual(['description', 'model', 'prompt'])
+    expect(Object.keys(props).sort()).toEqual(['description', 'model', 'prompt', 'reasoningEffort'])
     expect(schema!.description).not.toContain('job_output')
   })
 
@@ -258,6 +258,36 @@ describe('dsh-tool-subagent', () => {
 
     await callSubagent(ctx, { description: 'd', prompt: 'p' })
     expect(seen?.agentOptions).toEqual({ model: 'child-model' })
+  })
+
+  it('threads the call\'s reasoningEffort into the start request, alone or beside a route', async () => {
+    // Effort is per-child request configuration carried on the agent options;
+    // it must reach the provider even when no model route is named.
+    let seen: { agentOptions?: { model?: string; reasoningEffort?: string } } | undefined
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(SubagentRuntime)
+    ctx.subagents.registerProvider({
+      name: 'capture',
+      capabilities: { outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
+      inheritsParentContext: false,
+      start: async (request) => {
+        seen = request
+        return {
+          id: SessionId('capture-child'),
+          localAgent: undefined,
+          result: Promise.resolve({ output: [{ type: 'text', text: 'ok' }], stopReason: 'completed' as const }),
+          dispose: async () => {},
+        }
+      },
+    })
+    await ctx.plugin(tool, { provider: 'capture', maxDepth: 'provider-managed' })
+
+    await callSubagent(ctx, { description: 'd', prompt: 'p', reasoningEffort: 'high' })
+    expect(seen?.agentOptions).toEqual({ reasoningEffort: 'high' })
+    await callSubagent(ctx, { description: 'd', prompt: 'p', model: 'mock/k3', reasoningEffort: 'low' })
+    expect(seen?.agentOptions).toEqual({ provider: 'mock', model: 'k3', reasoningEffort: 'low' })
   })
 
   it('resolves the child model route: call arg > per-session section > global default > config', () => {

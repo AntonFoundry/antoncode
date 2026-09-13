@@ -1,4 +1,4 @@
-import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { CallId, createUserMessage, type LlmModelReasoningInfo, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { type Agent, type AgentOptions } from '@deepseek-ai/dsh-agent'
@@ -23,13 +23,13 @@ async function mountInvariants(ctx: Context): Promise<void> {
   await ctx.plugin(AgentLoopInvariant)
 }
 
-async function setup(script: Script, parentOptions: Partial<AgentOptions> = {}) {
+async function setup(script: Script, parentOptions: Partial<AgentOptions> = {}, reasoning?: LlmModelReasoningInfo) {
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx)
   await mountInvariants(ctx)
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(SubagentRuntime)
-  const adapter = new MockAdapter(script)
+  const adapter = new MockAdapter(script, reasoning)
   ctx.llm.registerAdapter(['mock'], adapter)
   const parent = ctx.agentLoop.create(SessionId('parent'), { provider: 'mock', model: 'mock', ...parentOptions })
   return { ctx, parent, adapter }
@@ -240,6 +240,36 @@ describe('startInProcessRun', () => {
     await overridden.result
     expect(adapter.requests[1]?.maxTokens).toBe(222)
     expect(ctx.agents.get(overridden.id)?.options.maxTokens).toBe(222)
+    await overridden.dispose()
+  })
+
+  it('inherits the parent reasoning effort and accepts an explicit child override', async () => {
+    // The model must declare the efforts the delegations name, or prepareCall
+    // rejects the child's request outright.
+    const reasoning: LlmModelReasoningInfo = {
+      efforts: [
+        { id: ReasoningEffortId('high'), name: 'High' },
+        { id: ReasoningEffortId('low'), name: 'Low' },
+      ],
+    }
+    const { ctx, parent, adapter } = await setup(
+      [textResponse('inherited'), textResponse('overridden')],
+      { reasoningEffort: 'high' },
+      reasoning,
+    )
+    const inherited = await startInProcessRun(request(parent), {})
+    await inherited.result
+    expect(adapter.requests[0]?.reasoningEffort).toBe('high')
+    expect(ctx.agents.get(inherited.id)?.options.reasoningEffort).toBe('high')
+    await inherited.dispose()
+
+    const overridden = await startInProcessRun({
+      ...request(parent),
+      agentOptions: { reasoningEffort: 'low' },
+    }, {})
+    await overridden.result
+    expect(adapter.requests[1]?.reasoningEffort).toBe('low')
+    expect(ctx.agents.get(overridden.id)?.options.reasoningEffort).toBe('low')
     await overridden.dispose()
   })
 
