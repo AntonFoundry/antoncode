@@ -13,6 +13,7 @@ import type {
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { HostObservable, SessionMaybeProvideInfo } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AgentContext } from '../agents/scope.ts'
+import type { JobView } from '@deepseek-ai/dsh-client-connection/client'
 import type { SessionSearchResultItem } from '../sessions/manager.ts'
 import type {
   SessionBinding, SessionListState, SessionProvideDescriptor,
@@ -54,6 +55,15 @@ export interface ISessions {
    * @returns the wire result; `ok: false` names why the stop did not land.
    */
   interruptSession(id: SessionId): Promise<RpcResult<{ accepted: true }>>
+  /**
+   * Kill one background job by registry id (the job list's stop control).
+   * Fire-and-return: `killed` acknowledges the cancel request; the
+   * `jobsBySession` mirror settles the row through the next change push, not
+   * this call's result.
+   * @param jobId - the registry-issued job id to kill.
+   * @returns the wire result; `ok: false` names why the kill did not land.
+   */
+  killJob(jobId: JobView['id']): Promise<RpcResult<{ killed: 'requested' | 'already-finished' }>>
   /**
    * Prompt one session by id without selecting it: the board's per-pane
    * composer. `mode` follows the session's live state — `steer` interrupts a

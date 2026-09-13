@@ -394,6 +394,11 @@ export class SessionRuntime implements ISessions {
     return this.manager.cancelSession(id)
   }
 
+  /** {@inheritdoc ISessions.killJob} */
+  killJob(jobId: JobView['id']): Promise<RpcResult<{ killed: 'requested' | 'already-finished' }>> {
+    return this.manager.killJob(jobId)
+  }
+
   /**
    * Select a listed or retained catalog-addressed session as current.
    * @param id - listed or addressed session id.

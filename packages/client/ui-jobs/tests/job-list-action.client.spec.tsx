@@ -33,7 +33,12 @@ function job(over: Partial<JobView> = {}): JobView {
   }
 }
 
-function props(jobs: readonly JobView[] | undefined): JobListActionProps {
+type KillJobProp = JobListActionProps extends { killJob: infer K } ? K : never
+
+function props(
+  jobs: readonly JobView[] | undefined,
+  killJob: KillJobProp = vi.fn(async (): Promise<{ ok: true }> => ({ ok: true })) as never,
+): JobListActionProps {
   const state = {
     ids: [SESSION],
     byId: {},
@@ -46,7 +51,12 @@ function props(jobs: readonly JobView[] | undefined): JobListActionProps {
   function useSessions<T>(select: (snapshot: SessionListState) => T): T {
     return select(state)
   }
-  return { sessionId: SESSION, useSessions, t } as unknown as JobListActionProps
+  return { sessionId: SESSION, useSessions, killJob, t } as unknown as JobListActionProps
+}
+
+/** The header list toggle, by its count label — the header may also hold a stop control. */
+function trigger(): HTMLElement {
+  return screen.getByRole('button', { name: /后台任务/ })
 }
 
 /**
@@ -78,7 +88,7 @@ describe('JobListAction visibility', () => {
 
   it('closes and unmounts when the last job disappears while the list is open', () => {
     const { container, rerender } = render(<JobListAction {...props([job()])} />)
-    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(trigger())
     expect(screen.getByRole('list', { name: zh['list.aria'] })).toBeDefined()
 
     rerender(<JobListAction {...props([])} />)
@@ -94,7 +104,7 @@ describe('JobListAction rows', () => {
       job({ id: 'bash-2' as JobView['id'], label: 'later live', startedAt: START + 5_000 }),
       job({ id: 'bash-1' as JobView['id'], label: 'earlier live', startedAt: START }),
     ])} />)
-    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(trigger())
     expect(rowCells()).toEqual([
       ['bash', 'earlier live', '运行中', '0秒'],
       ['bash', 'later live', '运行中', '0秒'],
@@ -108,7 +118,7 @@ describe('JobListAction rows', () => {
       job({ id: 'bash-2' as JobView['id'], label: 'second', status: 'completed', startedAt: START + 10, finishedAt: START + 100 }),
       job({ id: 'bash-1' as JobView['id'], label: 'first', status: 'completed', startedAt: START, finishedAt: START + 100 }),
     ])} />)
-    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(trigger())
     expect(rowCells().map(cells => cells[1])).toEqual(['first', 'second'])
   })
 
@@ -116,7 +126,7 @@ describe('JobListAction rows', () => {
     render(<JobListAction {...props([
       job({ status: 'killed', detail: 'signal: SIGTERM', finishedAt: START + 2_000 }),
     ])} />)
-    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(trigger())
     expect(rowCells()[0]).toContain('signal: SIGTERM')
   })
 
@@ -128,7 +138,7 @@ describe('JobListAction rows', () => {
       job({ id: 'bash-4' as JobView['id'], label: 'd', status: 'killed', finishedAt: START }),
       job({ id: 'bash-5' as JobView['id'], label: 'e', status: 'failed', finishedAt: START }),
     ])} />)
-    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(trigger())
     const words = rowCells().map(cells => cells[2])
     expect(new Set(words)).toEqual(new Set(['运行中', '正在停止', '已完成', '已取消', '已失败']))
   })
@@ -141,7 +151,7 @@ describe('JobListAction duration', () => {
       job({ id: 'bash-1' as JobView['id'], label: 'live' }),
       job({ id: 'bash-2' as JobView['id'], label: 'done', status: 'completed', finishedAt: START + 4_000 }),
     ])} />)
-    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(trigger())
     expect(rowCells()[0]).toContain('1秒')
     expect(rowCells()[1]).toContain('4秒')
 
@@ -157,7 +167,7 @@ describe('JobListAction duration', () => {
       // A clock that moved backwards must not render a negative duration.
       job({ id: 'bash-3' as JobView['id'], label: 'skew', status: 'completed', startedAt: START + 5_000, finishedAt: START }),
     ])} />)
-    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(trigger())
     expect(rowCells().map(cells => cells[3])).toEqual(['2小时3分', '2分5秒', '0秒'])
   })
 
@@ -165,14 +175,14 @@ describe('JobListAction duration', () => {
     const interval = vi.spyOn(globalThis, 'setInterval')
     render(<JobListAction {...props([job()])} />)
     expect(interval).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(trigger())
     expect(interval).toHaveBeenCalledTimes(1)
   })
 
   it('runs no clock for an open list holding only settled jobs', () => {
     const interval = vi.spyOn(globalThis, 'setInterval')
     render(<JobListAction {...props([job({ status: 'completed', finishedAt: START })])} />)
-    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(trigger())
     expect(interval).not.toHaveBeenCalled()
   })
 })
@@ -180,36 +190,36 @@ describe('JobListAction duration', () => {
 describe('JobListAction dismissal', () => {
   it('closes on Escape and returns focus to the trigger', () => {
     render(<JobListAction {...props([job()])} />)
-    const trigger = screen.getByRole('button')
-    fireEvent.click(trigger)
-    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    const toggle = trigger()
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
 
-    fireEvent.keyDown(trigger, { key: 'Escape' })
-    expect(trigger.getAttribute('aria-expanded')).toBe('false')
-    expect(document.activeElement).toBe(trigger)
+    fireEvent.keyDown(toggle, { key: 'Escape' })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(toggle)
   })
 
   it('ignores other keys and a closed-list Escape', () => {
     render(<JobListAction {...props([job()])} />)
-    const trigger = screen.getByRole('button')
-    fireEvent.keyDown(trigger, { key: 'Escape' })
-    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    const toggle = trigger()
+    fireEvent.keyDown(toggle, { key: 'Escape' })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
 
-    fireEvent.click(trigger)
-    fireEvent.keyDown(trigger, { key: 'ArrowDown' })
-    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(toggle)
+    fireEvent.keyDown(toggle, { key: 'ArrowDown' })
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
   })
 
   it('closes on an outside pointer press but not on one inside', () => {
     render(<JobListAction {...props([job()])} />)
-    const trigger = screen.getByRole('button')
-    fireEvent.click(trigger)
+    const toggle = trigger()
+    fireEvent.click(toggle)
 
     fireEvent.pointerDown(screen.getByRole('list', { name: zh['list.aria'] }))
-    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
 
     fireEvent.pointerDown(document.body)
-    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
   })
 })
 
@@ -221,7 +231,7 @@ describe('JobListAction wire tolerance', () => {
       job({ id: 'bash-1' as JobView['id'], label: 'no finish', status: 'completed' }),
       job({ id: 'bash-2' as JobView['id'], label: 'finished', status: 'completed', startedAt: START - 1_000, finishedAt: START + 2_000 }),
     ])} />)
-    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(trigger())
     expect(rowCells().map(cells => [cells[1], cells[3]])).toEqual([
       ['finished', '3秒'],
       ['no finish', '0秒'],
@@ -233,7 +243,72 @@ describe('JobListAction wire tolerance', () => {
       job({ id: 'bash-2' as JobView['id'], label: 'later', status: 'failed', startedAt: START + 1_000 }),
       job({ id: 'bash-1' as JobView['id'], label: 'earlier', status: 'failed', startedAt: START }),
     ])} />)
-    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(trigger())
     expect(rowCells().map(cells => cells[1])).toEqual(['later', 'earlier'])
+  })
+})
+
+describe('JobListAction stop control', () => {
+  it('shows a header stop only while jobs are live, and it kills every live job', () => {
+    const killJob = vi.fn(async (): Promise<{ ok: true }> => ({ ok: true }))
+    const { rerender } = render(<JobListAction {...props([
+      job({ id: 'bash-1' as JobView['id'] }),
+      job({ id: 'bash-2' as JobView['id'], startedAt: START + 1_000 }),
+      job({ id: 'bash-3' as JobView['id'], status: 'completed', finishedAt: START }),
+    ], killJob)} />)
+    const stop = screen.getByRole('button', { name: '停止 2 个运行中的任务' })
+    fireEvent.click(stop)
+    expect(killJob).toHaveBeenCalledTimes(2)
+    expect(killJob).toHaveBeenCalledWith('bash-1')
+    expect(killJob).toHaveBeenCalledWith('bash-2')
+
+    // Stopping must not also toggle the list popover.
+    expect(screen.queryByRole('list', { name: zh['list.aria'] })).toBeNull()
+
+    rerender(<JobListAction {...props([job({ status: 'completed', finishedAt: START })], killJob)} />)
+    expect(screen.queryByRole('button', { name: /停止/ })).toBeNull()
+  })
+
+  it('offers a per-row stop for each live job and none for settled rows', () => {
+    const killJob = vi.fn(async (): Promise<{ ok: true }> => ({ ok: true }))
+    render(<JobListAction {...props([
+      job({ id: 'bash-1' as JobView['id'], label: 'live' }),
+      job({ id: 'bash-2' as JobView['id'], label: 'done', status: 'completed', finishedAt: START }),
+    ], killJob)} />)
+    fireEvent.click(trigger())
+    fireEvent.click(screen.getByRole('button', { name: '停止 live' }))
+    expect(killJob).toHaveBeenCalledExactlyOnceWith('bash-1')
+  })
+
+  it('offers no per-row stop for an already-stopping job', () => {
+    const killJob = vi.fn(async (): Promise<{ ok: true }> => ({ ok: true }))
+    render(<JobListAction {...props([job({ label: 'ending', status: 'stopping' })], killJob)} />)
+    fireEvent.click(trigger())
+    expect(screen.queryByRole('button', { name: '停止 ending' })).toBeNull()
+  })
+
+  it('disables the row stop while its request is in flight', async () => {
+    let release!: () => void
+    const killJob = vi.fn((): Promise<{ ok: true }> => new Promise((resolve) => { release = () => resolve({ ok: true }) }))
+    render(<JobListAction {...props([job({ label: 'slow' })], killJob)} />)
+    fireEvent.click(trigger())
+    const stop = screen.getByRole('button', { name: '停止 slow' })
+    fireEvent.click(stop)
+    expect(stop.hasAttribute('disabled')).toBe(true)
+
+    await act(async () => { release() })
+    expect(stop.hasAttribute('disabled')).toBe(false)
+  })
+
+  it('surfaces a failed stop as the button tooltip and keeps it retryable', async () => {
+    const killJob = vi.fn(async (): Promise<{ ok: false; message: string }> => ({ ok: false, message: 'worker gone' }))
+    render(<JobListAction {...props([job({ label: 'doomed' })], killJob)} />)
+    fireEvent.click(trigger())
+    const stop = screen.getByRole('button', { name: '停止 doomed' })
+    fireEvent.click(stop)
+
+    await act(async () => {})
+    expect(stop.getAttribute('title')).toBe('停止失败：worker gone')
+    expect(stop.hasAttribute('disabled')).toBe(false)
   })
 })

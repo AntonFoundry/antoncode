@@ -38,6 +38,62 @@
   margin: 0 5px;
 }
 
+/* Header stop control: sits left of the list toggle and only mounts while at
+   least one job is live. */
+.stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.stop:hover,
+.stop:focus-visible {
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-fill-l2);
+}
+
+.stopIcon {
+  flex: none;
+}
+
+/* Per-row stop in the open list, aligned with the row's other trailing cells. */
+.rowStop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.rowStop:hover,
+.rowStop:focus-visible {
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-fill-l2);
+}
+
+/* Stop request in flight: the wire call is one-shot, so the button waits. */
+.rowStop:disabled {
+  color: var(--dsw-alias-label-tertiary);
+  cursor: default;
+  opacity: 0.6;
+}
+
 .menu {
   position: absolute;
   top: calc(100% + 5px);

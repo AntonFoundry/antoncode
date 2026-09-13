@@ -98,6 +98,10 @@ export interface RpcErrorDetailsMap {
   'subagent-not-resumable': { childSessionId: SessionId }
   'subagent-unauthorized': { childSessionId: SessionId }
   'subagent-delivery-unavailable': { childSessionId: SessionId }
+  /** A jobs.kill named no job the registry holds (settled jobs leave the store). */
+  'job-not-found': { jobId: string }
+  /** No background-job registry is composed in this deployment. */
+  'jobs-unavailable': Record<string, never>
   'internal': {}
 }
 

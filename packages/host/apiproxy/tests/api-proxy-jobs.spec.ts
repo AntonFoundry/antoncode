@@ -15,6 +15,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
+import { JobId } from '@deepseek-ai/dsh-jobs/brand'
 import type { JobOutcome } from '@deepseek-ai/dsh-jobs'
 import type { MuxFrame, RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api'
 import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
@@ -259,5 +260,54 @@ describe('session/jobs baseline for a session born after the stream opened', () 
     const frames = await collect(stream, 2, abort)
     const forNew = frames.filter(frame => frame.sessionId === created.id)
     expect(forNew.at(-1)?.jobs[0]?.label).toBe('visible to every caller')
+  })
+})
+
+describe('jobs.kill', () => {
+  const kill = (ctx: Context, jobId: string) => api(ctx).jobs.kill({
+    rpcId: RpcId('t-jobs-kill'),
+    payload: { jobId: JobId(jobId) },
+  })
+
+  it('kills an owned job by resolving its owner among the live sessions', async () => {
+    const { ctx, agent } = await harness(true)
+    const p = producer()
+    const id = ctx.jobs.start({ ...p.spec, owner: agent })
+
+    const { result } = await kill(ctx, id)
+    expect(result).toEqual({ ok: true, value: { killed: 'requested' } })
+    expect(ctx.jobs.get(id, agent).status).toBe('stopping')
+  })
+
+  it('kills an unowned job without a caller', async () => {
+    const { ctx } = await harness(true)
+    const id = ctx.jobs.start(producer().spec)
+
+    const { result } = await kill(ctx, id)
+    expect(result).toEqual({ ok: true, value: { killed: 'requested' } })
+  })
+
+  it('answers already-finished for a settled job', async () => {
+    const { ctx } = await harness(true)
+    const p = producer()
+    const id = ctx.jobs.start(p.spec)
+    p.settle({ status: 'completed' })
+    // Settlement is asynchronous: wait for the terminal state before killing.
+    await ctx.jobs.wait(JobId(id), 1_000)
+
+    const { result } = await kill(ctx, id)
+    expect(result).toEqual({ ok: true, value: { killed: 'already-finished' } })
+  })
+
+  it('rejects an unknown job id with job-not-found', async () => {
+    const { ctx } = await harness(true)
+    const { result } = await kill(ctx, 'bash-404')
+    expect(result).toMatchObject({ ok: false, error: { code: 'job-not-found', details: { jobId: 'bash-404' } } })
+  })
+
+  it('rejects with jobs-unavailable when no registry is composed', async () => {
+    const { ctx } = await harness(false)
+    const { result } = await kill(ctx, 'bash-1')
+    expect(result).toMatchObject({ ok: false, error: { code: 'jobs-unavailable' } })
   })
 })

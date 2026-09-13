@@ -660,6 +660,18 @@ export class SessionManager {
   }
 
   /**
+   * Kill one background job by registry id, without selecting anything: the
+   * raw `jobs.kill` wire call, shared with the job list's stop control.
+   * Fire-and-return — the row settles through the next `session/jobs` change
+   * push, not this call's result.
+   * @param jobId - the registry-issued job id to kill.
+   * @returns the wire result; failures carry the transport or rejection error.
+   */
+  async killJob(jobId: JobView['id']): Promise<RpcResult<{ killed: 'requested' | 'already-finished' }>> {
+    return (await this.api.jobs.kill({ jobId })).result
+  }
+
+  /**
    * Derive a session's board-pane activity tail from its history tail page
    * (see {@link deriveSessionTail}): one bounded wire read, display lines out.
    * @param sessionId - the session whose tail derives.

@@ -5,6 +5,7 @@
  */
 
 import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
+import type { RpcRequest, RpcResponse } from './rpc.ts'
 
 /**
  * One background job as the client sees it.
@@ -33,4 +34,23 @@ export interface JobView {
   startedAt: number
   /** Epoch ms when the task settled; absent while live. */
   finishedAt?: number
+}
+
+/**
+ * Background-job unary methods. The read side is the `session/jobs` mux frame
+ * (the registry's `onJobsChanged` push mints these views); the only mutation
+ * is the same kill the model-facing `job_kill` tool issues. Fire-and-return:
+ * `requested` acknowledges the admitted cancel signal, not quiescence — the
+ * row settles through the next change push.
+ */
+export interface JobsApi {
+  /**
+   * Request cancellation of one background job. The browser is not a registry
+   * caller, so the handler resolves the owning session's Agent itself; an
+   * absent id rejects with `job-not-found`.
+   * @param request - the job id to kill.
+   * @returns how the request landed: `requested` (cancel signal admitted) or
+   *   `already-finished` (the job had already settled).
+   */
+  kill(request: RpcRequest<{ jobId: JobId }>): Promise<RpcResponse<{ killed: 'requested' | 'already-finished' }>>
 }

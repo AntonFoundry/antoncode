@@ -17,6 +17,7 @@ import type { CredentialsApi } from './credentials.ts'
 import type { LlmApi } from './llm.ts'
 import type { DownloadsApi } from './downloads.ts'
 import type { TermApi } from './term.ts'
+import type { JobsApi } from './jobs.ts'
 import type { ClientResponse, RpcReceipt } from './rpc.ts'
 
 /** Root interface of the unified API. New client-request domain = one new file pair + one field here + one map row. */
@@ -34,6 +35,8 @@ export interface ApiProxy {
   llm: LlmApi
   /** Interactive PTY sessions for the GUI terminal (login bash on a node-pty). */
   term: TermApi
+  /** Background-job mutations; the read side is the `session/jobs` mux frame. */
+  jobs: JobsApi
   /** Host-only download surfaces (GET, no wire envelope); absent from IApiClient. */
   downloads: DownloadsApi
   /**
@@ -56,7 +59,7 @@ export type {
   SubagentAddress, SubagentCatalog, SubagentInterruptReceipt, SubagentListEntry,
   SubagentPromptReceipt, SubagentsApi,
 } from './subagents.ts'
-export type { JobView } from './jobs.ts'
+export type { JobView, JobsApi } from './jobs.ts'
 export type { WorkspaceApi, WorkspaceId, WorkspaceView } from './workspace.ts'
 export type { SkillsApi, SkillEntry } from './skills.ts'
 export type { AgentPresetsApi, AgentPresetEntry } from './agent-presets.ts'
