@@ -407,28 +407,28 @@
         rules:
           - name: push-gate
             tools: [bash]
-            commandPatterns: ['git\\s+push\\b(?!.*--dry-run)']
+            commandPatterns: ['git\s+push\b(?!.*--dry-run)']
             checklist: |-
               - Run the relevant test suite and show it passing
               - Re-state what is being pushed and why
               - Confirm the diff contains no secrets and no force flags
           - name: force-push-gate
             tools: [bash]
-            commandPatterns: ['git\\s+push\\b[^|]*\\s--force']
+            commandPatterns: ['git\s+push\b[^|]*\s--force']
             checklist: |-
               - Stop: force-pushing rewrites shared history. Ask the human for
                 explicit confirmation in this conversation, and quote it, before
                 retrying.
           - name: delete-gate
             tools: [bash]
-            commandPatterns: ['rm\\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\\b']
+            commandPatterns: ['rm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\b']
             checklist: |-
               - Name what is lost if this deletion is wrong and whether it is
                 recoverable (tracked in git? backed up?)
               - Confirm the target path is the intended one
           - name: deploy-gate
             tools: [bash]
-            commandPatterns: ['(pnpm\\s+run\\s+)?(deploy|release|publish)\\b', 'npm\\s+publish\\b']
+            commandPatterns: ['(pnpm\s+run\s+)?(deploy|release|publish)\b', 'npm\s+publish\b']
             checklist: |-
               - State the version being released and the changelog entry
               - Re-verify the build from clean before publishing
