@@ -6,6 +6,8 @@ SPA dist server for the Web shell: a function plugin (config `{distIndex}`) that
 
 The fallback seat is single-owner (a second claim throws) and effect-scoped: disposing the plugin's fiber releases the seat, after which the unclaimed webserver answers 404.
 
+Caching is revalidate-always: the shell ships `Cache-Control: no-store` and assets `no-cache` with a size-mtime ETag, so a rebuilt dist is picked up on the next load without heuristic browser caching. On top of that, each plugin activation mints a boot id (one per harness start) that rides every response — `x-dsh-boot` on all bodies, a `<meta name="dsh-boot">` in the served shell — so a long-lived client can detect a restart and drop its in-memory bundle instead of requesting old hashed chunks that no longer exist.
+
 ## Model Experience
 
 None, as the package serves browser assets; nothing here reaches a model request.

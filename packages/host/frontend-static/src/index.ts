@@ -11,6 +11,7 @@
  * @module @deepseek-ai/dsh-host-frontend-static
  */
 
+import { randomUUID } from 'node:crypto'
 import type { ServerResponse, IncomingMessage } from 'node:http'
 import { readFile, stat } from 'node:fs/promises'
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path'
@@ -56,8 +57,13 @@ const MIME: Record<string, string> = {
  */
 export async function serveStatic(
   pathname: string, res: ServerResponse, distRoot: string, distIndex: string,
-  renderIndex: () => Promise<string>, req?: IncomingMessage,
+  renderIndex: () => Promise<string>, req?: IncomingMessage, bootId?: string,
 ): Promise<void> {
+  // The boot id rides every response (header on all bodies, meta on the
+  // shell): a client that remembers the value it loaded under can detect a
+  // harness restart and drop its in-memory bundle instead of requesting old
+  // hashed chunks that no longer exist.
+  if (bootId !== undefined) res.setHeader('x-dsh-boot', bootId)
   const target = resolve(normalize(join(distRoot, pathname)))
   // Traversal rejection: the target must be distRoot itself (`/`) or stay under
   // it. `sep`, not '/': resolve() emits backslash paths on Windows, where a '/'
@@ -68,7 +74,13 @@ export async function serveStatic(
     return
   }
   const serveIndex = async (): Promise<void> => {
-    const body = await renderIndex()
+    const stamped = bootId === undefined
+      ? undefined
+      : `<meta name="dsh-boot" content="${bootId}">`
+    const body = stamped === undefined
+      ? await renderIndex()
+      // Insert after <head> so the restart marker is the shell's first tag.
+      : (await renderIndex()).replace(/<head(\s[^>]*)?>/i, head => `${head}\n    ${stamped}`)
     // The shell references every bundle; it must never come from a stale cache.
     res.writeHead(200, { 'content-type': MIME['.html'], 'cache-control': 'no-store' })
     res.end(body)
@@ -110,6 +122,9 @@ export async function serveStatic(
 export function apply(ctx: Context, config: Config): void {
   const distIndex = config.distIndex
   const distRoot = dirname(distIndex)
+  // One id per plugin activation: a harness restart remounts the plugin, so
+  // every served response carries the boot it came from.
+  const bootId = randomUUID()
   const renderIndex = async (): Promise<string> =>
     ctx.webServer.applyIndexTaps(await readFile(distIndex, 'utf8'))
   ctx.effect(() => ctx.webServer.registerFallback(async (req, res) => {
@@ -122,6 +137,6 @@ export function apply(ctx: Context, config: Config): void {
     }
     /* v8 ignore next -- node:http always sets url on server requests */
     const rawPath = new URL(req.url ?? '/', 'http://x').pathname
-    await serveStatic(decodeURIComponent(rawPath), res, distRoot, distIndex, renderIndex, req)
+    await serveStatic(decodeURIComponent(rawPath), res, distRoot, distIndex, renderIndex, req, bootId)
   }), 'frontend-static: fallback seat')
 }
