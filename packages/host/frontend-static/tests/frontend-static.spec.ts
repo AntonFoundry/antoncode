@@ -79,7 +79,7 @@ async function request(port: number, path: string, init?: RequestInit): Promise<
   return {
     status: response.status,
     type: response.headers.get('content-type'),
-    body: (await response.text()).slice(0, 80),
+    body: (await response.text()).slice(0, 240),
   }
 }
 
@@ -109,12 +109,21 @@ describe('real Loader composition', () => {
     // `/`, the index path, and any miss all render index.html (SPA routing)
     // through the registered index taps.
     const untap = server.tapIndex(html => html.replace('<head>', '<head><script>window.__T__=1</script>'))
+    let bootFromMeta: string | undefined
     for (const path of ['/', '/index.html', '/no/such/route']) {
       const got = await request(port, path)
       expect(got.status).toBe(200)
       expect(got.body).toContain('__T__')
       expect(got.body).toContain('shell')
+      // The boot id rides the shell as a meta tag: one per harness start, so a
+      // client can detect a restart and drop its in-memory bundle.
+      const meta = /<meta name="dsh-boot" content="([^"]+)"/.exec(got.body)
+      expect(meta).not.toBeNull()
+      bootFromMeta = meta![1]
     }
+    // The header on every response (here: an asset) matches the shell's meta.
+    const asset = await fetch(`http://127.0.0.1:${String(port)}/app.js`)
+    expect(asset.headers.get('x-dsh-boot')).toBe(bootFromMeta)
     untap()
     expect((await request(port, '/')).body).not.toContain('__T__')
 
