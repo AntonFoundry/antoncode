@@ -10,6 +10,9 @@ export interface C0ntextSettings {
   maxSurfaceRatio?: number
   windowTokens?: number
   evictorEnabled?: boolean
+  dreamProvider?: string
+  dreamModel?: string
+  dreamIdleHours?: number
 }
 
 export interface C0ntextCardState extends CardShell {
@@ -19,20 +22,30 @@ export interface C0ntextCardState extends CardShell {
   maxSurfaceRatio: CardFieldState
   windowTokens: CardFieldState
   evictorEnabled: CardFieldState
+  dreamProvider: CardFieldState
+  dreamModel: CardFieldState
+  dreamIdleHours: CardFieldState
 }
 
 export interface C0ntextCardFace extends CardActions {
   hooks: { c0ntextCard: SnapshotStore<C0ntextCardState> }
+  dreamCatalog: () => Promise<DreamRouteOption[]>
 }
+
+/** One selectable dream route from the deployment catalog (`provider/model`). */
+export interface DreamRouteOption { id: string; label: string }
 
 export class C0ntextCardController {
   private readonly form: CardForm<C0ntextSettings>
   private readonly store: SnapshotStore<C0ntextCardState>
+  private readonly dreamCatalog: () => Promise<DreamRouteOption[]>
 
-  constructor(scope: SettingsScope<C0ntextSettings>) {
+  constructor(scope: SettingsScope<C0ntextSettings>, dreamCatalog?: () => Promise<DreamRouteOption[]>) {
+    this.dreamCatalog = dreamCatalog ?? (() => Promise.resolve([]))
     this.form = new CardForm(scope, [
       textField('endpoint'), textField('apiKey'), textField('projectId'), numberField('maxSurfaceRatio'),
       numberField('windowTokens'), booleanField('evictorEnabled'),
+      textField('dreamProvider'), textField('dreamModel'), numberField('dreamIdleHours'),
     ])
     this.store = this.form.bind(() => this.projection())
   }
@@ -46,8 +59,17 @@ export class C0ntextCardController {
       maxSurfaceRatio: this.form.field('maxSurfaceRatio'),
       windowTokens: this.form.field('windowTokens'),
       evictorEnabled: this.form.field('evictorEnabled'),
+      dreamProvider: this.form.field('dreamProvider'),
+      dreamModel: this.form.field('dreamModel'),
+      dreamIdleHours: this.form.field('dreamIdleHours'),
     }
   }
 
-  inject(): C0ntextCardFace { return { hooks: { c0ntextCard: this.store }, ...this.form.actions() } }
+  inject(): C0ntextCardFace {
+    return {
+      hooks: { c0ntextCard: this.store },
+      dreamCatalog: () => this.dreamCatalog?.() ?? Promise.resolve([]),
+      ...this.form.actions(),
+    }
+  }
 }

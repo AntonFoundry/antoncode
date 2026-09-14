@@ -69,7 +69,22 @@ export function apply(ctx: ClientContext): void {
   const bash = new BashCardController(ctx.settingsScope.bind({ namespace: SHELL_NS }))
   const agentLoop = new AgentLoopCardController(ctx.settingsScope.bind({ namespace: AGENT_LOOP_NS }))
   const webSearch = new WebSearchCardController(ctx.settingsScope.bind({ namespace: WEB_SEARCH_NS }), api)
-  const c0ntext = new C0ntextCardController(ctx.settingsScope.bind({ namespace: CONTEXT_NS }))
+  const c0ntext = new C0ntextCardController(
+    ctx.settingsScope.bind({ namespace: CONTEXT_NS }),
+    async () => {
+      const list = ctx.sessions.list.getSnapshot()
+      const source = list.current ?? list.ids[0]
+      if (source === undefined) return []
+      const { result } = await api.sessions.models({ sessionId: source })
+      if (!result.ok) return []
+      const value = result.value as { groups?: readonly { id: string; name: string; models?: readonly { id: string; name?: string }[] }[] }
+      return (value.groups ?? []).flatMap(group =>
+        (group.models ?? []).map(model => ({
+          id: `${group.id}/${model.id}`,
+          label: `${group.name} · ${model.name ?? model.id}`,
+        })))
+    },
+  )
   // The model dropdown's catalog comes from any live session's advisory
   // directory — the deployment's providers and models are the same for every
   // session, and the session used as the catalog source is never shown.

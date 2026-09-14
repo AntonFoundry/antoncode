@@ -40,15 +40,35 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The body owns a definite height and the SVG fills it: the drawing then
+   scales (via its own viewBox + preserveAspectRatio) to the largest size the
+   box allows, letterboxed. This is what keeps wide flowcharts readable
+   in-card and makes fullscreen actually enlarge the diagram. */
 .diagramBody {
   display: flex;
   justify-content: center;
+  align-items: center;
   margin: 0 auto;
+  height: clamp(320px, 55vh, 720px);
 }
 
 .diagramBody svg {
-  max-width: 100%;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+}
+
+/* Zoomed: width steps past the card (percentage of the body) and the body
+   pans/scrolls instead of the svg refitting. */
+.zoomed {
+  overflow: auto;
+}
+
+.zoomed svg {
+  width: 100%;
+  /* width comes from the zoom percentage inline style on the body wrapper */
   height: auto;
+  max-width: none;
 }
 
 /* Zoomed: the wrapper takes a percentage width, so the diagram grows past
@@ -85,4 +105,8 @@
 .fullscreen {
   overflow: auto;
   background: var(--dsw-alias-bg-base, transparent);
+}
+
+.fullscreen .diagramBody {
+  height: calc(100vh - 56px);
 }

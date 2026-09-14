@@ -157,6 +157,34 @@ async function copyTextToClipboard(text: string): Promise<void> {
 }
 
 /** Download one blob as a timestamped PNG file (the clipboard's fallback). */
+/** 16px inline stroke icons — no icon-font or image dependency. */
+function CopySourceIcon(): ReactNode {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" stroke="currentColor" />
+      <path d="M10.5 3.5h-7A1.5 1.5 0 0 0 2 5v7" stroke="currentColor" />
+    </svg>
+  )
+}
+
+function CopyImageIcon(): ReactNode {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="2" y="2" width="12" height="12" rx="1.5" stroke="currentColor" />
+      <circle cx="5.8" cy="5.8" r="1.3" fill="currentColor" />
+      <path d="M2.5 11.5 6 8l3 3 2-2 2.5 2.5" stroke="currentColor" />
+    </svg>
+  )
+}
+
+
+function CheckIcon(): ReactNode {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M3 8.5 6.5 12 13 4.5" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  )
+}
 function downloadPng(png: Blob, id: string): void {
   const anchor = document.createElement('a')
   anchor.href = URL.createObjectURL(png)
@@ -170,6 +198,25 @@ function downloadPng(png: Blob, id: string): void {
  * first diagram; a module-level promise caches the configured instance.
  * Render ids must be unique per call — mermaid keys its SVG defs by id.
  */
+/** Render cache keyed by `theme\u0000code`. Failures are cached too: a
+ * diagram that failed once fails instantly and silently on every later
+ * mount instead of replaying mermaid's parse attempt (and its injected
+ * error bomb) each time history re-renders. */
+/**
+ * mermaid v11's render() is not safe to run concurrently: parallel calls race
+ * on its shared temp-DOM state and throw "Cannot read properties of null
+ * (reading 'firstChild')". History pages mount many diagram cards at once, so
+ * every render is serialized through this chain.
+ */
+let renderChain: Promise<unknown> = Promise.resolve()
+function serializeRender<T>(job: () => Promise<T>): Promise<T> {
+  const run = renderChain.then(job, job)
+  renderChain = run.then(() => undefined, () => undefined)
+  return run
+}
+
+const renderCache = new Map<string, Render>()
+
 export const MermaidDiagram = memo(function MermaidDiagram({
   code, copyLabel, copiedLabel, labels,
 }: MermaidDiagramProps): ReactNode {
@@ -218,23 +265,42 @@ export const MermaidDiagram = memo(function MermaidDiagram({
 
   useEffect(() => {
     let cancelled = false
+    const cacheKey = `${theme}\u0000${code}`
+    const cached = renderCache.get(cacheKey)
+    if (cached !== undefined) {
+      // Known outcome (success or failure): no mermaid render at all. For a
+      // failure this also skips mermaid's DOM error-bomb injection entirely.
+      setRender(cached)
+      return
+    }
     const run = async (): Promise<void> => {
       setRender({ phase: 'pending' })
       try {
         mermaidRef.current ??= (await import('mermaid')).default
-        mermaidRef.current.initialize({
+        const mermaid = mermaidRef.current
+        if (mermaid === undefined) throw new Error('mermaid failed to load')
+        mermaid.initialize({
           startOnLoad: false,
           securityLevel: 'strict',
           theme,
           themeVariables: { background: 'transparent', fontFamily: 'inherit' },
         })
         renderIndex.current += 1
-        const { svg } = await mermaidRef.current.render(`dsh-mermaid-${theme}-${renderIndex.current}`, code)
-        if (!cancelled) setRender({ phase: 'ready', svg })
+        const { svg } = await serializeRender(() =>
+          mermaid.render(`dsh-mermaid-${theme}-${renderIndex.current}`, code),
+        )
+        const next: Render = { phase: 'ready', svg }
+        renderCache.set(cacheKey, next)
+        if (!cancelled) setRender(next)
       } catch (error: unknown) {
-        if (!cancelled) {
-          setRender({ phase: 'failed', message: error instanceof Error ? error.message : String(error) })
-        }
+        // mermaid injects its error SVG (the bomb) into the page under the
+        // render id before throwing — remove it so the fallback is the only
+        // thing the user sees.
+        document.getElementById(`dsh-mermaid-${theme}-${renderIndex.current}`)?.remove()
+        document.querySelectorAll('[id^="dsh-mermaid-"]').forEach((node) => { node.remove() })
+        const next: Render = { phase: 'failed', message: error instanceof Error ? error.message : String(error) }
+        renderCache.set(cacheKey, next)
+        if (!cancelled) setRender(next)
       }
     }
     void run()
@@ -329,16 +395,20 @@ export const MermaidDiagram = memo(function MermaidDiagram({
           <button
             type="button"
             className={css.copyButton}
+            aria-label={sourceState === 'copied' ? labels.copiedSource : labels.copySource}
+            title={sourceState === 'copied' ? labels.copiedSource : labels.copySource}
             onClick={() => { copySource(code) }}
           >
-            {sourceState === 'copied' ? labels.copiedSource : labels.copySource}
+            {sourceState === 'copied' ? <CheckIcon /> : <CopySourceIcon />}
           </button>
           <button
             type="button"
             className={css.copyButton}
+            aria-label={copyState === 'copied' ? labels.copied : labels.copyImage}
+            title={copyState === 'copied' ? labels.copied : labels.copyImage}
             onClick={() => { copyImage(render.svg) }}
           >
-            {copyState === 'copied' ? labels.copied : labels.copyImage}
+            {copyState === 'copied' ? <CheckIcon /> : <CopyImageIcon />}
           </button>
           <button
             type="button"
