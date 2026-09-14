@@ -10,6 +10,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ToolExecution, ToolGuard } from '@deepseek-ai/dsh-tools'
 
 export const name = 'gate-policy'
@@ -27,6 +28,15 @@ export interface GateRule {
   commandPatterns: string[]
   /** The checks the model must perform and state before retrying the call. */
   checklist: string
+  /**
+   * Route the match through the user-approval UI instead of denying: the
+   * human sees the gate (rule, checklist, command context) and answers
+   * allow-once or deny. Allowed calls proceed untouched; denials and any
+   * approval-channel failure fall back to the checklist denial text. The
+   * ask bypasses the session approval policy — a gate confirmation is
+   * deployment-mandated, not a model-initiated ask.
+   */
+  confirm?: boolean
 }
 
 /**
@@ -58,6 +68,7 @@ export const Config: z<Config> = z.object({
     tools: z.array(z.string()).default(['bash']),
     commandPatterns: z.array(z.string()),
     checklist: z.string(),
+    confirm: z.boolean().default(false),
   })).default([]),
   verdictsEnabled: z.boolean().default(false),
   verdictsEndpoint: z.string().default(''),
@@ -146,6 +157,7 @@ interface CompiledRule {
   tools: RegExp[]
   patterns: RegExp[]
   checklist: string
+  confirm: boolean
 }
 
 /**
@@ -166,7 +178,7 @@ function compileRules(rules: GateRule[]): CompiledRule[] {
     } catch (error) {
       throw new Error(`gate-policy: rule '${rule.name}' has an invalid \`commandPatterns\` entry: ${error instanceof Error ? error.message : String(error)}`)
     }
-    return { name: rule.name, tools: (rule.tools ?? ['bash']).map(wildcardToRegExp), patterns, checklist: rule.checklist }
+    return { name: rule.name, tools: (rule.tools ?? ['bash']).map(wildcardToRegExp), patterns, checklist: rule.checklist, confirm: rule.confirm ?? false }
   })
 }
 
@@ -211,13 +223,37 @@ export function apply(ctx: Context, config: Config): void {
    * returns `undefined` and the call proceeds untouched. Registration returns
    * a disposer, so the effect disposes with the plugin fiber.
    */
-  const guard: ToolGuard = (execution: Readonly<ToolExecution>): string | undefined => {
+  /**
+   * Optional approval service: present in a full app composition, absent in
+   * bare tool-registry tests. A `confirm` rule without the service falls back
+   * to the plain checklist denial rather than failing the call.
+   */
+  const approval = ctx.get('approval') as
+    | { request(req: { agent: Agent; toolName: string; reason?: string; bypassPolicy?: boolean }): Promise<string> }
+    | undefined
+
+  const guard: ToolGuard = async (execution: Readonly<ToolExecution>): Promise<string | undefined> => {
     const command = commandText(execution)
     if (command === undefined) return undefined
     for (const rule of rules) {
       if (!rule.tools.some(pattern => pattern.test(execution.name))) continue
       if (!rule.patterns.some(pattern => pattern.test(command))) continue
-      return denialText(rule.name, rule.checklist, matchingRecipes(cache, rule.name, rule.checklist))
+      const denial = denialText(rule.name, rule.checklist, matchingRecipes(cache, rule.name, rule.checklist))
+      if (!rule.confirm) return denial
+      if (approval === undefined || execution.agent === undefined) return denial
+      try {
+        const outcome = await approval.request({
+          agent: execution.agent,
+          toolName: execution.name,
+          reason: `Gate '${rule.name}' matched this call and asks for your confirmation.\n\nCommand:\n${command}\n\n${rule.checklist}`,
+          bypassPolicy: true,
+        })
+        // Only an explicit allow proceeds; rejected/cancelled/unavailable deny.
+        if (outcome === 'allowed-once') return undefined
+      } catch {
+        // Fail closed: an approval-channel failure denies with the checklist.
+      }
+      return denial
     }
     return undefined
   }

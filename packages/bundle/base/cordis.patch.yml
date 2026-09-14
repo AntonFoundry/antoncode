@@ -408,6 +408,7 @@
           - name: push-gate
             tools: [bash]
             commandPatterns: ['git\s+push\b(?!.*--dry-run)']
+            confirm: true
             checklist: |-
               - Run the relevant test suite and show it passing
               - Re-state what is being pushed and why
