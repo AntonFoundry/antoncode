@@ -92,7 +92,7 @@ describe('MermaidDiagram', () => {
     )
     await waitFor(() => { expect(container.querySelector('[data-mermaid="ready"]')).not.toBeNull() })
     expect(initialize).toHaveBeenCalled()
-    const button = screen.getByText('Copy image')
+    const button = screen.getByRole('button', { name: 'Copy image' })
     fireEvent.click(button)
     await waitFor(() => { expect(write).toHaveBeenCalled() })
     const [items] = write.mock.calls[0] as [Array<{ types: string[] }>]
@@ -123,7 +123,7 @@ describe('MermaidDiagram', () => {
       <MermaidDiagram code="graph TD; a-->b" copyLabel="Copy" copiedLabel="Copied" labels={labels} />,
     )
     await waitFor(() => { expect(container.querySelector('[data-mermaid="ready"]')).not.toBeNull() })
-    fireEvent.click(screen.getByText('Copy image'))
+    fireEvent.click(screen.getByRole('button', { name: 'Copy image' }))
     await waitFor(() => { expect(container.querySelector('[data-copy="copied"]')).toBeNull() })
     expect(URL.createObjectURL).toHaveBeenCalled()
   })
@@ -231,9 +231,9 @@ describe('MermaidDiagram copy source and fullscreen', () => {
     const writeText = vi.fn(async () => undefined)
     vi.stubGlobal('navigator', { clipboard: { writeText } })
     await renderReady()
-    fireEvent.click(screen.getByText('Copy source'))
+    fireEvent.click(screen.getByRole('button', { name: 'Copy source' }))
     await waitFor(() => { expect(writeText).toHaveBeenCalledWith('graph TD; a-->b') })
-    expect(screen.getByText('Source copied')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Source copied' })).toBeTruthy()
   })
 
   it('falls back to execCommand where the async clipboard is missing', async () => {
@@ -243,9 +243,9 @@ describe('MermaidDiagram copy source and fullscreen', () => {
     const execCommand = vi.fn(() => true)
     Object.defineProperty(document, 'execCommand', { configurable: true, value: execCommand })
     await renderReady()
-    fireEvent.click(screen.getByText('Copy source'))
+    fireEvent.click(screen.getByRole('button', { name: 'Copy source' }))
     await waitFor(() => { expect(execCommand).toHaveBeenCalledWith('copy') })
-    expect(screen.getByText('Source copied')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Source copied' })).toBeTruthy()
   })
 
   it('toggles fullscreen on the diagram card and follows external exits', async () => {
