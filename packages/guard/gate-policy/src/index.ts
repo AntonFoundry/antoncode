@@ -223,15 +223,6 @@ export function apply(ctx: Context, config: Config): void {
    * returns `undefined` and the call proceeds untouched. Registration returns
    * a disposer, so the effect disposes with the plugin fiber.
    */
-  /**
-   * Optional approval service: present in a full app composition, absent in
-   * bare tool-registry tests. A `confirm` rule without the service falls back
-   * to the plain checklist denial rather than failing the call.
-   */
-  const approval = ctx.get('approval') as
-    | { request(req: { agent: Agent; toolName: string; reason?: string; bypassPolicy?: boolean }): Promise<string> }
-    | undefined
-
   const guard: ToolGuard = async (execution: Readonly<ToolExecution>): Promise<string | undefined> => {
     const command = commandText(execution)
     if (command === undefined) return undefined
@@ -240,6 +231,14 @@ export function apply(ctx: Context, config: Config): void {
       if (!rule.patterns.some(pattern => pattern.test(command))) continue
       const denial = denialText(rule.name, rule.checklist, matchingRecipes(cache, rule.name, rule.checklist))
       if (!rule.confirm) return denial
+      // Resolve the approval service lazily, at call time: this plugin only
+      // waits on `tools`, so at apply time the approval service may not have
+      // mounted yet and an apply-time `ctx.get` would be undefined forever.
+      // Absent service (bare tool-registry tests) or agent falls back to the
+      // plain checklist denial rather than failing the call.
+      const approval = ctx.get('approval') as
+        | { request(req: { agent: Agent; toolName: string; reason?: string; bypassPolicy?: boolean }): Promise<string> }
+        | undefined
       if (approval === undefined || execution.agent === undefined) return denial
       try {
         const outcome = await approval.request({
