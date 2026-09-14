@@ -171,6 +171,15 @@ export interface ApprovalRequest {
    * immediately and a late answer from a still-pending answerer is discarded.
    */
   readonly signal?: AbortSignal
+  /**
+   * Skip the session policy short-circuit. Deployment-mandated confirmations
+   * (a guard gate asking the human to approve one dangerous call) are not the
+   * model's discretionary asks the `'never'` policy exists to silence — the
+   * gate only fires on configured dangerous patterns, so it always reaches
+   * the answerers. The answerer waterfall and fail-closed defaults are
+   * unchanged.
+   */
+  readonly bypassPolicy?: boolean
 }
 
 /** Plugin config. All optional — `static Config` supplies the defaults. */
@@ -309,7 +318,7 @@ export class ApprovalService extends Service {
     // ahead of any gate LISTENER, so a listener-shaped gate cannot keep the
     // documented promise that 'never' rejects deterministically regardless
     // of registration order — only the service's own request path can.
-    if (this.effectivePolicy(session) === 'never') return 'rejected'
+    if (req.bypassPolicy !== true && this.effectivePolicy(session) === 'never') return 'rejected'
     // Enter the promise chain BEFORE dispatching: a listener that throws
     // SYNCHRONOUSLY (before its first await) must land in the same rejection
     // path as an async one — `Promise.resolve(call())` would let it escape
