@@ -95,6 +95,27 @@ export class CordisInspectRegistryService extends Service {
     ]
   }
 
+  /** Resolve one requested Host provider id, tolerating case misses before failing with the directory. */
+  private resolveHostProvider(providerId: string): HostCordisInspectProviderRegistration {
+    const exact = this.providers.get(providerId)
+    if (exact !== undefined) return exact
+    const ids = [...this.providers.keys()]
+    const caseHit = ids.find(id => id.toLowerCase() === providerId.toLowerCase())
+    if (caseHit !== undefined) return this.providers.get(caseHit) as HostCordisInspectProviderRegistration
+    throw unresolvedProviderError('Host', providerId, ids, 'Client', [...(this.clientManifest ?? []).map(manifest => manifest.id)])
+  }
+
+  /** Resolve one requested Client provider manifest, tolerating case misses before failing with the directory. */
+  private resolveClientProvider(providerId: string): CordisInspectProviderManifest {
+    const manifest = this.clientManifest ?? []
+    const exact = manifest.find(candidate => candidate.id === providerId)
+    if (exact !== undefined) return exact
+    const ids = manifest.map(candidate => candidate.id)
+    const caseHit = ids.find(id => id.toLowerCase() === providerId.toLowerCase())
+    if (caseHit !== undefined) return manifest.find(candidate => candidate.id === caseHit) as CordisInspectProviderManifest
+    throw unresolvedProviderError('Client', providerId, ids, 'Host', [...this.providers.keys()])
+  }
+
   /**
    * Execute one provider query on its owning platform.
    * @param platform - Host or Client runtime.
@@ -114,12 +135,12 @@ export class CordisInspectRegistryService extends Service {
     signal: AbortSignal,
   ): Promise<JsonValue> {
     if (platform === 'host') {
-      const registration = this.providers.get(providerId)
-      if (registration === undefined) throw new Error(`Host Cordis inspect provider "${providerId}" is not registered`)
-      const method = findMethod(registration.manifest, methodName)
+      const registration = this.resolveHostProvider(providerId)
+      const resolvedMethod = resolveMethodName(registration.manifest, methodName)
+      const method = findMethod(registration.manifest, resolvedMethod)
       validateInput('Host', providerId, method, input)
       signal.throwIfAborted()
-      const data = await registration.query(methodName, input, { agent, signal })
+      const data = await registration.query(resolvedMethod, input, { agent, signal })
       signal.throwIfAborted()
       return validateOutput('Host', providerId, method, data)
     }
@@ -162,17 +183,17 @@ export class CordisInspectRegistryService extends Service {
     agent: Agent,
     signal: AbortSignal,
   ): Promise<JsonValue> {
-    const provider = this.clientManifest?.find(candidate => candidate.id === providerId)
-    if (provider === undefined) throw new Error(`Client Cordis inspect provider "${providerId}" is not registered`)
-    const method = findMethod(provider, methodName)
+    const provider = this.resolveClientProvider(providerId)
+    const resolvedMethod = resolveMethodName(provider, methodName)
+    const method = findMethod(provider, resolvedMethod)
     validateInput('Client', providerId, method, input)
     signal.throwIfAborted()
     const requestId = `inspect-${this.nextRequest++}` as CordisInspectRequestId
     const request: CordisInspectQueryRequest = {
       requestId,
       agentId: agent.id,
-      provider: providerId,
-      method: methodName,
+      provider: provider.id,
+      method: resolvedMethod,
       ...input === undefined ? {} : { input },
     }
     const result = new Promise<CordisInspectQueryResolution>((resolve) => {
@@ -182,7 +203,7 @@ export class CordisInspectRegistryService extends Service {
       const pending = this.pending.get(requestId)
       if (pending === undefined) return
       this.pending.delete(requestId)
-      pending.settle({ ok: false, reason: 'cancelled', message: `Client inspect query ${providerId}.${methodName} was cancelled` })
+      pending.settle({ ok: false, reason: 'cancelled', message: `Client inspect query ${providerId}.${resolvedMethod} was cancelled` })
       this.ctx.emit('cordis/inspect-query-resolved', { requestId })
     }
     signal.addEventListener('abort', onAbort, { once: true })
@@ -190,7 +211,7 @@ export class CordisInspectRegistryService extends Service {
     else this.ctx.emit('cordis/inspect-query', request)
     try {
       const resolution = await result
-      if (!resolution.ok) throw new Error(`${providerId}.${methodName}: ${resolution.message}`)
+      if (!resolution.ok) throw new Error(`${providerId}.${resolvedMethod}: ${resolution.message}`)
       return resolution.data
     } finally {
       signal.removeEventListener('abort', onAbort)
@@ -220,8 +241,58 @@ function validateManifest(manifest: CordisInspectProviderManifest): CordisInspec
 
 function findMethod(manifest: CordisInspectProviderManifest, name: string): CordisInspectMethodManifest {
   const method = manifest.methods.find(candidate => candidate.name === name)
-  if (method === undefined) throw new Error(`Cordis inspect provider "${manifest.id}" has no method "${name}"`)
-  return method
+  if (method !== undefined) return method
+  const declared = manifest.methods.map(candidate => candidate.name)
+  throw new Error(
+    `Cordis inspect provider "${manifest.id}" has no method "${name}"; declared methods: `
+    + `${declared.join(', ')}. Call cordis_inspect_list for each method's schemas.`,
+  )
+}
+
+/**
+ * Strip a `Provider.method` qualified name to its bare method name. Models
+ * frequently emit the qualified form; the provider is already selected
+ * separately, so the prefix carries no selection information.
+ * @param manifest - provider manifest whose method names are candidates.
+ * @param name - requested method name, bare or `Provider.method`.
+ * @returns the bare method name to look up.
+ */
+function resolveMethodName(manifest: CordisInspectProviderManifest, name: string): string {
+  const dot = name.lastIndexOf('.')
+  if (dot < 0) return name
+  const bare = name.slice(dot + 1)
+  return manifest.methods.some(candidate => candidate.name === bare) ? bare : name
+}
+
+/**
+ * Build the model-facing failure for a provider id that matches no registration,
+ * carrying the directory the miss was reaching for plus any cross-platform hit.
+ * @param platform - platform the query named.
+ * @param providerId - requested provider id.
+ * @param known - provider ids registered on `platform`.
+ * @param otherPlatform - the opposite platform.
+ * @param otherKnown - provider ids registered on `otherPlatform`.
+ * @returns an error whose message names every resolvable referent.
+ */
+function unresolvedProviderError(
+  platform: 'Host' | 'Client',
+  providerId: string,
+  known: readonly string[],
+  otherPlatform: 'Host' | 'Client',
+  otherKnown: readonly string[],
+): Error {
+  const parts = [
+    `${platform} Cordis inspect provider "${providerId}" is not registered`,
+    known.length > 0
+      ? `registered ${platform} providers: ${known.join(', ')}`
+      : `no ${platform} providers are registered`,
+  ]
+  const lower = providerId.toLowerCase()
+  const crossHit = otherKnown.find(id => id.toLowerCase() === lower)
+  if (crossHit !== undefined) parts.push(`provider "${crossHit}" exists on the ${otherPlatform} platform; resend the query with platform set accordingly`)
+  else if (otherKnown.length > 0) parts.push(`${otherPlatform} providers: ${otherKnown.join(', ')}`)
+  parts.push('call cordis_inspect_list for the full directory')
+  return new Error(`${parts.join('; ')}`)
 }
 
 function validateInput(
