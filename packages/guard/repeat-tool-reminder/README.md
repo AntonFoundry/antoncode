@@ -15,6 +15,7 @@ An advisory loop-breaker, not a model-facing tool: it never appears in the tool 
     exclude: [todo_write]        # tool-name patterns transparent to the chain
     argumentsPreviewChars: 500   # default; cap on arguments quoted in the detailed reminder
     cycleThreshold: 2            # default; complete alternations before the ping-pong advisory
+    failureThreshold: 3          # default; consecutive failed calls to one tool before the guessing advisory
     escalateToBlock: true        # default; after an ignored advisory, veto the next cycle call
 ```
 
@@ -35,6 +36,8 @@ the error. A broken alternation (a new distinct key) re-arms the advisory for
 the next episode; a user interjection resets all state as before.
 
 `cycleThreshold` fails loud below 2 at plugin load.
+
+A run of `failureThreshold` consecutive FAILED calls to one tool (distinct or identical arguments — guessing and error-ignoring are both no-progress) delivers the guessing advisory once per episode: re-read the failures, use the surface's discovery/list tool, or ask the user with `ask_user_question`. A success or a user interjection breaks the run. `failureThreshold` fails loud below 2 at plugin load.
 
 `thresholds` fails loud at plugin load: an empty list, a non-integer, a value below 2, or a duplicate throws, never a silent fall-back to defaults; `argumentsPreviewChars` equally rejects anything but an integer >= 1. The list is normalized to ascending order; the FIRST threshold delivers a short generic nudge, every later threshold delivers the detailed form naming the tool, the run length, and the canonical arguments — head-truncated at `argumentsPreviewChars` with an omitted-count marker, so a looping `write`/`edit` payload cannot ride into the next request unbounded (the chain key always compares the FULL canonical string; the cap bounds the reminder, never the detection).
 
