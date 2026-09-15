@@ -45,6 +45,48 @@ function reminders(agent: Agent): { text: string; source: unknown }[] {
     }))
 }
 
+describe('guessing advisory (consecutive failed calls)', () => {
+  it('advises discovery or asking after the failure threshold is reached with varying arguments', async () => {
+    const ctx = await harness({ failureThreshold: 2 })
+    ctx.tools.register(defineContentToolFixture({ name: 'flaky', description: 'f', parameters: {}, async execute() { throw new Error('no such referent') } }))
+    const adapter = new MockAdapter([
+      toolCallResponse('f1', 'flaky', { provider: 'host' }),
+      toolCallResponse('f2', 'flaky', { provider: 'slots' }),
+      textResponse('done'),
+    ])
+    ctx.llm.registerAdapter(['mock'], adapter)
+    const agent = ctx.agentLoop.create(SessionId('a2'), { provider: 'mock', model: 'mock' })
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+
+    const found = reminders(agent).filter(entry => String((entry.source as { summary?: string }).summary ?? '').includes('failed ×'))
+    expect(found).toHaveLength(1)
+    expect(found[0]!.text).toContain('Do not guess argument values again')
+    expect(found[0]!.text).toContain('ask_user_question')
+  })
+
+  it('a successful call resets the failure run', async () => {
+    const ctx = await harness({ failureThreshold: 2 })
+    ctx.tools.register(defineContentToolFixture({ name: 'flaky', description: 'f', parameters: {}, async execute() { throw new Error('no') } }))
+    const adapter = new MockAdapter([
+      toolCallResponse('f1', 'flaky', { a: 1 }),
+      toolCallResponse('f2', 'probe', { q: 'ok' }),
+      toolCallResponse('f3', 'flaky', { b: 2 }),
+      textResponse('done'),
+    ])
+    ctx.llm.registerAdapter(['mock'], adapter)
+    const agent = ctx.agentLoop.create(SessionId('a3'), { provider: 'mock', model: 'mock' })
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+
+    expect(reminders(agent).filter(entry => String((entry.source as { summary?: string }).summary ?? '').includes('failed ×'))).toHaveLength(0)
+  })
+
+  it('rejects a non-integer or too-small failureThreshold at load', async () => {
+    await expect(harness({ failureThreshold: 1 })).rejects.toThrow('failureThreshold 1')
+  })
+})
+
 // The reminder is a `notice`-form context; its summary names the repeated
 // call so a reader sees it without expanding the row.
 const guardSource = (tool: string, count: number) => ({

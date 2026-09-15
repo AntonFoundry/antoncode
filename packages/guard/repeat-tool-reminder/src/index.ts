@@ -28,6 +28,14 @@ export const name = 'repeat-tool-reminder'
 export interface Config {
   /** Consecutive-repeat counts that trigger a reminder (default `[3, 5, 8]`). */
   thresholds?: number[]
+
+  /**
+   * Consecutive failed calls to one tool that trigger the guessing advisory
+   * (default `3`). The run counts failures regardless of argument variation:
+   * distinct arguments mean the model is guessing, identical arguments mean it
+   * is ignoring an error — both are intent it cannot resolve from what it sees.
+   */
+  failureThreshold?: number
   /** Tool-name patterns to track; empty means every tool is tracked. */
   include?: string[]
   /** Tool-name patterns transparent to the chain (neither count nor reset). */
@@ -59,6 +67,7 @@ export interface Config {
 
 export const Config: z<Config> = z.object({
   thresholds: z.array(z.number()).default([3, 5, 8]),
+  failureThreshold: z.number().default(3),
   include: z.array(z.string()).default([]),
   exclude: z.array(z.string()).default([]),
   argumentsPreviewChars: z.number().default(500),
@@ -93,6 +102,19 @@ function detailedReminder(toolName: string, count: number, canonicalArguments: s
     + 'these exact arguments again. Inspect the latest result and choose a '
     + 'different action, different arguments, or finish the task if enough '
     + 'evidence has been gathered.'
+}
+
+/**
+ * The guessing advisory, delivered when one tool has failed `failureThreshold`
+ * consecutive times. Names the tool and orders the three-step escape: read the
+ * failure, discover the correct arguments, or ask the human.
+ */
+function guessingReminder(toolName: string, count: number): string {
+  return `Repeated failures detected: the last ${count} calls to ${toolName} failed. Do not guess argument values again.
+`
+    + '- Re-read the failure messages: they usually name the exact invalid field or referent.\n'
+    + '- Look for the discovery tool for this surface (a list, catalog, or inspect tool) and call it before retrying.\n'
+    + '- If the correct arguments remain ambiguous or no listing exists, ask the user with ask_user_question instead of trying again.'
 }
 
 /**
@@ -222,6 +244,8 @@ interface Chain {
   recent: string[]
   /** A ping-pong advisory was delivered and the alternation has not broken since. */
   advisedCycle: boolean
+  /** Consecutive failed-call run on one tool; `advised` is once per episode. */
+  failures?: { tool: string; count: number; advised: boolean }
 }
 
 /** Ring cap: deep enough for a cycle window plus slack, small enough to stay trivial. */
@@ -247,6 +271,10 @@ export function apply(ctx: Context, config: Config): void {
     throw new Error(`repeat-tool-reminder: invalid cycleThreshold ${cycleThreshold} — must be an integer >= 2`)
   }
   const escalateToBlock = config.escalateToBlock as boolean
+  const failureThreshold = config.failureThreshold as number
+  if (!Number.isInteger(failureThreshold) || failureThreshold < 2) {
+    throw new Error(`repeat-tool-reminder: invalid failureThreshold ${failureThreshold} — must be an integer >= 2`)
+  }
 
   const chains = new WeakMap<Agent, Chain>()
 
@@ -264,7 +292,7 @@ export function apply(ctx: Context, config: Config): void {
    * same pipeline), and a model hammering a denied call is exactly the loop
    * worth breaking.
    */
-  function observe(exec: ToolExecution): { context?: UserMessage; veto?: UserMessage } | undefined {
+  function observe(exec: ToolExecution, failed: boolean): { context?: UserMessage; veto?: UserMessage } | undefined {
     // A direct `ctx.tools.execute()` caller has no model to remind and no id
     // to key on; only agent-loop calls participate.
     if (!exec.agent) return undefined
@@ -304,7 +332,28 @@ export function apply(ctx: Context, config: Config): void {
         source: { ...PLUGIN_SOURCE, form: 'notice', summary: `${exec.name} × ${count}` },
       }) }
     }
-    chains.set(exec.agent, { key, count, recent, advisedCycle })
+    // Failure-run tracking: a success breaks the run; a failure on another tool
+    // restarts it; the advisory fires once per episode at the threshold.
+    let failures = chain?.failures
+    let failureContext: UserMessage | undefined
+    if (!failed) failures = undefined
+    else {
+      const run = failures !== undefined && failures.tool === exec.name
+        ? { tool: exec.name, count: failures.count + 1, advised: failures.advised }
+        : { tool: exec.name, count: 1, advised: false }
+      if (run.count === failureThreshold && !run.advised) {
+        run.advised = true
+        failureContext = createUserMessage({
+          content: [{ type: 'text', text: guessingReminder(exec.name, run.count) }],
+          source: { ...PLUGIN_SOURCE, form: 'notice', summary: `${exec.name} failed × ${run.count}` },
+        })
+      }
+      failures = run
+      if (failureContext !== undefined) {
+        outcome = { context: failureContext, ...outcome?.veto !== undefined ? { veto: outcome.veto } : {} }
+      }
+    }
+    chains.set(exec.agent, { key, count, recent, advisedCycle, ...failures === undefined ? {} : { failures } })
     // The veto THROWS rather than returning a block decision: execute's outer
     // try/catch converts the throw into an isError result whose message is the
     // veto text — the guaranteed escape surface (a returned block decision can
@@ -319,8 +368,8 @@ export function apply(ctx: Context, config: Config): void {
   // the downstream outcome), DELEGATE so a later listener can still block or
   // replace, then fold the reminder onto whatever came back — additionalContexts
   // rides both decision variants, so a blocked call still gets the nudge.
-  ctx.on('tools/post-execute', async (exec, _result, next): Promise<PostToolDecision> => {
-    const outcome = observe(exec)
+  ctx.on('tools/post-execute', async (exec, result, next): Promise<PostToolDecision> => {
+    const outcome = observe(exec, result.isError === true)
     const downstream = await next()
     if (outcome === undefined) return downstream
     if (outcome.veto !== undefined) {
