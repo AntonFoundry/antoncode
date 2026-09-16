@@ -20,6 +20,7 @@ import type { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type { ToolCallView, ToolResultView } from './presentation.ts'
 import { assertSupportedJsonSchema, validateJsonSchemaValue } from './json-schema.ts'
+import { toolsMatchingArgumentKeys } from './schema.ts'
 import type { JsonSchemaNode } from './json-schema.ts'
 import { createRunCodeTool, RUN_CODE_NAME, SDK_SECTION_ORDER } from './code-mode.ts'
 import type { CodeSdkLanguage } from './code-mode.ts'
@@ -113,6 +114,7 @@ export {
   defineTool,
   valueSchemaSpecToJsonSchema,
   parameterSchemaSpecToJsonSchema,
+  toolsMatchingArgumentKeys,
   validateArgs,
   ToolArgsError,
   type ValueSchemaAnnotations,
@@ -1856,6 +1858,53 @@ export class ToolRuntime extends Service {
     }
   }
 
+  /**
+   * Enrich an invalid-arguments failure result with the sibling-tool
+   * corrective hint: when every violation is a missing-required violation
+   * and the supplied argument keys exactly cover another visible tool's
+   * parameter object, the error names that tool — the paged-catalog
+   * wrong-payload confusion (typically `bash` called with a sibling's
+   * arguments) recovers in one retry. Operates on the already-normalized
+   * result text, never on the thrown value, so hostile thrown objects
+   * keep their exact normalization. Non-invalid-args results pass through.
+   * @param exec - the failing execution (tool name, scope, raw arguments).
+   * @param result - the normalized error result.
+   * @returns the result, or a copy carrying the appended hint.
+   */
+  private withSiblingHint(exec: ToolRunContext, result: ToolExecutionResult): ToolExecutionResult {
+    const message = result.error?.message
+    const prefix = 'invalid arguments: '
+    if (message === undefined || !message.startsWith(prefix)) return result
+    const violations = message.slice(prefix.length).split('; ')
+    if (!violations.every(violation => violation.startsWith('missing required property'))) return result
+    const args = exec.arguments
+    if (args === null || typeof args !== 'object' || Array.isArray(args)) return result
+    const keys = Object.keys(args)
+    const candidates = [...this.view(exec.agent).visible.values()]
+      .filter(definition => definition.name !== exec.name)
+      .map((definition) => {
+        const parameters = definition.parameters as { properties?: Record<string, unknown>; required?: unknown }
+        return {
+          name: definition.name,
+          required: Array.isArray(parameters.required)
+            ? parameters.required.filter((key): key is string => typeof key === 'string')
+            : [],
+          properties: parameters.properties !== null && typeof parameters.properties === 'object'
+            ? Object.keys(parameters.properties)
+            : [],
+        }
+      })
+    const match = toolsMatchingArgumentKeys(keys, candidates)[0]
+    if (match === undefined) return result
+    const hint = `the supplied properties (${keys.join(', ')}) match tool "${match}" — retry with that tool and the same arguments`
+    const hinted = `${message}; ${hint}`
+    return {
+      ...result,
+      content: [{ type: 'text', text: `Error: ${hinted}` }],
+      error: { ...result.error, message: hinted },
+    }
+  }
+
   /** Whether the original caller signal is currently aborted. */
   private callerCancelled(exec: ToolRunContext): boolean {
     const state = this.cancellationStates.get(exec)
@@ -1901,8 +1950,8 @@ export class ToolRuntime extends Service {
       return isAborted(signal)
         ? toolAbortedResult(result)
         : result
-    } catch (error: unknown) {
-      return toolErrorResult(error)
+    } catch (error) {
+      return this.withSiblingHint(exec, toolErrorResult(error))
     } finally {
       fused.dispose()
       exec.signal = wrapperSignal
