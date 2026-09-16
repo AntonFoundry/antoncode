@@ -269,7 +269,10 @@ function providerWording(inheritsConversation: boolean): { description: string; 
         + 'completed turns so far (it does not see the current in-flight turn). Use this when the subtask '
         + 'builds on this conversation\'s context — a follow-up analysis, '
         + 'a review, a continuation — without consuming this conversation\'s context for the work itself. '
-        + 'You receive its result, not its intermediate steps.',
+        + 'You receive its result, not its intermediate steps. Delegation is the DEFAULT for decomposable '
+        + 'work: when a task splits into two or more independent pieces — separate files, surfaces, or '
+        + 'concerns — fan them out to parallel subagent calls in one message instead of doing them inline; '
+        + 'keep only single-step or strictly sequential actions inline.',
       promptDescription:
         'The task for the subagent. It already sees this conversation\'s completed turns, so build on them '
         + 'freely and state only what is new.',
@@ -281,7 +284,10 @@ function providerWording(inheritsConversation: boolean): { description: string; 
       + 'to offload focused, independent work — research, a scoped '
       + 'implementation, an analysis — so it does not consume this conversation\'s context. The subagent '
       + 'returns its result, not its intermediate steps. Give it a '
-      + 'complete, standalone prompt: it does not see this conversation.',
+      + 'complete, standalone prompt: it does not see this conversation. Delegation is the DEFAULT for '
+      + 'decomposable work: when a task splits into two or more independent pieces — separate files, '
+      + 'surfaces, or concerns — fan them out to parallel subagent calls in one message instead of doing '
+      + 'them inline; keep only single-step or strictly sequential actions inline.',
     promptDescription:
       'The complete, self-contained task for the subagent. It does not share this '
       + 'conversation\'s context, so include everything it needs.',
@@ -552,7 +558,16 @@ export function apply(ctx: Context, config: Config): void {
       order: SUBAGENT_SECTION_ORDER,
       text: context => disposeTool === undefined || ctx.tools.get(toolName, context.scope) === undefined
         ? ''
-        : `Use ${toolName} in the background by default. Start independent delegations together in one assistant message and continue useful work while they run. Set \`run_in_background: false\` only when your next action depends on that subagent's result. When a background run settles, the runtime sends you a notice containing its outcome and any final assistant message.`,
+        : 'Delegation is the DEFAULT for decomposable work: when a task splits into two or more independent '
+          + `pieces — separate files, surfaces, or concerns — fan them out to parallel ${toolName} calls in one `
+          + 'assistant message instead of doing them inline. Keep only genuinely single-step or strictly '
+          + 'sequential actions inline; do not wait to be asked to parallelize.'
+          + (backgroundEnabled && continuable
+            ? ` Use ${toolName} in the background by default: start the independent delegations together and `
+              + 'continue useful work while they run. Set `run_in_background: false` only when your next action '
+              + 'depends on that subagent\'s result. When a background run settles, the runtime sends you a notice '
+              + 'containing its outcome and any final assistant message.'
+            : ''),
     })
   }
 }
