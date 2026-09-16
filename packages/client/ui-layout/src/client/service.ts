@@ -43,6 +43,8 @@ export interface ILayout {
   openDetails(): void
   /** Close the details panel. */
   closeDetails(): void
+  /** Toggle the details panel (closed ⟷ open). */
+  toggleDetails(): void
 }
 
 /** Cross-plugin panel-action face (ctx.layout). */
@@ -95,15 +97,15 @@ export class LayoutController implements ILayout {
 
   /**
    * Open the details panel (no-op when open): split the rightmost leaf
-   * column-wise into a details leaf. Without an attached wm store, falls
-   * through to the legacy panel action.
+   * row-wise into the pinned home details leaf (the context column). Without
+   * an attached wm store, falls through to the legacy panel action.
    */
   openDetails(): void {
     if (this.#wm !== undefined) {
       const { tree } = this.#wm.getSnapshot()
       if (findLeaf(tree, WM_LEAF_DETAILS) === undefined) {
         const anchor = lastLeafId(tree)
-        if (anchor !== undefined) this.#write(t => splitLeaf(t, anchor, 'column', 'details', WM_LEAF_DETAILS))
+        if (anchor !== undefined) this.#write(t => splitLeaf(t, anchor, 'row', 'details', WM_LEAF_DETAILS, 'after'))
       }
       return
     }
@@ -120,6 +122,21 @@ export class LayoutController implements ILayout {
       return
     }
     this.#require().closeDetails()
+  }
+
+  /**
+   * Toggle the details panel: close it when open, open it when closed.
+   * Without an attached wm store, falls through to the legacy panel actions
+   * (open wins when the legacy face cannot answer state queries).
+   */
+  toggleDetails(): void {
+    if (this.#wm !== undefined) {
+      const { tree } = this.#wm.getSnapshot()
+      if (findLeaf(tree, WM_LEAF_DETAILS) !== undefined) this.closeDetails()
+      else this.openDetails()
+      return
+    }
+    this.#require().openDetails()
   }
 
   /** Write one wm tree transform; the caller has checked the attachment. */

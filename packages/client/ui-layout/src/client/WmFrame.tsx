@@ -30,7 +30,7 @@ import type { PropsRenderSlots, PropsRuntime, PropsStore, SnapshotSelectorHook }
 import type { DirectoryListing } from '@deepseek-ai/dsh-api-remotes/client'
 import { BrandWordmark, IconCloseOutline16, IconPanelLeftOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SidebarOwnerProps } from './index.ts'
-import { clampWidth, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN } from './columns.ts'
+import { clampWidth, DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN } from './columns.ts'
 
 /** Untouched-preference sidebar share of the frame width (committed baseline). */
 const SIDEBAR_SHARE = 0.18
@@ -48,8 +48,10 @@ import { FilesBuffer } from './FilesBuffer.tsx'
 import {
   SINGLETON_BUFFERS, SCRATCH_BUFFER_ID, WM_LEAF_DETAILS, WM_LEAF_SIDEBAR, bufferRoster, bufferTitle, canClose, defaultTree,
   isSingletonBuffer,
-  ensureBuffer, findBuffer, findLeaf, findSplit, firstLeafId, normalizeTree,
+  ensureBuffer, findBuffer, findLeaf, findSplit, firstLeafId, focusDirection, lastLeafId, moveLeafTabbed, normalizeTree,
   SIDEBAR_REATTACH_WEIGHT,
+  toggleTabbed,
+  type WmDir,
   flipWithSibling, keepOnlyLeaf, killBuffer, leafIds, removeLeaf, scratchBuffer, setWeights, splitLeaf, swapBuffer, tidyTree,
   type WmBuffer, type WmDirection, type WmNode,
 } from './wm.ts'
@@ -167,14 +169,29 @@ function isHomeSidebar(child: WmNode, dir: WmDirection): boolean {
   return child.kind === 'leaf' && child.id === WM_LEAF_SIDEBAR && child.buffer === 'sidebar' && dir === 'row'
 }
 
-/** Context toggle icon: a pane outline with the column on the RIGHT. */
-function FlipIcon() {
+/**
+ * Whether one split child is the HOME context pane: the canonical details leaf
+ * (`WM_LEAF_DETAILS`) showing the context buffer in a ROW split — the right
+ * sidebar's mirror image. Only that pane is pinned to the details width
+ * preference; a context buffer shown in any other window is a normal weighted
+ * pane.
+ * @param child - one split child subtree.
+ * @param dir - the parent split's orientation.
+ * @returns true when the child is the pinned home context pane.
+ */
+function isHomeContext(child: WmNode, dir: WmDirection): boolean {
+  return child.kind === 'leaf' && child.id === WM_LEAF_DETAILS && child.buffer === 'details' && dir === 'row'
+}
+
+/** Directional move icon: a chevron pointing at the travel direction. */
+function MoveIcon({ dir }: { dir: 'left' | 'right' | 'up' | 'down' }) {
+  const rotation = dir === 'left' ? 0 : dir === 'right' ? 180 : dir === 'up' ? 90 : 270
   return (
-    <svg viewBox="0 0 16 16" width={18} height={18} aria-hidden>
-      <path d="M5 3 2 6l3 3" fill="none" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M11 13l3-3-3-3" fill="none" stroke="currentColor" strokeWidth="1.5" />
-      <line x1="2.5" y1="6" x2="13" y2="6" stroke="currentColor" strokeWidth="1.5" />
-      <line x1="13.5" y1="10" x2="3" y2="10" stroke="currentColor" strokeWidth="1.5" />
+    <svg
+      viewBox="0 0 16 16" width={18} height={18} aria-hidden
+      style={{ transform: `rotate(${rotation}deg)` }}
+    >
+      <path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" strokeWidth="1.5" />
     </svg>
   )
 }
@@ -207,7 +224,8 @@ function TidyIcon() {
   )
 }
 
-function ContextIcon() {
+/** Exported for sibling shells; the c0ntext toggle plugin inlines its own copy. */
+export function ContextIcon() {
   return (
     <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden>
       <rect x="1" y="2" width="14" height="12" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5" />
@@ -314,6 +332,10 @@ interface NodeRenderProps {
   buffers: readonly WmBuffer[]
   renderSlot: WmFrameProps['renderSlot']
   sidebarOwner: SidebarOwnerProps & { brandInFrame: true }
+  /** The pinned home context pane's px width (the details width preference). */
+  contextWidth: number
+  /** The leaf the moving leaf tabbed onto (the drop-shade flash target). */
+  tabShade?: string | undefined
   scratch: ScratchBufferShared
   files: FilesBufferShared
   readTextFile: WmFrameProps['readTextFile']
@@ -321,6 +343,8 @@ interface NodeRenderProps {
   onSplit: (leafId: string, dir: WmDirection) => void
   onClose: (leafId: string) => void
   onFlip: (leafId: string) => void
+  /** Move one leaf one step in a screen direction (i3-style). */
+  onMove: (leafId: string, dir: WmDir) => void
   onToggleExpand: () => void
   expanded: boolean
   onTidy: () => void
@@ -335,8 +359,9 @@ interface SashDragBase {
   w0: number
   w1: number
   delta: number
-  /** When the boundary touches the sidebar leaf: its side (index) and px width. */
-  sidebar: { index: number; width: number } | null
+  /** When the boundary touches a pinned home pane (sidebar or context): its
+   *  side (index), px width, and which preference the drag writes. */
+  sidebar: { index: number; width: number; kind: 'sidebar' | 'context' } | null
 }
 
 /**
@@ -349,7 +374,7 @@ interface SashDragBase {
 function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf' }> }) {
   const {
     node, tree, focusedId, buffers, renderSlot, sidebarOwner, scratch, files, readTextFile,
-    onFocus, onSplit, onClose, onFlip, onToggleExpand, expanded, onTidy,
+    onFocus, onSplit, onClose, onMove, onToggleExpand, expanded, onTidy,
   } = props
   const buffer = findBuffer(buffers, node.buffer)
   // A leaf referencing a registry gap falls back by id so a hand-edited or
@@ -392,6 +417,9 @@ function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf
     >
       <div className={css.modeLine}>
         <span className={css.bufferName}>{title}</span>
+        {/* Tab-drop shade: a brief brand overlay on the pane that absorbed
+            the moved window as a new tab. */}
+        {props.tabShade === node.id && <div className={css.tabShade} aria-hidden />}
         <span className={css.modeActions}>
           <button
             type="button" className={css.modeButton} aria-label="Split below" title="Split below (C-x 2)"
@@ -405,42 +433,50 @@ function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf
           >
             <SplitRightIcon />
           </button>
+          {/* Tidy and expand/restore are single-pane operations (C-x 1 must be
+              reachable on the last window, and expand must leave a visible
+              restore), so they render unconditionally; only flip and close
+              require a sibling leaf. */}
+          <button
+            type="button" className={css.modeButton} aria-label="Tidy panes" title="Tidy panes (balance all splits)"
+            onClick={() => { onTidy() }}
+          >
+            <TidyIcon />
+          </button>
+          {/* The four directional moves (i3-style): the pane travels one
+              step in the arrow's direction (⌘⇧H/⌘⇧J/⌘⇧K/⌘⇧L). */}
+          {(['left', 'right', 'up', 'down'] as const).map(dir => (
+            <button
+              key={dir}
+              type="button" className={css.modeButton} aria-label={`Move pane ${dir}`}
+              title={`Move pane ${dir} (⌘⇧${dir === 'left' ? 'H' : dir === 'down' ? 'J' : dir === 'up' ? 'K' : 'L'})`}
+              onClick={() => { onMove(node.id, dir) }}
+            >
+              <MoveIcon dir={dir} />
+            </button>
+          ))}
+          {expanded ? (
+            <button
+              type="button" className={css.modeButton} aria-label="Restore layout" title="Restore the pre-expand layout"
+              onClick={() => { onToggleExpand() }}
+            >
+              <RestoreIcon />
+            </button>
+          ) : (
+            <button
+              type="button" className={css.modeButton} aria-label="Expand pane" title="Expand to full frame (C-x 1)"
+              onClick={() => { onToggleExpand() }}
+            >
+              <ExpandIcon />
+            </button>
+          )}
           {closeable && (
-            <>
-              <button
-                type="button" className={css.modeButton} aria-label="Tidy panes" title="Tidy panes (balance all splits)"
-                onClick={() => { onTidy() }}
-              >
-                <TidyIcon />
-              </button>
-              <button
-                type="button" className={css.modeButton} aria-label="Flip pane" title="Flip with sibling pane (M-x flip-pane)"
-                onClick={() => { onFlip(node.id) }}
-              >
-                <FlipIcon />
-              </button>
-              {expanded ? (
-                <button
-                  type="button" className={css.modeButton} aria-label="Restore layout" title="Restore the pre-expand layout"
-                  onClick={() => { onToggleExpand() }}
-                >
-                  <RestoreIcon />
-                </button>
-              ) : (
-                <button
-                  type="button" className={css.modeButton} aria-label="Expand pane" title="Expand to full frame (C-x 1)"
-                  onClick={() => { onToggleExpand() }}
-                >
-                  <ExpandIcon />
-                </button>
-              )}
-              <button
-                type="button" className={css.modeButton} aria-label="Close" title="Close window (C-x 0)"
-                onClick={() => { onClose(node.id) }}
-              >
-                <IconCloseOutline16 size={14} />
-              </button>
-            </>
+            <button
+              type="button" className={css.modeButton} aria-label="Close" title="Close window (C-x 0)"
+              onClick={() => { onClose(node.id) }}
+            >
+              <IconCloseOutline16 size={14} />
+            </button>
           )}
         </span>
       </div>
@@ -455,21 +491,77 @@ function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf
  * converts the pointer delta into a weight fraction at drag time.
  */
 function NodeView(props: NodeRenderProps & { node: WmNode }) {
-  const { node } = props
+  const { node, focusedId, buffers, onFocus } = props
   const splitRef = useRef<HTMLDivElement | null>(null)
   const dragBase = useRef<SashDragBase>({ size: 0, index: 0, w0: 0, w1: 0, delta: 0, sidebar: null })
   if (node.kind === 'leaf') return <LeafPane {...props} node={node} />
+  // Tabbed container (i3): a tab strip above exactly one visible child — the
+  // focused leaf when it belongs to the group, else the first child. Clicking
+  // a tab moves the focus cursor to that leaf (which makes it visible).
+  if (node.tabbed === true) {
+    const tabIdOf = (child: WmNode): string | undefined =>
+      child.kind === 'leaf' ? child.id : firstLeafId(child)
+    const firstChild = node.children[0]
+    const active = node.children.some(child => tabIdOf(child) === focusedId)
+      ? focusedId
+      : firstChild !== undefined
+        ? tabIdOf(firstChild)
+        : undefined
+    const titleOf = (child: WmNode): string => {
+      const id = tabIdOf(child)
+      const leaf = id !== undefined ? findLeaf(node, id) : undefined
+      const buffer = leaf !== undefined ? findBuffer(buffers, leaf.buffer) : undefined
+      return buffer !== undefined ? bufferTitle(buffer) : '(unnamed)'
+    }
+    const activeChild = node.children.find(child => tabIdOf(child) === active)
+    return (
+      <div className={css.tabbed}>
+        <div className={css.tabStrip} role="tablist" aria-label="Tabbed group">
+          {node.children.map((child) => {
+            const id = tabIdOf(child)
+            return (
+              <button
+                key={child.id}
+                type="button"
+                role="tab"
+                className={css.tab}
+                aria-selected={id === active || undefined}
+                title={titleOf(child)}
+                onClick={() => { if (id !== undefined) onFocus(id) }}
+              >
+                {titleOf(child)}
+              </button>
+            )
+          })}
+        </div>
+        <div className={css.paneWrapper} style={{ display: 'flex', flexDirection: 'column', flex: '1 1 0%' }}>
+          {activeChild !== undefined && <NodeView {...props} node={activeChild} />}
+        </div>
+      </div>
+    )
+  }
   // Fill guarantee, link 2: flex-grow factors below one distribute only that
   // fraction of the free space (the sub-one flex-factors rule), so a split
   // whose pinned home sidebar carries grow 0 would leave (1 - Σgrow) of its
   // width as dead space. The unpinned children's weights are therefore
   // renormalized over the split's unpinned weight total, keeping Σgrow at
   // exactly 1 whatever the stored weight ratios.
-  const pinned = node.children.map(child => isHomeSidebar(child, node.dir))
-  const unpinnedTotal = node.weights.reduce((sum, w, i) => sum + (pinned[i] ? 0 : (w ?? 0)), 0)
-  const unpinnedCount = pinned.filter(isPinned => !isPinned).length
+  // Pinned home panes: the sidebar column (left) and the context column
+  // (right) are fixed-width preference panes; every other window carries the
+  // renormalized split weight (see the fill-guarantee note below).
+  const pinned: ('sidebar' | 'context' | undefined)[] = node.children.map(child =>
+    isHomeSidebar(child, node.dir) ? 'sidebar' : isHomeContext(child, node.dir) ? 'context' : undefined,
+  )
+  const pinnedWidth = (kind: 'sidebar' | 'context'): number =>
+    kind === 'sidebar' ? props.sidebarOwner.width : props.contextWidth
+  const pinAt = (index: number): { index: number; width: number; kind: 'sidebar' | 'context' } | undefined => {
+    const kind = pinned[index]
+    return kind === undefined ? undefined : { index, width: pinnedWidth(kind), kind }
+  }
+  const unpinnedTotal = node.weights.reduce((sum, w, i) => sum + (pinned[i] !== undefined ? 0 : (w ?? 0)), 0)
+  const unpinnedCount = pinned.filter(isPinned => isPinned === undefined).length
   const growOf = (i: number): number => {
-    if (pinned[i]) return 0
+    if (pinned[i] !== undefined) return 0
     if (unpinnedTotal <= 0) return 1 / Math.max(unpinnedCount, 1)
     return (node.weights[i] ?? 0) / unpinnedTotal
   }
@@ -488,18 +580,14 @@ function NodeView(props: NodeRenderProps & { node: WmNode }) {
               onStart={() => {
                 // Freeze the gesture base: split size and the two adjacent
                 // weights at drag start, so deltas never compound (the
-                // DragHandle base-width pattern). Only the HOME sidebar
-                // boundary resizes the width preference (isHomeSidebar); a
-                // workspace buffer shown in any other window resizes
-                // ordinary split weights like every other pane.
+                // DragHandle base-width pattern). A boundary touching a
+                // PINNED home pane (sidebar or context) resizes that pane's
+                // width preference; a workspace buffer shown in any other
+                // window resizes ordinary split weights like every other pane.
                 const el = splitRef.current
                 const prev = node.children[i - 1]
-                const side = isHomeSidebar(child, node.dir)
-                  ? { index: i, width: props.sidebarOwner.width }
-                  : undefined
-                const sidePrev = prev !== undefined && isHomeSidebar(prev, node.dir)
-                  ? { index: i - 1, width: props.sidebarOwner.width }
-                  : undefined
+                const side = pinAt(i)
+                const sidePrev = prev !== undefined ? pinAt(i - 1) : undefined
                 dragBase.current = {
                   size: el === null ? 0 : node.dir === 'row' ? el.clientWidth : el.clientHeight,
                   index: i - 1,
@@ -517,13 +605,13 @@ function NodeView(props: NodeRenderProps & { node: WmNode }) {
           )}
           <div
             className={css.paneWrapper}
-            style={pinned[i]
-              ? // The home sidebar pane IS the sidebar column: pinned to the
-              // width preference, so the divider sits exactly on its edge.
-              // Every other window (including one switched to the workspace
+            style={pinAt(i) !== undefined
+              ? // A pinned home pane IS its column: pinned to the width
+              // preference, so the divider sits exactly on its edge.
+              // Every other window (including one switched to the same
               // buffer) carries the renormalized split weight — a fill
               // guarantee for the buffer it shows.
-              { display: 'flex', flexDirection: 'column', flex: `0 0 ${props.sidebarOwner.width}px` }
+              { display: 'flex', flexDirection: 'column', flex: `0 0 ${pinAt(i)?.width ?? 0}px` }
               : { display: 'flex', flexDirection: 'column', flex: `${growOf(i)} 1 0%` }}
           >
             <NodeView {...props} node={child} />
@@ -543,16 +631,16 @@ export function TopbarChrome() {
   return (
     <>
       <button type="button" className={css.brandToggle} aria-label="Notifications" title="Notifications (coming soon)">
-        <svg width={16} height={16} viewBox="0 0 16 16" fill="none" aria-hidden>
-          <path d="M8 2a4 4 0 0 0-4 4v3l-1.2 2.1a.5.5 0 0 0 .43.75h9.54a.5.5 0 0 0 .43-.75L12 9V6a4 4 0 0 0-4-4Z" stroke="currentColor" strokeWidth="1.2" />
-          <path d="M6.5 12.5a1.5 1.5 0 0 0 3 0" stroke="currentColor" strokeWidth="1.2" />
+        <svg width={18} height={18} viewBox="0 0 16 16" fill="none" aria-hidden>
+          <path d="M8 2a4 4 0 0 0-4 4v3l-1.2 2.1a.5.5 0 0 0 .43.75h9.54a.5.5 0 0 0 .43-.75L12 9V6a4 4 0 0 0-4-4Z" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M6.5 12.5a1.5 1.5 0 0 0 3 0" stroke="currentColor" strokeWidth="1.5" />
         </svg>
       </button>
       <button type="button" className={css.brandToggle} aria-label="Account" title="Account (coming soon)">
-        <svg width={16} height={16} viewBox="0 0 16 16" fill="none" aria-hidden>
-          <circle cx="8" cy="8" r="6.4" stroke="currentColor" strokeWidth="1.2" />
-          <circle cx="8" cy="6.4" r="2" stroke="currentColor" strokeWidth="1.2" />
-          <path d="M3.8 12.6a4.6 4.6 0 0 1 8.4 0" stroke="currentColor" strokeWidth="1.2" />
+        <svg width={18} height={18} viewBox="0 0 16 16" fill="none" aria-hidden>
+          <circle cx="8" cy="8" r="6.4" stroke="currentColor" strokeWidth="1.5" />
+          <circle cx="8" cy="6.4" r="2" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M3.8 12.6a4.6 4.6 0 0 1 8.4 0" stroke="currentColor" strokeWidth="1.5" />
         </svg>
       </button>
     </>
@@ -630,6 +718,17 @@ export function WmFrame({
     window.clearTimeout(echoTimer.current)
     setEcho(text)
     echoTimer.current = window.setTimeout(() => { setEcho(undefined) }, 4000)
+  }, [])
+  // Tab-drop shade: the target pane flashes a brand overlay when a directional
+  // move tabs the moved window onto it (the non-drag stand-in for i3's drop
+  // highlight). Self-expiring; the timer dies with the frame.
+  const [tabShade, setTabShade] = useState<string | undefined>(undefined)
+  const tabShadeTimer = useRef<number | undefined>(undefined)
+  useEffect(() => () => { window.clearTimeout(tabShadeTimer.current) }, [])
+  const flashTabShade = useCallback((leafId: string) => {
+    window.clearTimeout(tabShadeTimer.current)
+    setTabShade(leafId)
+    tabShadeTimer.current = window.setTimeout(() => { setTabShade(undefined) }, 700)
   }, [])
   const prefixRef = useRef(prefixArmed)
   prefixRef.current = prefixArmed
@@ -808,9 +907,45 @@ export function WmFrame({
     notify('Flipped pane')
   }, [notify, writeTree])
 
+  const onMove = useCallback((leafId: string, dir: WmDir) => {
+    // Mode-aware i3 move: in tabbing mode the leaf tabs onto the axis
+    // neighbor (shade flash on the target); inside a tabbed container it
+    // reorders tabs; otherwise the plain swap / move-out runs.
+    const result = moveLeafTabbed(treeRef.current, leafId, dir, panels.tabbing)
+    if (result.tree === treeRef.current) {
+      notify('Nowhere to move')
+      return
+    }
+    writeTree(result.tree)
+    if (result.onto !== undefined) {
+      // Keep the absorbing pane visible during the shade flash: the moved
+      // window waits as its new tab (⌘hjkl or a tab click reaches it).
+      flashTabShade(result.onto)
+      setFocus(result.onto)
+      notify('Tabbed pane')
+    } else {
+      notify('Moved pane')
+    }
+  }, [flashTabShade, notify, panels.tabbing, setFocus, writeTree])
+
   const onTidy = useCallback(() => {
     writeTree(tidyTree(treeRef.current))
     notify('Tidied panes')
+  }, [notify, writeTree])
+
+  // Tabbed-container toggle (⌘⇧E, i3 $mod+e): the focused leaf's nearest
+  // multi-child ancestor flips between a tabbed group and a side-by-side /
+  // stacked split.
+  const onToggleTabbed = useCallback(() => {
+    const id = focusRef.current
+    if (id === undefined) return
+    const next = toggleTabbed(treeRef.current, id)
+    if (next === treeRef.current) {
+      notify('No container to tab')
+      return
+    }
+    writeTree(next)
+    notify('Tabbed container toggled')
   }, [notify, writeTree])
 
   // Pre-expand tree stash: component-level (a session-scope gesture, not
@@ -835,11 +970,16 @@ export function WmFrame({
   }, [notify, setFocus, writeTree])
 
   const onSash = useCallback((splitId: string, base: SashDragBase) => {
-    // A boundary touching the sidebar leaf resizes the width preference (the
-    // pane is pinned to it), not the split weights.
+    // A boundary touching a pinned home pane (sidebar or context) resizes
+    // that pane's width preference (the pane is pinned to it), not the
+    // split weights.
     if (base.sidebar !== null && base.size > 0) {
       const grown = base.sidebar.index === base.index
       const next = base.sidebar.width + (grown ? base.delta : -base.delta)
+      if (base.sidebar.kind === 'context') {
+        actions.setDetails(clampWidth(Math.round(next), DETAILS_MIN, DETAILS_MAX))
+        return
+      }
       setSidebarWidth(clampWidth(Math.round(next), SIDEBAR_MIN, SIDEBAR_MAX))
       return
     }
@@ -859,10 +999,11 @@ export function WmFrame({
     next[base.index] = next0
     next[base.index + 1] = total - next0
     writeWeights(setWeights(t, splitId, next))
-  }, [setSidebarWidth])
+  }, [actions, setSidebarWidth])
 
-  // Context toggle: the header's right-hand control pops Context into its
-  // own window beside the focused buffer (split-right), or takes it back.
+  // Context toggle: the header's right-hand control pops Context into the
+  // pinned home context column beside the rightmost window (the right-hand
+  // mirror of the workspace sidebar), or takes it back.
   const onContextToggle = useCallback(() => {
     const t = treeRef.current
     const existing = findLeaf(t, WM_LEAF_DETAILS)
@@ -870,11 +1011,10 @@ export function WmFrame({
       writeTree(removeLeaf(t, WM_LEAF_DETAILS))
       return
     }
-    const anchor = focusRef.current ?? firstLeafId(t)
+    const anchor = lastLeafId(t)
     if (anchor === undefined) return
-    const leafId = freshLeafId()
-    writeTree(splitLeaf(t, anchor, 'row', 'details', leafId, 'after'))
-    setFocus(leafId)
+    writeTree(splitLeaf(t, anchor, 'row', 'details', WM_LEAF_DETAILS, 'after'))
+    setFocus(WM_LEAF_DETAILS)
   }, [setFocus, writeTree])
 
   // Brand-strip toggle: the same transition ctx.layout.toggleSidebar() runs
@@ -1308,6 +1448,33 @@ export function WmFrame({
         }
         return
       }
+      case 'move-window-left':
+      case 'move-window-right':
+      case 'move-window-up':
+      case 'move-window-down': {
+        // The chords ride the same mode-aware move as the mode-line chevrons
+        // (tabbing mode tabs onto the neighbor; tabbed containers reorder).
+        const id = focusRef.current
+        if (id === undefined) return
+        onMove(id, command.slice('move-window-'.length) as WmDir)
+        return
+      }
+      case 'focus-left':
+      case 'focus-right':
+      case 'focus-up':
+      case 'focus-down': {
+        // i3-style directional focus: the nearest leaf whose center lies in
+        // the direction of travel (see focusDirection).
+        const id = focusRef.current ?? firstLeafId(treeRef.current)
+        if (id === undefined) return
+        const dir = command.slice('focus-'.length) as WmDir
+        const target = focusDirection(treeRef.current, id, dir)
+        if (target !== undefined) setFocus(target)
+        return
+      }
+      case 'toggle-tabbed':
+        onToggleTabbed()
+        return
       case 'multi-cursor': {
         // The broadcast state lives in ui-terminal's store; the frame only
         // raises the toggle event (same seam as the c0ntext open-map event).
@@ -1377,7 +1544,7 @@ export function WmFrame({
         return
       }
     }
-  }, [buffers, cycleBuffer, listDirectory, loadTheme, notify, onClose, onSplit,
+  }, [buffers, cycleBuffer, listDirectory, loadTheme, notify, onClose, onMove, onSplit, onToggleTabbed,
     sessionsListSnapshot, setBuffers, setFocus, setTree, writeScratch, writeTree, stashWs, activeWorkspaceId])
   // The minibuffer's execute callback precedes this declaration; the mirror
   // lets it dispatch palette picks without a dependency cycle.
@@ -1454,6 +1621,15 @@ export function WmFrame({
     brandInFrame: true,
   }
 
+  // The pinned context column's px width: an untouched details preference
+  // (0 = never dragged) takes the contract default; a dragged preference is
+  // honored in px, re-clamped into [DETAILS_MIN, DETAILS_MAX].
+  const contextWidth = clampWidth(
+    panels.details === 0 ? DETAILS_DEFAULT : panels.details,
+    DETAILS_MIN,
+    DETAILS_MAX,
+  )
+
   const filesShared: FilesBufferShared = {
     listDirectory,
     openPath,
@@ -1471,6 +1647,8 @@ export function WmFrame({
     buffers,
     renderSlot,
     sidebarOwner,
+    contextWidth,
+    tabShade,
     scratch: scratchShared,
     files: filesShared,
     readTextFile,
@@ -1478,6 +1656,7 @@ export function WmFrame({
     onSplit,
     onClose,
     onFlip,
+    onMove,
     onToggleExpand,
     expanded,
     onTidy,
@@ -1514,7 +1693,10 @@ export function WmFrame({
             </button>
           ))}
         </div>
-        {(
+        {/* The right-edge chrome cluster: the context toggle leads the same
+            40px button row as the notification/account stand-ins (it used to
+            float mid-header after the centered mode switch). */}
+        <div className={css.topbarRight}>
           <button
             type="button"
             className={css.brandToggle}
@@ -1525,8 +1707,8 @@ export function WmFrame({
           >
             <ContextIcon />
           </button>
-        )}
-        <div className={css.topbarRight}>{renderSlot('shell.topbar.right', {})}</div>
+          {renderSlot('shell.topbar.right', {})}
+        </div>
       </div>
       <div className={css.treeArea}>
         {panels.mode === 'agent'

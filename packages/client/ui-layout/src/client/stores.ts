@@ -46,7 +46,7 @@ function seedMode(): LayoutMode {
  * sidebar over the squeezed center without rewriting the width preference —
  * plus the frame's viewing {@link LayoutMode}.
  */
-type LayoutState = { sidebar: number; details: number; narrow: boolean; narrowExpanded: boolean; mode: LayoutMode }
+type LayoutState = { sidebar: number; details: number; narrow: boolean; narrowExpanded: boolean; mode: LayoutMode; tabbing: boolean }
 
 /**
  * Annotation twin of the actions literal below (the export needs a declared
@@ -60,6 +60,7 @@ type LayoutActions = {
   openDetails: (draft: LayoutState) => void
   closeDetails: (draft: LayoutState) => void
   setMode: (draft: LayoutState, mode: LayoutMode) => void
+  toggleTabbing: (draft: LayoutState) => void
 }
 
 /**
@@ -74,7 +75,9 @@ type LayoutActions = {
  */
 export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutActions>  {
   const handle = defineStore({
-    init: (): LayoutState => ({ sidebar: SIDEBAR_DEFAULT, details: 0, narrow: false, narrowExpanded: false, mode: seedMode() }),
+    init: (): LayoutState => ({
+      sidebar: SIDEBAR_DEFAULT, details: 0, narrow: false, narrowExpanded: false, mode: seedMode(), tabbing: false,
+    }),
     actions: {
       setSidebar: (d, px: number) => { d.sidebar = clampWidth(px, SIDEBAR_MIN, SIDEBAR_MAX) },
       setDetails: (d, px: number) => { d.details = clampWidth(px, DETAILS_MIN, DETAILS_MAX) },
@@ -97,6 +100,9 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
         d.mode = mode
         try { window.localStorage.setItem(MODE_KEY, mode) } catch { /* private mode */ }
       },
+      // Tabbing mode (i3-like): directional moves tab the window onto the
+      // neighbor instead of swapping with it.
+      toggleTabbing: (d) => { d.tabbing = !d.tabbing },
     },
   })
   return handle
