@@ -578,11 +578,13 @@ describe('dsh-tool-subagent', () => {
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
     await ctx.plugin(SubagentRuntime)
+    const started = vi.fn()
     ctx.subagents.registerProvider({
       name: 'spy',
       capabilities: { outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
       inheritsParentContext: false,
       start: async (request) => {
+        started()
         if (request.signal.aborted) throw new Error('start aborted')
         let resolveResult: (r: { output: never[]; stopReason: 'aborted' }) => void
         const result = new Promise<{ output: never[]; stopReason: 'aborted' }>((res) => { resolveResult = res })
@@ -602,9 +604,9 @@ describe('dsh-tool-subagent', () => {
 
     const controller = new AbortController()
     const pending = callSubagent(ctx, { description: 'd', prompt: 'p' }, { signal: controller.signal })
-    // Let provider.start install its listener before aborting.
-    await Promise.resolve()
-    await Promise.resolve()
+    // Let provider.start install its listener before aborting: two bare
+    // microtask yields race the async pipeline and abort can land pre-listener.
+    await vi.waitFor(() => { expect(started).toHaveBeenCalledTimes(1) })
     controller.abort()
     const result = await pending
     expect(cancelled).toHaveBeenCalledTimes(1)
