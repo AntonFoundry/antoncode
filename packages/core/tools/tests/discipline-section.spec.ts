@@ -29,7 +29,8 @@ describe('tools:working-discipline section', () => {
     const text = await disciplineSection(ctx)
     expect(text).toContain('todo tree with todo_write')
     expect(text).toContain('NAME the capability seam')
-    expect(text).toContain('tight token budget')
+    expect(text).toContain('Working economy')
+    expect(text).not.toContain('tight token budget')
     expect(text).toContain('grep or ripgrep before reading files')
   })
 
@@ -38,6 +39,6 @@ describe('tools:working-discipline section', () => {
     const text = await disciplineSection(ctx)
     expect(text).toContain('todo tree with todo_write')
     expect(text).toContain('NAME the capability seam')
-    expect(text).not.toContain('tight token budget')
+    expect(text).not.toContain('Working economy')
   })
 })
