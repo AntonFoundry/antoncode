@@ -1898,10 +1898,13 @@ export class ToolRuntime extends Service {
     if (match === undefined) return result
     const hint = `the supplied properties (${keys.join(', ')}) match tool "${match}" — retry with that tool and the same arguments`
     const hinted = `${message}; ${hint}`
+    const info = result.error?.info
     return {
-      ...result,
+      isError: true,
       content: [{ type: 'text', text: `Error: ${hinted}` }],
-      error: { ...result.error, message: hinted },
+      error: info !== undefined ? { message: hinted, info } : { message: hinted },
+      ...(result.meta !== undefined ? { meta: result.meta } : {}),
+      ...(result.additionalContexts !== undefined ? { additionalContexts: result.additionalContexts } : {}),
     }
   }
 
