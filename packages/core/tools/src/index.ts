@@ -83,7 +83,7 @@ const PAGED_ONLY_INSTRUCTION = `Tools are paged: the catalog below lists names a
  * produces. Deliberately no hard numeric cap: the claim shapes style, and a
  * number would invite early stopping on legitimately long tasks.
  */
-const TOKEN_EFFICIENCY = 'Token discipline: this session runs on a tight token budget — assume an order of magnitude less headroom than you would want, and spend like it is scarce, because it is. The cheap tool first: grep or ripgrep before reading files, a targeted read with offset and limit before a whole file, one batched command before several round-trips, the smallest output that answers the question. Lean prose: never restate the task or the user\'s words back, no filler transitions, summarize findings instead of echoing transcripts. When a step would be expensive, ask what a budget-pressured engineer would do instead — they almost always know a cheaper path.'
+const TOKEN_EFFICIENCY = 'Working economy: context is managed automatically (eviction at a high watermark); you will not run out, and you never need to check or conserve capacity. Economy means latency and precision, not survival: the cheap tool first: grep or ripgrep before reading files, a targeted read with offset and limit before a whole file, one batched command before several round-trips, the smallest output that answers the question. Lean prose: never restate the task or the user\'s words back, no filler transitions, summarize findings instead of echoing transcripts. Never truncate, defer, or shrink work to save tokens: if a task needs a large action, do it in full on the first try.'
 
 /**
  * The plugin-vs-shared-layer decision rule, universal because the failure it
@@ -929,6 +929,9 @@ export class ToolRuntime extends Service {
     // The framing is the deployment's call: on by default (budget-told
     // agents measurably pick cheaper tools), off for long-horizon tasks.
     this.efficiencyDiscipline = config.efficiencyDiscipline ?? true
+    // Live efficiency toggle: the Settings > General row persists into the
+    // 'tools-discipline' settings section; the section text reads it per assembly.
+    try { ctx.inject(['settings'], (settingsCtx) => { (settingsCtx as unknown as { settings: { register: (ns: string, schema: unknown) => void } }).settings.register('tools-discipline', z.object({ efficiencyDiscipline: z.boolean().default(true) })) }) } catch { /* settings absent: constructor default stands */ }
     this.maxParallelSubCalls = resolveMaxParallelSubCalls(config.maxParallelSubCalls)
     this.pinned = new Set(config.pinned ?? [])
     ctx.systemPrompt.tools(context => this.wireSchemas(context.scope))
@@ -1017,16 +1020,31 @@ export class ToolRuntime extends Service {
    * @returns the section registration.
    */
   /** The always-on working-discipline section (see {@link TODO_TREE_DISCIPLINE}). */
-  private todoDisciplineSection(): { name: string; order: number; text: string } {
+  private todoDisciplineSection(): { name: string; order: number; text: (context: { scope?: ScopeKey }) => string } {
     return {
       name: 'tools:working-discipline',
       order: PAGED_RULE_SECTION_ORDER - 1,
-      text: [
+      text: () => [
         TODO_TREE_DISCIPLINE,
-        ...(this.efficiencyDiscipline ? [TOKEN_EFFICIENCY] : []),
+        ...(this.readEfficiencyDiscipline() ? [TOKEN_EFFICIENCY] : []),
         PLUGIN_DISCIPLINE,
       ].join('\n\n'),
     }
+  }
+
+  /**
+   * Live efficiency-discipline value: false only when the deployment flag is
+   * explicitly off, or the persisted section explicitly turns it off.
+   */
+  private readEfficiencyDiscipline(): boolean {
+    if (this.efficiencyDiscipline === false) return false
+    try {
+      const settings = this.ctx.get('settings')
+      if (settings === undefined) return true
+      const section = settings.get('tools-discipline') as { efficiencyDiscipline?: boolean } | undefined
+      if (section === undefined || typeof section.efficiencyDiscipline !== 'boolean') return true
+      return section.efficiencyDiscipline
+    } catch { return true }
   }
 
   private pagedRuleSection(): { name: string; order: number; text: (context: { scope?: ScopeKey }) => string } {

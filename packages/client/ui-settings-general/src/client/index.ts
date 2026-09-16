@@ -8,6 +8,7 @@
  * Export discipline: packages/client/AGENTS.md.
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import { createElement, type CSSProperties } from 'react'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
@@ -167,6 +168,70 @@ export function apply(ctx: ClientContext): void {
   }
   ctx.slots.inject('settings.close', () =>
     ctx.slots.register({ name: 'settings.close', locale: NS }, CloseLabel))
+  // Efficiency-discipline row: reads/writes the 'tools-discipline' settings
+  // section that the tools runtime consumes per assembly. Registered natively
+  // here because the General section is this package's own settings surface.
+  const efficiencyScope = ctx.get('settingsScope')
+  if (efficiencyScope !== undefined && typeof (efficiencyScope as { bind?: unknown }).bind === 'function') {
+    const bound = (efficiencyScope as {
+      bind: (options: { namespace: string }) => {
+        getSnapshot: () => { value: { efficiencyDiscipline?: boolean } | undefined; revision: number }
+        subscribe: (listener: () => void) => () => void
+        set: (field: string, value: boolean) => Promise<void> | void
+      }
+    }).bind({ namespace: 'tools-discipline' })
+    const readEnabled = (): boolean => {
+      const section = bound.getSnapshot().value
+      return section === undefined ? true : section.efficiencyDiscipline !== false
+    }
+    let snap = { enabled: readEnabled() }
+    const store = {
+      getSnapshot: () => snap,
+      subscribe: (listener: () => void) => bound.subscribe(() => { snap = { enabled: readEnabled() }; listener() }),
+    }
+    const useEnabled = bindSnapshotSelector(store)
+    const setEnabled = (enabled: boolean): void => { void bound.set('efficiencyDiscipline', enabled) }
+    ctx.slots.inject('settings.general.item', () => ctx.slots.register({
+      name: 'settings.general.item',
+      id: 'efficiency-discipline',
+      order: 15,
+      locale: NS,
+    }, (rowProps) => {
+      const enabled = useEnabled(state => state.enabled)
+      const group: CSSProperties = {
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        gap: 16, padding: '16px 0', borderBottom: '1px solid var(--dsw-alias-border-l2)', minWidth: 0,
+      }
+      const copy: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }
+      const title: CSSProperties = { fontSize: 14, fontWeight: 400, lineHeight: '22px', color: 'var(--dsw-alias-label-primary)' }
+      const description: CSSProperties = { fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)' }
+      const toggle: CSSProperties = {
+        position: 'relative', flex: 'none', width: 38, height: 22, border: 0,
+        borderRadius: 999, background: enabled
+          ? 'var(--dsw-alias-state-success-primary, #34c759)'
+          : 'var(--dsw-alias-border-l1, #3a3a3c)',
+        cursor: 'pointer', padding: 0, margin: 0, boxSizing: 'border-box',
+        transition: 'background 200ms cubic-bezier(0.2, 0.8, 0.2, 1)', userSelect: 'none',
+      }
+      const thumb: CSSProperties = {
+        position: 'absolute', top: 2, left: 2, width: 18, height: 18,
+        borderRadius: '50%', background: '#ffffff',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.25), 0 0 1px rgba(0,0,0,0.3)',
+        transition: 'transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1)', pointerEvents: 'none',
+        transform: enabled ? 'translateX(16px)' : 'translateX(0)',
+      }
+      return createElement('div', { style: group },
+        createElement('div', { style: copy },
+          createElement('div', { style: title }, rowProps.t('efficiency.title')),
+          createElement('div', { style: description }, rowProps.t('efficiency.description')),
+        ),
+        createElement('button', {
+          style: toggle, type: 'button', role: 'switch', 'aria-checked': enabled,
+          'aria-label': rowProps.t('efficiency.title'), onClick: () => { setEnabled(!enabled) },
+        }, createElement('span', { style: thumb })),
+      )
+    }))
+  }
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: 'general',
