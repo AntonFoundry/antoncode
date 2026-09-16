@@ -74,6 +74,10 @@
      zero basis, so content size never sets the pane size. */
   flex: 1 1 0%;
   width: 100%;
+  /* Size container: the narrow-pane toolbar compaction queries it. The
+     pane's size comes from the flex layout, never its contents, so size
+     containment cannot collapse it. */
+  container-type: size;
 }
 
 /* Slim mode line: buffer name left, window commands right (Emacs echo of
@@ -125,6 +129,39 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/* Narrow-pane toolbar compaction: a pane narrower than ~320px (a squeezed
+   middle window, a small app window) cannot fit the full nine-button row at
+   24px each — the tail buttons clip out of view. Compact chrome keeps every
+   command reachable; below 220px the row itself scrolls instead of clipping. */
+@container (max-width: 320px) {
+  .modeLine {
+    padding: 0 4px;
+  }
+
+  .modeActions {
+    flex: none;
+    gap: 0;
+  }
+
+  .modeButton {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+@container (max-width: 220px) {
+  .modeActions {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    justify-content: flex-start;
+  }
+
+  .bufferName {
+    flex: none;
+  }
+}
+
 .paneBody {
   position: relative;
   /* Fill guarantee chain, link 4: the buffer body fills the pane below the
@@ -135,6 +172,66 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+/* Tabbed container (i3): a slim tab strip above exactly one visible child. */
+.tabbed {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 0%;
+  overflow: hidden;
+}
+
+.tabStrip {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 2px 4px 0;
+  background: var(--dsw-specific-sidebar-fill);
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  overflow-x: auto;
+  min-width: 0;
+}
+
+.tab {
+  appearance: none;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  padding: 2px 10px;
+  font-size: 11px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.tab[aria-selected] {
+  background: var(--dsw-alias-bg-base);
+  border-color: var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+/* Tab-drop shade: brief brand overlay on the pane that absorbed the moved
+   window as a new tab (the non-drag stand-in for i3's drop highlight). */
+.tabShade {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 22%, transparent);
+  box-shadow: inset 0 0 0 2px var(--dsw-alias-brand-primary);
 }
 
 /* Sash between sibling panes: a 1px border line with a 7px pointer hit

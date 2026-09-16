@@ -61,6 +61,24 @@ export type WmCommand =
   | 'tidy-panes'
   /** Swap the focused pane with its sibling in the parent split. */
   | 'flip-pane'
+  /** Move the focused pane one step left (i3-style; ⌘⇧H). */
+  | 'move-window-left'
+  /** Move the focused pane one step right (⌘⇧L). */
+  | 'move-window-right'
+  /** Move the focused pane one step up (⌘⇧K). */
+  | 'move-window-up'
+  /** Move the focused pane one step down (⌘⇧J). */
+  | 'move-window-down'
+  /** Focus the nearest pane to the left (⌘H). */
+  | 'focus-left'
+  /** Focus the nearest pane to the right (⌘L). */
+  | 'focus-right'
+  /** Focus the nearest pane above (⌘K). */
+  | 'focus-up'
+  /** Focus the nearest pane below (⌘J). */
+  | 'focus-down'
+  /** Toggle the focused container between tabbed group and side-by-side split (⌘⇧E). */
+  | 'toggle-tabbed'
   /** Restore the pre-expand layout (undo expand-to-full). */
   | 'restore-layout'
   /** Save the current window tree as the workspace's layout (M-x). */
@@ -80,6 +98,8 @@ export interface KeyEventLike {
   key: string
   altKey?: boolean
   metaKey?: boolean
+  /** Shift selects the directional MOVE table over FOCUS (⌘⇧hjkl vs ⌘hjkl). */
+  shiftKey?: boolean
   /** The physical key code — M-x detection survives Option-key character mapping. */
   code?: string
 }
@@ -92,6 +112,8 @@ export interface KeyEventLike {
  *   ArrowLeft/ArrowRight (buffer cycling), and ctrl-chorded f/s
  *   (C-x C-f find-file, C-x C-s save). C-x C-g cancels.
  * - With C-c armed, ArrowLeft/ArrowRight run winner undo/redo.
+ * - ⌘H/⌘J/⌘K/⌘L focus left/down/up/right; with Shift the same four keys
+ *   move the focused window instead (the i3 directional tables).
  * - Ctrl+G and Escape cancel any pending prefix or minibuffer from anywhere.
  * - Anything else is `null`; a `null` while a prefix is armed means the
  *   chord failed and the caller must disarm.
@@ -105,6 +127,23 @@ export function parseChord(event: KeyEventLike, prefix: ArmedPrefix): ChordResul
   // hide it. Meta is other apps'; ctrl chords run their own tables.
   if (event.altKey === true && event.ctrlKey !== true && event.metaKey !== true && event.code === 'KeyX') {
     return { command: 'm-x' }
+  }
+  // ⌘ (meta) hjkl: the i3-style directional table. Shift selects the MOVE
+  // table (the window travels), plain selects FOCUS (the cursor travels):
+  // ⌘H/⌘J/⌘K/⌘L focus left/down/up/right; ⌘⇧H/⌘⇧J/⌘⇧K/⌘⇧L move the window
+  // the same four ways. Only these four physical keys are claimed; every
+  // other meta chord stays other apps'.
+  if (event.metaKey === true && event.ctrlKey !== true && event.altKey !== true) {
+    // ⌘⇧E toggles the focused container's tabbed/split arrangement (i3
+    // $mod+e); plain ⌘E stays other apps'.
+    if (event.code === 'KeyE' && event.shiftKey === true) return { command: 'toggle-tabbed' }
+    if (event.code !== 'KeyH' && event.code !== 'KeyJ' && event.code !== 'KeyK' && event.code !== 'KeyL') return null
+    const vertical = event.code === 'KeyJ' || event.code === 'KeyK'
+    const forward = event.code === 'KeyL' || event.code === 'KeyJ'
+    const direction = vertical ? (forward ? 'down' : 'up') : (forward ? 'right' : 'left')
+    return event.shiftKey === true
+      ? { command: `move-window-${direction}` as WmCommand }
+      : { command: `focus-${direction}` as WmCommand }
   }
   // Meta/alt-chorded keys are other apps' shortcuts; never intercept.
   if (event.metaKey || event.altKey) return null
@@ -175,6 +214,15 @@ export const COMMANDS: readonly CommandEntry[] = [
   { name: 'multi-cursor', command: 'multi-cursor', keys: 'M-x' },
   { name: 'tidy-panes', command: 'tidy-panes', keys: 'M-x' },
   { name: 'flip-pane', command: 'flip-pane', keys: 'M-x' },
+  { name: 'move-window-left', command: 'move-window-left', keys: '⌘⇧H' },
+  { name: 'move-window-right', command: 'move-window-right', keys: '⌘⇧L' },
+  { name: 'move-window-up', command: 'move-window-up', keys: '⌘⇧K' },
+  { name: 'move-window-down', command: 'move-window-down', keys: '⌘⇧J' },
+  { name: 'focus-left', command: 'focus-left', keys: '⌘H' },
+  { name: 'focus-right', command: 'focus-right', keys: '⌘L' },
+  { name: 'focus-up', command: 'focus-up', keys: '⌘K' },
+  { name: 'focus-down', command: 'focus-down', keys: '⌘J' },
+  { name: 'tabbed-mode', command: 'toggle-tabbed', keys: '⌘⇧E' },
   { name: 'restore-layout', command: 'restore-layout', keys: 'M-x' },
   { name: 'save-layout', command: 'save-layout', keys: 'M-x' },
   { name: 'load-theme', command: 'load-theme', keys: 'M-x' },

@@ -12,12 +12,13 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import {
   WM_LEAF_CONVERSATION, WM_LEAF_DETAILS, WM_LEAF_SIDEBAR,
-  canClose, countLeaves, defaultTree, findLeaf, findSplit, firstLeafId, keepOnlyLeaf, killBuffer,
+  canClose, countLeaves, defaultTree, findLeaf, findSplit, firstLeafId, focusDirection, keepOnlyLeaf, killBuffer,
+  moveLeaf, moveLeafTabbed, tabInto, toggleTabbed,
   SCRATCH_BUFFER_ID,
   lastLeafId, leafIds, normalizeTree, openBuffer, removeLeaf, setBuffer, setWeights, splitLeaf,
 } from '@deepseek-ai/dsh-client-ui-layout/src/client/wm.ts'
 import { createLayoutStore, createScratchStore, createWmStore } from '@deepseek-ai/dsh-client-ui-layout/src/client/stores.ts'
-import { SIDEBAR_DEFAULT } from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
+import { DETAILS_DEFAULT, SIDEBAR_DEFAULT } from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
 import { LayoutController } from '@deepseek-ai/dsh-client-ui-layout/src/client/service.ts'
 import type { PanelActions, WmTreeSource } from '@deepseek-ai/dsh-client-ui-layout/src/client/service.ts'
 import { WmFrame } from '@deepseek-ai/dsh-client-ui-layout/src/client/WmFrame.tsx'
@@ -96,8 +97,106 @@ describe('wm tree operations', () => {
     expect(countLeaves(tree, 'details')).toBe(2)
   })
 
-  it('canClose: every window closes except the last one standing', () => {
-    const tree = shipped3()
+  it('moveLeaf swaps with the axis neighbor and moves out one level at the edge', () => {
+    // Along the axis: a swap of the two root children (weights travel too).
+    const moved = moveLeaf(defaultTree(), WM_LEAF_CONVERSATION, 'left')
+    expect(leafIds(moved)).toEqual([WM_LEAF_CONVERSATION, WM_LEAF_SIDEBAR])
+    // Against a perpendicular parent: the leaf moves out and wraps the edge
+    // neighbor in a fresh split (i3-style reparent).
+    // sidebar | [conversation / details] (column) — moving sidebar right wraps.
+    const nested: WmNode = {
+      kind: 'split', id: 'wm:root', dir: 'row', weights: [0.3, 0.7],
+      children: [
+        { kind: 'leaf', id: WM_LEAF_SIDEBAR, buffer: 'sidebar' },
+        {
+          kind: 'split', id: 'wm:inner', dir: 'column', weights: [0.5, 0.5],
+          children: [
+            { kind: 'leaf', id: WM_LEAF_CONVERSATION, buffer: 'conversation' },
+            { kind: 'leaf', id: WM_LEAF_DETAILS, buffer: 'details' },
+          ],
+        },
+      ],
+    }
+    const out = moveLeaf(nested, WM_LEAF_SIDEBAR, 'right')
+    // Along the axis with a sibling present: sidebar swaps with the whole
+    // neighboring subtree (the flip semantic).
+    if (out.kind !== 'split') throw new Error('expected split root')
+    expect(out.children).toHaveLength(2)
+    const [first, second] = out.children
+    expect(first?.kind).toBe('split')
+    expect(second?.kind).toBe('leaf')
+    expect(leafIds(out)).toEqual([WM_LEAF_CONVERSATION, WM_LEAF_DETAILS, WM_LEAF_SIDEBAR])
+    // The inner column split is untouched by the swap.
+    if (first?.kind !== 'split') return
+    expect(first.dir).toBe('column')
+    expect(leafIds(moved)).toHaveLength(2)
+    // Perpendicular parent: moving the conversation LEFT leaves its column —
+    // it re-inserts beside the column in the row root.
+    const outLeft = moveLeaf(nested, WM_LEAF_CONVERSATION, 'left')
+    expect(leafIds(outLeft)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
+    if (outLeft.kind !== 'split') return
+    expect(outLeft.children[1]?.kind).toBe('leaf')
+  })
+
+  it('moveLeaf no-ops on a sole leaf, an unknown leaf, and the root axis edge', () => {
+    const single = keepOnlyLeaf(defaultTree(), WM_LEAF_CONVERSATION)
+    expect(moveLeaf(single, WM_LEAF_CONVERSATION, 'left')).toBe(single)
+    const tree = defaultTree()
+    expect(moveLeaf(tree, 'nope', 'right')).toBe(tree)
+    // Root row edge: no grandparent to move out into.
+    expect(moveLeaf(tree, WM_LEAF_SIDEBAR, 'left')).toBe(tree)
+  })
+
+  it('focusDirection picks the nearest leaf strictly on the travel side', () => {
+    const tree = defaultTree()
+    expect(focusDirection(tree, WM_LEAF_CONVERSATION, 'left')).toBe(WM_LEAF_SIDEBAR)
+    expect(focusDirection(tree, WM_LEAF_SIDEBAR, 'right')).toBe(WM_LEAF_CONVERSATION)
+    // Vertical: no leaf lies above the top edge.
+    expect(focusDirection(tree, WM_LEAF_SIDEBAR, 'up')).toBeUndefined()
+    const stacked = splitLeaf(defaultTree(), WM_LEAF_CONVERSATION, 'column', 'details', WM_LEAF_DETAILS)
+    expect(focusDirection(stacked, WM_LEAF_CONVERSATION, 'down')).toBe(WM_LEAF_DETAILS)
+    expect(focusDirection(stacked, WM_LEAF_DETAILS, 'up')).toBe(WM_LEAF_CONVERSATION)
+    // The sidebar spans the full height: straight below its center is the
+    // details half only.
+    expect(focusDirection(stacked, WM_LEAF_SIDEBAR, 'down')).toBe(WM_LEAF_DETAILS)
+  })
+
+  it('tabInto / toggleTabbed / moveLeafTabbed implement the i3 tabbed containers', () => {
+    const tree = defaultTree()
+    // Tab the conversation onto the sidebar: pruning collapses the tree to
+    // the bare target leaf, which wraps into the tabbed group.
+    const tabbed = tabInto(tree, WM_LEAF_CONVERSATION, WM_LEAF_SIDEBAR)
+    const root = tabbed.kind === 'split' ? tabbed : undefined
+    expect(root?.tabbed).toBe(true)
+    expect(root?.children).toHaveLength(2)
+    // Toggling the group's container splits it back out side-by-side.
+    const splitOut = toggleTabbed(tabbed, WM_LEAF_SIDEBAR)
+    expect(splitOut.kind).toBe('split')
+    if (splitOut.kind !== 'split') return
+    expect(splitOut.tabbed).toBe(false)
+    expect(leafIds(splitOut)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
+    // Toggling a plain row split turns it into a tabbed group.
+    const grouped = toggleTabbed(tree, WM_LEAF_CONVERSATION)
+    if (grouped.kind !== 'split') return
+    expect(grouped.tabbed).toBe(true)
+    // Inside a tabbed group a directional move reorders the tabs.
+    const reordered = moveLeafTabbed(grouped, WM_LEAF_SIDEBAR, 'right', false)
+    expect(leafIds(reordered.tree)).toEqual([WM_LEAF_CONVERSATION, WM_LEAF_SIDEBAR])
+    // In tabbing mode, a move toward a neighbor TABS onto it and reports the
+    // drop target (the shade flash). The tree collapses to the tabbed group.
+    const result = moveLeafTabbed(tree, WM_LEAF_SIDEBAR, 'right', true)
+    expect(result.onto).toBe(WM_LEAF_CONVERSATION)
+    expect(result.tree.kind).toBe('split')
+    if (result.tree.kind !== 'split') return
+    expect(result.tree.tabbed).toBe(true)
+    expect(leafIds(result.tree)).toEqual([WM_LEAF_CONVERSATION, WM_LEAF_SIDEBAR])
+    // With tabbing mode off the same move swaps (the plain i3 move).
+    expect(moveLeafTabbed(tree, WM_LEAF_SIDEBAR, 'right', false).onto).toBeUndefined()
+    expect(leafIds(moveLeafTabbed(tree, WM_LEAF_SIDEBAR, 'right', false).tree))
+      .toEqual([WM_LEAF_CONVERSATION, WM_LEAF_SIDEBAR])
+  })
+
+  it('canClose: every window closes except the last one standing', () => {    const tree = shipped3()
     expect(canClose(tree, WM_LEAF_SIDEBAR)).toBe(true)
     expect(canClose(tree, WM_LEAF_DETAILS)).toBe(true)
     // The conversation pane closes too when other windows remain (C-x b
@@ -289,7 +388,15 @@ const openWorkspaceLog: string[] = []
 function openWorkspaceStub(workspaceId: string): void { openWorkspaceLog.push(workspaceId) }
 
 /** Fire one synthetic keydown at the window (capture-phase listener target). */
-function press(key: string, mods: { ctrlKey?: boolean; altKey?: boolean; code?: string } = {}): void {
+interface PressMods {
+  ctrlKey?: boolean
+  altKey?: boolean
+  metaKey?: boolean
+  shiftKey?: boolean
+  code?: string
+}
+
+function press(key: string, mods: PressMods = {}): void {
   act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...mods })) })
 }
 
@@ -368,6 +475,103 @@ describe('WmFrame render', () => {
     act(() => { closeButtonOf('conversation').click() })
     expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR])
     expect([...container.querySelectorAll('[class*=bufferName]')].some(el => el.textContent === 'Chat')).toBe(false)
+  })
+
+  it('single-pane mode line keeps tidy + expand/restore; only flip and close need a sibling', () => {
+    const { container, wm } = mountFrame(keepOnlyLeaf(defaultTree(), WM_LEAF_CONVERSATION))
+    const conv = '[data-buffer="conversation"] '
+    // Tidy and Expand stay reachable on the last window (C-x 1 must be
+    // clickable there, and expanding must leave a visible restore).
+    expect(container.querySelector(`${conv}button[aria-label="Tidy panes"]`)).toBeTruthy()
+    expect(container.querySelector(`${conv}button[aria-label="Expand pane"]`)).toBeTruthy()
+    expect(container.querySelector(`${conv}button[aria-label="Flip pane"]`)).toBeNull()
+    expect(container.querySelector(`${conv}button[aria-label="Close"]`)).toBeNull()
+    act(() => { (container.querySelector(`${conv}button[aria-label="Expand pane"]`) as HTMLElement).click() })
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION])
+    const restore = container.querySelector(`${conv}button[aria-label="Restore layout"]`) as HTMLElement
+    expect(restore).toBeTruthy()
+    act(() => { restore.click() })
+    // Restore returns the pre-expand layout (here: the single pane itself).
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION])
+    expect(container.querySelector(`${conv}button[aria-label="Expand pane"]`)).toBeTruthy()
+  })
+
+  it('context toggle pins the home details leaf as a fixed-width right column', () => {
+    const { getByLabelText, container, wm } = mountFrame()
+    const wrapperOf = (buffer: string): HTMLElement | null =>
+      container.querySelector(`[data-buffer="${buffer}"]`)?.parentElement ?? null
+    act(() => { getByLabelText('Toggle context panel').click() })
+    // The home details leaf is the canonical id, placed after the anchor.
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
+    // The pane is pinned to the details width preference (untouched → default).
+    expect(wrapperOf('details')?.style.flex).toBe(`0 0 ${DETAILS_DEFAULT}px`)
+    act(() => { getByLabelText('Toggle context panel').click() })
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
+  })
+
+  it('sash drag on the context boundary writes the details width preference', () => {
+    const { getByLabelText, container, layout } = mountFrame()
+    act(() => { getByLabelText('Toggle context panel').click() })
+    // The context sash is the one directly before the details pane wrapper.
+    const detailsWrapper = container.querySelector('[data-buffer="details"]')?.parentElement
+    if (detailsWrapper === null || detailsWrapper === undefined) throw new Error('details wrapper missing')
+    const contextSash = detailsWrapper.previousElementSibling as HTMLElement
+    expect(contextSash.className).toContain('sash')
+    const down = new PointerEvent('pointerdown', { pointerId: 1, clientX: 1280, bubbles: true })
+    const move = new PointerEvent('pointermove', { pointerId: 1, clientX: 1180, bubbles: true })
+    const up = new PointerEvent('pointerup', { pointerId: 1, clientX: 1180, bubbles: true })
+    act(() => { contextSash.dispatchEvent(down) })
+    act(() => { contextSash.dispatchEvent(move) })
+    act(() => { contextSash.dispatchEvent(up) })
+    // Dragging left widens the right-hand context column: 640 + 100.
+    expect(layout.getSnapshot().details).toBe(DETAILS_DEFAULT + 100)
+  })
+
+  it('⌘⇧L moves the focused window right; ⌘H/⌘J navigate focus; mode line carries the four move buttons', () => {
+    const { container, wm } = mountFrame()
+    // The mode line renders one directional move button per direction.
+    for (const dir of ['left', 'right', 'up', 'down']) {
+      expect(container.querySelector(`[aria-label="Move pane ${dir}"]`)).toBeTruthy()
+    }
+    // ⌘⇧L moves the focused (sidebar) window right: swap with the neighbor.
+    press('L', { metaKey: true, shiftKey: true, code: 'KeyL' })
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION, WM_LEAF_SIDEBAR])
+    // ⌘L focuses right: to the (moved) sidebar leaf.
+    press('l', { metaKey: true, code: 'KeyL' })
+    expect(wm.getSnapshot().focusedLeafId).toBe(WM_LEAF_SIDEBAR)
+    // ⌘H back left: to the conversation leaf.
+    press('h', { metaKey: true, code: 'KeyH' })
+    expect(wm.getSnapshot().focusedLeafId).toBe(WM_LEAF_CONVERSATION)
+    // ⌘J from the top row: nothing lies below — focus stands.
+    press('j', { metaKey: true, code: 'KeyJ' })
+    expect(wm.getSnapshot().focusedLeafId).toBe(WM_LEAF_CONVERSATION)
+  })
+
+  it('⌘⇧E tabs the container: strip renders one tab per window, clicking focuses', () => {
+    const { container, wm } = mountFrame()
+    // Split the conversation right so the root container has three leaves.
+    act(() => { (container.querySelector('[data-buffer="conversation"] button[aria-label="Split right"]') as HTMLElement).click() })
+    // ⌘⇧E converts the focused container into a tabbed group.
+    press('E', { metaKey: true, shiftKey: true, code: 'KeyE' })
+    const tree = wm.getSnapshot().tree
+    expect(tree.kind === 'split' && tree.tabbed === true).toBe(true)
+    // The strip renders one tab per window; clicking focuses that leaf.
+    const tabs = [...container.querySelectorAll('[class*="tabStrip"] [role="tab"]')]
+    expect(tabs).toHaveLength(2)
+    act(() => { (tabs[tabs.length - 1] as HTMLElement).click() })
+    expect(wm.getSnapshot().focusedLeafId).toBeDefined()
+  })
+
+  it('tabbing mode: ⌘⇧L tabs the window onto the neighbor with the drop shade', () => {
+    const { container, wm, layout } = mountFrame()
+    act(() => { layout.actions.toggleTabbing() })
+    // Focus starts on the leftmost leaf; ⌘⇧L moves toward the chat window.
+    press('L', { metaKey: true, shiftKey: true, code: 'KeyL' })
+    // The tree gained a tabbed group and the target flashes the shade.
+    expect(container.querySelector('[class*="tabShade"]')).toBeTruthy()
+    expect(JSON.stringify(wm.getSnapshot().tree)).toContain('"tabbed":true')
+    // Focus stays on the absorbing pane during the flash.
+    expect(wm.getSnapshot().focusedLeafId).toBe(WM_LEAF_CONVERSATION)
   })
 
   it('mode-line split inserts a new pane beside the target', () => {

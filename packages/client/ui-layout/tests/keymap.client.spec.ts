@@ -97,3 +97,27 @@ describe('M-x — Alt+KeyX physical-code intercept', () => {
     expect(parseChord(ev('f', { alt: true, code: 'KeyF' }), undefined)).toBeNull()
   })
 })
+
+describe('⌘hjkl — the i3-style directional tables', () => {
+  const mev = (code: string, key: string, shift = false) => ({
+    key, ctrlKey: false, altKey: false, metaKey: true, shiftKey: shift, code,
+  })
+  it('⌘H/⌘J/⌘K/⌘L focus left/down/up/right', () => {
+    expect(parseChord(mev('KeyH', 'h'), undefined)).toEqual({ command: 'focus-left' })
+    expect(parseChord(mev('KeyJ', 'j'), undefined)).toEqual({ command: 'focus-down' })
+    expect(parseChord(mev('KeyK', 'k'), undefined)).toEqual({ command: 'focus-up' })
+    expect(parseChord(mev('KeyL', 'l'), undefined)).toEqual({ command: 'focus-right' })
+  })
+  it('⌘⇧H/⌘⇧J/⌘⇧K/⌘⇧L move the window the same four ways', () => {
+    expect(parseChord(mev('KeyH', 'H', true), undefined)).toEqual({ command: 'move-window-left' })
+    expect(parseChord(mev('KeyJ', 'J', true), undefined)).toEqual({ command: 'move-window-down' })
+    expect(parseChord(mev('KeyK', 'K', true), undefined)).toEqual({ command: 'move-window-up' })
+    expect(parseChord(mev('KeyL', 'L', true), undefined)).toEqual({ command: 'move-window-right' })
+  })
+  it('claims nothing else under meta, and works from an armed prefix', () => {
+    expect(parseChord(mev('KeyF', 'f'), undefined)).toBeNull()
+    expect(parseChord(mev('KeyF', 'f', true), 'x')).toBeNull()
+    expect(parseChord(mev('KeyH', 'h'), 'x')).toEqual({ command: 'focus-left' })
+    expect(parseChord({ ...mev('KeyH', 'h'), ctrlKey: true }, undefined)).toBeNull()
+  })
+})

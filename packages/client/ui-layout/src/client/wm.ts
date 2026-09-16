@@ -149,6 +149,8 @@ export interface WmSplit {
   dir: WmDirection
   children: WmNode[]
   weights: number[]
+  /** Tabbed container (i3): children render as tabs, one visible at a time. */
+  tabbed?: boolean
 }
 
 /** Any window-tree node. */
@@ -573,9 +575,324 @@ export function flipWithSibling(node: WmNode, leafId: string): WmNode {
   return { ...node, children: node.children.map(child => flipWithSibling(child, leafId)) }
 }
 
+/** The four screen directions a window can move toward or focus can travel. */
+export type WmDir = 'left' | 'right' | 'up' | 'down'
+
+/** Fresh split id for the wrap splits moveLeaf inserts (module-local counter). */
+let moveSplitSeq = 0
+function freshMoveSplitId(): string {
+  moveSplitSeq += 1
+  return `wm:move:${moveSplitSeq}`
+}
+
+/** One ancestor frame on the walk from the root down to a leaf's parent. */
+interface AncestorFrame {
+  split: Extract<WmNode, { kind: 'split' }>
+  index: number
+}
+
+/**
+ * Walk the tree collecting the ancestor frames from the root split down to
+ * the given leaf's parent split.
+ * @param node - tree to walk.
+ * @param leafId - target leaf.
+ * @returns the frames (root first), or undefined when the leaf is absent.
+ */
+function ancestorPath(node: WmNode, leafId: string): AncestorFrame[] | undefined {
+  const walk = (n: WmNode, frames: AncestorFrame[]): AncestorFrame[] | undefined => {
+    if (n.kind === 'leaf') return n.id === leafId ? frames : undefined
+    for (let i = 0; i < n.children.length; i += 1) {
+      const child = n.children[i]
+      if (child === undefined) continue
+      const hit = walk(child, [...frames, { split: n, index: i }])
+      if (hit !== undefined) return hit
+    }
+    return undefined
+  }
+  return walk(node, [])
+}
+
+/**
+ * Move a leaf one step in a screen direction (i3-style). Along the parent
+ * split's axis the leaf swaps with its adjacent neighbor; at the axis edge
+ * (or against a perpendicular parent) the leaf moves out one level: it is
+ * re-inserted into the grandparent beside its former subtree, wrapping the
+ * neighbor in a fresh split when the grandparent runs perpendicular. A sole
+ * leaf, an unknown leaf, or a leaf pinned at the root edge in its own axis
+ * direction returns the tree unchanged.
+ * @param node - tree to transform.
+ * @param leafId - the leaf to move.
+ * @param dir - the screen direction to move toward.
+ * @returns the transformed tree (same reference when the move is impossible).
+ */
+export function moveLeaf(node: WmNode, leafId: string, dir: WmDir): WmNode {
+  const axis: WmDirection = dir === 'left' || dir === 'right' ? 'row' : 'column'
+  const forward = dir === 'right' || dir === 'down'
+  const leaf = findLeaf(node, leafId)
+  if (leaf === undefined || leafIds(node).length < 2) return node
+  const path = ancestorPath(node, leafId)
+  if (path === undefined || path.length === 0) return node
+  const parentFrame = path[path.length - 1]
+  if (parentFrame === undefined) return node
+  const parent = parentFrame.split
+  const leafIndex = parent.children.findIndex(child => child.kind === 'leaf' && child.id === leafId)
+  if (leafIndex < 0) return node
+  if (parent.dir === axis) {
+    const siblingIndex = forward ? leafIndex + 1 : leafIndex - 1
+    if (siblingIndex >= 0 && siblingIndex < parent.children.length) {
+      return flipWithSibling(node, leafId)
+    }
+  }
+  // Move out one level: extract the leaf, then re-insert it beside the former
+  // subtree inside the grandparent (wrapping perpendicular neighbors).
+  const grand = path.length >= 2 ? path[path.length - 2] : undefined
+  if (grand === undefined) return node
+  const pruned = removeLeaf(node, leafId)
+  const g = findSplit(pruned, grand.split.id)
+  if (g === undefined) return node
+  const insert = (n: WmNode): WmNode => {
+    if (n.kind === 'leaf') return n
+    if (n.id !== g.id) return { ...n, children: n.children.map(insert) }
+    if (n.dir === axis) {
+      const at = Math.min(Math.max(grand.index + (forward ? 1 : 0), 0), n.children.length)
+      const children = n.children.slice()
+      children.splice(at, 0, leaf)
+      const weights = n.weights.slice()
+      weights.splice(at, 0, weights[grand.index] ?? 1 / Math.max(n.children.length, 1))
+      return normalizeTree({ ...n, children, weights })
+    }
+    // Perpendicular grandparent: wrap the edge neighbor in the direction of
+    // travel in a fresh split together with the moved leaf.
+    const wi = forward ? n.children.length - 1 : 0
+    const neighbor = n.children[wi]
+    const neighborWeight = n.weights[wi] ?? 1 / Math.max(n.children.length, 1)
+    if (neighbor === undefined) return n
+    const wrapped = normalizeTree({
+      kind: 'split',
+      id: freshMoveSplitId(),
+      dir: axis,
+      weights: [neighborWeight / 2, neighborWeight / 2],
+      children: forward ? [neighbor, leaf] : [leaf, neighbor],
+    })
+    const children = n.children.slice()
+    children[wi] = wrapped
+    return { ...n, children }
+  }
+  return insert(pruned)
+}
+
+/** One leaf's fractional rectangle (the geometric focus-navigation model). */
+interface LeafRect { id: string; x: number; y: number; w: number; h: number }/**
+ * Lay every leaf out on the unit square: row splits divide width by weight,
+ * column splits divide height (the same proportional model the flex layout
+ * renders).
+ * @param node - subtree root.
+ * @param x - fractional left edge.
+ * @param y - fractional top edge.
+ * @param w - fractional width.
+ * @param h - fractional height.
+ * @param out - accumulator.
+ */
+function layoutRects(node: WmNode, x: number, y: number, w: number, h: number, out: LeafRect[]): void {
+  if (node.kind === 'leaf') {
+    out.push({ id: node.id, x, y, w, h })
+    return
+  }
+  const total = node.weights.reduce((sum, weight) => sum + weight, 0) || node.children.length
+  let offset = 0
+  node.children.forEach((child, i) => {
+    const share = (node.weights[i] ?? 1 / node.children.length) / total
+    if (node.dir === 'row') layoutRects(child, x + offset * w, y, share * w, h, out)
+    else layoutRects(child, x, y + offset * h, w, share * h, out)
+    offset += share
+  })
+}
+
+/**
+ * Focus the nearest leaf in a screen direction from the given leaf (i3-style
+ * focus): candidates must lie strictly on that side of the focus center, and
+ * the winner minimizes center distance with the travel axis weighted double.
+ * @param node - tree to search.
+ * @param leafId - the currently focused leaf.
+ * @param dir - the direction to move focus toward.
+ * @returns the winning leaf's id, or undefined when no leaf lies that way.
+ */
+export function focusDirection(node: WmNode, leafId: string, dir: WmDir): string | undefined {
+  const rects: LeafRect[] = []
+  layoutRects(node, 0, 0, 1, 1, rects)
+  const current = rects.find(rect => rect.id === leafId)
+  if (current === undefined) return undefined
+  const cx = current.x + current.w / 2
+  const cy = current.y + current.h / 2
+  const horizontal = dir === 'left' || dir === 'right'
+  let best: { id: string; cost: number } | undefined
+  for (const rect of rects) {
+    if (rect.id === leafId) continue
+    const rx = rect.x + rect.w / 2
+    const ry = rect.y + rect.h / 2
+    const dx = rx - cx
+    const dy = ry - cy
+    const onSide = dir === 'left' ? rx < cx : dir === 'right' ? rx > cx : dir === 'up' ? ry < cy : ry > cy
+    if (!onSide) continue
+    // Candidates IN LINE with the focus (their perpendicular span overlaps
+    // the focus's) win: a leaf stacked directly below beats a nearer one in
+    // a different column. Off-line candidates pay a large cross-axis tax.
+    const overlap = horizontal
+      ? Math.min(rect.y + rect.h, current.y + current.h) - Math.max(rect.y, current.y)
+      : Math.min(rect.x + rect.w, current.x + current.w) - Math.max(rect.x, current.x)
+    const primary = horizontal ? Math.abs(dx) : Math.abs(dy)
+    const secondary = horizontal ? Math.abs(dy) : Math.abs(dx)
+    const cost = overlap > 0 ? primary : primary * 4 + secondary * 4
+    if (best === undefined || cost < best.cost) best = { id: rect.id, cost }
+  }
+  return best?.id
+}
+
 export function keepOnlyLeaf(node: WmNode, leafId: string): WmNode {
   return normalizeTree(leafIds(node).filter(id => id !== leafId).reduce(
     (tree, id) => removeLeaf(tree, id),
     node,
   ))
+}
+
+/**
+ * The leaf a directional move from `leafId` lands on along its parent split's
+ * axis: the adjacent sibling leaf, or — when the sibling is a split — the
+ * leaf of that subtree nearest the travel direction. Undefined when the leaf
+ * sits at the axis edge (no neighbor to land on).
+ * @param node - tree to search.
+ * @param leafId - the moving leaf.
+ * @param dir - the screen direction of travel.
+ * @returns the neighbor leaf's id, or undefined.
+ */
+export function axisNeighborLeaf(node: WmNode, leafId: string, dir: WmDir): string | undefined {
+  const axis: WmDirection = dir === 'left' || dir === 'right' ? 'row' : 'column'
+  const forward = dir === 'right' || dir === 'down'
+  const path = ancestorPath(node, leafId)
+  const frame = path?.[path.length - 1]
+  if (frame === undefined) return undefined
+  const { split, index } = frame
+  if (split.dir !== axis) return undefined
+  const siblingIndex = forward ? index + 1 : index - 1
+  const sibling = split.children[siblingIndex]
+  if (sibling === undefined) return undefined
+  if (sibling.kind === 'leaf') return sibling.id
+  return forward ? firstLeafId(sibling) : lastLeafId(sibling)
+}
+
+/**
+ * Tab one leaf onto another (i3 tabbed-container semantics): the source leaf
+ * leaves its current position and becomes a tab of the target. A target
+ * already living in a tabbed split gains a sibling tab; any other target is
+ * replaced in place by a fresh tabbed split holding [target, source].
+ * @param node - tree to transform.
+ * @param sourceId - the leaf that moves.
+ * @param targetId - the leaf to tab onto.
+ * @returns the transformed tree (same reference when the tab is impossible).
+ */
+export function tabInto(node: WmNode, sourceId: string, targetId: string): WmNode {
+  const source = findLeaf(node, sourceId)
+  if (source === undefined || sourceId === targetId) return node
+  if (findLeaf(node, targetId) === undefined) return node
+  const pruned = removeLeaf(node, sourceId)
+  if (findLeaf(pruned, targetId) === undefined) return node
+  // Pruning collapsed the tree to the bare target leaf: wrap it in the group.
+  if (pruned.kind === 'leaf') {
+    return {
+      kind: 'split',
+      id: freshMoveSplitId(),
+      dir: 'row',
+      tabbed: true,
+      weights: [1, 1],
+      children: [pruned, source],
+    }
+  }
+  const insert = (n: WmNode): WmNode => {
+    if (n.kind === 'leaf') return n
+    const targetIndex = n.children.findIndex(child => child.kind === 'leaf' && child.id === targetId)
+    if (targetIndex < 0) return { ...n, children: n.children.map(insert) }
+    const children = n.children.slice()
+    if (n.tabbed === true) {
+      // The target already lives in a tabbed group: join it as a sibling tab.
+      children.splice(targetIndex + 1, 0, source)
+      const weights = n.weights.slice()
+      weights.splice(targetIndex + 1, 0, 1)
+      return normalizeTree({ ...n, children, weights })
+    }
+    // Replace the target leaf in place with a fresh tabbed group.
+    const targetChild = n.children[targetIndex]
+    if (targetChild === undefined) return { ...n, children: n.children.map(insert) }
+    children[targetIndex] = {
+      kind: 'split',
+      id: freshMoveSplitId(),
+      dir: 'row',
+      tabbed: true,
+      weights: [1, 1],
+      children: [targetChild, source],
+    }
+    return normalizeTree({ ...n, children })
+  }
+  return insert(pruned)
+}
+
+/**
+ * Toggle the leaf's container between tabbed and side-by-side arrangement
+ * (i3 $mod+e): the nearest ancestor split with two or more children becomes
+ * a tabbed group, or splits back out. A sole leaf has no container.
+ * @param node - tree to transform.
+ * @param leafId - the focused leaf selecting the container.
+ * @returns the transformed tree (same reference when there is no container).
+ */
+export function toggleTabbed(node: WmNode, leafId: string): WmNode {
+  const path = ancestorPath(node, leafId)
+  if (path === undefined) return node
+  const host = [...path].reverse().find(frame => frame.split.children.length >= 2)
+  if (host === undefined) return node
+  const map = (n: WmNode): WmNode => {
+    if (n.kind === 'leaf') return n
+    if (n.id === host.split.id) return { ...n, tabbed: n.tabbed !== true }
+    return { ...n, children: n.children.map(map) }
+  }
+  return map(node)
+}
+
+/** The result of a mode-aware directional move: the new tree plus, when the
+ * move tabbed the leaf onto a target, that target's id (for the drop shade). */
+export interface MoveResult {
+  tree: WmNode
+  /** The leaf the moving leaf tabbed onto (undefined for a plain move). */
+  onto?: string
+}
+
+/**
+ * Mode-aware directional move. Inside a tabbed container the move reorders
+ * tabs along the axis (or moves the tab out at the container's edge). In
+ * tabbing mode, a move toward an axis neighbor TABS the leaf onto that
+ * neighbor (the drop-shade flow); without a neighbor — or with tabbing mode
+ * off — it falls back to the plain i3-style move (swap / move out).
+ * @param node - tree to transform.
+ * @param leafId - the moving leaf.
+ * @param dir - the screen direction of travel.
+ * @param tabbing - whether the frame's tabbing mode is on.
+ * @returns the new tree and the tab target when one absorbed the leaf.
+ */
+export function moveLeafTabbed(node: WmNode, leafId: string, dir: WmDir, tabbing: boolean): MoveResult {
+  if (findLeaf(node, leafId) === undefined) return { tree: node }
+  const path = ancestorPath(node, leafId)
+  const parent = path?.[path.length - 1]?.split
+  const forward = dir === 'right' || dir === 'down'
+  if (parent?.tabbed === true) {
+    // Inside a tabbed group: adjacent tabs reorder; the edge moves outward.
+    const index = parent.children.findIndex(child => child.kind === 'leaf' && child.id === leafId)
+    const siblingIndex = forward ? index + 1 : index - 1
+    if (siblingIndex >= 0 && siblingIndex < parent.children.length) {
+      return { tree: flipWithSibling(node, leafId) }
+    }
+    return { tree: moveLeaf(node, leafId, dir) }
+  }
+  if (tabbing) {
+    const neighbor = axisNeighborLeaf(node, leafId, dir)
+    if (neighbor !== undefined) return { tree: tabInto(node, leafId, neighbor), onto: neighbor }
+  }
+  return { tree: moveLeaf(node, leafId, dir) }
 }
