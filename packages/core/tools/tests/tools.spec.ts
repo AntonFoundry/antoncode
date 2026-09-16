@@ -2567,6 +2567,51 @@ describe('validateArgs (the runtime-validation Agent Note, part 1)', () => {
 })
 
 describe('defineTool validation (the runtime-validation Agent Note, part 1)', () => {
+  it('names the sibling tool whose schema the wrong-tool payload matches', async () => {
+    const ctx = await setup()
+    ctx.tools.register(defineContentToolFixture({
+      name: 'commander',
+      description: 'runs a command',
+      parameters: {
+        command: { type: 'string', required: true },
+        description: { type: 'string', required: true },
+      },
+      async execute(args) {
+        return [{ type: 'text', text: args.command }]
+      },
+    }))
+    ctx.tools.register(defineContentToolFixture({
+      name: 'searcher',
+      description: 'searches contents',
+      parameters: {
+        pattern: { type: 'string', required: true },
+        path: { type: 'string' },
+      },
+      async execute(args) {
+        return [{ type: 'text', text: args.pattern }]
+      },
+    }))
+    // grep-shaped payload under the command tool: the error keeps the
+    // violations and appends the corrective match.
+    const result = await ctx.tools.execute({
+      signal: testToolSignal, callId: CallId('c1'), name: 'commander',
+      arguments: { path: '/x', pattern: 'y' },
+    })
+    expect(result.isError).toBe(true)
+    expect(result.content[0]).toMatchObject({
+      text: 'Error: invalid arguments: missing required property "command"; missing required property "description"; '
+        + 'the supplied properties (path, pattern) match tool "searcher" — retry with that tool and the same arguments',
+    })
+    // A payload no sibling covers keeps the plain violations.
+    const unmatched = await ctx.tools.execute({
+      signal: testToolSignal, callId: CallId('c2'), name: 'commander',
+      arguments: { command: 'ls' },
+    })
+    expect(unmatched.content[0]).toMatchObject({
+      text: 'Error: invalid arguments: missing required property "description"',
+    })
+  })
+
   it('returns an isError result with the violations when the model sends bad args', async () => {
     const ctx = await setup()
     ctx.tools.register(defineContentToolFixture({
