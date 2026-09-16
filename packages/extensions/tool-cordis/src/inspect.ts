@@ -189,8 +189,10 @@ export function describeDynamic(ctx: Context, agent?: Agent): string[] {
         : `; active: ${row.activeRun.packageId} as ${row.activeRun.pluginRunId}`)
     const packages = row.packages.map((pkg) => {
       const halves = [...pkg.hasHostHalf ? ['host'] : [], ...pkg.hasClientHalf ? ['client'] : []].join('+')
+      const caps = (pkg as { capabilities?: readonly string[] }).capabilities ?? []
+      const capNote = caps.length ? ` [caps: ${caps.join(', ')}]` : ''
       const active = row.activeRun?.packageId === pkg.packageId ? row.activeRun : undefined
-      if (active === undefined) return `    - ${pkg.packageId}: ${pkg.name} (${halves}) — ${pkg.purpose}`
+      if (active === undefined) return `    - ${pkg.packageId}: ${pkg.name} (${halves})${capNote} — ${pkg.purpose}`
       const fiber = active.fiber
       const state = fiber === undefined ? 'running' : fiber.state === FiberState.ACTIVE ? 'running' : STATE_LABELS[fiber.state]
       const provides = fiber === undefined ? [] : providedServices(ctx, fiber)

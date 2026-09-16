@@ -45,6 +45,8 @@ export interface DynamicCordisDefinition {
   hostCode?: string
   /** Client source. */
   clientCode?: string
+  /** Capability surfaces statically detected at define time. */
+  capabilities: string[]
 }
 
 /** Stable plugin instance containing immutable package versions. */
@@ -105,6 +107,8 @@ export interface DynamicCordisDefineReceipt {
   purpose: string
   hasHostHalf: boolean
   hasClientHalf: boolean
+  /** Capability surfaces statically detected at define time. */
+  capabilities: string[]
 }
 
 /** Source-free modification context for an explicit `@pluginId` reference. */
@@ -128,6 +132,8 @@ export interface DynamicCordisPluginInspection extends DynamicCordisReference {
     purpose: string
     hasHostHalf: boolean
     hasClientHalf: boolean
+    /** Capability surfaces statically detected at define time. */
+    capabilities: string[]
   }>
 }
 

@@ -118,7 +118,7 @@ export interface CordisHalfState {
   /** Lifecycle state of this half. */
   status: 'absent' | 'pending' | 'stopped' | 'running' | 'waiting' | 'failed'
   /** Services still needed by a successfully created Fiber. */
-  waitingFor: readonly string[]
+  waitingFor: string[]
   /** Failure text for this half. */
   error?: string
 }
@@ -223,6 +223,8 @@ export interface DynamicCordisInventoryPackage {
   hasHostHalf: boolean
   /** Whether this version contains Client code. */
   hasClientHalf: boolean
+  /** Capability surfaces statically detected at define time. */
+  capabilities: string[]
 }
 
 /** One stable plugin row in the frame-wide inventory. */
@@ -273,9 +275,9 @@ export type DynamicCordisRunResponse =
     packageId: CordisDynamicPackageId
     pluginRunId: CordisDynamicPluginRunId
     /** Missing Host services; a parked Fiber is a successful activation. */
-    waitingFor: readonly string[]
+    waitingFor: string[]
     /** Missing Client services reported by the approving page. */
-    clientWaitingFor?: readonly string[]
+    clientWaitingFor?: string[]
     /** Last fully successful Package. */
     currentPackageId?: CordisDynamicPackageId
     /** Selected transition target. */
@@ -312,7 +314,7 @@ export type DynamicCordisHostHalfResult =
     pluginId: CordisDynamicPluginId
     packageId: CordisDynamicPackageId
     pluginRunId: CordisDynamicPluginRunId
-    waitingFor: readonly string[]
+    waitingFor: string[]
     /** False when a panel merely attaches this page to an already active run. */
     startedHere: boolean
   }
@@ -334,7 +336,7 @@ export interface DynamicCordisClientSource {
 
 /** Browser verdict used for both approved tool runs and panel runs. */
 export type DynamicCordisRunResolution =
-  | { ok: true; pluginRunId: CordisDynamicPluginRunId; waitingFor?: readonly string[] }
+  | { ok: true; pluginRunId: CordisDynamicPluginRunId; waitingFor?: string[] }
   | {
     ok: false
     reason: 'rejected' | 'host-half-failed' | 'client-half-failed'

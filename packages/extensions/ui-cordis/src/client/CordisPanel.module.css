@@ -39,7 +39,19 @@
 }
 
 .badge[data-active] {
-  background: var(--dsw-alias-interactive-bg-hover);
+  background: var(--dsw-alias-state-warn-tertiary);
+}
+
+.badge[data-active]:hover {
+  background: var(--dsw-alias-state-warn-tertiary);
+  filter: brightness(1.06);
+}
+
+.badge[data-active] .badgeLabel,
+.badge[data-active] .badgeCount,
+.badge[data-active]:hover .badgeLabel,
+.badge[data-active]:hover .badgeCount {
+  color: var(--dsw-alias-state-warn-label);
 }
 
 .badgeLabel {
@@ -365,4 +377,23 @@
 
 .doubleCheck svg:last-child {
   left: 5px;
+}
+
+.capRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.capChip {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: var(--dsw-alias-state-warn-label);
+  font-size: 11px;
+  line-height: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
