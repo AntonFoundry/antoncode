@@ -221,11 +221,13 @@ export function apply(ctx: Context): void {
           purpose: { type: 'string', required: true },
           hasHostHalf: { type: 'boolean', required: true },
           hasClientHalf: { type: 'boolean', required: true },
+          capabilities: { type: 'array', required: true, items: { type: 'string' }, description: 'Capability surfaces statically detected in the Package source (shell, fs, net).' },
         },
       },
       render: (_args, value) => [{
         type: 'text',
         text: `Defined ${value.pluginId}/${value.packageId} (${value.name}); it is not running yet. `
+          + `Detected capabilities: ${value.capabilities.length ? value.capabilities.join(', ') : 'none'}. `
           + 'Use cordis_run to activate this Package.',
       }],
       presentationMeta: (_args, value) => ({ pluginId: value.pluginId, packageId: value.packageId }),

@@ -248,6 +248,13 @@ export function CordisPanel({
           <span className={css.rowName}>{name}</span>
           <span className={css.rowStatus}>{t(STATUS_LABELS[status])}</span>
         </div>
+        {selectedPackage !== undefined && selectedPackage.capabilities.length > 0 && (
+          <div className={css.capRow} data-cordis-caps={selectedPackage.packageId}>
+            {selectedPackage.capabilities.map(cap => (
+              <span key={cap} className={css.capChip}>{cap}</span>
+            ))}
+          </div>
+        )}
         {listed !== undefined && listed.packages.length > 1 && selectedPackageId !== undefined && (
           <label className={css.versionPicker}>
             <span>{t('panel.version')}</span>
@@ -481,7 +488,11 @@ export function CordisPanel({
           {wide && (
             <>
               <span className={css.badgeLabel}>{t('panel.trigger')}</span>
-              <span className={css.badgeCount}>{t('panel.runningCount', { count: running })}</span>
+              <span className={css.badgeCount}>
+                {approvals > 0
+                  ? t('panel.awaitingCount', { count: approvals })
+                  : t('panel.runningCount', { count: running })}
+              </span>
             </>
           )}
         </button>
