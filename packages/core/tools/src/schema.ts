@@ -457,6 +457,30 @@ export function parameterSchemaSpecToJsonSchema(spec: ParameterSchemaSpec): Para
   return schema
 }
 
+/**
+ * Names of candidate tools whose parameter object exactly covers the supplied
+ * argument keys: every required property is supplied and every supplied key is
+ * a declared property. A non-empty result means the arguments plausibly belong
+ * to that tool rather than the one the model named — the paged-tool confusion
+ * where, say, `bash` is called with `grep`'s `{path, pattern}` payload.
+ * @param argumentKeys - property names present in the failed call's arguments.
+ * @param candidates - name plus declared required/property names per tool the
+ *   caller can see, excluding the called tool.
+ * @returns the matching candidate names; empty when the keys carry no signal
+ *   (no keys, or nothing both required-covered and property-covered).
+ */
+export function toolsMatchingArgumentKeys(
+  argumentKeys: readonly string[],
+  candidates: readonly { name: string; required: readonly string[]; properties: readonly string[] }[],
+): string[] {
+  if (argumentKeys.length === 0) return []
+  return candidates
+    .filter(candidate => candidate.required.length > 0
+      && candidate.required.every(key => argumentKeys.includes(key))
+      && argumentKeys.every(key => candidate.properties.includes(key)))
+    .map(candidate => candidate.name)
+}
+
 /** Invalid model-generated arguments for a typed tool. */
 export class ToolArgsError extends HarnessError {
   /** Individual violations in schema-walk order. */
