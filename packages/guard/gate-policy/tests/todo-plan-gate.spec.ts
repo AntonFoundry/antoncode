@@ -38,7 +38,7 @@ async function harness(config: Config, adapter: MockAdapter): Promise<{ ctx: Con
     description: 't',
     parameters: {},
     async execute(_args, exec) {
-      exec.agent.session.append('todo/write', { todos: [{ content: 'plan', status: 'in_progress' }] })
+      exec.agent!.session.append('todo/write', { todos: [{ content: 'plan', status: 'in_progress' }] })
       return [{ type: 'text', text: 'planned' }]
     },
   }))
@@ -101,10 +101,15 @@ describe('todo-plan gate', () => {
     // contract, independent of the dispatch machinery around it.
     // The guard's own dispatch walks layers.chainLayers(exec.agent); this
     // probe drives the global layer's first guard, which is the plugin's.
+    type Guard = (request: {
+      name: string
+      arguments: Record<string, unknown>
+      agent: unknown
+    }) => Promise<undefined | { message: string }>
     const layers = (ctx.tools as unknown as {
       layers: {
-        global: { guards: { entries(): Array<Record<string, unknown>> } }
-        chainLayers(scope: unknown): Array<{ guards: { entries(): Array<Record<string, unknown>> } }>
+        global: { guards: { values(): IterableIterator<Guard> } }
+        chainLayers(scope: unknown): Array<{ guards: { values(): IterableIterator<Guard> } }>
       }
     }).layers
     const all = [
