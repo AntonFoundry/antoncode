@@ -59,7 +59,7 @@ async function bench(isLoopback = true) {
   return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, settingsDescribe, settingsOpenDocument }
 }
 
-/** Declare the shell's child slots the way ui-settings and ui-layout do. */
+/** Declare the shell's parent slots the way ui-sidebar and ui-layout do. */
 function declare(slots: SlotRegistry): () => void {
   return slots.register(
     {
@@ -67,11 +67,6 @@ function declare(slots: SlotRegistry): () => void {
       children: {
         'sidebar.settings': { kind: 'single', scope: 'root' },
         'settings.view': { kind: 'single', scope: 'root' },
-        'settings.trigger': { kind: 'single', scope: 'root' },
-        'settings.header': { kind: 'single', scope: 'root' },
-        'settings.action': { kind: 'list', scope: 'root' },
-        'settings.section': { kind: 'list', scope: 'root' },
-        'settings.onboarding': { kind: 'list', scope: 'root' },
       },
     } as never,
     () => null,
