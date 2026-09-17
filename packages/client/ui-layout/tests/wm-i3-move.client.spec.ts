@@ -56,6 +56,26 @@ describe('i3 directional move', () => {
     expect(order.indexOf('terminal')).toBeLessThan(order.indexOf('chat'))
   })
 
+  it('swaps with the neighbor in the MOVE direction (⌘⇧L exchanges with the right pane)', () => {
+    const tree: WmNode = {
+      kind: 'split',
+      id: 'wm:root',
+      dir: 'row',
+      weights: [0.34, 0.33, 0.33],
+      children: [
+        { kind: 'leaf', id: 'sidebar', buffer: 'sidebar' },
+        { kind: 'leaf', id: 'chat', buffer: 'conversation' },
+        { kind: 'leaf', id: 'details', buffer: 'details' },
+      ],
+    }
+    // Regression: the sibling used to be chosen as `index === 0 ? 1 : index - 1`,
+    // so moving the middle window RIGHT pulled in its LEFT neighbor.
+    const moved = moveLeaf(tree, 'chat', 'right')
+    expect(leafIds(moved)).toEqual(['sidebar', 'details', 'chat'])
+    expect(moveLeaf(tree, 'chat', 'left') !== tree).toBe(true)
+    expect(leafIds(moveLeaf(tree, 'chat', 'left'))).toEqual(['chat', 'sidebar', 'details'])
+  })
+
   it('keeps traveling: repeated moves walk the window through the tree', () => {
     let tree = nestedTree()
     // Start: sidebar | (scratch, terminal above chat). One press per step,

@@ -619,19 +619,22 @@ function ancestorPath(node: WmNode, leafId: string): AncestorFrame[] | undefined
  * Swap the focused leaf with its ADJACENT SIBLING SUBTREE in the parent
  * split — leaf or split, i3 `move` semantics: the window takes the sibling's
  * whole slot (children position and weight), the sibling subtree takes the
- * window's old slot. Unlike {@link flipWithSibling} this crosses split
- * siblings, which is what makes ⌘⇧hjkl keep traveling through a nested tree.
+ * window's old slot. The sibling is chosen IN THE MOVE DIRECTION, so ⌘⇧L on
+ * a middle window exchanges it with the RIGHT neighbor. Unlike
+ * {@link flipWithSibling} this crosses split siblings, which is what makes
+ * ⌘⇧hjkl keep traveling through a nested tree.
  * @param node - subtree root.
  * @param leafId - the moving leaf.
+ * @param forward - whether the move travels toward the split's end.
  * @returns the swapped tree, or the input when the leaf has no adjacent sibling.
  */
-export function swapWithSibling(node: WmNode, leafId: string): WmNode {
+export function swapWithSibling(node: WmNode, leafId: string, forward: boolean): WmNode {
   if (node.kind === 'leaf') return node
   const index = node.children.findIndex(child => child.kind === 'leaf' && child.id === leafId)
-  const siblingIndex = index >= 0 ? (index === 0 ? 1 : index - 1) : -1
-  const sibling = siblingIndex >= 0 ? node.children[siblingIndex] : undefined
+  const siblingIndex = index >= 0 ? (forward ? index + 1 : index - 1) : -1
+  const sibling = siblingIndex >= 0 && siblingIndex < node.children.length ? node.children[siblingIndex] : undefined
   if (index < 0 || sibling === undefined) {
-    return { ...node, children: node.children.map(child => swapWithSibling(child, leafId)) }
+    return { ...node, children: node.children.map(child => swapWithSibling(child, leafId, forward)) }
   }
   const children = node.children.slice()
   const weights = node.weights.slice()
@@ -676,7 +679,7 @@ export function moveLeaf(node: WmNode, leafId: string, dir: WmDir): WmNode {
   if (parent.dir === axis) {
     const siblingIndex = forward ? leafIndex + 1 : leafIndex - 1
     if (siblingIndex >= 0 && siblingIndex < parent.children.length) {
-      return swapWithSibling(node, leafId)
+      return swapWithSibling(node, leafId, forward)
     }
   }
   // Move out one level: extract the leaf, then re-insert it beside the former
