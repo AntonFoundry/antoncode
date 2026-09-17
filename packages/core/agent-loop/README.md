@@ -1,6 +1,6 @@
 # dsh-agent-loop
 
-English | [中文](README.zh.md)
+English
 
 THE concrete agent plugin and loop driver. Its package-internal implementation satisfies the `Agent` interface and drives the session/turn/step lifecycle.
 

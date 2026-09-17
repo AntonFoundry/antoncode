@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-08-02-web-thinking-tail-scroll.zh.md)
+English
 
 ## Problem
 

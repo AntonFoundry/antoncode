@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-07-30-approval-panel-command-cap.zh.md)
+English
 
 ## Problem
 

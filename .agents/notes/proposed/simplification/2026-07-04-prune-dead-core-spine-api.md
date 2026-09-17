@@ -2,7 +2,7 @@
 
 Status: proposed
 
-English | [中文](2026-07-04-prune-dead-core-spine-api.zh.md)
+English
 
 ## Problem
 

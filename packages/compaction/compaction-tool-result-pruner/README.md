@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-compaction-tool-result-pruner
 
-English | [中文](README.zh.md)
+English
 
 The replay-safe model-free pruning service (`ctx.toolResultPruner`). It rewrites over-budget `tool/result` surface nodes to a bounded head, a fixed omission marker, and a bounded tail while retaining the full original event in the append-only session log.
 

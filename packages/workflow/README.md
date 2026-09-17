@@ -1,6 +1,6 @@
 # workflow/ — dynamic-workflow capability family
 
-English | [中文](README.zh.md)
+English
 
 This family runs model-authored orchestration workflows over subagents and exposes general and fixed-policy tools to the model.
 

@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-gate-policy
 
-English | [中文](README.zh.md)
+English
 
 A deny-with-question gate on the tool-execution path. Each configured rule pairs a trigger (tool-name patterns plus anchored regexes over the call's `command` argument) with a checklist. When a call matches, the gate denies it and the checklist becomes the denial reason — the model reads it as the tool result, performs the checks, states their outcome, and retries the same call. A gate never approves anything; it can only block a call until the checks are stated. Decision record: [the guidebook-gates-and-recipes Agent Note](../../../.agents/notes/proposed/feature/2026-09-13-guidebook-gates-and-recipes.md).
 

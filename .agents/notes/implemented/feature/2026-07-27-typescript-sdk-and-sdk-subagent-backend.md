@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-07-27-typescript-sdk-and-sdk-subagent-backend.zh.md)
+English
 
 ## Problem
 

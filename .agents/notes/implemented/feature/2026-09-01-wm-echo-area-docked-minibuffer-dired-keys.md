@@ -1,8 +1,7 @@
 # Agent Note: Echo area, docked minibuffer, and keyboard dired
-English | [中文](2026-09-01-wm-echo-area-docked-minibuffer-dired-keys.zh.md)
-
 
 Status: implemented
+English
 
 ## Problem
 

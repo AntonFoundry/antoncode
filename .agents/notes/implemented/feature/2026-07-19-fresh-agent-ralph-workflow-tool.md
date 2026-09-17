@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-07-19-fresh-agent-ralph-workflow-tool.zh.md)
+English
 
 ## Problem
 

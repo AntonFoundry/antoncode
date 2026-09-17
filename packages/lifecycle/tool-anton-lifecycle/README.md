@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-tool-anton-lifecycle
 
-English | [中文](README.zh.md)
+English
 
 Model-facing lifecycle controls for an Anton deployment. The plugin registers `anton_status`, `anton_start`, `anton_stop`, and `anton_restart`; each makes a bounded HTTP request to the out-of-process Anton Bridge supervisor.
 

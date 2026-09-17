@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-client-ui-terminal
 
-English | [中文](README.zh.md)
+English
 
 Terminal shell plugin: an [xterm.js](https://xtermjs.org/) view occupying the window manager's `terminal.view` slot — one interactive PTY session per terminal buffer, opened with `C-x t` / `M-x term`. Decision record: the [interactive PTY terminal buffers Agent Note](../../../.agents/notes/implemented/feature/2026-09-05-interactive-pty-terminal-buffers.md).
 

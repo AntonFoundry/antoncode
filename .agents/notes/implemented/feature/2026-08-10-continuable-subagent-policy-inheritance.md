@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-08-10-continuable-subagent-policy-inheritance.zh.md)
+English
 
 ## Problem
 

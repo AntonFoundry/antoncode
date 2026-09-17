@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-08-05-large-session-jsonl-restore-pipeline.zh.md)
+English
 
 ## Problem
 

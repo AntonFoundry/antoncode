@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-07-12-simplify-session-log-representation.zh.md)
+English
 
 ## Problem
 

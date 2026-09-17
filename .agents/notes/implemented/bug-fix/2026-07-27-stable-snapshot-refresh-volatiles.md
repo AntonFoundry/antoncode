@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-07-27-stable-snapshot-refresh-volatiles.zh.md)
+English
 
 ## Problem
 

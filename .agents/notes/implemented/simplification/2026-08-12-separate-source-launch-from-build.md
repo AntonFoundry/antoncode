@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-08-12-separate-source-launch-from-build.zh.md)
+English
 
 ## Problem
 

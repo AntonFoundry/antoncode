@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-07-31-resume-selector-batch-projection.zh.md)
+English
 
 ## Problem
 

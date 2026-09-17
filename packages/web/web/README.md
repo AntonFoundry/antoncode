@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-web
 
-English | [中文](README.zh.md)
+English
 
 The **`WebRuntime`** (`ctx.web`) defines WHAT web access the harness has — search the web, fetch a URL — over multiple providers, without binding the model contract to one vendor's API shape.
 

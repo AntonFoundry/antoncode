@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-typert-loader
 
-English | [中文](README.zh.md)
+English
 
 Node-only Loader integration for generated Typert artifacts. The plugin requires `ctx.loader` and `ctx.typert`; it does not provide the registry itself.
 

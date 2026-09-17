@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-web-fetch-http
 
-English | [中文](README.zh.md)
+English
 
 An anonymous public HTTP(S) `WebFetchProvider` for the harness [web capability seam](../web/README.md) (`ctx.web`). It retrieves a concrete URL and returns a status code plus bounded decoded content.
 

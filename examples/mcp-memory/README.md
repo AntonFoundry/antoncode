@@ -1,6 +1,6 @@
 # Third-party memory MCP examples
 
-English | [中文](README.zh.md)
+English
 
 These three **default-off reference configurations** connect one memory system to DSH through [`@deepseek-ai/dsh-mcp-client`](../../packages/mcp/mcp-client/README.md). Pick one, or copy the same generic MCP row for another server.
 

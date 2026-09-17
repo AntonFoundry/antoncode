@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-07-30-web-transcript-log-ordered-projection.zh.md)
+English
 
 ## Problem
 

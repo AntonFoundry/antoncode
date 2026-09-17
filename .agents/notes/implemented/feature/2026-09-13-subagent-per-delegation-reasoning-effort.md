@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-09-13-subagent-per-delegation-reasoning-effort.zh.md)
+English
 
 ## Problem
 

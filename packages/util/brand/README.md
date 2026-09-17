@@ -1,6 +1,6 @@
 # dsh-brand
 
-English | [中文](README.zh.md)
+English
 
 The `Branded<B>` nominal-typing primitive — a tiny, **type-only** package (no runtime code, no harness-package dependency) shared by every package that owns a cross-boundary id.
 

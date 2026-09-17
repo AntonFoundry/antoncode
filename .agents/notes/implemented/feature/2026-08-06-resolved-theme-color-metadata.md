@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-08-06-resolved-theme-color-metadata.zh.md)
+English
 
 ## Problem
 

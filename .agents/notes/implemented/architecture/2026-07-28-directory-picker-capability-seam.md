@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-07-28-directory-picker-capability-seam.zh.md)
+English
 
 ## Problem
 

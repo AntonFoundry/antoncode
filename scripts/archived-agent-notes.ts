@@ -1,7 +1,6 @@
 /** Pure archive-format, triplet, and immutable-manifest helpers. */
 
 import { createHash } from 'node:crypto'
-import { basename } from 'node:path'
 import { AGENT_NOTE_CLASSES } from './agent-note-tree.ts'
 
 /** Versioned fields in the frozen-content manifest. */
@@ -77,24 +76,7 @@ function validDate(value: string): boolean {
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
 }
 
-interface Triplet {
-  source?: Buffer
-  zh?: Buffer
-  meta?: Buffer
-}
-
-function pairMeta(content: string): Map<string, string> | undefined {
-  const entries = new Map<string, string>()
-  for (const line of content.split('\n')) {
-    if (line === '' || line.startsWith('#')) continue
-    const match = /^([^:#]+\.md): ([0-9a-f]{40})$/.exec(line)
-    if (match?.[1] === undefined || match[2] === undefined) return undefined
-    entries.set(match[1], match[2])
-  }
-  return entries
-}
-
-function validateHeader(path: string, content: Buffer, sourceBase: string, chinese: boolean): string[] {
+function validateHeader(path: string, content: Buffer, sourceBase: string): string[] {
   const errors: string[] = []
   const lines = content.toString('utf8').split('\n')
   if (!/^# Agent Note: \S/.test(lines[0] ?? '')) errors.push(`${path}: line 1 must be \`# Agent Note: <title>\``)
@@ -107,63 +89,25 @@ function validateHeader(path: string, content: Buffer, sourceBase: string, chine
     errors.push(`${path}: archive date ${archived} predates the note filename`)
   }
   if (lines[4] !== '') errors.push(`${path}: line 5 must be blank`)
-  const switcher = chinese
-    ? `[English](${sourceBase}.md) | 中文`
-    : `English | [中文](${sourceBase}.zh.md)`
-  if (lines[5] !== switcher) errors.push(`${path}: line 6 must be ${JSON.stringify(switcher)}`)
+  if (lines[5] !== 'English') errors.push(`${path}: line 6 must be ${JSON.stringify('English')}`)
   return errors
 }
 
 /** Validate the closed kind tree, implemented/archive headers, and complete bilingual triplets. */
+/** Validate the closed kind tree and implemented/archive headers. Archives are English-only. */
 export function validateArchiveArtifacts(artifacts: ReadonlyMap<string, Buffer>): string[] {
   const errors: string[] = []
-  const triplets = new Map<string, Triplet>()
-  for (const [path, content] of artifacts) {
-    const match = /^([^/]+)\/(\d{4}-\d{2}-\d{2}-.+?)(\.zh\.md|\.i18n\.yaml|\.md)$/.exec(path)
-    if (match?.[1] === undefined || match[2] === undefined || match[3] === undefined) {
-      errors.push(`${path}: expected {kind}/yyyy-mm-dd-topic.{md,zh.md,i18n.yaml}`)
+  for (const [path, content] of [...artifacts].sort(([left], [right]) => left.localeCompare(right))) {
+    const match = /^([^/]+)\/(\d{4}-\d{2}-\d{2}-.+)\.md$/.exec(path)
+    if (match?.[1] === undefined || match[2] === undefined) {
+      errors.push(`${path}: expected {kind}/yyyy-mm-dd-topic.md (archives are English-only)`)
       continue
     }
     if (!(AGENT_NOTE_CLASSES as readonly string[]).includes(match[1])) {
       errors.push(`${path}: unknown Agent Note kind ${JSON.stringify(match[1])}`)
       continue
     }
-    const key = `${match[1]}/${match[2]}`
-    const triplet = triplets.get(key) ?? {}
-    if (match[3] === '.md') triplet.source = content
-    else if (match[3] === '.zh.md') triplet.zh = content
-    else triplet.meta = content
-    triplets.set(key, triplet)
-  }
-
-  for (const [key, triplet] of [...triplets].sort(([left], [right]) => left.localeCompare(right))) {
-    const sourcePath = `${key}.md`
-    const zhPath = `${key}.zh.md`
-    const metaPath = `${key}.i18n.yaml`
-    const { source, zh, meta } = triplet
-    const missing = [
-      source === undefined ? sourcePath : undefined,
-      zh === undefined ? zhPath : undefined,
-      meta === undefined ? metaPath : undefined,
-    ].filter((path): path is string => path !== undefined)
-    if (source === undefined || zh === undefined || meta === undefined) {
-      errors.push(`${key}: incomplete archived triplet; missing ${missing.join(', ')}`)
-      continue
-    }
-    const sourceBase = basename(key)
-    errors.push(...validateHeader(sourcePath, source, sourceBase, false))
-    errors.push(...validateHeader(zhPath, zh, sourceBase, true))
-    const sourceDate = /^Archived: (\d{4}-\d{2}-\d{2})$/m.exec(source.toString('utf8'))?.[1]
-    const zhDate = /^Archived: (\d{4}-\d{2}-\d{2})$/m.exec(zh.toString('utf8'))?.[1]
-    if (sourceDate !== undefined && zhDate !== undefined && sourceDate !== zhDate) {
-      errors.push(`${key}: English and Chinese archive dates differ (${sourceDate} vs ${zhDate})`)
-    }
-    const pair = pairMeta(meta.toString('utf8'))
-    if (pair === undefined || pair.size !== 2
-      || pair.get(`${sourceBase}.md`) !== gitBlobHash(source)
-      || pair.get(`${sourceBase}.zh.md`) !== gitBlobHash(zh)) {
-      errors.push(`${metaPath}: consistency record must contain the current Git blob hashes of both archived sides`)
-    }
+    errors.push(...validateHeader(path, content, match[2]))
   }
   return errors
 }

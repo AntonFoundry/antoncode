@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-08-12-composer-overlay-seat-width-compensation.zh.md)
+English
 
 ## Problem
 

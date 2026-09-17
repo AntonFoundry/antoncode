@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-client-ui-jobs
 
-English | [中文](README.zh.md)
+English
 
 Web background-job feature owner: contributes one entry to `conversation.session.header.actions` listing the `ctx.jobs` records this session can see. The data arrives entirely through the `jobsBySession` list mirror that [`dsh-client-runtime`](../runtime/README.md) folds from `session/jobs` frames; the only RPC the package issues is `jobs.kill` (via the sessions service) behind its stop controls, and its own state stops at popover visibility and per-row stop requests.
 

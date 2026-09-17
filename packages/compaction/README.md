@@ -1,6 +1,6 @@
 # compaction/ — compaction capability family
 
-English | [中文](README.zh.md)
+English
 
 A compaction capability family (see [capability seams](../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md)): a Service Definition, a summarizing provider, a model-free tool-result pruning companion, and a human command Consumer. All **product** packages.
 

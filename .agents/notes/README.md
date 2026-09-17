@@ -1,6 +1,6 @@
 # Agent Notes
 
-English | [中文](README.zh.md)
+English
 
 One kind of design doc lives here. An **Agent Note** records a decision or proposal that affects this codebase — the *why* and *what we gave up*, the parts code and docs can't carry. This file defines where Agent Notes live, when to write one, and [the in-file format](#the-file-format).
 
@@ -122,4 +122,4 @@ Moving a file between lifecycle folders means updating the `Status:` line and re
 
 ### Chinese counterparts
 
-A `.zh.md` counterpart mirrors its English sibling's structure section-for-section under the [i18n contract](../../docs/i18n/README.md); the machine-checked header tokens (`# Agent Note: ` and the `Status:` line) stay in English verbatim. The format gate skips `.zh.md` files — the pairing gate checks their consistency.
+Notes are English-only: no `.zh.md` counterparts and no translation records. The format gate checks the English file alone.

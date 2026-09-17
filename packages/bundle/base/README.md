@@ -1,6 +1,6 @@
 # `@deepseek-ai/dsh-base`
 
-English | [中文](README.zh.md)
+English
 
 The shared dsh core as a profile bundle: [`cordis.patch.yml`](cordis.patch.yml) inserts every base plugin row — model adapters, the shared [`agent-default-model`](../../core/agent-default-model/README.md) selection, tools, persistence, policy, settings/credentials, telemetry, and host-level subagent providers — over the empty profile root, as the first layer of every profile's `dsh.profile.bundles` list. This bundle neither depends on nor mounts the optional Codex and Claude Code providers; an opting-in Profile installs and mounts the selected provider once on the host plane, while Agent Presets decide whether their agents receive the corresponding model-facing delegation tools. Later bundle layers (e.g. [`dsh-web-app`](../web-app/README.md)) and the user's profile `cordis.patch.yml` override these rows by id; a patch replaces a row's whole `config`, so mode-specific values live in mode bundles, not here. The package has no runtime API; the profile composer resolves the patch through the `dsh.bundle.patch` manifest field, never through code.
 

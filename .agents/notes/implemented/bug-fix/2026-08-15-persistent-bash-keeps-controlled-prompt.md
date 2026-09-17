@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-08-15-persistent-bash-keeps-controlled-prompt.zh.md)
+English
 
 ## Problem
 

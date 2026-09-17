@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-compaction
 
-English | [中文](README.zh.md)
+English
 
 The **`CompactionEngine`** (`ctx.compaction`) defines WHAT compaction does — decide when history is too large and summarize an older range into a single surface node — without saying HOW.
 
