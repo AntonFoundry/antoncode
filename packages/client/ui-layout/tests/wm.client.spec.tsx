@@ -917,12 +917,12 @@ describe('Emacs chords (window listener)', () => {
 describe('buffer registry', () => {
   it('seeds the singletons, migrates pre-registry snapshots, and reconciles', () => {
     const instance = createWmStore().create()
-    expect(instance.getSnapshot().buffers.map(b => b.id)).toEqual(['sidebar', 'conversation', 'details'])
+    expect(instance.getSnapshot().buffers.map(b => b.id)).toEqual(['sidebar', 'conversation', 'details', 'settings'])
     // Old persisted snapshot: leaves carry bare kind ids, no buffers array.
     // The ids ARE the singleton ids, so the tree renders as-is; reconcile
     // heals the registry side.
     act(() => { instance.actions.reconcile() })
-    expect(instance.getSnapshot().buffers.map(b => b.id)).toEqual(['sidebar', 'conversation', 'details'])
+    expect(instance.getSnapshot().buffers.map(b => b.id)).toEqual(['sidebar', 'conversation', 'details', 'settings'])
   })
 
   it('killBuffer refuses singletons, swaps leaves to scratch, and prunes the registry', () => {
@@ -1051,8 +1051,8 @@ describe('winner mode + new chords (window listener)', () => {
     const { wm } = mountFrame()
     act(() => { wm.actions.setFocus(WM_LEAF_SIDEBAR) })
     press('x', { ctrlKey: true })
-    // Registry order: Workspace, Chat, Context, *scratch*. Chat is shown in
-    // its own window — cycling lands on it anyway (clones, not skips).
+    // Registry order: Workspace, Chat, Context, Settings, *scratch*. Chat is
+    // shown in its own window — cycling lands on it anyway (clones, not skips).
     press('ArrowRight')
     expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('conversation')
     press('x', { ctrlKey: true })
@@ -1060,10 +1060,13 @@ describe('winner mode + new chords (window listener)', () => {
     expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('details')
     press('x', { ctrlKey: true })
     press('ArrowRight')
+    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('settings')
+    press('x', { ctrlKey: true })
+    press('ArrowRight')
     expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe(SCRATCH_BUFFER_ID)
     press('x', { ctrlKey: true })
     press('ArrowLeft') // back through the same order
-    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('details')
+    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('settings')
   })
 
   it('C-x k offers open non-singleton buffers; killing swaps to scratch', () => {
