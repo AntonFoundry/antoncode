@@ -1,6 +1,7 @@
 # Agent Note: Echo area, docked minibuffer, and keyboard dired
 
 Status: implemented
+
 English
 
 ## Problem
