@@ -9,6 +9,8 @@ export type PluginsSettingsLocaleKey =
   | 'bashMaxOutputBytes' | 'bashMaxOutputBytesHint'
   | 'agentLoopTitle' | 'agentLoopDescription' | 'agentLoopMaxParallel' | 'agentLoopMaxParallelHint'
   | 'webSearchTitle' | 'webSearchDescription'
+  | 'gatePolicyTitle' | 'gatePolicyDescription'
+  | 'gatePolicyEnabled' | 'gatePolicyEnabledHint' | 'gatePolicyTools' | 'gatePolicyToolsHint'
   | 'webSearchApiKey' | 'webSearchApiKeyHint' | 'webSearchApiKeySet' | 'webSearchApiKeyUnset'
   | 'webSearchBaseUrl' | 'webSearchBaseUrlHint' | 'webSearchMaxUses' | 'webSearchMaxUsesHint'
   | 'contextTitle' | 'contextDescription' | 'contextEndpoint' | 'contextEndpointHint' | 'contextApiKey' | 'contextApiKeyHint'
@@ -49,6 +51,12 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   agentLoopMaxParallelHint: 'Upper bound on parallel-safe calls running at once within one step.',
   webSearchTitle: 'Web search',
   webSearchDescription: 'The DeepSeek search provider.',
+  gatePolicyTitle: 'Gate policy',
+  gatePolicyDescription: 'Plan-first gating and dangerous-action checklists.',
+  gatePolicyEnabled: 'Todo-plan gate',
+  gatePolicyEnabledHint: "Write 'true' or 'false' — gated tools are denied until a todo plan exists.",
+  gatePolicyTools: 'Gated tools',
+  gatePolicyToolsHint: 'Comma-separated tool names (e.g. bash, edit, write).',
   webSearchApiKey: 'API key',
   webSearchApiKeyHint: 'Stored outside the settings file. Leave blank to keep the current key.',
   webSearchApiKeySet: 'A key is configured.',
@@ -111,6 +119,12 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   agentLoopMaxParallelHint: '同一步内最多同时运行多少个可并行的调用。',
   webSearchTitle: '网页搜索',
   webSearchDescription: 'DeepSeek 搜索提供方。',
+  gatePolicyTitle: '门控策略',
+  gatePolicyDescription: '计划优先门控与危险操作清单。',
+  gatePolicyEnabled: '待办计划门控',
+  gatePolicyEnabledHint: "输入 'true' 或 'false'——在存在待办计划前，受控工具将被拒绝。",
+  gatePolicyTools: '受控工具',
+  gatePolicyToolsHint: '逗号分隔的工具名（如 bash, edit, write）。',
   webSearchApiKey: 'API Key',
   webSearchApiKeyHint: '不写入设置文件。留空表示保持当前密钥。',
   webSearchApiKeySet: '已配置密钥。',

@@ -1,7 +1,7 @@
 /**
  * Window-tree model for the Emacs-style window manager: a binary-plus tree of
  * splits (row/column with weight fractions) whose leaves each show one
- * registered buffer slot (sidebar | conversation | details). Every operation
+ * registered buffer slot (sidebar | conversation | details | settings). Every operation
  * here is pure and immutable — each takes a tree and returns a new tree,
  * never mutating its input (the tree lives in the WM store; WmFrame and
  * LayoutController write transformed trees back through `setTree`).
@@ -16,11 +16,11 @@
 export type WmDirection = 'row' | 'column'
 
 /** The buffer kinds the registry knows. */
-export type WmBufferKind = 'sidebar' | 'conversation' | 'details' | 'scratch' | 'files' | 'terminal' | 'file'
+export type WmBufferKind = 'sidebar' | 'conversation' | 'details' | 'settings' | 'scratch' | 'files' | 'terminal' | 'file'
 
 /**
  * One registry entry. `path` is present only on `files` buffers (the
- * directory currently listed; navigation replaces it in place). The three
+ * directory currently listed; navigation replaces it in place). The four
  * shell kinds are singletons — exactly one buffer of each exists, always,
  * and they cannot be killed.
  */
@@ -32,8 +32,8 @@ export interface WmBuffer {
   sessionId?: string
 }
 
-/** Stable ids of the three singleton buffers (their ids ARE their kind names). */
-export const SINGLETON_BUFFER_IDS: readonly string[] = ['sidebar', 'conversation', 'details']
+/** Stable ids of the four singleton buffers (their ids ARE their kind names). */
+export const SINGLETON_BUFFER_IDS: readonly string[] = ['sidebar', 'conversation', 'details', 'settings']
 
 /** The scratch buffer's fixed id (compos's *scratch*). */
 export const SCRATCH_BUFFER_ID = 'buffer:scratch'
@@ -45,11 +45,12 @@ export const SCRATCH_BUFFER_ID = 'buffer:scratch'
  */
 export const SIDEBAR_REATTACH_WEIGHT = 0.18
 
-/** The three singleton registry entries, in shell order. */
+/** The four singleton registry entries, in shell order. */
 export const SINGLETON_BUFFERS: readonly WmBuffer[] = [
   { id: 'sidebar', kind: 'sidebar' },
   { id: 'conversation', kind: 'conversation' },
   { id: 'details', kind: 'details' },
+  { id: 'settings', kind: 'settings' },
 ]
 
 /** Fresh scratch registry entry. */
@@ -93,6 +94,7 @@ export function bufferTitle(buffer: WmBuffer): string {
     case 'sidebar': return 'Workspace'
     case 'conversation': return 'Chat'
     case 'details': return 'Context'
+    case 'settings': return 'Settings'
     case 'scratch': return '*scratch*'
     case 'files': return `Dired: ${buffer.path ?? '?'}`
     case 'terminal': return 'Terminal'
@@ -160,6 +162,7 @@ export type WmNode = WmLeaf | WmSplit
 export const WM_LEAF_SIDEBAR = 'sidebar'
 export const WM_LEAF_CONVERSATION = 'conversation'
 export const WM_LEAF_DETAILS = 'details'
+export const WM_LEAF_SETTINGS = 'settings'
 
 /**
  * The shipped layout: sidebar | (conversation | details) as fractional
@@ -421,9 +424,9 @@ export function killBuffer(
   // the window shows something else).
   if (isSingletonBuffer(bufferId)) {
     if (bufferId === 'conversation') return { buffers: [...state.buffers], tree: state.tree }
-    if (bufferId === 'details') {
+    if (bufferId === 'details' || bufferId === 'settings') {
       const map = (n: WmNode): WmNode => {
-        if (n.kind === 'leaf') return n.buffer === 'details' ? { ...n, buffer: 'conversation' } : n
+        if (n.kind === 'leaf') return n.buffer === bufferId ? { ...n, buffer: 'conversation' } : n
         return { ...n, children: n.children.map(map) }
       }
       return { buffers: [...state.buffers], tree: normalizeTree(map(state.tree)) }
@@ -613,8 +616,41 @@ function ancestorPath(node: WmNode, leafId: string): AncestorFrame[] | undefined
 }
 
 /**
+ * Swap the focused leaf with its ADJACENT SIBLING SUBTREE in the parent
+ * split — leaf or split, i3 `move` semantics: the window takes the sibling's
+ * whole slot (children position and weight), the sibling subtree takes the
+ * window's old slot. Unlike {@link flipWithSibling} this crosses split
+ * siblings, which is what makes ⌘⇧hjkl keep traveling through a nested tree.
+ * @param node - subtree root.
+ * @param leafId - the moving leaf.
+ * @returns the swapped tree, or the input when the leaf has no adjacent sibling.
+ */
+export function swapWithSibling(node: WmNode, leafId: string): WmNode {
+  if (node.kind === 'leaf') return node
+  const index = node.children.findIndex(child => child.kind === 'leaf' && child.id === leafId)
+  const siblingIndex = index >= 0 ? (index === 0 ? 1 : index - 1) : -1
+  const sibling = siblingIndex >= 0 ? node.children[siblingIndex] : undefined
+  if (index < 0 || sibling === undefined) {
+    return { ...node, children: node.children.map(child => swapWithSibling(child, leafId)) }
+  }
+  const children = node.children.slice()
+  const weights = node.weights.slice()
+  const moved = children[index]
+  if (moved === undefined) return node
+  children[index] = sibling
+  children[siblingIndex] = moved
+  const movedWeight = weights[index]
+  const siblingWeight = weights[siblingIndex]
+  if (movedWeight === undefined || siblingWeight === undefined) return node
+  weights[index] = siblingWeight
+  weights[siblingIndex] = movedWeight
+  return { ...node, children, weights }
+}
+
+/**
  * Move a leaf one step in a screen direction (i3-style). Along the parent
- * split's axis the leaf swaps with its adjacent neighbor; at the axis edge
+ * split's axis the leaf swaps with its adjacent sibling — leaf OR split
+ * subtree ({@link swapWithSibling}); at the axis edge
  * (or against a perpendicular parent) the leaf moves out one level: it is
  * re-inserted into the grandparent beside its former subtree, wrapping the
  * neighbor in a fresh split when the grandparent runs perpendicular. A sole
@@ -640,7 +676,7 @@ export function moveLeaf(node: WmNode, leafId: string, dir: WmDir): WmNode {
   if (parent.dir === axis) {
     const siblingIndex = forward ? leafIndex + 1 : leafIndex - 1
     if (siblingIndex >= 0 && siblingIndex < parent.children.length) {
-      return flipWithSibling(node, leafId)
+      return swapWithSibling(node, leafId)
     }
   }
   // Move out one level: extract the leaf, then re-insert it beside the former

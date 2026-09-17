@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
 import type { GeneralSectionComponentProps } from '../src/client/GeneralSection.tsx'
 import { GeneralSection } from '../src/client/GeneralSection.tsx'
-import { CloseLabel, HeaderContent, TriggerContent } from '../src/client/chrome.tsx'
+import { HeaderContent, TriggerContent } from '../src/client/chrome.tsx'
 import type { TriggerContentProps } from '../src/client/chrome.tsx'
 import { SettingsDocumentAction } from '../src/client/SettingsDocumentAction.tsx'
 import { SettingsDocumentStore } from '../src/client/settings-document-store.ts'
@@ -33,11 +33,9 @@ describe('chrome content', () => {
     expect(screen.queryByText('Settings')).toBeNull()
   })
 
-  it('HeaderContent and CloseLabel render their translated text', () => {
+  it('HeaderContent renders its translated text', () => {
     render(<HeaderContent {...kit} t={t} />)
-    render(<CloseLabel {...kit} t={t} />)
     expect(screen.getByText('Settings')).toBeTruthy()
-    expect(screen.getByText('Close')).toBeTruthy()
   })
 })
 

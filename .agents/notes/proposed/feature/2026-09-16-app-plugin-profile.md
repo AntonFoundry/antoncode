@@ -44,41 +44,33 @@ Implementation plan: a thin helper package (or ui-layout export) —
 `defineAppPlugin({ id, label, icon, order, surface })` — performing 1–3 so
 app authors write one declaration instead of hand-wiring slots.
 
-## View activation: the one-click → surface hop (resolved by the store share)
+## View activation: the one-click → surface hop (shipped mechanism)
 
 Clicking the header icon must raise the app's root surface. The active view
 on the ring is per-session chat-store state inside ui-conversation
 (`ConversationSession`: `useStore(s => s.view)` →
 `renderSlot('conversation.view', …, { only: active.id })`), and inactive ring
-entries are not mounted — so the hop cannot happen from an occupant's own
-render.
+entries are not mounted — so the hop happens through a session provide
+channel, not through an occupant's own render.
 
-**Resolved design (verified against source, no new extension point needed)**:
-the session-header seat already shares the per-session chat store — the
-`conversation.session.header` registration declares `store: chatStore`
-(ui-conversation `apply.ts`), so **every header-utilities occupant receives
-the store share** (`PropsStore<ChatStoreState>` with `actions.setView`), and
-`setView` activates any registered view id (`resolveActiveView` falls back
-gracefully for unregistered ids). The app-plugin's header button therefore
-calls its own store share with its own view id:
+**Shipped mechanism**: ui-conversation publishes a `sessionViews` provide
+contribution; every session-scope occupant receives a `viewActions` prop:
 
-```tsx
-// app plugin's header-utilities occupant; its conversation.view entry
-// registered id 'myapp' into the same ring.
-const { actions } = props            // PropsStore share at the header seat
-const view = useStore(s => s.view)   // 'myapp' while the app surface is up
-onClick={() => { actions.setView('myapp') }}
+```ts
+viewActions: { activate(viewId: string): void }
 ```
 
-Invariants:
-
-- Activation is a plain store write (`actions.setView`), replay-safe, and
-  needs no session event (view selection is UI state, not model-visible).
-- Nothing crosses plugins but the store share the header seat already
-  grants — no provide channel, no window events, no ui-conversation change.
-- The composer-dock and shell-overlay seats do NOT share that store; apps
-  wanting a toggle there either take the header seat (recommended) or route
-  through their own host-side command.
+`activate` writes the shared chat store (`actions.setView(viewId)`) through
+the slots service's get-or-create instance accessor
+(`ctx.slots.storeInstanceOf(handle, sessionId)` — added for this channel,
+because `StoreHandle.create` deliberately does not dedupe). The channel
+carries only JSON (a view id); view selection is UI state, so no session
+event is required. Verified by
+`packages/client/ui-conversation/tests/app-view-activation.client.spec.tsx`:
+a header-utilities toggle activating a registered `myapp` view flips the ring
+selection. An earlier theory — that the header seat's registration
+(`store: chatStore`) automatically shares the store with child-seat occupants
+— is false: `store` is per registration, and child seats declare none.
 
 ## Alternatives considered
 

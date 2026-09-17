@@ -12,8 +12,18 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ToolExecution, ToolGuard } from '@deepseek-ai/dsh-tools'
+import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 
 export const name = 'gate-policy'
+
+/** The settings namespace the plan gate reads live (Settings → Plugins → Gate policy). */
+export const GATE_POLICY_SETTINGS_NAMESPACE = settingsNamespace('gate-policy')
+
+/** Schemastery section schema the settings registry validates the card writes against. */
+export const TodoPlanSectionSchema = z.object({
+  enabled: z.boolean(),
+  tools: z.array(z.string()),
+})
 
 /** The guard registers against the tool runtime, so the service is a hard dependency. */
 export const inject = ['tools']
@@ -40,6 +50,25 @@ export interface GateRule {
 }
 
 /**
+ * The todo-plan gate's configuration: when enabled, the gated tools are
+ * denied until the calling session carries a todo plan (a `todo/write`
+ * event anywhere in its log). `todo_write` itself is never gated — it is
+ * how the gate is satisfied.
+ */
+export interface TodoPlanGateConfig {
+  /** Enable the plan gate. Defaults to `false`. */
+  enabled?: boolean
+  /** Tools gated until a todo plan exists. Defaults to `['bash', 'edit', 'write', 'multiedit']`. */
+  tools?: string[]
+}
+
+/** The flat section the Settings card edits: the todo-plan gate. */
+export interface TodoPlanGateSection {
+  enabled: boolean
+  tools: string[]
+}
+
+/**
  * Plugin config, validated by the same-named schemastery schema plus the
  * load-time checks in `apply` (misconfiguration fails loud: an invalid regex,
  * an empty rule name, or an empty checklist throws at plugin load, never a
@@ -48,6 +77,8 @@ export interface GateRule {
 export interface Config {
   /** Gate rules; evaluated in order, and the first matching rule denies. */
   rules?: GateRule[]
+  /** The todo-plan gate: gated tools are denied until the session has a todo plan. Defaults to disabled. */
+  todoPlanGate?: TodoPlanGateConfig
   /** Pre-fetch c0ntext guidebook recipes and append matching ones to denials. Defaults to `false`. */
   verdictsEnabled?: boolean
   /** Base URL of the c0ntext worker, e.g. `http://127.0.0.1:8090`. Verdicts are inert without it. */
@@ -70,6 +101,10 @@ export const Config: z<Config> = z.object({
     checklist: z.string(),
     confirm: z.boolean().default(false),
   })).default([]),
+  todoPlanGate: z.object({
+    enabled: z.boolean(),
+    tools: z.array(z.string()),
+  }).default({ enabled: false, tools: ['bash', 'edit', 'write', 'multiedit'] }),
   verdictsEnabled: z.boolean().default(false),
   verdictsEndpoint: z.string().default(''),
   verdictsApiKey: z.string().default(''),
@@ -188,7 +223,65 @@ function compileRules(rules: GateRule[]): CompiledRule[] {
  * @param config - validated {@link Config}; rules are re-compiled fail-loud here.
  */
 export function apply(ctx: Context, config: Config): void {
-  const rules = compileRules(config.rules as GateRule[])
+  let rules = compileRules(config.rules as GateRule[])
+
+  /**
+   * Settings section: the plan gate (and future guard knobs) read live, so a
+   * Settings edit takes effect on the next call without re-composing. The
+   * section is seeded from the composition entry; `todo_write` itself is
+   * never gated (it is how the gate is satisfied), and a session read
+   * failure fails OPEN: a discipline nudge must not break execution when the
+   * log is unreadable.
+   */
+  const sectionSeed: TodoPlanGateSection = {
+    enabled: config.todoPlanGate?.enabled ?? false,
+    tools: [...(config.todoPlanGate?.tools ?? ['bash', 'edit', 'write', 'multiedit'])],
+  }
+  let live: () => TodoPlanGateSection = () => sectionSeed
+  installSettingsSection(
+    ctx,
+    GATE_POLICY_SETTINGS_NAMESPACE,
+    TodoPlanSectionSchema as unknown as z<TodoPlanGateSection>,
+    sectionSeed,
+    {
+      setSource: (source) => { live = source as () => TodoPlanGateSection },
+      onChange: () => {
+        rules = compileRules((live() as unknown as { rules?: GateRule[] }).rules ?? [])
+      },
+    },
+  )
+
+  const todoPlanDenial = (toolName: string): string =>
+    'Gate \'todo-plan\' blocked this call. No plan exists in the todo tree yet. '
+    + 'Call todo_write with your plan — top-level tasks for the phases, children for the concrete subtasks — '
+    + `then retry \`${toolName}\`. todo_write itself is never gated.`
+  const hasTodoPlan = (execution: Readonly<ToolExecution>): boolean => {
+    try {
+      const agent = (execution as { agent?: { session?: { events?: readonly { type?: string }[] } } }).agent
+      const events = agent?.session?.events
+      if (events === undefined) return true // unreadable log fails open
+      for (let i = events.length - 1; i >= 0; i--) {
+        const event = events[i]
+        if (event !== undefined && event.type === 'todo/write') return true
+      }
+      return false
+    } catch {
+      return true // fail open: the gate must never break execution on its own failure
+    }
+  }
+
+  const todoPlanGuard: ToolGuard = (execution: Readonly<ToolExecution>): string | undefined => {
+    const gate = live()
+    if (gate.enabled !== true) return undefined
+    if (execution.name === 'todo_write') return undefined
+    const tools = (gate.tools ?? ['bash', 'edit', 'write', 'multiedit']).map(wildcardToRegExp)
+    if (!tools.some(pattern => pattern.test(execution.name))) return undefined
+    if (hasTodoPlan(execution)) return undefined
+    return todoPlanDenial(execution.name)
+  }
+
+  ctx.effect(() => ctx.tools.guard(todoPlanGuard))
+
 
   /**
    * The guidebook cache: verdicts are pre-fetched on an interval because the

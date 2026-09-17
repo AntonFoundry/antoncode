@@ -1,8 +1,8 @@
 # Agent Note: Pane-header tidy/flip/expand and focused-pane accent
-English | [中文](2026-09-06-pane-header-tidy-flip-expand.zh.md)
-
 
 Status: implemented
+
+English | [中文](2026-09-06-pane-header-tidy-flip-expand.zh.md)
 
 ## Problem
 

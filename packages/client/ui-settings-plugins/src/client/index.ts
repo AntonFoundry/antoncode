@@ -34,6 +34,8 @@ import { C0ntextCardController, CONTEXT_NS } from './c0ntext-card-controller.ts'
 import { ConfigurablePluginsTabController } from './tab-store.ts'
 import { SUBAGENT_MODEL_NS, SubagentModelCardController } from './subagent-model-card-controller.ts'
 import { WEB_SEARCH_NS, WebSearchCardController } from './web-search-card-controller.ts'
+import { GATE_POLICY_NS, GatePolicyCardController } from './gate-policy-card-controller.ts'
+import { GatePolicyCard } from './GatePolicyCard.tsx'
 import { en, zh } from './locales.ts'
 
 export type { PluginsSettingsSectionInjected, PluginsSettingsSectionProps } from './PluginsSettingsSection.tsx'
@@ -69,6 +71,7 @@ export function apply(ctx: ClientContext): void {
   const bash = new BashCardController(ctx.settingsScope.bind({ namespace: SHELL_NS }))
   const agentLoop = new AgentLoopCardController(ctx.settingsScope.bind({ namespace: AGENT_LOOP_NS }))
   const webSearch = new WebSearchCardController(ctx.settingsScope.bind({ namespace: WEB_SEARCH_NS }), api)
+  const gatePolicy = new GatePolicyCardController(ctx.settingsScope.bind({ namespace: GATE_POLICY_NS }))
   const c0ntext = new C0ntextCardController(
     ctx.settingsScope.bind({ namespace: CONTEXT_NS }),
     async () => {
@@ -212,6 +215,12 @@ export function apply(ctx: ClientContext): void {
       locale: NS,
       inject: () => webSearch.inject(),
     }, WebSearchCard)
+    yield ctx.slots.register({
+      name: 'settings.plugin.item',
+      key: GATE_POLICY_NS,
+      locale: NS,
+      inject: () => gatePolicy.inject(),
+    }, GatePolicyCard)
     yield ctx.slots.register({
       name: 'settings.plugin.item',
       key: CONTEXT_NS,

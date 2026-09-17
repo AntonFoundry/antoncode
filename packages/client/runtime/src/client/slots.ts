@@ -419,6 +419,19 @@ export class SlotRegistry extends Service {
     return this._host
   }
 
+  /**
+   * Resolve (create or reuse) the store instance a session-scope slot
+   * occupant receives for `handle` under `sessionId` — the sanctioned
+   * imperative route for session-provide contributions that must write an
+   * entry-declared store outside a render (same instance the outlets bind).
+   * @param handle - the store handle the target entry declared.
+   * @param sessionId - the session scope key.
+   * @returns the shared live instance.
+   */
+  storeInstanceOf(handle: EngineStoreHandle, sessionId: string): StoreInstanceLike {
+    return this.resolveStore(handle, sessionId)
+  }
+
   /** Resolve (create or reuse) the store instance for a registered handle under a scope key. */
   private resolveStore(handle: EngineStoreHandle, sessionId: string | undefined): StoreInstanceLike {
     const record = this._stores.get(handle)

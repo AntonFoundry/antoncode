@@ -124,7 +124,7 @@ export interface WmFrameInjected {
 /** Full composed props: runtime share + child-slot render share + store share + injected wm face. */
 export type WmFrameProps =
   & PropsRuntime<'root'>
-  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'shell.overlay' | 'terminal.view' | 'shell.topbar.left' | 'shell.topbar.right'>
+  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'settings.view' | 'shell.overlay' | 'terminal.view' | 'shell.topbar.left' | 'shell.topbar.right'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
   & WmFrameInjected
 
@@ -400,7 +400,9 @@ function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf
         ? <FileViewer path={buffer?.path ?? node.buffer} readText={readTextFile} />
         : bufferKind === 'terminal'
           ? renderSlot('terminal.view', { sessionId: findBuffer(buffers, node.buffer)?.sessionId })
-          : renderSlot(bufferKind as 'sidebar' | 'conversation' | 'details', owner)
+          : bufferKind === 'settings'
+            ? renderSlot('settings.view', {})
+            : renderSlot(bufferKind as 'sidebar' | 'conversation' | 'details', owner)
   const title = buffer !== undefined ? bufferTitle(buffer) : '(unnamed)'
   // A focused terminal buffer must receive keyboard input immediately: the
   // xterm capture textarea inside the slot occupant takes DOM focus.
@@ -924,6 +926,9 @@ export function WmFrame({
       setFocus(result.onto)
       notify('Tabbed pane')
     } else {
+      // i3 focus discipline: focus follows the moved window, so repeated
+      // ⌘⇧hjkl presses keep traveling in the direction.
+      setFocus(leafId)
       notify('Moved pane')
     }
   }, [flashTabShade, notify, panels.tabbing, setFocus, writeTree])

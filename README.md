@@ -46,7 +46,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Development
 
-Start with the [development guide](docs/development.md) and [architecture documentation](docs/architecture.md).
+Start with the [development guide](docs/development.md) and [architecture documentation](docs/architecture.md). To extend the harness — tools, hooks, UI plugins, or full one-click app surfaces — follow the [extension cookbook](docs/cookbook/extension-cookbook.md).
 
 For agents, follow [AGENTS.md](AGENTS.md).
 

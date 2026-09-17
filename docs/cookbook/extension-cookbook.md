@@ -32,6 +32,65 @@ export function apply(ctx: Context) {
 
 This waterfall is the reorderable policy layer. Use `ctx.tools.guard()` when an invariant needs a monotonic final denial, `tools/execute` when a plugin must wrap the actual dispatch lifetime (timeouts/retries/metrics; only `exec.signal` is replaceable), `tools/post-execute` for explicit result transformation, and `tools/result` for contained observation of the immutable final outcome. The [adding-a-tool guide](adding-a-tool.md#execution-policy-and-observation) gives the selection rule.
 
+## An app plugin (one-click application surface)
+
+An app plugin is a UI plugin that behaves like a browser extension: it pins its own invocation button to the session header, and clicking it opens the plugin's full application surface. The shell knows no app by name — the plugin declares all three of its affordances itself, and disabling or uninstalling the plugin retracts them structurally (slot registrations are fiber effects).
+
+The three registrations, all in one client plugin (`apply`):
+
+```ts
+interface AppSlots {
+  inject(name: string, register: () => () => unknown): () => unknown
+  register(options: Record<string, unknown>, component: () => unknown): () => unknown
+}
+
+declare function MyAppView(): null
+declare function MyAppToggleButton(): null
+
+export const inject = ['slots', 'layout']
+
+export function apply(ctx: {
+  get(name: string): unknown
+  effect(callback: () => () => unknown, label?: string): unknown
+}): void {
+  const slots = ctx.get('slots') as AppSlots | undefined
+  if (slots === undefined) return
+
+  // 1. Root surface: a view-ring entry (full-column, like Chat/Trajectory).
+  ctx.effect(() => slots.inject('conversation.view', () => slots.register({
+    name: 'conversation.view', id: 'myapp', order: 30, label: () => 'MyApp',
+  }, MyAppView)), 'myapp: view')
+
+  // 2. Invocation button: the session-header utilities seat shares the
+  //    per-session chat store, so its occupants can activate any registered
+  //    view id (PropsStore gives `actions.setView`).
+  ctx.effect(() => slots.inject('conversation.session.header.utilities', () => slots.register({
+    name: 'conversation.session.header.utilities', id: 'myapp-toggle', order: 80,
+    label: () => 'MyApp',
+  }, MyAppToggleButton)), 'myapp: header button')
+}
+```
+
+```ts
+// MyAppToggleButton body: one click raises the app surface. The header seat's
+// PropsStore share carries the chat store, so `actions.setView` reaches every
+// registered view id — 'myapp' among them.
+function activateMyAppView(props: {
+  useStore(selector: (state: { view: string | null }) => string | null): string | null
+  actions: { setView(viewId: string): void }
+}): boolean {
+  const view = props.useStore(state => state.view)
+  if (view === 'myapp') return false
+  props.actions.setView('myapp')
+  return true
+}
+```
+
+3. **Command parity** (host side): a `commands.register({ name: 'myapp', … })` entry whose handler activates the same state, so `M-x`/`/myapp` users and one-click users drive one surface.
+
+Ownership rules: the shell sidebar button toggles any plugin-exposed sidebar; app-specific buttons, logos, and positioning are the plugin's own directives, arriving only through the generic seats (`conversation.session.header.utilities`, `shell.topbar.right`, `conversation.composer.dock`). View activation is UI state (`actions.setView`) — no session event. The full contract, the activation design, and alternatives live in the [app-plugin profile note](../../.agents/notes/proposed/feature/2026-09-16-app-plugin-profile.md); the c0ntext plugin's session-header mark is the shipped first instance.
+
+
 ## A UI plugin
 
 A UI plugin renders from the `session/event` feed (the assistant token stream as `assistant/chunk`, plus turn/step boundaries and tool activity), and drives input back in via `agent.followup()` / `agent.steer()`. A browser plugin contributing a business row to the built-in Web Client instead registers a `ConversationNodeDefinition` and keyed Chat renderer; follow the [Conversation Node guide](adding-a-conversation-node.md).

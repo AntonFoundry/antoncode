@@ -1,8 +1,8 @@
 # Agent Note: Agent mode as a workspace-grouped live session board
-[中文](2026-09-08-agent-mode-session-board.zh.md) | English
-
 
 Status: implemented
+
+[中文](2026-09-08-agent-mode-session-board.zh.md) | English
 
 ## Problem
 
