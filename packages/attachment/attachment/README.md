@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-attachment
 
-English | [中文](README.zh.md)
+English
 
 The durable attachment seam. `ctx.attachments` validates and durably commits immutable image bytes, then returns a serializable `ImageAttachmentRef`; consumers never persist browser paths, object URLs, provider URLs, or base64 in session events.
 

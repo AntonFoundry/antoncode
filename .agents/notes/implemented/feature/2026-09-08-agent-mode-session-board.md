@@ -2,7 +2,7 @@
 
 Status: implemented
 
-[中文](2026-09-08-agent-mode-session-board.zh.md) | English
+English
 
 ## Problem
 

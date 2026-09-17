@@ -1,6 +1,6 @@
 # todo/ — todo / planning capability family
 
-English | [中文](README.zh.md)
+English
 
 The model-facing todo capability. It is a single **product** package because one agent session owns the list; there is no replaceable provider contract.
 

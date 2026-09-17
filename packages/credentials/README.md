@@ -1,6 +1,6 @@
 # credentials/ — credential references
 
-English | [中文](README.zh.md)
+English
 
 The credential capability family separates reference resolution from its provider:
 

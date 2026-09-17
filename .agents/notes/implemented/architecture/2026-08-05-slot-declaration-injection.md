@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-08-05-slot-declaration-injection.zh.md)
+English
 
 ## Problem
 

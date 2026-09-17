@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-tool-subagent
 
-English | [中文](README.zh.md)
+English
 
 The model-facing delegation tool over one configured `ctx.subagents` provider. Changing the provider changes transport without changing the execution contract.
 

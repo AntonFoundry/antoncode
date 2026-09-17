@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-hook-protocol
 
-English | [中文](README.zh.md)
+English
 
 The **shared core** of the Claude Code / Codex hook wire protocol. NOT a cordis plugin — it registers nothing and injects nothing. It is a **library** of dialect-neutral primitives the two bridge plugins (`@deepseek-ai/dsh-hooks-claude-code`, `@deepseek-ai/dsh-hooks-codex`) import so neither re-implements the identical halves of the protocol.
 

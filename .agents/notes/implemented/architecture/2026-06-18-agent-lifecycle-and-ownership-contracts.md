@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-06-18-agent-lifecycle-and-ownership-contracts.zh.md)
+English
 
 ## Problem
 

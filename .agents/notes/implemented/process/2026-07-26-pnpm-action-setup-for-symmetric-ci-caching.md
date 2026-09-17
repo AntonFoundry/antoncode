@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-07-26-pnpm-action-setup-for-symmetric-ci-caching.zh.md)
+English
 
 ## Problem
 

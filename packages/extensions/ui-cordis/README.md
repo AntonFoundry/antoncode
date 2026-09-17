@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-client-ui-cordis
 
-English | [中文](README.zh.md)
+English
 
 Cordis dynamic-plugin surfaces, browser half: a frame-wide panel that operates every definition the host holds, and a read-only `cordis_define` card that records what a session defined.
 

@@ -1,6 +1,6 @@
 # dsh-home-paths
 
-English | [中文](README.zh.md)
+English
 
 Shared filesystem path helpers for DeepSeek Harness user data.
 

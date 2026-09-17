@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-tool-bash-persistent
 
-English | [中文](README.zh.md)
+English
 
 Model-facing `bash(command)` backed by one owner-scoped `ctx.terminals` shell. The package owns the tool contract and shell reuse; deployments select the PTY backend and sandbox policy.
 

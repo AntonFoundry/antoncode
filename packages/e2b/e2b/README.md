@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-e2b
 
-English | [中文](README.zh.md)
+English
 
 Shared lifecycle owner for one E2B sandbox. The filesystem and subprocess adapters inject `ctx.e2b`, await its single SDK handle, and therefore inhabit the same remote Linux working tree and process world. The package pins `e2b@2.29.1`; the [family map](../README.md) lists the opt-in composition.
 

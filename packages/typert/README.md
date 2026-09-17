@@ -1,6 +1,6 @@
 # Typert
 
-English | [中文](README.zh.md)
+English
 
 Typert separates source analysis, runtime storage, and Loader discovery.
 

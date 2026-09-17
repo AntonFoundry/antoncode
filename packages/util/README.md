@@ -1,6 +1,6 @@
 # util/ — low-level shared utilities
 
-English | [中文](README.zh.md)
+English
 
 These zero-dependency packages provide small primitives shared by multiple capability families. Business semantics remain with each consuming capability.
 

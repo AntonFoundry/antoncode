@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-07-31-code-mode-language-dispatch.zh.md)
+English
 
 ## Problem
 

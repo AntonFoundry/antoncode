@@ -291,7 +291,7 @@ describe('grouped flat plans', () => {
       },
     ]
     render(<TodoTreeBody todos={TREE} t={t} />)
-    // A single "实现:" head at a child level stays full-text and ungrouped.
+    // A single implementation-note head at a child level stays full-text and ungrouped.
     expect(screen.getByText('实现: 核心')).toBeTruthy()
     expect(screen.queryByRole('button', { name: '实现' })).toBeNull()
   })

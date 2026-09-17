@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-06-20-core-data-structures-catalog.zh.md)
+English
 
 ## Problem
 

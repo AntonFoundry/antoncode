@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-08-05-workspace-blank-session-reuse-membership.zh.md)
+English
 
 ## Problem
 

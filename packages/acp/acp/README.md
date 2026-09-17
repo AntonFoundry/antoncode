@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-acp
 
-English | [中文](README.zh.md)
+English
 
 Automation-only [Agent Client Protocol](https://agentclientprotocol.com) server over JSON-RPC stdio. Programmatic clients create fresh harness agents, send text/image prompts, collect committed assistant text/images, resolve one-shot permission requests by policy, and cancel work. The primary in-repository client is [`dsh-subagent-acp`](../../subagent/subagent-acp/README.md).
 

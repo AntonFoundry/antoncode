@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-skill
 
-English | [中文](README.zh.md)
+English
 
 Pure agent skill provider registry.
 

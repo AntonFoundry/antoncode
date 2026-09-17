@@ -2,8 +2,6 @@
 
 Status: implemented
 
-[中文](2026-08-27-zai-models-dev-catalog.zh.md)
-
 ## Problem
 
 The `zai` route's picker list was the installed pi-ai catalog, which only changes when

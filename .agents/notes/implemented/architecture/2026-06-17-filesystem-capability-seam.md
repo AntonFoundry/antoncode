@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-06-17-filesystem-capability-seam.zh.md)
+English
 
 ## Problem
 

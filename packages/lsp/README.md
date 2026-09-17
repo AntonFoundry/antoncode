@@ -1,6 +1,6 @@
 # lsp/ - LSP capability family
 
-English | [中文](README.zh.md)
+English
 
 The language-server capability seam: an LSP Service Definition, a generic stdio provider, and the model-facing `lsp` tool. All **product** packages.
 

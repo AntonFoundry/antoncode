@@ -2,7 +2,7 @@
 
 Status: proposed
 
-English | [中文](2026-06-16-typed-event-schemas.zh.md)
+English
 
 ## Problem
 

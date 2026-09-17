@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-07-22-fast-local-git-hooks.zh.md)
+English
 
 ## Problem
 

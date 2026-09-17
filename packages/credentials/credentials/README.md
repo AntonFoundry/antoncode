@@ -1,6 +1,6 @@
 # dsh-credentials
 
-English | [中文](README.zh.md)
+English
 
 Credential Service Definition (`ctx.credentials`). One doctrine, three consequences:
 

@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-07-15-replay-token-meter-service.zh.md)
+English
 
 ## Problem
 

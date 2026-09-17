@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-08-03-pi-ai-declared-provider-catalog.zh.md)
+English
 
 ## Problem
 

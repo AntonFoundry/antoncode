@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-spill
 
-English | [中文](README.zh.md)
+English
 
 The **`SpillStore`** (`ctx.spillStore`) defines WHAT a spill backend does — persist a tool's oversized text and return a model-facing locator plus retrieval guidance — without saying HOW.
 

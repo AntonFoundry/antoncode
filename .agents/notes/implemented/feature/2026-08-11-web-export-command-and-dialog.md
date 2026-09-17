@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-08-11-web-export-command-and-dialog.zh.md)
+English
 
 ## Problem
 

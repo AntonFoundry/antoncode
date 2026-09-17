@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-tool-todo
 
-English | [中文](README.zh.md)
+English
 
 The model-facing `todo_write` tool: the agent's whole task list, replaced wholesale on each call.
 

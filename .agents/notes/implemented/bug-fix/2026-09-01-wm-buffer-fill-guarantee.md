@@ -1,5 +1,5 @@
 # Agent Note: WM buffers fill their windows
-English | [中文](2026-09-01-wm-buffer-fill-guarantee.zh.md)
+English
 
 
 Status: implemented

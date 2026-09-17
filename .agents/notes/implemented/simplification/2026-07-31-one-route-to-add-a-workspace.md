@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-07-31-one-route-to-add-a-workspace.zh.md)
+English
 
 ## Problem
 

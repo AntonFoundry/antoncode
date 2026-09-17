@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-07-30-web-queue-steer-action.zh.md)
+English
 
 ## Problem
 
