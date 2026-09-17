@@ -53,7 +53,7 @@ import {
   toggleTabbed,
   type WmDir,
   flipWithSibling, keepOnlyLeaf, killBuffer, leafIds, removeLeaf, scratchBuffer, setWeights, splitLeaf, swapBuffer, tidyTree,
-  type WmBuffer, type WmDirection, type WmNode,
+  type WmBuffer, type WmBufferKind, type WmDirection, type WmNode,
 } from './wm.ts'
 import { requestHarnessRestart, waitAndReload } from './bridge.ts'
 import css from './WmFrame.module.css'
@@ -379,7 +379,7 @@ function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf
   const buffer = findBuffer(buffers, node.buffer)
   // A leaf referencing a registry gap falls back by id so a hand-edited or
   // partially migrated snapshot still renders the shell.
-  const bufferKind = buffer?.kind ?? (isSingletonBuffer(node.buffer) ? node.buffer : 'scratch')
+  const bufferKind: WmBufferKind = buffer?.kind ?? (isSingletonBuffer(node.buffer) ? node.buffer as WmBufferKind : 'scratch')
   const owner = bufferKind === 'sidebar' ? sidebarOwner : {}
   const closeable = canClose(tree, node.id)
   const focused = focusedId === node.id
@@ -403,7 +403,9 @@ function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf
           : bufferKind === 'settings'
             ? renderSlot('settings.view', {})
             : renderSlot(bufferKind as 'sidebar' | 'conversation' | 'details', owner)
-  const title = buffer !== undefined ? bufferTitle(buffer) : '(unnamed)'
+  // The title uses the same id-based fallback as the kind: a registry gap
+  // (stale snapshot before reconcile) still names singleton leaves.
+  const title = buffer !== undefined ? bufferTitle(buffer) : bufferTitle({ id: node.buffer, kind: bufferKind })
   // A focused terminal buffer must receive keyboard input immediately: the
   // xterm capture textarea inside the slot occupant takes DOM focus.
   const paneRef = useRef<HTMLDivElement | null>(null)
@@ -512,8 +514,10 @@ function NodeView(props: NodeRenderProps & { node: WmNode }) {
     const titleOf = (child: WmNode): string => {
       const id = tabIdOf(child)
       const leaf = id !== undefined ? findLeaf(node, id) : undefined
-      const buffer = leaf !== undefined ? findBuffer(buffers, leaf.buffer) : undefined
-      return buffer !== undefined ? bufferTitle(buffer) : '(unnamed)'
+      const leafBuffer = leaf !== undefined ? findBuffer(buffers, leaf.buffer) : undefined
+      const leafKind: WmBufferKind = leafBuffer?.kind
+        ?? (leaf !== undefined && isSingletonBuffer(leaf.buffer) ? leaf.buffer as WmBufferKind : 'scratch')
+      return bufferTitle({ id: leaf?.buffer ?? '', kind: leafKind })
     }
     const activeChild = node.children.find(child => tabIdOf(child) === active)
     return (
