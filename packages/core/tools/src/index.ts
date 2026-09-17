@@ -1875,6 +1875,10 @@ export class ToolRuntime extends Service {
     const message = result.error?.message
     const prefix = 'invalid arguments: '
     if (message === undefined || !message.startsWith(prefix)) return result
+    // Narrow to the failure variant: hinting only ever decorates denials, and
+    // spreading the success variant would resurrect `isError: false` beside a
+    // freshly built `error` payload (rejected under exactOptionalPropertyTypes).
+    if (result.isError !== true) return result
     const violations = message.slice(prefix.length).split('; ')
     if (!violations.every(violation => violation.startsWith('missing required property'))) return result
     const args = exec.arguments

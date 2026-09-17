@@ -34,6 +34,65 @@ export function apply(ctx: Context) {
 
 这个 waterfall（瀑布式事件）是可重排的策略层。当不变式需要单调的最终拒绝时使用 `ctx.tools.guard()`；当插件需要包裹实际分发生命周期时（超时/重试/指标；仅 `exec.signal` 可替换）使用 `tools/execute`；显式结果变换使用 `tools/post-execute`；对不可变最终结果的受限观察使用 `tools/result`。选择规则见[添加工具指南](adding-a-tool.md#execution-policy-and-observation)。
 
+## 应用插件（一键应用界面）
+
+应用插件是一类 behaves like 浏览器扩展的 UI 插件：它把自己的调用按钮固定在会话头部，点击后打开插件完整的应用界面。Shell 不知道任何应用的名字——插件自行声明全部三个挂载点，禁用或卸载插件时会结构性撤下它们（slot 注册是 fiber effect）。
+
+三个注册，全部在一个客户端插件的 `apply` 中：
+
+```ts
+interface AppSlots {
+  inject(name: string, register: () => () => unknown): () => unknown
+  register(options: Record<string, unknown>, component: () => unknown): () => unknown
+}
+
+declare function MyAppView(): null
+declare function MyAppToggleButton(): null
+
+export const inject = ['slots', 'layout']
+
+export function apply(ctx: {
+  get(name: string): unknown
+  effect(callback: () => () => unknown, label?: string): unknown
+}): void {
+  const slots = ctx.get('slots') as AppSlots | undefined
+  if (slots === undefined) return
+
+  // 1. Root surface: a view-ring entry (full-column, like Chat/Trajectory).
+  ctx.effect(() => slots.inject('conversation.view', () => slots.register({
+    name: 'conversation.view', id: 'myapp', order: 30, label: () => 'MyApp',
+  }, MyAppView)), 'myapp: view')
+
+  // 2. Invocation button: the session-header utilities seat shares the
+  //    per-session chat store, so its occupants can activate any registered
+  //    view id (PropsStore gives `actions.setView`).
+  ctx.effect(() => slots.inject('conversation.session.header.utilities', () => slots.register({
+    name: 'conversation.session.header.utilities', id: 'myapp-toggle', order: 80,
+    label: () => 'MyApp',
+  }, MyAppToggleButton)), 'myapp: header button')
+}
+```
+
+```ts
+// MyAppToggleButton body: one click raises the app surface. The header seat's
+// PropsStore share carries the chat store, so `actions.setView` reaches every
+// registered view id — 'myapp' among them.
+function activateMyAppView(props: {
+  useStore(selector: (state: { view: string | null }) => string | null): string | null
+  actions: { setView(viewId: string): void }
+}): boolean {
+  const view = props.useStore(state => state.view)
+  if (view === 'myapp') return false
+  props.actions.setView('myapp')
+  return true
+}
+```
+
+3. **命令对等**（host 侧）：注册 `commands.register({ name: 'myapp', … })`，其 handler 激活同一界面，`M-x`/`/myapp` 用户与一键用户驱动同一个表面。
+
+所有权规则：shell 侧边栏按钮切换任何插件暴露的侧边栏；应用专属的按钮、图标与定位是插件自己的指令，仅通过通用座位（`conversation.session.header.utilities`、`shell.topbar.right`、`conversation.composer.dock`）到达界面。视图激活是 UI 状态（`actions.setView`）——不需要会话事件。完整契约、激活设计与备选方案见[应用插件 profile 笔记](../../.agents/notes/proposed/feature/2026-09-16-app-plugin-profile.md)；c0ntext 插件的会话头部标记是已交付的首个实例。
+
+
 ## UI 插件
 
 UI 插件从 `session/event` 事件流渲染（助手 token 流以 `assistant/chunk` 形式到达，加上轮次/步骤边界与工具活动），并通过 `agent.followup()` / `agent.steer()` 将输入驱动回去。如果浏览器插件要向内建 Web Client 贡献业务行，则应注册 `ConversationNodeDefinition` 与 keyed Chat renderer；具体步骤见 [Conversation Node 指南](adding-a-conversation-node.md)。

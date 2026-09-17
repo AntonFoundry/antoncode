@@ -104,6 +104,15 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * xterm.js view; the owning buffer's session id rides the owner props.
      */
     'terminal.view': { kind: 'single'; scope: 'root'; owner: { sessionId?: string | undefined } }
+    /**
+     * The settings window body (the `settings` buffer, opened through
+     * ctx.layout's openSettings/toggleSettings — the sidebar-foot trigger is
+     * the shipped driver). OCCUPIED by ui-settings-general's window shell,
+     * which declares the header/action/section seats inside it. No owner
+     * props: window open/close is ctx.layout's, and closing via the pane's
+     * own close gesture is equivalent.
+     */
+    'settings.view': { kind: 'single'; scope: 'root' }
   }
 }
 
@@ -157,6 +166,7 @@ export function apply(ctx: ClientContext): void {
         'shell.topbar.left': { kind: 'list', scope: 'root' },
         'shell.topbar.right': { kind: 'list', scope: 'root' },
         'terminal.view': { kind: 'single', scope: 'root' },
+        'settings.view': { kind: 'single', scope: 'root' },
       },
       // Exclusive store: the factory itself — the framework instantiates per
       // entry and delivers useStore/actions to WmFrame as standard props.

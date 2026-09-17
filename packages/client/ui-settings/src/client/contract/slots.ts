@@ -34,9 +34,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'settings.action': { kind: 'list'; scope: 'root'; owner: SettingsHeaderOwnerProps }
     /**
-     * The close button's visually-hidden label text (the button itself —
-     * icon, geometry, focus — is shell chrome). Absent contribution leaves
-     * the button without an accessible name (broken-composition state).
+     * The settings window's close-control label text, for shells that render
+     * their own close button (the button itself — icon, geometry, focus — is
+     * shell chrome). The shipped WM settings window closes through the pane's
+     * own mode-line gesture and renders no seat content; absent contribution
+     * in a shell that does render the button leaves it without an accessible
+     * name (broken-composition state).
      */
     'settings.close': { kind: 'single'; scope: 'root'; owner: SettingsHeaderOwnerProps }
     /**

@@ -11,8 +11,8 @@
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import type { createLayoutStore } from './stores.ts'
 import {
-  SIDEBAR_REATTACH_WEIGHT, WM_LEAF_DETAILS, WM_LEAF_SIDEBAR, firstLeafId, findLeaf, lastLeafId,
-  removeLeaf, splitLeaf, type WmNode,
+  SIDEBAR_REATTACH_WEIGHT, WM_LEAF_DETAILS, WM_LEAF_SETTINGS, WM_LEAF_SIDEBAR, firstLeafId, findLeaf,
+  lastLeafId, removeLeaf, splitLeaf, type WmNode,
 } from './wm.ts'
 
 /** The layout store's bound action set (framework-baked, draft params peeled). */
@@ -45,6 +45,12 @@ export interface ILayout {
   closeDetails(): void
   /** Toggle the details panel (closed ⟷ open). */
   toggleDetails(): void
+  /** Open the settings window (no-op when already open). */
+  openSettings(): void
+  /** Close the settings window. */
+  closeSettings(): void
+  /** Toggle the settings window (closed ⟷ open). */
+  toggleSettings(): void
 }
 
 /** Cross-plugin panel-action face (ctx.layout). */
@@ -137,6 +143,36 @@ export class LayoutController implements ILayout {
       return
     }
     this.#require().openDetails()
+  }
+
+  /**
+   * Open the settings window (no-op when open): split the rightmost leaf
+   * row-wise into the canonical settings leaf. Unlike the details column it
+   * is a normal weighted pane (no pinned width preference). Without an
+   * attached wm store, this is a no-op — the settings shell only exists in
+   * compositions that attach the wm store.
+   */
+  openSettings(): void {
+    if (this.#wm === undefined) return
+    const { tree } = this.#wm.getSnapshot()
+    if (findLeaf(tree, WM_LEAF_SETTINGS) === undefined) {
+      const anchor = lastLeafId(tree)
+      if (anchor !== undefined) this.#write(t => splitLeaf(t, anchor, 'row', 'settings', WM_LEAF_SETTINGS, 'after'))
+    }
+  }
+
+  /** Close the settings window (no-op when closed). */
+  closeSettings(): void {
+    if (this.#wm === undefined) return
+    this.#write(t => findLeaf(t, WM_LEAF_SETTINGS) !== undefined ? removeLeaf(t, WM_LEAF_SETTINGS) : t)
+  }
+
+  /** Toggle the settings window: close it when open, open it when closed. */
+  toggleSettings(): void {
+    if (this.#wm === undefined) return
+    const { tree } = this.#wm.getSnapshot()
+    if (findLeaf(tree, WM_LEAF_SETTINGS) !== undefined) this.closeSettings()
+    else this.openSettings()
   }
 
   /** Write one wm tree transform; the caller has checked the attachment. */

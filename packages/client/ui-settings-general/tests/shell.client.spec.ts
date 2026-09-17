@@ -3,8 +3,8 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { apply, inject } from '../src/client/index.ts'
-import type { SettingsRootInjected } from '../src/client/shell-contract.ts'
-import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
+import type { SettingsRootInjected, SettingsWindowInjected } from '../src/client/shell-contract.ts'
+import { SettingsRoot, SettingsWindow } from '../src/client/SettingsRoot.tsx'
 
 async function bench() {
   const ctx = new Context()
@@ -22,60 +22,108 @@ async function bench() {
     isLoopback: false,
   } as never)
   ctx.provide('remote', { $on: () => () => {} } as never)
-  return { ctx, slots: ctx.get('slots') as SlotRegistry }
+  const openSettings = vi.fn()
+  const closeSettings = vi.fn()
+  ctx.provide('layout', {
+    toggleSidebar: () => {},
+    openDetails: () => {},
+    closeDetails: () => {},
+    toggleDetails: () => {},
+    openSettings,
+    closeSettings,
+    toggleSettings: () => {},
+  } as never)
+  return { ctx, slots: ctx.get('slots') as SlotRegistry, openSettings, closeSettings }
 }
 
 function declare(slots: SlotRegistry): () => void {
   return slots.register(
-    { name: 'root', children: { 'sidebar.settings': { kind: 'single', scope: 'root' } } } as never,
+    {
+      name: 'root',
+      children: {
+        'sidebar.settings': { kind: 'single', scope: 'root' },
+        'settings.view': { kind: 'single', scope: 'root' },
+      },
+    } as never,
     () => null,
   )
 }
 
-function injectedOf(slots: SlotRegistry): SettingsRootInjected {
+function rootOf(slots: SlotRegistry): SettingsRootInjected {
   const entry = slots.entries('sidebar.settings')[0]!
   return (entry.inject as () => SettingsRootInjected)()
 }
 
-/** The shell's child declarations (chrome, actions, sections, and onboarding overlays). */
-const CHILD_SPECS = {
+function windowOf(slots: SlotRegistry): SettingsWindowInjected {
+  const entry = slots.entries('settings.view')[0]!
+  return (entry.inject as () => SettingsWindowInjected)()
+}
+
+/** The trigger root's child declarations (chrome trigger + onboarding overlays). */
+const ROOT_CHILD_SPECS = {
   'settings.trigger': { kind: 'single', scope: 'root' },
-  'settings.header': { kind: 'single', scope: 'root' },
-  'settings.action': { kind: 'list', scope: 'root' },
-  'settings.close': { kind: 'single', scope: 'root' },
-  'settings.section': { kind: 'list', scope: 'root' },
   'settings.onboarding': { kind: 'list', scope: 'root' },
 } as const
 
+/** The window body's child declarations (title, actions, sections). */
+const WINDOW_CHILD_SPECS = {
+  'settings.header': { kind: 'single', scope: 'root' },
+  'settings.action': { kind: 'list', scope: 'root' },
+  'settings.section': { kind: 'list', scope: 'root' },
+} as const
+
 describe('ui-settings apply', () => {
-  it('declares only the slot registry (a pure composition face, no locale)', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection'])
+  it('declares the slot registry plus the layout face (window open/close)', () => {
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'layout'])
   })
 
-  it('registers the shell and declares every child slot, before or after the declaration', async () => {
+  it('registers the trigger root and the window body, before or after the declaration', async () => {
     const before = await bench()
     declare(before.slots)
     await before.ctx.plugin({ inject: [...inject], apply }).await()
     expect(before.slots.entries('sidebar.settings')[0]!.component).toBe(SettingsRoot)
-    for (const name of Object.keys(CHILD_SPECS) as Array<keyof typeof CHILD_SPECS>) {
-      expect(before.slots.spec(name)).toEqual(CHILD_SPECS[name])
+    expect(before.slots.entries('settings.view')[0]!.component).toBe(SettingsWindow)
+    for (const name of Object.keys(ROOT_CHILD_SPECS) as Array<keyof typeof ROOT_CHILD_SPECS>) {
+      expect(before.slots.spec(name)).toEqual(ROOT_CHILD_SPECS[name])
+    }
+    for (const name of Object.keys(WINDOW_CHILD_SPECS) as Array<keyof typeof WINDOW_CHILD_SPECS>) {
+      expect(before.slots.spec(name)).toEqual(WINDOW_CHILD_SPECS[name])
     }
 
     const after = await bench()
     await after.ctx.plugin({ inject: [...inject], apply }).await()
     expect(after.slots.entries('sidebar.settings')).toHaveLength(0)
+    expect(after.slots.entries('settings.view')).toHaveLength(0)
     declare(after.slots)
     await Promise.resolve()
     expect(after.slots.entries('sidebar.settings')[0]!.component).toBe(SettingsRoot)
+    expect(after.slots.entries('settings.view')[0]!.component).toBe(SettingsWindow)
     // The self-inflicted ledger notifications hit the duplicate guard.
     expect(after.slots.entries('sidebar.settings')).toHaveLength(1)
+    expect(after.slots.entries('settings.view')).toHaveLength(1)
+  })
+
+  it('opens the window through the layout face from the trigger and section paths', async () => {
+    const b = await bench()
+    declare(b.slots)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const root = rootOf(b.slots)
+    root.openWindow()
+    expect(b.openSettings).toHaveBeenCalledOnce()
+    root.openSection('models')
+    expect(b.openSettings).toHaveBeenCalledTimes(2)
+    // openSection selects the section the window opens on.
+    expect(windowOf(b.slots).hooks.activeSection.getSnapshot()).toEqual({ activeId: 'models' })
+    // The window's close routes to the same face.
+    windowOf(b.slots).closeWindow()
+    expect(b.closeSettings).toHaveBeenCalledOnce()
   })
 
   it('projects the section ledger into ordered nav rows with option defaults', async () => {
     const b = await bench()
     declare(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
-    const { sections } = injectedOf(b.slots).hooks
+    const { sections } = windowOf(b.slots).hooks
     // This package registers the General section itself; every other section
     // arrives from a feature registrant.
     const GENERAL = { id: 'general', order: 0, label: 'general.nav' }
@@ -100,11 +148,25 @@ describe('ui-settings apply', () => {
     off()
   })
 
+  it('publishes active-section changes to subscribers of the shared source', async () => {
+    const b = await bench()
+    declare(b.slots)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const { activeSection } = windowOf(b.slots).hooks
+    expect(activeSection.getSnapshot()).toEqual({ activeId: undefined })
+    const listener = vi.fn()
+    const off = activeSection.subscribe(listener)
+    windowOf(b.slots).setActiveSection('models')
+    expect(activeSection.getSnapshot()).toEqual({ activeId: 'models' })
+    expect(listener).toHaveBeenCalledOnce()
+    off()
+  })
+
   it('projects onboarding entries into stable coordinator order', async () => {
     const b = await bench()
     declare(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
-    const { onboardingSteps } = injectedOf(b.slots).hooks
+    const { onboardingSteps } = rootOf(b.slots).hooks
     b.slots.register({ name: 'settings.onboarding', id: 'credential', order: 0 } as never, () => null)
     b.slots.register({ name: 'settings.onboarding', id: 'welcome', order: -100 } as never, () => null)
     b.slots.register({ name: 'settings.onboarding', id: 'default-order' } as never, () => null)
@@ -128,16 +190,23 @@ describe('ui-settings apply', () => {
     const redeclare = declare(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     expect(b.slots.entries('sidebar.settings')).toHaveLength(1)
-    // Declarer unload: the cascade removes our entry and every child
-    // declaration while our local disposer variable goes stale.
+    expect(b.slots.entries('settings.view')).toHaveLength(1)
+    // Declarer unload: the cascade removes our entries and every child
+    // declaration while our local disposer variables go stale.
     redeclare()
     expect(b.slots.entries('sidebar.settings')).toHaveLength(0)
+    expect(b.slots.entries('settings.view')).toHaveLength(0)
     expect(b.slots.spec('settings.trigger')).toBeUndefined()
+    expect(b.slots.spec('settings.section')).toBeUndefined()
     declare(b.slots)
     await Promise.resolve()
     expect(b.slots.entries('sidebar.settings')[0]!.component).toBe(SettingsRoot)
-    for (const name of Object.keys(CHILD_SPECS) as Array<keyof typeof CHILD_SPECS>) {
-      expect(b.slots.spec(name)).toEqual(CHILD_SPECS[name])
+    expect(b.slots.entries('settings.view')[0]!.component).toBe(SettingsWindow)
+    for (const name of Object.keys(ROOT_CHILD_SPECS) as Array<keyof typeof ROOT_CHILD_SPECS>) {
+      expect(b.slots.spec(name)).toEqual(ROOT_CHILD_SPECS[name])
+    }
+    for (const name of Object.keys(WINDOW_CHILD_SPECS) as Array<keyof typeof WINDOW_CHILD_SPECS>) {
+      expect(b.slots.spec(name)).toEqual(WINDOW_CHILD_SPECS[name])
     }
   })
 
@@ -148,7 +217,11 @@ describe('ui-settings apply', () => {
     await fiber.await()
     await fiber.dispose()
     expect(b.slots.entries('sidebar.settings')).toHaveLength(0)
-    for (const name of Object.keys(CHILD_SPECS) as Array<keyof typeof CHILD_SPECS>) {
+    expect(b.slots.entries('settings.view')).toHaveLength(0)
+    for (const name of Object.keys(ROOT_CHILD_SPECS) as Array<keyof typeof ROOT_CHILD_SPECS>) {
+      expect(b.slots.spec(name)).toBeUndefined()
+    }
+    for (const name of Object.keys(WINDOW_CHILD_SPECS) as Array<keyof typeof WINDOW_CHILD_SPECS>) {
       expect(b.slots.spec(name)).toBeUndefined()
     }
   })

@@ -1315,9 +1315,6 @@ importers:
       '@deepseek-ai/dsh-client-ui-commands':
         specifier: workspace:^
         version: link:../../client/ui-commands
-      '@deepseek-ai/dsh-client-ui-context-toggle':
-        specifier: workspace:^
-        version: link:../../extensions/ui-context-toggle
       '@deepseek-ai/dsh-client-ui-conversation':
         specifier: workspace:^
         version: link:../../client/ui-conversation
@@ -2553,6 +2550,9 @@ importers:
       '@deepseek-ai/dsh-client-test-runtime':
         specifier: workspace:^
         version: link:../../test-support/client-runtime
+      '@deepseek-ai/dsh-client-ui-layout':
+        specifier: workspace:^
+        version: link:../ui-layout
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: workspace:^
         version: link:../ui-primitives
@@ -4153,8 +4153,6 @@ importers:
         specifier: workspace:^
         version: link:../../core/tools
 
-  packages/extensions/ui-context-toggle: {}
-
   packages/extensions/ui-cordis:
     devDependencies:
       '@deepseek-ai/cordis':
@@ -4647,6 +4645,9 @@ importers:
 
   packages/guard/gate-policy:
     dependencies:
+      '@deepseek-ai/dsh-settings':
+        specifier: workspace:^
+        version: link:../../settings/settings
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery

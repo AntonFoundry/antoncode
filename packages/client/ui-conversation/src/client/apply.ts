@@ -179,6 +179,26 @@ export function apply(ctx: Context): void {
   // component through the standard provide channel — the 'input' hook plus
   // the two public actions. Materialization is the shell creation trigger
   // (per-session lazy; scope disposer tears down).
+  // The app-plugin activation channel: session-scope occupants (an app
+  // plugin's header-utilities toggle) receive `viewActions.activate(viewId)`
+  // and raise any registered conversation.view entry. Backed by the same
+  // chat-store instance the view ring renders from — a plain store write,
+  // no session event (view selection is UI state).
+  ctx.effect(() => sessions.provide({
+    props: ['viewActions'],
+    resolve: binding => ({
+      props: {
+        viewActions: {
+          activate: (viewId: string): void => {
+            (ctx.slots as unknown as {
+              storeInstanceOf(handle: unknown, sessionId: string): { actions: { setView(viewId: string): void } }
+            }).storeInstanceOf(chatStore, binding.sessionId).actions.setView(viewId)
+          },
+        },
+      },
+    }),
+  }), 'ui-conversation: view activation provider')
+
   ctx.effect(() => sessions.provide({
     hooks: ['input'],
     props: ['inputActions'],

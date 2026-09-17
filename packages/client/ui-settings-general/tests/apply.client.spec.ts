@@ -1,4 +1,4 @@
-/** Ownerless-copy registrations: the five seats, dictionaries, thunked labels, and HMR recovery. */
+/** Ownerless-copy registrations: the four seats, dictionaries, thunked labels, and HMR recovery. */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
@@ -6,7 +6,7 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-settings-general/client'
-import { CloseLabel, HeaderContent, TriggerContent } from '../src/client/chrome.tsx'
+import { HeaderContent, TriggerContent } from '../src/client/chrome.tsx'
 import { GeneralSection } from '../src/client/GeneralSection.tsx'
 import { SettingsDocumentAction } from '../src/client/SettingsDocumentAction.tsx'
 import type { SettingsDocumentActionInjected } from '../src/client/SettingsDocumentAction.tsx'
@@ -20,7 +20,6 @@ const SEATS = [
   ['settings.trigger', TriggerContent],
   ['settings.header', HeaderContent],
   ['settings.action', SettingsDocumentAction],
-  ['settings.close', CloseLabel],
   ['settings.section', GeneralSection],
 ] as const
 
@@ -48,19 +47,29 @@ async function bench(isLoopback = true) {
     api: { settings: { describe: settingsDescribe, openDocument: settingsOpenDocument } },
     isLoopback,
   } as never)
+  ctx.provide('layout', {
+    toggleSidebar: () => {},
+    openDetails: () => {},
+    closeDetails: () => {},
+    toggleDetails: () => {},
+    openSettings: () => {},
+    closeSettings: () => {},
+    toggleSettings: () => {},
+  } as never)
   return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, settingsDescribe, settingsOpenDocument }
 }
 
-/** Declare the shell's six child slots the way ui-settings' entry does. */
+/** Declare the shell's child slots the way ui-settings and ui-layout do. */
 function declare(slots: SlotRegistry): () => void {
   return slots.register(
     {
       name: 'root',
       children: {
+        'sidebar.settings': { kind: 'single', scope: 'root' },
+        'settings.view': { kind: 'single', scope: 'root' },
         'settings.trigger': { kind: 'single', scope: 'root' },
         'settings.header': { kind: 'single', scope: 'root' },
         'settings.action': { kind: 'list', scope: 'root' },
-        'settings.close': { kind: 'single', scope: 'root' },
         'settings.section': { kind: 'list', scope: 'root' },
         'settings.onboarding': { kind: 'list', scope: 'root' },
       },
@@ -75,7 +84,7 @@ function generalEntry(slots: SlotRegistry) {
 
 describe('ui-settings-general apply', () => {
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'layout'])
   })
 
   it('fills all five seats for declarations before or after apply', async () => {

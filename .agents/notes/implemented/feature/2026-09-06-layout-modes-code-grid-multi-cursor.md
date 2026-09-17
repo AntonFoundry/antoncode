@@ -1,8 +1,8 @@
 # Agent Note: Layout modes, code-mode terminal grid, and multi-cursor broadcast
-English | [中文](2026-09-06-layout-modes-code-grid-multi-cursor.zh.md)
-
 
 Status: implemented
+
+English | [中文](2026-09-06-layout-modes-code-grid-multi-cursor.zh.md)
 
 ## Problem
 

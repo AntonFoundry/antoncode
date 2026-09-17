@@ -404,6 +404,12 @@
     - id: gate-policy
       name: '@deepseek-ai/dsh-gate-policy'
       config:
+        # The plan gate: gated tools are denied until the session's log carries
+        # a todo/write plan — plan first, then execute. todo_write itself is
+        # never gated.
+        todoPlanGate:
+          enabled: true
+          tools: [bash, edit, write, multiedit]
         rules:
           - name: push-gate
             tools: [bash]
