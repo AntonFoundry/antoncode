@@ -141,11 +141,18 @@ export function resolveChildModelRoute(
   parentSessionId: string,
   callModel: string | undefined,
   configuredModel: string | undefined,
-): AgentOptions | undefined {
+  taskText = '',
+  autoRoute?: (task: string) => AgentOptions | undefined | Promise<AgentOptions | undefined>,
+): AgentOptions | undefined | Promise<AgentOptions | undefined> {
   if (callModel !== undefined && callModel.trim().length > 0) return splitModelRoute(callModel.trim())
   const sessionRoute = section.bySession[parentSessionId]
   if (typeof sessionRoute === 'string' && sessionRoute.trim().length > 0) return splitModelRoute(sessionRoute.trim())
-  if (section.defaultModel.trim().length > 0) return splitModelRoute(section.defaultModel.trim())
+  if (section.defaultModel.trim().length > 0) {
+    // `auto` consults the model-intel datasheet with the task text; a
+    // resolution failure falls through to parent inheritance.
+    if (section.defaultModel.trim().toLowerCase() === 'auto') return autoRoute?.(taskText)
+    return splitModelRoute(section.defaultModel.trim())
+  }
   return configuredModel !== undefined ? { model: configuredModel } : undefined
 }
 
@@ -341,6 +348,13 @@ export function apply(ctx: Context, config: Config): void {
     setSource: (source) => { sectionSource = source },
     onChange: () => {},
   })
+  // The `auto` route reads the optional model-intel datasheet service. It may
+  // mount after this plugin (sibling order is unconstrained), so the lookup is
+  // per call through the global store, never a topology-sensitive property.
+  const autoRouteSource = (): ((task: string) => Promise<AgentOptions | undefined>) | undefined => {
+    const intel = ctx.get('model-intel')
+    return intel === undefined ? undefined : (task: string) => intel.resolveAutoRoute(task)
+  }
   const backgroundEnabled = config.enableRunInBackground !== false
   const continuable = (config.backgroundMode ?? 'one-shot') === 'continuable'
   const toolName = config.toolName ?? 'subagent'
@@ -456,11 +470,16 @@ export function apply(ctx: Context, config: Config): void {
         // (per-session, then global), then the configured agentOptions model —
         // merged OVER the configured agent options so a route overrides only
         // the provider/model fields it names.
-        const route = resolveChildModelRoute(
+        const route = await resolveChildModelRoute(
           sectionSource(),
           parent.id,
           typeof args.model === 'string' ? args.model : undefined,
           config.agentOptions?.model,
+          args.prompt,
+          // Optional model-intel service: the `auto` route reads its
+          // datasheet; an unmounted (or disabled) service resolves nothing
+          // and the delegation inherits the parent model.
+          autoRouteSource(),
         )
         // The call's `reasoningEffort` argument rides the agent options: it is
         // per-child request configuration, not a route field.
@@ -562,6 +581,9 @@ export function apply(ctx: Context, config: Config): void {
           + `pieces — separate files, surfaces, or concerns — fan them out to parallel ${toolName} calls in one `
           + 'assistant message instead of doing them inline. Keep only genuinely single-step or strictly '
           + 'sequential actions inline; do not wait to be asked to parallelize.'
+          + ` For relatively large tasks, multi-phase projects, or complex sets of to-dos, spawn a ${toolName} `
+          + 'to research the codebase and author a comprehensive implementation plan before mutating code, '
+          + 'then record the plan with plan_write.'
           + (backgroundEnabled && continuable
             ? ` Use ${toolName} in the background by default: start the independent delegations together and `
               + 'continue useful work while they run. Set `run_in_background: false` only when your next action '

@@ -29,6 +29,10 @@ const toolsField = {
 export interface GatePolicyCardState extends CardShell {
   enabled: CardFieldState
   tools: CardFieldState
+  /** Whether the gate is on (the effective stored value). */
+  enabledOn: boolean
+  /** The effective gated-tools list. */
+  toolsList: string[]
 }
 
 /** Card face the slot registration injects. */
@@ -59,10 +63,14 @@ export class GatePolicyCardController {
   }
 
   private projection(): GatePolicyCardState {
+    const enabled = this.form.field('enabled')
+    const tools = this.form.field('tools')
     return {
       ...this.form.shell(),
-      enabled: this.form.field('enabled'),
-      tools: this.form.field('tools'),
+      enabled,
+      tools,
+      enabledOn: enabled.text === 'true',
+      toolsList: tools.text.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0),
     }
   }
 

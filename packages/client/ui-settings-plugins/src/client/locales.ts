@@ -11,6 +11,7 @@ export type PluginsSettingsLocaleKey =
   | 'webSearchTitle' | 'webSearchDescription'
   | 'gatePolicyTitle' | 'gatePolicyDescription'
   | 'gatePolicyEnabled' | 'gatePolicyEnabledHint' | 'gatePolicyTools' | 'gatePolicyToolsHint'
+  | 'gatePolicyToolsEmpty' | 'gatePolicyAddTool'
   | 'webSearchApiKey' | 'webSearchApiKeyHint' | 'webSearchApiKeySet' | 'webSearchApiKeyUnset'
   | 'webSearchBaseUrl' | 'webSearchBaseUrlHint' | 'webSearchMaxUses' | 'webSearchMaxUsesHint'
   | 'contextTitle' | 'contextDescription' | 'contextEndpoint' | 'contextEndpointHint' | 'contextApiKey' | 'contextApiKeyHint'
@@ -57,6 +58,8 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   gatePolicyEnabledHint: "Write 'true' or 'false' — gated tools are denied until a todo plan exists.",
   gatePolicyTools: 'Gated tools',
   gatePolicyToolsHint: 'Comma-separated tool names (e.g. bash, edit, write).',
+  gatePolicyToolsEmpty: 'No tools gated — the plan gate is idle.',
+  gatePolicyAddTool: 'Add tool…',
   webSearchApiKey: 'API key',
   webSearchApiKeyHint: 'Stored outside the settings file. Leave blank to keep the current key.',
   webSearchApiKeySet: 'A key is configured.',
@@ -125,6 +128,8 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   gatePolicyEnabledHint: "输入 'true' 或 'false'——在存在待办计划前，受控工具将被拒绝。",
   gatePolicyTools: '受控工具',
   gatePolicyToolsHint: '逗号分隔的工具名（如 bash, edit, write）。',
+  gatePolicyToolsEmpty: '未选择任何受控工具——计划门控处于空闲状态。',
+  gatePolicyAddTool: '添加工具…',
   webSearchApiKey: 'API Key',
   webSearchApiKeyHint: '不写入设置文件。留空表示保持当前密钥。',
   webSearchApiKeySet: '已配置密钥。',
