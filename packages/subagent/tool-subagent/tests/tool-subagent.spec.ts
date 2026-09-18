@@ -305,6 +305,14 @@ describe('dsh-tool-subagent', () => {
       .toEqual({ model: 'call-model' })
     // Blank strings never route.
     expect(tool.resolveChildModelRoute({ defaultModel: '  ', bySession: { s1: '' } }, 's1', '  ', undefined)).toBeUndefined()
+    // `auto` consults the model-intel resolver with the task text; an
+    // unresolved auto (no datasheet hit) falls through to inheritance.
+    expect(tool.resolveChildModelRoute({ defaultModel: 'auto', bySession: {} }, 's1', undefined, undefined, 'fix the bug', () => ({ provider: 'zai', model: 'glm-5.3' })))
+      .toEqual({ provider: 'zai', model: 'glm-5.3' })
+    expect(tool.resolveChildModelRoute({ defaultModel: 'auto', bySession: {} }, 's1', undefined, undefined, 'fix the bug')).toBeUndefined()
+    // The call's own model still outranks `auto`.
+    expect(tool.resolveChildModelRoute({ defaultModel: 'auto', bySession: {} }, 's1', 'mine/model', undefined, 'fix the bug', () => ({ provider: 'zai', model: 'x' })))
+      .toEqual({ provider: 'mine', model: 'model' })
   })
 
   it('defaults toolName and omits agentOptions when apply() is called directly (schema bypass)', async () => {

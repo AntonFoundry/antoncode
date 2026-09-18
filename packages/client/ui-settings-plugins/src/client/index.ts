@@ -75,17 +75,22 @@ export function apply(ctx: ClientContext): void {
   const c0ntext = new C0ntextCardController(
     ctx.settingsScope.bind({ namespace: CONTEXT_NS }),
     async () => {
+      // `auto` sits above the catalog: the model-intel datasheet picks the
+      // route per delegation, skipping providers without a usable key.
+      const routes: { id: string; label: string }[] = [
+        { id: 'auto', label: 'Auto · researched per task' },
+      ]
       const list = ctx.sessions.list.getSnapshot()
       const source = list.current ?? list.ids[0]
-      if (source === undefined) return []
+      if (source === undefined) return routes
       const { result } = await api.sessions.models({ sessionId: source })
-      if (!result.ok) return []
+      if (!result.ok) return routes
       const value = result.value as { groups?: readonly { id: string; name: string; models?: readonly { id: string; name?: string }[] }[] }
-      return (value.groups ?? []).flatMap(group =>
+      return [...routes, ...(value.groups ?? []).flatMap(group =>
         (group.models ?? []).map(model => ({
           id: `${group.id}/${model.id}`,
           label: `${group.name} · ${model.name ?? model.id}`,
-        })))
+        })))]
     },
   )
   // The model dropdown's catalog comes from any live session's advisory
@@ -94,17 +99,22 @@ export function apply(ctx: ClientContext): void {
   const subagentModel = new SubagentModelCardController(
     ctx.settingsScope.bind({ namespace: SUBAGENT_MODEL_NS }),
     async () => {
+      // `auto` sits above the catalog: the model-intel datasheet picks the
+      // route per delegation, skipping providers without a usable key.
+      const routes: { id: string; label: string }[] = [
+        { id: 'auto', label: 'Auto · researched per task' },
+      ]
       const list = ctx.sessions.list.getSnapshot()
       const source = list.current ?? list.ids[0]
-      if (source === undefined) return []
+      if (source === undefined) return routes
       const { result } = await api.sessions.models({ sessionId: source })
-      if (!result.ok) return []
+      if (!result.ok) return routes
       const value = result.value as { groups?: readonly { id: string; name: string; models?: readonly { id: string; name?: string }[] }[] }
-      return (value.groups ?? []).flatMap(group =>
+      return [...routes, ...(value.groups ?? []).flatMap(group =>
         (group.models ?? []).map(model => ({
           id: `${group.id}/${model.id}`,
           label: `${group.name} · ${model.name ?? model.id}`,
-        })))
+        })))]
     },
   )
 
