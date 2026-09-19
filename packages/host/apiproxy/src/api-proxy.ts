@@ -3548,14 +3548,18 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     },
     term: {
       async spawn(request) {
-        const { cols = 80, rows = 24 } = request.payload
+        const { cols = 80, rows = 24, cwd } = request.payload
         try {
           // Lazy require: the native binary exists only in the host runtime,
           // and this module also loads in browser-facing type graphs.
-          const [{ spawn: ptySpawn }, os] = await Promise.all([
+          const [{ spawn: ptySpawn }, os, { existsSync }] = await Promise.all([
             import('node-pty'),
             import('node:os'),
+            import('node:fs'),
           ])
+          const targetCwd = (cwd !== undefined && typeof cwd === 'string' && existsSync(cwd))
+            ? cwd
+            : existsSync(process.cwd()) ? process.cwd() : os.homedir()
           termSeq += 1
           const sessionId = `term-${termSeq}-${randomUUID().slice(0, 8)}`
           const session: PtySession = {
@@ -3563,7 +3567,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
               name: 'xterm-256color',
               cols,
               rows,
-              cwd: os.homedir(),
+              cwd: targetCwd,
               env: { ...process.env, TERM: 'xterm-256color' } as Record<string, string>,
             }),
             buffer: '',

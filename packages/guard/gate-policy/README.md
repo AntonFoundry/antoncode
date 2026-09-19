@@ -42,19 +42,23 @@ config: verdictsEnabled: true verdictsEndpoint: http://127.0.0.1:8090
 
 ### Todo-plan gate (opt-in)
 
-A second guard enforcing the plan-first discipline: while the calling session's log carries no `todo/write` event, the gated tools are denied with a teaching denial ("Call todo_write with your plan …, then retry"). Writing the plan re-opens the tools — `todo_write` itself is never gated — and any plan in the log satisfies the gate (the standing plan persists across turns). The session log is read through the same replay-pure backward scan the standing-plan section uses; a read failure fails OPEN, so the gate never breaks execution on its own failure.
+A second guard enforcing the plan-first discipline: while the calling session's log carries no `todo/write` event, the gated tools are denied with a teaching denial ("Call todo_write with your plan …, then retry"). Furthermore, when the todo tree contains `minTodosForImplementationPlan` (default `3`) or more items (counting top-level items and nested children), mutation tools are blocked until an implementation plan is recorded via `plan_write` or an approved `exit_plan_mode`. This guides the model to delegate reconnaissance and plan drafting to a subagent (`subagent`), write the plan markdown, and link `implementation_plan.md` before modifying files on multi-step projects. `todo_write`, `plan_write`, and `subagent` are never gated. The session log is read through the same replay-pure backward scan the standing-plan section uses; a read failure fails OPEN, so the gate never breaks execution on its own failure.
 
 ```yaml
 config:
   todoPlanGate:
     enabled: true                      # default false
     tools: [bash, edit, write, multiedit]  # default; *-wildcard patterns
+    requireImplementationPlan: true    # default true
+    minTodosForImplementationPlan: 3   # default 3
 ```
 
 | Field | Meaning |
 |---|---|
 | `enabled` | Defaults to `false` — opt-in, never shipped on. |
-| `tools` | `*`-wildcard patterns over the tool name; default the write-side tools. `todo_write` is always exempt. |
+| `tools` | `*`-wildcard patterns over the tool name; default the write-side tools. `todo_write`, `plan_write`, and `subagent` are always exempt. |
+| `requireImplementationPlan` | Require an implementation plan when the todo tree is large; default `true`. |
+| `minTodosForImplementationPlan` | Total todos threshold to require an implementation plan; default `3`. |
 
 Misconfiguration fails loud at plugin load: an invalid regex, an empty rule name, or an empty checklist throws. A call without a string `command` argument never matches — gates key on shell command text, not argument shapes.
 

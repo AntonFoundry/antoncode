@@ -37,6 +37,12 @@ export const DETAILS_MIN = 300
 export const DETAILS_MAX = 900
 /** Details width before any user drag. */
 export const DETAILS_DEFAULT = 640
+/** Context sidebar drag clamp floor (allows manual shrink). */
+export const CONTEXT_MIN = 300
+/** Context sidebar drag clamp ceiling. */
+export const CONTEXT_MAX = 864
+/** Context sidebar natural width before any user drag (552px, increased by 20%). */
+export const CONTEXT_DEFAULT = 552
 
 /**
  * Clamp a panel width into its contract range.

@@ -17,7 +17,7 @@ export interface TermApi {
    * @param request - initialcols/rows shape the first prompt layout.
    * @returns the new session's id.
    */
-  spawn(request: RpcRequest<{ cols?: number; rows?: number }>): Promise<RpcResponse<{ sessionId: string }>>
+  spawn(request: RpcRequest<{ cols?: number; rows?: number; cwd?: string }>): Promise<RpcResponse<{ sessionId: string }>>
 
   /**
    * Advance the output cursor.

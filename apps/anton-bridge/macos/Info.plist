@@ -23,5 +23,11 @@
   <dict>
     <key>NSAllowsLocalNetworking</key><true/>
   </dict>
+  <key>NSDesktopFolderUsageDescription</key>
+  <string>Anton needs access to files on your Desktop when running workspace commands.</string>
+  <key>NSDocumentsFolderUsageDescription</key>
+  <string>Anton needs access to files in your Documents when running workspace commands.</string>
+  <key>NSDownloadsFolderUsageDescription</key>
+  <string>Anton needs access to files in your Downloads when running workspace commands.</string>
 </dict>
 </plist>

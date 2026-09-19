@@ -17,8 +17,8 @@ import css from './TerminalView.module.css'
 
 /** Term faces injected by the plugin's apply (over the `term` RPC domain). */
 export interface TerminalViewProps {
-  /** Spawn a login shell at the given size; resolves the session id. */
-  spawn(cols: number, rows: number): Promise<{ sessionId: string }>
+  /** Spawn a login shell at the given size and optional directory; resolves the session id. */
+  spawn(cols: number, rows: number, cwd?: string): Promise<{ sessionId: string }>
   /** Read the output tail past the client's cursor. */
   read(sessionId: string, since: number): Promise<{ data: string; next: number; exited: boolean }>
   /** Write raw keystrokes to the shell. */
@@ -31,6 +31,10 @@ export interface TerminalViewProps {
   themeTokens(): Record<string, string>
   /** The buffer's PTY session id; a missing id spawns a fresh session. */
   sessionId?: string | undefined
+  /** Notifies the window manager when a new session is spawned for this buffer. */
+  onSessionCreated?: ((sessionId: string) => void) | undefined
+  /** Preferred initial working directory for newly spawned shells. */
+  workspacePath?: string | undefined
   /** Broadcast-store read hook (bound from the hooks compartment). */
   useBroadcast: SnapshotSelectorHook<BroadcastState>
   /** Broadcast-store write face (the single instance's bound actions). */
@@ -63,6 +67,7 @@ export function TerminalView(props: TerminalViewProps) {
 
     let disposed = false
     let since = 0
+    let exitWritten = false
     let poll: number | undefined
     let liveSession = props.sessionId
 
@@ -126,10 +131,33 @@ export function TerminalView(props: TerminalViewProps) {
       if (disposed) return
 
       if (liveSession === undefined) {
-        const spawned = await faces.spawn(term.cols, term.rows)
+        const spawned = await faces.spawn(term.cols, term.rows, faces.workspacePath)
         mark('spawned')
-        if (disposed) { void facesRef.current.dispose(spawned.sessionId); return }
+        if (disposed) return
         liveSession = spawned.sessionId
+        faces.onSessionCreated?.(liveSession)
+      } else {
+        mark('reconnecting')
+        try {
+          const replay = await faces.read(liveSession, 0)
+          if (disposed) return
+          if (replay.data.length > 0) {
+            term.write(replay.data)
+            since = replay.next
+          }
+          if (replay.exited) {
+            exitWritten = true
+            term.write('\r\n\x1b[90m[process exited — press Enter to restart, or C-x 0 to close]\x1b[0m')
+          }
+        } catch {
+          // Session unavailable or server restarted: fall back to fresh spawn.
+          if (disposed) return
+          const spawned = await faces.spawn(term.cols, term.rows, faces.workspacePath)
+          mark('spawned-fallback')
+          if (disposed) return
+          liveSession = spawned.sessionId
+          faces.onSessionCreated?.(liveSession)
+        }
       }
 
       // Resize the PTY only when the grid actually changed: every SIGWINCH
@@ -147,6 +175,20 @@ export function TerminalView(props: TerminalViewProps) {
       }
       term.onData((data) => {
         if (liveSession === undefined) return
+        if (exitWritten) {
+          if (data === '\r' || data === '\n') {
+            term.reset()
+            exitWritten = false
+            void facesRef.current.spawn(term.cols, term.rows, facesRef.current.workspacePath).then((spawned) => {
+              if (disposed) return
+              liveSession = spawned.sessionId
+              since = 0
+              facesRef.current.onSessionCreated?.(liveSession)
+              facesRef.current.broadcastActions.join(liveSession)
+            })
+          }
+          return
+        }
         if (broadcastRef.current.on) {
           // Multi-cursor: echo the keystrokes into every joined terminal.
           for (const sid of broadcastRef.current.sessions) {
@@ -168,7 +210,6 @@ export function TerminalView(props: TerminalViewProps) {
       })
       ro.observe(host)
 
-      let exitWritten = false
       // Single-flight: a read that outlives its tick must not overlap the
       // next one — two in-flight reads share the same cursor and both write
       // the same tail, double-printing the prompt (the startup chevron
@@ -177,7 +218,7 @@ export function TerminalView(props: TerminalViewProps) {
       poll = window.setInterval(() => {
         if (disposed || exitWritten || reading || liveSession === undefined) return
         reading = true
-        void facesRef.current.read(liveSession, since).then((result) => {
+        void facesRef.current.read(liveSession, since).then((result: { data: string; next: number; exited: boolean }) => {
           reading = false
           if (disposed || exitWritten) return
           if (result.data.length > 0) {
@@ -189,7 +230,7 @@ export function TerminalView(props: TerminalViewProps) {
             // so every later read would just re-report the exit.
             exitWritten = true
             if (poll !== undefined) window.clearInterval(poll)
-            term.write('\r\n\x1b[90m[process exited — close the window or C-x t for a new shell]\x1b[0m')
+            term.write('\r\n\x1b[90m[process exited — press Enter to restart, or C-x 0 to close]\x1b[0m')
           }
         }, () => { reading = false })
       }, 60)
@@ -199,7 +240,6 @@ export function TerminalView(props: TerminalViewProps) {
       disposed = true
       if (poll !== undefined) window.clearInterval(poll)
       facesRef.current.broadcastActions.leave(props.sessionId ?? liveSession ?? '')
-      void facesRef.current.dispose(props.sessionId ?? '')
       host.innerHTML = ''
     }
     // One lifecycle per buffer session identity.

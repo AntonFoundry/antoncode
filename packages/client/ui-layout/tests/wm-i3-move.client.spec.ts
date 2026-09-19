@@ -167,4 +167,96 @@ describe('i3 directional move', () => {
     const split = toggleTabbed(tabbed, 'a')
     expect(split.kind === 'split' && split.tabbed === true).toBe(false)
   })
+
+  it('stacks a window vertically (down/up) from a flat row, and supports repeated stack/unstack cycles', () => {
+    // 4-pane row: sidebar | chat | context | terminal
+    const fourPaneRow: WmNode = {
+      kind: 'split',
+      id: 'wm:root',
+      dir: 'row',
+      weights: [0.2, 0.4, 0.2, 0.2],
+      children: [
+        { kind: 'leaf', id: 'sidebar', buffer: 'sidebar' },
+        { kind: 'leaf', id: 'chat', buffer: 'conversation' },
+        { kind: 'leaf', id: 'context', buffer: 'details' },
+        { kind: 'leaf', id: 'terminal', buffer: 'terminal' },
+      ],
+    }
+
+    // 1. Move terminal down: stacks vertically under context
+    const stackedDown = moveLeaf(fourPaneRow, 'terminal', 'down')
+    expect(stackedDown.kind).toBe('split')
+    if (stackedDown.kind === 'split') {
+      expect(stackedDown.children.length).toBe(3)
+      const lastChild = stackedDown.children[2]
+      expect(lastChild?.kind).toBe('split')
+      if (lastChild?.kind === 'split') {
+        expect(lastChild.dir).toBe('column')
+        expect(lastChild.children.map(c => c.id)).toEqual(['context', 'terminal'])
+      }
+    }
+
+    // 2. Inside the vertical stack, move terminal up: swaps with context
+    const swappedUp = moveLeaf(stackedDown, 'terminal', 'up')
+    if (swappedUp.kind === 'split') {
+      const lastChild = swappedUp.children[2]
+      if (lastChild?.kind === 'split') {
+        expect(lastChild.dir).toBe('column')
+        expect(lastChild.children.map(c => c.id)).toEqual(['terminal', 'context'])
+      }
+    }
+
+    // 3. Move terminal out to the right: un-stacks back into the 4-pane row
+    const unstacked = moveLeaf(stackedDown, 'terminal', 'right')
+    expect(unstacked.kind).toBe('split')
+    if (unstacked.kind === 'split') {
+      expect(unstacked.dir).toBe('row')
+      expect(unstacked.children.map(c => c.id)).toEqual(['sidebar', 'chat', 'context', 'terminal'])
+    }
+
+    // 4. From the unstacked row, move terminal down AGAIN: stacks vertically under context again!
+    const restacked = moveLeaf(unstacked, 'terminal', 'down')
+    if (restacked.kind === 'split') {
+      expect(restacked.children.length).toBe(3)
+      const lastChild = restacked.children[2]
+      if (lastChild?.kind === 'split') {
+        expect(lastChild.dir).toBe('column')
+        expect(lastChild.children.map(c => c.id)).toEqual(['context', 'terminal'])
+      }
+    }
+
+    // 5. Unstack leftward (between chat and context) and re-stack
+    const unstackedLeft = moveLeaf(stackedDown, 'terminal', 'left')
+    if (unstackedLeft.kind === 'split') {
+      expect(unstackedLeft.dir).toBe('row')
+      expect(unstackedLeft.children.map(c => c.id)).toEqual(['sidebar', 'chat', 'terminal', 'context'])
+    }
+  })
+
+  it('stacks a 2-window flat row vertically into a column split', () => {
+    const flat: WmNode = {
+      kind: 'split',
+      id: 'wm:root',
+      dir: 'row',
+      weights: [0.5, 0.5],
+      children: [
+        { kind: 'leaf', id: 'a', buffer: 'scratch' },
+        { kind: 'leaf', id: 'b', buffer: 'terminal' },
+      ],
+    }
+    // Move b down: stacks under a
+    const col = moveLeaf(flat, 'b', 'down')
+    expect(col.kind).toBe('split')
+    if (col.kind === 'split') {
+      expect(col.dir).toBe('column')
+      expect(col.children.map(c => c.id)).toEqual(['a', 'b'])
+    }
+
+    // Move b up inside the column: swaps with a
+    const swapped = moveLeaf(col, 'b', 'up')
+    if (swapped.kind === 'split') {
+      expect(swapped.dir).toBe('column')
+      expect(swapped.children.map(c => c.id)).toEqual(['b', 'a'])
+    }
+  })
 })

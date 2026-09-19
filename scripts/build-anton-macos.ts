@@ -159,9 +159,9 @@ if (!existsSync(bundledPluginManifest)) {
 }
 assertLibOnlyHarnessBundle()
 
-run(['codesign', '--force', '--sign', '-', join(resources, 'bin', 'anton-bridge')])
-run(['codesign', '--force', '--sign', '-', join(resources, 'node', 'bin', 'node')])
-run(['codesign', '--force', '--sign', '-', appRoot])
+run(['codesign', '--force', '--sign', '-', '-i', 'dev.antoncode.anton.bridge', '-r=designated => identifier "dev.antoncode.anton.bridge"', join(resources, 'bin', 'anton-bridge')])
+run(['codesign', '--force', '--sign', '-', '-i', 'dev.antoncode.anton.node', '-r=designated => identifier "dev.antoncode.anton.node"', join(resources, 'node', 'bin', 'node')])
+run(['codesign', '--force', '--sign', '-', '-i', 'dev.antoncode.anton', '-r=designated => identifier "dev.antoncode.anton"', appRoot])
 
 console.log(`Built ${appRoot}`)
 console.log(`Size: use du -sh ${appRoot}`)

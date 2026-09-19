@@ -442,12 +442,22 @@ export function apply(ctx: Context): void {
             })
         },
         deleteViaFork: (seqs) => {
+          const source = sessions.list.getSnapshot().byId[sessionId]
+          const sourceTitle = source?.title ?? source?.displayTitle
           void sessions.forkExcluding({ sessionId, excludeSeqs: seqs })
-            .then((childId) => { sessions.open(childId) })
+            .then(async (childId) => {
+              const child = sessions.binding(childId)?.session
+              if (sourceTitle !== undefined && child !== undefined) {
+                const renamed = await child.rename(sourceTitle)
+                if (!renamed.ok) throw new Error(renamed.error.message)
+              }
+              await ctx.workspaces.archiveSession(sessionId)
+              sessions.open(childId)
+            })
             .catch((error: unknown) => {
-              // Keep the current session usable; the host error surface stays
-              // the dialog's error slot, so a console-level record is enough.
-              console.warn('ui-conversation: delete-via-fork failed', error)
+              // Keep the current session usable when replacement preparation
+              // fails. A child already created remains recoverable in the list.
+              console.warn('ui-conversation: message deletion failed', error)
             })
         },
       }

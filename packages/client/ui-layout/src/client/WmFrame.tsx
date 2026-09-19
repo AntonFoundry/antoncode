@@ -30,7 +30,10 @@ import type { PropsRenderSlots, PropsRuntime, PropsStore, SnapshotSelectorHook }
 import type { DirectoryListing } from '@deepseek-ai/dsh-api-remotes/client'
 import { BrandWordmark, IconCloseOutline16, IconPanelLeftOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SidebarOwnerProps } from './index.ts'
-import { clampWidth, DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN } from './columns.ts'
+import {
+  clampWidth, CONTEXT_DEFAULT, CONTEXT_MAX, CONTEXT_MIN,
+  DETAILS_DEFAULT, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN,
+} from './columns.ts'
 
 /** Untouched-preference sidebar share of the frame width (committed baseline). */
 const SIDEBAR_SHARE = 0.18
@@ -49,6 +52,7 @@ import {
   SINGLETON_BUFFERS, SCRATCH_BUFFER_ID, WM_LEAF_DETAILS, WM_LEAF_SIDEBAR, bufferRoster, bufferTitle, canClose, defaultTree,
   isSingletonBuffer,
   ensureBuffer, findBuffer, findLeaf, findSplit, firstLeafId, focusDirection, lastLeafId, moveLeafTabbed, normalizeTree,
+  tabNeighborLeaf,
   SIDEBAR_REATTACH_WEIGHT,
   toggleTabbed,
   type WmDir,
@@ -119,6 +123,8 @@ export interface WmFrameInjected {
   listDirectory: (path?: string, opts?: { includeFiles?: boolean }, signal?: AbortSignal) => Promise<DirectoryListing>
   /** Open a path with the host OS default application. */
   openPath: (path: string) => Promise<void>
+  /** Dispose one background terminal PTY session when its buffer is killed. */
+  disposeTerminalSession?: (sessionId: string) => Promise<void>
 }
 
 /** Full composed props: runtime share + child-slot render share + store share + injected wm face. */
@@ -137,22 +143,6 @@ function freshId(prefix: string): string {
 const freshLeafId = (): string => freshId('wm:leaf')
 const freshFilesBuffer = (): WmBuffer => ({ id: freshId('buffer:files'), kind: 'files' })
 
-/** Minimum px size of one child subtree of a split (spec: sidebar 200, rest 240). */
-function minPxOf(node: WmNode): number {
-  return node.kind === 'leaf' && node.buffer === 'sidebar' ? SIDEBAR_PANE_MIN : PANE_MIN
-}
-
-/**
- * Whether one split child is the HOME sidebar pane: the canonical sidebar
- * leaf (`WM_LEAF_SIDEBAR`, the id the shipped tree and every re-attach path
- * use) in its home orientation — a child of a ROW split. Only that pane is
- * pinned to the column width preference; any other window showing the
- * workspace buffer (a column-split placement, a leaf that switched to it via
- * C-x b) is a normal weighted window whose buffer must fill it.
- * @param child - one split child subtree.
- * @param dir - the parent split's orientation.
- * @returns true when the child is the pinned home sidebar pane.
- */
 /** Agent-board viewing preferences persisted per workspace. */
 interface BoardPrefs {
   /** Pane order within a section: newest first, or active panes first. */
@@ -165,22 +155,48 @@ interface BoardPrefs {
   workspace?: string | undefined
 }
 
-function isHomeSidebar(child: WmNode, dir: WmDirection): boolean {
-  return child.kind === 'leaf' && child.id === WM_LEAF_SIDEBAR && child.buffer === 'sidebar' && dir === 'row'
+/** Minimum px size of one child subtree of a split (spec: sidebar 200, rest 240). */
+function minPxOf(node: WmNode): number {
+  return (node.kind === 'leaf' && (node.buffer === 'sidebar' || node.buffer === 'details')) ||
+    (node.kind === 'split' && (hasLeafBuffer(node, 'sidebar') || hasLeafBuffer(node, 'details')))
+    ? SIDEBAR_PANE_MIN
+    : PANE_MIN
+}
+
+/** Whether a subtree contains any leaf displaying the given buffer. */
+function hasLeafBuffer(node: WmNode, buffer: WmBufferKind): boolean {
+  if (node.kind === 'leaf') return node.buffer === buffer
+  return node.children.some(child => hasLeafBuffer(child, buffer))
 }
 
 /**
- * Whether one split child is the HOME context pane: the canonical details leaf
- * (`WM_LEAF_DETAILS`) showing the context buffer in a ROW split — the right
- * sidebar's mirror image. Only that pane is pinned to the details width
- * preference; a context buffer shown in any other window is a normal weighted
- * pane.
- * @param child - one split child subtree.
- * @param dir - the parent split's orientation.
- * @returns true when the child is the pinned home context pane.
+ * Whether one split child represents the workspace sidebar in a row split:
+ * either a standalone leaf displaying the sidebar buffer, or a column-split
+ * container containing the sidebar alongside stacked tools (but not conversation).
  */
-function isHomeContext(child: WmNode, dir: WmDirection): boolean {
-  return child.kind === 'leaf' && child.id === WM_LEAF_DETAILS && child.buffer === 'details' && dir === 'row'
+function isSidebarPane(child: WmNode, dir: WmDirection): boolean {
+  if (dir !== 'row') return false
+  if (child.kind === 'leaf') return child.buffer === 'sidebar'
+  return child.dir === 'column' && hasLeafBuffer(child, 'sidebar') && !hasLeafBuffer(child, 'conversation')
+}
+
+/**
+ * Whether one split child represents the c0ntext sidebar in a row split:
+ * either a standalone leaf displaying the details (Context) buffer, or a column-split
+ * container containing Context alongside stacked tools (like terminal, but not conversation).
+ */
+function isContextPane(child: WmNode, dir: WmDirection): boolean {
+  if (dir !== 'row') return false
+  if (child.kind === 'leaf') return child.buffer === 'details'
+  return child.dir === 'column' && hasLeafBuffer(child, 'details') && !hasLeafBuffer(child, 'conversation')
+}
+
+/** Determine the sidebar kind of a child in a row split, if any. */
+function paneSidebarKind(child: WmNode, dir: WmDirection): 'sidebar' | 'context' | undefined {
+  if (dir !== 'row') return undefined
+  if (isSidebarPane(child, dir)) return 'sidebar'
+  if (isContextPane(child, dir)) return 'context'
+  return undefined
 }
 
 /** Directional move icon: a chevron pointing at the travel direction. */
@@ -350,6 +366,8 @@ interface NodeRenderProps {
   onTidy: () => void
   onSash: (splitId: string, base: SashDragBase) => void
   onDragging: (dragging: boolean) => void
+  workspacePath?: string | undefined
+  onTerminalSessionCreated?: (bufferId: string, sessionId: string) => void
 }
 
 /** Frozen gesture base for one sash drag (adjacent weights + split size). */
@@ -374,7 +392,7 @@ interface SashDragBase {
 function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf' }> }) {
   const {
     node, tree, focusedId, buffers, renderSlot, sidebarOwner, scratch, files, readTextFile,
-    onFocus, onSplit, onClose, onMove, onToggleExpand, expanded, onTidy,
+    onFocus, onSplit, onClose, onMove, onToggleExpand, expanded, onTidy, workspacePath, onTerminalSessionCreated,
   } = props
   const buffer = findBuffer(buffers, node.buffer)
   // A leaf referencing a registry gap falls back by id so a hand-edited or
@@ -399,7 +417,11 @@ function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf
       : bufferKind === 'file'
         ? <FileViewer path={buffer?.path ?? node.buffer} readText={readTextFile} />
         : bufferKind === 'terminal'
-          ? renderSlot('terminal.view', { sessionId: findBuffer(buffers, node.buffer)?.sessionId })
+          ? renderSlot('terminal.view', {
+            sessionId: buffer?.sessionId,
+            workspacePath,
+            onSessionCreated: (sessionId) => { onTerminalSessionCreated?.(node.buffer, sessionId) },
+          })
           : bufferKind === 'settings'
             ? renderSlot('settings.view', {})
             : renderSlot(bufferKind as 'sidebar' | 'conversation' | 'details', owner)
@@ -546,18 +568,29 @@ function NodeView(props: NodeRenderProps & { node: WmNode }) {
       </div>
     )
   }
-  // Fill guarantee, link 2: flex-grow factors below one distribute only that
-  // fraction of the free space (the sub-one flex-factors rule), so a split
-  // whose pinned home sidebar carries grow 0 would leave (1 - Σgrow) of its
-  // width as dead space. The unpinned children's weights are therefore
-  // renormalized over the split's unpinned weight total, keeping Σgrow at
-  // exactly 1 whatever the stored weight ratios.
-  // Pinned home panes: the sidebar column (left) and the context column
-  // (right) are fixed-width preference panes; every other window carries the
-  // renormalized split weight (see the fill-guarantee note below).
-  const pinned: ('sidebar' | 'context' | undefined)[] = node.children.map(child =>
-    isHomeSidebar(child, node.dir) ? 'sidebar' : isHomeContext(child, node.dir) ? 'context' : undefined,
-  )
+  // Fill guarantee: unpinned children's weights are renormalized over the
+  // split's unpinned weight total, keeping Σgrow at exactly 1 whatever the
+  // stored weight ratios.
+  // Pinned panes: workspace sidebar (left) and c0ntext sidebar (right) are
+  // restricted to fixed sidebar sizes when content windows (conversation,
+  // terminal, etc.) exist, allowing content windows to expand.
+  // When no content windows exist, panes can expand fully to fill the frame.
+  const hasContentWindows = node.children.some(child => paneSidebarKind(child, node.dir) === undefined)
+  const pinned: ('sidebar' | 'context' | undefined)[] = node.children.map((child) => {
+    const kind = paneSidebarKind(child, node.dir)
+    if (kind === undefined) return undefined
+    // When content windows exist (chat, etc.), sidebars restrict to their fixed size so content can expand.
+    if (hasContentWindows) return kind
+    // When no content windows exist ("if nothing else exist in the windows"):
+    // A single remaining pane expands fully.
+    if (node.children.length === 1) return undefined
+    // When both workspace sidebar and context sidebar exist with no content:
+    // the workspace sidebar stays at its fixed rail, while context expands fully.
+    if (kind === 'sidebar' && node.children.some(c => paneSidebarKind(c, node.dir) === 'context')) {
+      return 'sidebar'
+    }
+    return undefined
+  })
   const pinnedWidth = (kind: 'sidebar' | 'context'): number =>
     kind === 'sidebar' ? props.sidebarOwner.width : props.contextWidth
   const pinAt = (index: number): { index: number; width: number; kind: 'sidebar' | 'context' } | undefined => {
@@ -691,6 +724,7 @@ export function WmFrame({
   readTextFile,
   listDirectory,
   openPath,
+  disposeTerminalSession,
 }: WmFrameProps) {
   const panels = useStore(s => s)
   const wmSnapshot = useWm(s => s)
@@ -867,11 +901,15 @@ export function WmFrame({
 
   /** Kill a buffer through the registry op and publish both halves. */
   const killBufferById = useCallback((bufferId: string) => {
+    const buf = findBuffer(buffers, bufferId)
+    if (buf?.kind === 'terminal' && buf.sessionId !== undefined) {
+      void disposeTerminalSession?.(buf.sessionId)
+    }
     const result = killBuffer({ buffers, tree: treeRef.current }, bufferId)
     setBuffers(result.buffers)
     setTree(result.tree)
     notify(`Killed ${bufferId}`)
-  }, [buffers, notify, setBuffers, setTree])
+  }, [buffers, disposeTerminalSession, notify, setBuffers, setTree])
 
   /** Open a files buffer beside the focused leaf (one listing per buffer). */
   const openFilesBuffer = useCallback((target: string | undefined) => {
@@ -939,8 +977,10 @@ export function WmFrame({
 
   const onTidy = useCallback(() => {
     writeTree(tidyTree(treeRef.current))
+    actions.setDetails(CONTEXT_DEFAULT)
+    setSidebarWidth(SIDEBAR_DEFAULT)
     notify('Tidied panes')
-  }, [notify, writeTree])
+  }, [actions, notify, setSidebarWidth, writeTree])
 
   // Tabbed-container toggle (⌘⇧E, i3 $mod+e): the focused leaf's nearest
   // multi-child ancestor flips between a tabbed group and a side-by-side /
@@ -986,7 +1026,7 @@ export function WmFrame({
       const grown = base.sidebar.index === base.index
       const next = base.sidebar.width + (grown ? base.delta : -base.delta)
       if (base.sidebar.kind === 'context') {
-        actions.setDetails(clampWidth(Math.round(next), DETAILS_MIN, DETAILS_MAX))
+        actions.setDetails(clampWidth(Math.round(next), CONTEXT_MIN, CONTEXT_MAX))
         return
       }
       setSidebarWidth(clampWidth(Math.round(next), SIDEBAR_MIN, SIDEBAR_MAX))
@@ -1107,6 +1147,15 @@ export function WmFrame({
     if (current === undefined) return undefined
     return workspaceSnapshot.items.find(w => w.sessionIds.includes(current))?.workspaceId
   }, [workspaceSnapshot.items, sessionsListSnapshot.current])
+
+  const activeWorkspacePath = useMemo(() => {
+    const ws = activeWorkspaceId
+    return workspaceSnapshot.items.find(w => w.workspaceId === ws)?.path ?? workspaceSnapshot.items[0]?.path
+  }, [activeWorkspaceId, workspaceSnapshot.items])
+
+  const onTerminalSessionCreated = useCallback((bufferId: string, sessionId: string) => {
+    setBuffers(buffersRef.current.map(b => b.id === bufferId ? { ...b, sessionId } : b))
+  }, [setBuffers])
 
   // Per-workspace arrangements: the window tree (and viewing mode) are
   // workspace facts. Three persistence semantics, all keyed by workspace:
@@ -1446,6 +1495,8 @@ export function WmFrame({
       }
       case 'tidy-panes': {
         writeTree(tidyTree(treeRef.current))
+        actions.setDetails(CONTEXT_DEFAULT)
+        setSidebarWidth(SIDEBAR_DEFAULT)
         notify('Tidied panes')
         return
       }
@@ -1477,6 +1528,13 @@ export function WmFrame({
         const id = focusRef.current ?? firstLeafId(treeRef.current)
         if (id === undefined) return
         const dir = command.slice('focus-'.length) as WmDir
+        // i3 tabbed-container focus: cycle the tab order within the stack
+        // first; at the container's edge fall through to geometric focus.
+        const tabNeighbor = tabNeighborLeaf(treeRef.current, id, dir)
+        if (tabNeighbor !== undefined) {
+          setFocus(tabNeighbor)
+          return
+        }
         const target = focusDirection(treeRef.current, id, dir)
         if (target !== undefined) setFocus(target)
         return
@@ -1630,14 +1688,19 @@ export function WmFrame({
     brandInFrame: true,
   }
 
-  // The pinned context column's px width: an untouched details preference
-  // (0 = never dragged) takes the contract default; a dragged preference is
-  // honored in px, re-clamped into [DETAILS_MIN, DETAILS_MAX].
-  const contextWidth = clampWidth(
-    panels.details === 0 ? DETAILS_DEFAULT : panels.details,
-    DETAILS_MIN,
-    DETAILS_MAX,
-  )
+  // The c0ntext sidebar column's px width: starts at CONTEXT_DEFAULT (natural content width 552px)
+  // so internal elements fit comfortably with extra breathing room and no horizontal scrollbar.
+  // A manually dragged preference is honored in px and clamped into [CONTEXT_MIN, CONTEXT_MAX].
+  const contextWidth =
+    panels.details === 0 ||
+    panels.details === DETAILS_DEFAULT ||
+    panels.details === SIDEBAR_DEFAULT ||
+    panels.details === SIDEBAR_MIN ||
+    panels.details === 384 ||
+    panels.details === 460 ||
+    panels.details === CONTEXT_DEFAULT
+      ? CONTEXT_DEFAULT
+      : clampWidth(panels.details, CONTEXT_MIN, CONTEXT_MAX)
 
   const filesShared: FilesBufferShared = {
     listDirectory,
@@ -1671,6 +1734,8 @@ export function WmFrame({
     onTidy,
     onSash,
     onDragging: setDragging,
+    workspacePath: activeWorkspacePath,
+    onTerminalSessionCreated,
   }
 
   return (

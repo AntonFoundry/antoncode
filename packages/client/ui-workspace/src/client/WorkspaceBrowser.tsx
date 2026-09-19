@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  Button, IconArchiveOutline20, IconCloseFill14, IconPersonalizationOutline16,
+  Button, IconArchiveOutline20, IconChecklistOutline14, IconCloseFill14, IconPersonalizationOutline16,
   IconProjectAddOutline16, IconSearchOutline16, Menu, Modal, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
@@ -243,6 +243,12 @@ type SessionTreeProps = Pick<
   onSessionRename: (sessionId: SessionNode['id'], currentTitle: string) => void
   /** Archive a session (row menu action; the row disappears on the state echo). */
   onSessionArchive: (sessionId: SessionNode['id']) => void
+  /** Selection mode active: session rows toggle membership instead of opening. */
+  selectionMode: boolean
+  /** Ids in the current multi-selection. */
+  selectedSessionIds: ReadonlySet<string>
+  /** Toggle one session's membership in the multi-selection. */
+  onToggleSessionSelected: (sessionId: SessionNode['id']) => void
   /** Session order behavior: fixed after edits, or additionally promoted by user activity. */
   orderBy: SessionOrderBy
 }
@@ -251,6 +257,7 @@ type SessionTreeProps = Pick<
 function SessionTree({
   useSessions, startSession, open, forkSession, workspaces, archivedSessionIds,
   onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive,
+  selectionMode, selectedSessionIds, onToggleSessionSelected,
   insertWorkspaceBefore, insertSessionBefore, orderBy,
   groupExpansion, setGroupExpanded,
   sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t,
@@ -528,6 +535,9 @@ function SessionTree({
               onRename={onSessionRename}
               onFork={forkSession}
               onArchive={onSessionArchive}
+              selectionMode={selectionMode}
+              selected={selectedSessionIds.has(node.id)}
+              onToggleSelect={onToggleSessionSelected}
               drag={dragProps}
               t={t}
             />
@@ -590,6 +600,7 @@ function SessionTree({
 /** The flat "In one list" body: every session is one draggable top-level row. */
 function FlatList({
   useSessions, open, forkSession, onSessionRename, onSessionArchive, archivedSessionIds,
+  selectionMode, selectedSessionIds, onToggleSessionSelected,
   orderBy, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, t,
 }: Pick<
   SessionTreeProps,
@@ -599,6 +610,9 @@ function FlatList({
   | 'onSessionRename'
   | 'onSessionArchive'
   | 'archivedSessionIds'
+  | 'selectionMode'
+  | 'selectedSessionIds'
+  | 'onToggleSessionSelected'
   | 'orderBy'
   | 'sessionOrderByAccount'
   | 'sessionUpdatedAtByAccount'
@@ -677,6 +691,9 @@ function FlatList({
               onRename={onSessionRename}
               onFork={forkSession}
               onArchive={onSessionArchive}
+              selectionMode={selectionMode}
+              selected={selectedSessionIds.has(node.id)}
+              onToggleSelect={onToggleSessionSelected}
               flat
               drag={{
                 start: () => {
@@ -982,6 +999,35 @@ export function WorkspaceBrowser({
     })
   }
 
+  // Multi-selection: rows toggle membership instead of opening while active,
+  // and one bulk-archive commit fans the row action across the selection. The
+  // selection is view state — it survives neither a mode exit nor a remount.
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedSessionIds, setSelectedSessionIds] = useState<ReadonlySet<string>>(new Set())
+  const exitSessionSelection = () => {
+    setSelectionMode(false)
+    setSelectedSessionIds(new Set())
+  }
+  const onToggleSessionSelected = (sessionId: SessionNode['id']) => {
+    setSelectedSessionIds((current) => {
+      const next = new Set(current)
+      if (next.has(sessionId)) next.delete(sessionId)
+      else next.add(sessionId)
+      return next
+    })
+  }
+  const [bulkArchiving, setBulkArchiving] = useState(false)
+  const archiveSelectedSessions = () => {
+    if (bulkArchiving || selectedSessionIds.size === 0) return
+    setBulkArchiving(true)
+    Promise.allSettled(
+      [...selectedSessionIds].map(id => archiveSession(id as SessionNode['id'])),
+    ).then(() => {
+      setBulkArchiving(false)
+      exitSessionSelection()
+    })
+  }
+
   // Delete dialog is separate from the row so a successful removal can
   // unmount that row without tearing down the in-flight confirmation state.
   const [deleteTarget, setDeleteTarget] = useState<{ workspaceId: WorkspaceId; title: string } | null>(null)
@@ -1084,13 +1130,26 @@ export function WorkspaceBrowser({
         )}
         <div className={clsx(css.headerActions, wide && searchExpanded && css.headerActionsHidden)}>
           {wide && (
-            <ViewOptionsMenu
-              groupBy={groupBy}
-              orderBy={orderBy}
-              onGroupPick={(mode) => { actions.setGroupBy(mode) }}
-              onOrderPick={(mode) => { actions.setOrderBy(mode) }}
-              t={t}
-            />
+            <>
+              <ViewOptionsMenu
+                groupBy={groupBy}
+                orderBy={orderBy}
+                onGroupPick={(mode) => { actions.setGroupBy(mode) }}
+                onOrderPick={(mode) => { actions.setOrderBy(mode) }}
+                t={t}
+              />
+              <Tooltip label={t('selection.toggle')} side="bottom" delayMs={500}>
+                <button
+                  type="button"
+                  className={css.iconButton}
+                  aria-label={t('selection.toggle')}
+                  aria-pressed={selectionMode}
+                  onClick={() => { if (selectionMode) exitSessionSelection(); else setSelectionMode(true) }}
+                >
+                  <IconChecklistOutline14 size={16} />
+                </button>
+              </Tooltip>
+            </>
           )}
           {/* Adding is the button's one action, so a composition with no
               picking affordance has nothing to offer here: the region hides the
@@ -1151,6 +1210,25 @@ export function WorkspaceBrowser({
       {/* Always-mounted seat keeps the region's flex slot while the list
           itself is wide-only. */}
       <div className={css.listArea}>
+        {wide && selectionMode && (
+          <div className={css.selectionBar} data-empty={selectedSessionIds.size === 0 || undefined}>
+            <span className={css.selectionCount}>{t('selection.selectedCount', { n: selectedSessionIds.size })}</span>
+            <span className={css.selectionActions}>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={selectedSessionIds.size === 0 || bulkArchiving}
+                icon={<IconArchiveOutline20 size={14} />}
+                onClick={archiveSelectedSessions}
+              >
+                {t('selection.archive')}
+              </Button>
+              <Button variant="outline" size="sm" onClick={exitSessionSelection}>
+                {t('selection.done')}
+              </Button>
+            </span>
+          </div>
+        )}
         {wide && (normalizedQuery !== ''
           ? (
             <SearchResults
@@ -1170,6 +1248,9 @@ export function WorkspaceBrowser({
                 useSessions={useSessions} open={open} forkSession={forkSession}
                 onSessionRename={onSessionRename} onSessionArchive={onSessionArchive}
                 archivedSessionIds={archivedSessionIds}
+                selectionMode={selectionMode}
+                selectedSessionIds={selectedSessionIds}
+                onToggleSessionSelected={onToggleSessionSelected}
                 orderBy={orderBy}
                 sessionOrderByAccount={sessionOrderByAccount}
                 sessionUpdatedAtByAccount={sessionUpdatedAtByAccount}
@@ -1184,6 +1265,9 @@ export function WorkspaceBrowser({
                 onSessionRename={onSessionRename}
                 onSessionArchive={onSessionArchive}
                 forkSession={forkSession}
+                selectionMode={selectionMode}
+                selectedSessionIds={selectedSessionIds}
+                onToggleSessionSelected={onToggleSessionSelected}
                 workspaces={workspaces}
                 groupExpansion={groupExpansion}
                 setGroupExpanded={actions.setGroupExpanded}

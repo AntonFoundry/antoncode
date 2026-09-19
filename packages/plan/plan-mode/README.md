@@ -6,13 +6,17 @@ Logged, per-agent plan collaboration state with deployment-owned guidance, direc
 
 ## Durable state
 
-`plan/mode` (`{ active: boolean }`) is a log-only, whole-value-replace `SessionEventMap` member. `foldPlanMode(events)` returns the last logged value or `false`, so resume, fork, and compaction recover plan state directly from the session log. UIs observe committed flips through `session/event`.
+`plan/mode` (`{ active: boolean }`) is a log-only, whole-value-replace `SessionEventMap` member. `foldPlanMode(events)` returns the last logged value or `false`, so resume, fork, and compaction recover plan state directly from the session log. UIs observe committed flips through `session/event`. `plan/write` (`{ plan: string; title?: string; path?: string }`) is logged whenever a plan is recorded via `plan_write` or an approved `exit_plan_mode`.
 
 `ctx.planMode.set(agent, active)` appends the standalone `plan/mode` event immediately when the agent is idle, because no in-turn pre-step runs before the next prompt. While the agent is running, it holds a pending selection for the next accepted in-turn pre-step. It returns which happened (`committed`/`queued`), a `cancelled` reversal, or a `noop`. `get(agent)` returns `{ active, pending? }`, separating the logged state used to assemble the current step from a user's mid-turn selection. Initial and continuation pre-steps both apply pending selections; a same-step request-recovery retry reuses its frozen assembly and leaves the selection pending for the next pre-step. A changed user selection contributes one plugin-sourced `user/message` notice when the last logged request header described the other state (both commit paths).
 
 ## Model and human interactions
 
-While active, `plan:policy` renders the configured `section`. The plugin always registers `exit_plan_mode`, keeping tool schemas stable across the transition; its execute path accepts only active plan mode and leaves it only after an exact user approval through `ctx.userQuestions`.
+While active, `plan:policy` renders the configured `section` at prompt order 50. In addition, `plan:standing-plan` renders the latest recorded implementation plan at prompt order 52 (following `todo:standing-plan` at order 51), keeping the model grounded in its active plan without polluting the conversation transcript.
+
+The plugin registers two tools:
+- `exit_plan_mode`: Reviews and exits plan mode. Takes `plan` markdown and optional `path` (default `implementation_plan.md`). On approval, saves the file to disk, appends `plan/write` to the session log, flips plan mode to inactive, and renders presentation `locations: [{ path }]` so the UI opens the plan in a right-hand buffer split side-by-side with chat.
+- `plan_write`: Records an implementation plan directly from default or plan mode. Takes `plan` markdown, optional `title`, and optional `path` (default `implementation_plan.md`). Saves the file to disk, appends `plan/write` to the session log, and renders presentation `locations: [{ path }]` for the side-by-side buffer split in the UI.
 
 The review question declares the `plan-review` presentation intent, naming `Approve` as the label that approves it, so a capable UI presents the plan as a decision instead of a generic question; the answer the tool reads is the same either way. A dismissed review — the user closing the request to speak instead — is reported to the model as such, telling it to stay in plan mode and wait for the message; every other review failure keeps the seam's own message.
 

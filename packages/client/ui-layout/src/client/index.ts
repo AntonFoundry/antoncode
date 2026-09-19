@@ -103,7 +103,15 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * One interactive PTY terminal surface. OCCUPIED by ui-terminal's
      * xterm.js view; the owning buffer's session id rides the owner props.
      */
-    'terminal.view': { kind: 'single'; scope: 'root'; owner: { sessionId?: string | undefined } }
+    'terminal.view': {
+      kind: 'single'
+      scope: 'root'
+      owner: {
+        sessionId?: string | undefined
+        workspacePath?: string | undefined
+        onSessionCreated?: ((sessionId: string) => void) | undefined
+      }
+    }
     /**
      * The settings window body (the `settings` buffer, opened through
      * ctx.layout's openSettings/toggleSettings — the sidebar-foot trigger is
@@ -266,6 +274,12 @@ export function apply(ctx: ClientContext): void {
             }
             openInline(path)
             return Promise.resolve()
+          },
+          disposeTerminalSession: async (sessionId: string): Promise<void> => {
+            const conn = ctx.get('connection') as unknown as { api?: { term?: { dispose(req: { sessionId: string }): Promise<unknown> } } } | undefined
+            if (conn?.api?.term?.dispose) {
+              await conn.api.term.dispose({ sessionId }).catch(() => {})
+            }
           },
           // The api client returns the RpcResponse envelope: the business
           // result sits under `result` ({ ok: true, value } | { ok: false }).
