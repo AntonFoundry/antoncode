@@ -297,7 +297,9 @@ export function apply(ctx: Context, config: Config): void {
   const getTodoPlanState = (execution: Readonly<ToolExecution>):
   { hasTodo: boolean; todoCount: number; hasImplementationPlan: boolean } => {
     try {
-      const agent = (execution as { agent?: { session?: { events?: readonly { type?: string; data?: unknown }[] } } }).agent
+      const agent = (
+        execution as { agent?: { session?: { events?: readonly { type?: string; data?: unknown }[] } } }
+      ).agent
       const events = agent?.session?.events
       if (events === undefined) return { hasTodo: true, todoCount: 0, hasImplementationPlan: true } // unreadable log fails open
       let hasTodo = false
