@@ -8,7 +8,7 @@
 import { useState } from 'react'
 import clsx from 'clsx'
 import {
-  HoverCard, IconArchiveOutline20, IconBranchOutline16, IconEditOutline16,
+  HoverCard, IconArchiveOutline20, IconBranchOutline16, IconCheckOutline16, IconEditOutline16,
   IconEllipsisOutline16, IconFolderClose16, IconFolderOpen16, IconPlusOutline16,
   IconTrashOutline16, IconTriangleRightFill14, Menu, StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -377,7 +377,8 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
  * @param props.t - the browser root's locale seat.
  * @returns the session row.
  */
-export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork, onArchive, drag, flat = false, t }: {
+export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork, onArchive,
+  selectionMode = false, selected: selectionChecked = false, onToggleSelect, drag, flat = false, t }: {
   node: SessionNode
   currentId: string | undefined
   now: number
@@ -388,6 +389,12 @@ export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork
   onFork: (id: SessionNode['id']) => void
   /** Archive this session (row menu action; commits without a dialog). */
   onArchive: (id: SessionNode['id']) => void
+  /** Selection mode active: rows toggle membership instead of opening. */
+  selectionMode?: boolean | undefined
+  /** Whether this row belongs to the current selection (selection mode only). */
+  selected?: boolean | undefined
+  /** Toggle this row's selection membership (selection mode only). */
+  onToggleSelect?: ((id: SessionNode['id']) => void) | undefined
   /** Present only on draggable rows (workspace-group sessions outside search). */
   drag?: RowDragProps | undefined
   /** The row is rendered without a parent Workspace header. */
@@ -415,13 +422,17 @@ export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork
     <div
       className={clsx(
         css.sessionRow, selected && css.selected, menuOpen && css.menuOpen,
+        selectionMode && selectionChecked && css.selectionChecked,
         flat && !showStatus && css.flatSessionRowWithoutStatus,
         drag?.marker === 'before' && css.dropBefore, drag?.marker === 'after' && css.dropAfter,
       )}
       role="treeitem"
       aria-selected={selected}
-      onClick={() => { onOpen(node.id) }}
-      draggable={drag !== undefined}
+      onClick={() => {
+        if (selectionMode) onToggleSelect?.(node.id)
+        else onOpen(node.id)
+      }}
+      draggable={drag !== undefined && !selectionMode}
       onDragStart={drag === undefined
         ? undefined
         : (e) => {
@@ -449,7 +460,13 @@ export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork
       {/* Pending interaction and own or descendant activity outrank the
           finished-but-unviewed reminder, which returns after activity stops
           and is cleared by opening the session. */}
-      {(!flat || showStatus) && (
+      {/* Selection mode swaps the leading slot for the membership indicator
+          (status dots and the menu are browsing-mode affordances). */}
+      {selectionMode ? (
+        <span className={clsx(css.slot, css.selectionBox)} data-checked={selectionChecked || undefined} role="checkbox" aria-checked={selectionChecked}>
+          {selectionChecked && <IconCheckOutline16 size={12} />}
+        </span>
+      ) : (!flat || showStatus) && (
         <span className={css.slot}>
           {showStatus && <SessionStatusDots statuses={statuses} />}
         </span>
@@ -459,8 +476,8 @@ export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork
           happened in it yet, so a "now" timestamp and the row verbs
           (rename/fork/archive) would all act on content that does not
           exist — both trailing cells stay off until the first prompt. */}
-      {!row.blank && <span className={css.time}>{timeLabel(row.updatedAt, now, t)}</span>}
-      {!row.blank && (
+      {!row.blank && !selectionMode && <span className={css.time}>{timeLabel(row.updatedAt, now, t)}</span>}
+      {!row.blank && !selectionMode && (
         <span className={css.rowActions}>
           <Menu
             open={menuOpen}

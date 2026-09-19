@@ -18,6 +18,11 @@
 export interface PlanProjection {
   active: boolean
   pending: boolean
+  standingPlan?: {
+    plan: string
+    title?: string | undefined
+    path?: string | undefined
+  } | null | undefined
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {

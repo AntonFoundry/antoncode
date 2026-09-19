@@ -23,6 +23,8 @@ export const GATE_POLICY_SETTINGS_NAMESPACE = settingsNamespace('gate-policy')
 export const TodoPlanSectionSchema = z.object({
   enabled: z.boolean(),
   tools: z.array(z.string()),
+  requireImplementationPlan: z.boolean().default(true),
+  minTodosForImplementationPlan: z.number().default(3),
 })
 
 /** The guard registers against the tool runtime, so the service is a hard dependency. */
@@ -60,12 +62,18 @@ export interface TodoPlanGateConfig {
   enabled?: boolean
   /** Tools gated until a todo plan exists. Defaults to `['bash', 'edit', 'write', 'multiedit']`. */
   tools?: string[]
+  /** Whether an implementation plan is required when a large todo tree is present. Defaults to `true`. */
+  requireImplementationPlan?: boolean
+  /** Threshold of total todos (root + nested) to require an implementation plan via plan_write or exit_plan_mode. Defaults to `3`. */
+  minTodosForImplementationPlan?: number
 }
 
 /** The flat section the Settings card edits: the todo-plan gate. */
 export interface TodoPlanGateSection {
   enabled: boolean
   tools: string[]
+  requireImplementationPlan?: boolean
+  minTodosForImplementationPlan?: number
 }
 
 /**
@@ -104,7 +112,9 @@ export const Config: z<Config> = z.object({
   todoPlanGate: z.object({
     enabled: z.boolean(),
     tools: z.array(z.string()),
-  }).default({ enabled: false, tools: ['bash', 'edit', 'write', 'multiedit'] }),
+    requireImplementationPlan: z.boolean().default(true),
+    minTodosForImplementationPlan: z.number().default(3),
+  }).default({ enabled: false, tools: ['bash', 'edit', 'write', 'multiedit'], requireImplementationPlan: true, minTodosForImplementationPlan: 3 }),
   verdictsEnabled: z.boolean().default(false),
   verdictsEndpoint: z.string().default(''),
   verdictsApiKey: z.string().default(''),
@@ -218,6 +228,25 @@ function compileRules(rules: GateRule[]): CompiledRule[] {
 }
 
 /**
+ * Total number of todos in a todo tree, counting top-level items and recursive children.
+ * @param todos - unknown todo items array or tree.
+ * @returns the total count of todo items.
+ */
+export function countTodos(todos: unknown): number {
+  if (!Array.isArray(todos)) return 0
+  let count = 0
+  for (const item of todos) {
+    if (item !== null && typeof item === 'object') {
+      count += 1
+      if ('children' in item && Array.isArray((item as { children?: unknown }).children)) {
+        count += countTodos((item as { children?: unknown }).children)
+      }
+    }
+  }
+  return count
+}
+
+/**
  * Install the guard's registration.
  * @param ctx - plugin context; the guard registration is scoped to it and disposed with it.
  * @param config - validated {@link Config}; rules are re-compiled fail-loud here.
@@ -236,6 +265,8 @@ export function apply(ctx: Context, config: Config): void {
   const sectionSeed: TodoPlanGateSection = {
     enabled: config.todoPlanGate?.enabled ?? false,
     tools: [...(config.todoPlanGate?.tools ?? ['bash', 'edit', 'write', 'multiedit'])],
+    requireImplementationPlan: config.todoPlanGate?.requireImplementationPlan ?? true,
+    minTodosForImplementationPlan: config.todoPlanGate?.minTodosForImplementationPlan ?? 3,
   }
   let live: () => TodoPlanGateSection = () => sectionSeed
   installSettingsSection(
@@ -255,29 +286,56 @@ export function apply(ctx: Context, config: Config): void {
     'Gate \'todo-plan\' blocked this call. No plan exists in the todo tree yet. '
     + 'Call todo_write with your plan — top-level tasks for the phases, children for the concrete subtasks — '
     + `then retry \`${toolName}\`. todo_write itself is never gated.`
-  const hasTodoPlan = (execution: Readonly<ToolExecution>): boolean => {
+
+  const implementationPlanDenial = (toolName: string, todoCount: number, minTodos: number): string =>
+    `Gate 'todo-plan' blocked this call. Your todo tree contains ${todoCount} tasks (threshold: ${minTodos}), `
+    + 'which indicates a non-trivial project. For tasks of this scale, you must create a detailed implementation plan first. '
+    + 'Delegate codebase exploration and plan authoring to a subagent (using `subagent`) to preserve context, '
+    + 'record the plan with `plan_write` (or `exit_plan_mode`), and link the plan artifact (e.g. `implementation_plan.md`). '
+    + `Then retry \`${toolName}\`. \`subagent\` and \`plan_write\` are never gated.`
+
+  const getTodoPlanState = (execution: Readonly<ToolExecution>):
+  { hasTodo: boolean; todoCount: number; hasImplementationPlan: boolean } => {
     try {
-      const agent = (execution as { agent?: { session?: { events?: readonly { type?: string }[] } } }).agent
+      const agent = (execution as { agent?: { session?: { events?: readonly { type?: string; data?: unknown }[] } } }).agent
       const events = agent?.session?.events
-      if (events === undefined) return true // unreadable log fails open
+      if (events === undefined) return { hasTodo: true, todoCount: 0, hasImplementationPlan: true } // unreadable log fails open
+      let hasTodo = false
+      let todoCount = 0
+      let hasImplementationPlan = false
       for (let i = events.length - 1; i >= 0; i--) {
         const event = events[i]
-        if (event !== undefined && event.type === 'todo/write') return true
+        if (event === undefined) continue
+        if (event.type === 'plan/write') {
+          hasImplementationPlan = true
+        }
+        if (!hasTodo && event.type === 'todo/write') {
+          hasTodo = true
+          const data = event.data as { todos?: unknown } | undefined
+          todoCount = countTodos(data?.todos)
+        }
       }
-      return false
+      return { hasTodo, todoCount, hasImplementationPlan }
     } catch {
-      return true // fail open: the gate must never break execution on its own failure
+      // fail open: the gate must never break execution on its own failure
+      return { hasTodo: true, todoCount: 0, hasImplementationPlan: true }
     }
   }
 
   const todoPlanGuard: ToolGuard = (execution: Readonly<ToolExecution>): string | undefined => {
     const gate = live()
     if (gate.enabled !== true) return undefined
-    if (execution.name === 'todo_write') return undefined
+    if (execution.name === 'todo_write' || execution.name === 'plan_write' || execution.name === 'subagent') return undefined
     const tools = (gate.tools ?? ['bash', 'edit', 'write', 'multiedit']).map(wildcardToRegExp)
     if (!tools.some(pattern => pattern.test(execution.name))) return undefined
-    if (hasTodoPlan(execution)) return undefined
-    return todoPlanDenial(execution.name)
+    const { hasTodo, todoCount, hasImplementationPlan } = getTodoPlanState(execution)
+    if (!hasTodo) return todoPlanDenial(execution.name)
+    const requireImplPlan = gate.requireImplementationPlan ?? true
+    const minTodos = gate.minTodosForImplementationPlan ?? 3
+    if (requireImplPlan && todoCount >= minTodos && !hasImplementationPlan) {
+      return implementationPlanDenial(execution.name, todoCount, minTodos)
+    }
+    return undefined
   }
 
   ctx.effect(() => ctx.tools.guard(todoPlanGuard))

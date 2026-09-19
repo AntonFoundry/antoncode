@@ -32,7 +32,7 @@ export function apply(ctx: ClientContext): void {
 
   ctx.slots.inject('terminal.view', () => ctx.slots.register({
     name: 'terminal.view',
-    inject: () => {
+    inject: (owner?: { sessionId?: string; workspacePath?: string; onSessionCreated?: (sessionId: string) => void }) => {
       // The connection inject is the wire handle; its api face is the typed
       // IApiClient (the model-selection service uses the same cast). The
       // theme face is cast for the same reason — the Context merges live in
@@ -42,12 +42,15 @@ export function apply(ctx: ClientContext): void {
       const api = (ctx.get('connection') as unknown as { api: IApiClient }).api
       const theme = (ctx as unknown as { theme: { getTheme(): { active: { tokens: Record<string, string> } } } }).theme
       return {
-        spawn: (cols: number, rows: number) => api.term.spawn({ cols, rows }).then(r => r.result.ok ? { sessionId: r.result.value.sessionId } : { sessionId: '' }),
+        spawn: (cols: number, rows: number, cwd?: string) => api.term.spawn({ cols, rows, ...cwd !== undefined ? { cwd } : {} }).then(r => r.result.ok ? { sessionId: r.result.value.sessionId } : { sessionId: '' }),
         read: (sessionId: string, since: number) => api.term.read({ sessionId, since }).then(r => r.result.ok ? r.result.value : { data: '', next: since, exited: true }),
         input: (sessionId: string, data: string) => api.term.input({ sessionId, data }).then(() => undefined),
         resize: (sessionId: string, cols: number, rows: number) => api.term.resize({ sessionId, cols, rows }).then(() => undefined),
         dispose: (sessionId: string) => api.term.dispose({ sessionId }).then(() => undefined),
         themeTokens: () => theme.getTheme().active.tokens,
+        sessionId: owner?.sessionId,
+        workspacePath: owner?.workspacePath,
+        onSessionCreated: owner?.onSessionCreated,
         broadcastActions: broadcast.actions,
         hooks: { broadcast },
       }

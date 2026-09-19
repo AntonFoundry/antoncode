@@ -24,6 +24,22 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* Selection-mode membership indicator: an empty round box, filled + checked
+   when the row is selected; the row highlights like the current selection. */
+.selectionBox {
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 50%;
+  box-sizing: border-box;
+  color: var(--dsw-alias-label-primary);
+}
+
+.selectionBox[data-checked] {
+  border-color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
 .searchResultRow {
   display: flex;
   flex-direction: column;

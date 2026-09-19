@@ -79,7 +79,8 @@
   flex: none;
   min-height: 0;
   max-height: 54%;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
@@ -88,7 +89,8 @@
 .contextOnly {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .empty {

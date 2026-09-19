@@ -444,6 +444,33 @@
   font-size: 13px;
 }
 
+/* Multi-selection action bar: count + bulk archive, pinned above the list. */
+.selectionBar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 32px;
+  padding: 0 8px;
+  margin-bottom: 4px;
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.selectionCount {
+  flex: none;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.selectionActions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 /* Rename dialog form (same figma dialog family as the create modals). */
 .renameInput {
   box-sizing: border-box;

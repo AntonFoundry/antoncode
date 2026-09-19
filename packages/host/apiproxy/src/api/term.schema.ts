@@ -8,6 +8,7 @@ import type { Wire } from './rpc.schema.ts'
 export const termSpawnRequestSchema = z.object({
   cols: z.number().optional(),
   rows: z.number().optional(),
+  cwd: z.string().optional(),
 }) satisfies z.ZodType<Wire<RequestPayload<'term.spawn'>>>
 
 /** term.spawn response value. */

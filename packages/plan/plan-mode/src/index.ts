@@ -23,6 +23,8 @@
  * @module @deepseek-ai/dsh-plan-mode
  */
 
+import fs from 'node:fs'
+import path from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { z as zod } from 'zod'
 import type { ZodType } from 'zod'
@@ -51,6 +53,11 @@ declare module '@deepseek-ai/dsh-session/types' {
      * inactive through {@link foldPlanMode}.
      */
     'plan/mode': { active: boolean }
+    /**
+     * Standing implementation plan: log-only, non-surface, whole-value replace.
+     * The last `plan/write` wins; folded into `PlanProjection.standingPlan`.
+     */
+    'plan/write': { plan: string; title?: string; path?: string }
   }
 }
 
@@ -94,6 +101,37 @@ function firstHeading(plan: string): string | undefined {
     if (match) return match[1]
   }
   return undefined
+}
+
+/**
+ * The model-facing plan write tool's name. Always registered so agents can
+ * record an implementation plan produced by a planning subagent or update it.
+ */
+export const PLAN_WRITE = 'plan_write'
+
+const PLAN_WRITE_DESCRIPTION
+  = 'Record or update the standing implementation plan for the current work. '
+  + 'Use this tool whenever an implementation plan has been produced (e.g. by a planning subagent) '
+  + 'or updated. The plan persists across turns and is injected into every subsequent request as a standing guide '
+  + 'for both the model and the user. Send the COMPLETE markdown plan, starting with a # heading.'
+
+/**
+ * Format the standing implementation plan section text from the session's latest `plan/write` event.
+ * Exported for testing and section spec.
+ *
+ * @param plan - the markdown implementation plan text.
+ * @param title - optional headline/title for the plan.
+ * @returns the section text.
+ */
+export function standingImplementationPlanSection(plan: string, title?: string): string {
+  const header = title
+    ? `Standing implementation plan: ${title}`
+    : 'Standing implementation plan'
+  return [
+    `${header} (the implementation plan currently in force — it persists across turns):`,
+    plan,
+    'Execute against this implementation plan phase by phase, keeping the standing todo tree in sync with progress. Only a whole new plan replaces it, via plan_write carrying the complete new plan.',
+  ].join('\n\n')
 }
 
 /**
@@ -146,12 +184,21 @@ interface PlanUnitState {
   active: boolean
   /** The selection's target mode; null when no selection is outstanding. */
   wanted: boolean | null
+  standingPlan: { plan: string; title?: string; path?: string } | null
 }
 
 /** Wire payload schema of the `plan` projection. */
 const planProjectionSchema: ZodType<PlanProjection> = zod.object({
   active: zod.boolean(),
   pending: zod.boolean(),
+  standingPlan: zod.union([
+    zod.object({
+      plan: zod.string(),
+      title: zod.string().optional(),
+      path: zod.string().optional(),
+    }),
+    zod.null(),
+  ]).optional(),
 })
 
 /** Whether the log holds an opened turn without its closing `turn/end`. */
@@ -232,36 +279,63 @@ export class PlanModeController extends Service {
       },
     })
 
-    // The plan projection unit (session-projection RFC): a pure double-event
-    // fold serving clients the whole {active, pending} value. `command/run`
+    ctx.systemPrompt.section({
+      name: 'plan:standing-plan',
+      order: 52,
+      text: (context) => {
+        if (context.agent === undefined) return ''
+        const events = context.agent.session.events
+        for (let i = events.length - 1; i >= 0; i--) {
+          const event = events[i]
+          if (event !== undefined && event.type === 'plan/write') {
+            return standingImplementationPlanSection(event.data.plan, event.data.title)
+          }
+        }
+        return ''
+      },
+    })
+
+    // The plan projection unit (session-projection RFC): a pure event
+    // fold serving clients the whole {active, pending, standingPlan} value. `command/run`
     // records the user's logged /plan selection (the handler calls `set()`
     // before any failing path, so a failed handler cannot leave the recorded
     // command without its plan selection); `plan/mode` records that selection
-    // and clears it. Pending is thereby a pure
-    // replay quantity: host restarts, other tabs, and cold reads all recover
-    // it from the log alone. The unit child activates only when a projection
+    // and clears it. `plan/write` updates the standing implementation plan.
+    // The unit child activates only when a projection
     // registry is composed (headless assemblies stay unaffected).
     ctx.inject(['sessionProjections'], (projectionCtx) => {
       projectionCtx.sessionProjections.register<'plan', PlanUnitState>({
         key: 'plan',
         schema: planProjectionSchema,
-        init: () => ({ active: false, wanted: null }),
+        init: () => ({ active: false, wanted: null, standingPlan: null }),
         apply: (state, event) => {
           if (event.type === 'command/run' && event.data.name === 'plan') {
             if (event.data.args === undefined) return state
             const wanted = event.data.args.trim() !== 'off'
-            return wanted === state.wanted ? state : { active: state.active, wanted }
+            return wanted === state.wanted ? state : { active: state.active, wanted, standingPlan: state.standingPlan }
           }
           if (event.type === 'plan/mode') {
-            return { active: event.data.active, wanted: null }
+            return { active: event.data.active, wanted: null, standingPlan: state.standingPlan }
+          }
+          if (event.type === 'plan/write') {
+            return {
+              active: state.active,
+              wanted: state.wanted,
+              standingPlan: {
+                plan: event.data.plan,
+                ...event.data.title !== undefined ? { title: event.data.title } : {},
+                ...event.data.path !== undefined ? { path: event.data.path } : {},
+              },
+            }
           }
           return state
         },
         view: state => ({
           active: state.active,
           pending: state.wanted !== null && state.wanted !== state.active,
+          standingPlan: state.standingPlan,
         }),
-        stateVersion: 1,
+        stateVersion: 2,
       })
     })
 
@@ -307,6 +381,7 @@ export class PlanModeController extends Service {
       description: EXIT_DESCRIPTION,
       parameters: {
         plan: { type: 'string', required: true, description: 'The complete plan, as markdown, starting with a # heading that names it.' },
+        path: { type: 'string', description: 'Optional workspace-relative path where the plan markdown is saved. Defaults to "implementation_plan.md".' },
       },
       output: {
         schema: {
@@ -377,19 +452,136 @@ export class PlanModeController extends Service {
         // silent selection is appended at the next accepted in-turn pre-step,
         // before its request assembly.
         this.pendingIntents.set(agent.session, { active: false, narrate: false })
+        const planPath = typeof args.path === 'string' && args.path.trim().length > 0
+          ? args.path.trim()
+          : 'implementation_plan.md'
+        const cwd = agent.session.header.cwd ?? process.cwd()
+        const absPath = path.resolve(cwd, planPath)
+        try {
+          await fs.promises.mkdir(path.dirname(absPath), { recursive: true })
+          await fs.promises.writeFile(absPath, args.plan, 'utf-8')
+        } catch (error) {
+          ctx.logger?.warn?.('exit_plan_mode failed to write plan file to %s: %o', absPath, error)
+        }
+        const heading = firstHeading(args.plan)
+        agent.session.append('plan/write', {
+          plan: args.plan,
+          title: heading ?? 'Approved Plan',
+          path: planPath,
+        })
         return { approved: true }
       },
-      presentCall: args => ({
-        card: 'generic',
-        title: firstHeading(args.plan) ?? 'Plan',
-        kind: 'other',
-        content: [{ type: 'text', text: args.plan }],
-      }),
-      presentResult: (_args, result) => ({
-        card: 'generic',
-        title: 'Plan review',
-        content: result.content,
-      }),
+      presentCall: (args) => {
+        const planPath = typeof args.path === 'string' && args.path.trim().length > 0 ? args.path.trim() : 'implementation_plan.md'
+        return {
+          card: 'generic',
+          title: firstHeading(args.plan) ?? 'Plan',
+          kind: 'other',
+          locations: [{ path: planPath }],
+          content: [{ type: 'text', text: args.plan }],
+        }
+      },
+      presentResult: (_args, result) => {
+        const planPath = typeof _args.path === 'string' && _args.path.trim().length > 0 ? _args.path.trim() : 'implementation_plan.md'
+        return {
+          card: 'generic',
+          title: 'Plan review',
+          locations: [{ path: planPath }],
+          content: result.content,
+        }
+      },
+    }))
+
+    ctx.tools.register(defineTool({
+      name: PLAN_WRITE,
+      description: PLAN_WRITE_DESCRIPTION,
+      parameters: {
+        plan: {
+          type: 'string',
+          required: true,
+          description: 'The complete implementation plan, as markdown, starting with a # heading that names it.',
+        },
+        title: {
+          type: 'string',
+          description: 'Optional short title for the plan.',
+        },
+        path: {
+          type: 'string',
+          description: 'Optional workspace-relative file path to save the plan markdown. Defaults to "implementation_plan.md".',
+        },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            recorded: { type: 'boolean', required: true },
+            title: { type: 'string', required: true },
+            path: { type: 'string', required: true },
+            bytes: { type: 'integer', required: true },
+          },
+        },
+        render: (_args, value) => [{
+          type: 'text',
+          text: `Recorded implementation plan: ${value.title} in ${value.path} (${value.bytes} bytes). It is now the standing plan in force across turns.`,
+        }],
+      },
+      execute: async (args, exec) => {
+        const agent = exec.agent
+        if (agent === undefined) {
+          throw new Error(`${PLAN_WRITE} requires an owning agent session`)
+        }
+        const plan = args.plan.trim()
+        if (!/^#{1,6}\s+\S/.test(plan)) {
+          throw new Error(`${PLAN_WRITE} requires a non-empty markdown plan starting with a # heading`)
+        }
+        const heading = firstHeading(plan)
+        const title = typeof args.title === 'string' && args.title.trim().length > 0
+          ? args.title.trim()
+          : (heading ?? 'Implementation Plan')
+        const planPath = typeof args.path === 'string' && args.path.trim().length > 0
+          ? args.path.trim()
+          : 'implementation_plan.md'
+
+        const cwd = agent.session.header.cwd ?? process.cwd()
+        const absPath = path.resolve(cwd, planPath)
+        try {
+          await fs.promises.mkdir(path.dirname(absPath), { recursive: true })
+          await fs.promises.writeFile(absPath, plan, 'utf-8')
+        } catch (error) {
+          ctx.logger?.warn?.('plan_write failed to write plan file to %s: %o', absPath, error)
+        }
+
+        agent.session.append('plan/write', { plan, title, path: planPath })
+        return {
+          recorded: true,
+          title,
+          path: planPath,
+          bytes: plan.length,
+        }
+      },
+      presentCall: (args) => {
+        const planPath = typeof args.path === 'string' && args.path.trim().length > 0 ? args.path.trim() : 'implementation_plan.md'
+        const title = typeof args.title === 'string' && args.title.trim().length > 0
+          ? args.title.trim()
+          : (firstHeading(args.plan) ?? 'Implementation Plan')
+        return {
+          card: 'generic',
+          title,
+          kind: 'other',
+          locations: [{ path: planPath }],
+          content: [{ type: 'text', text: args.plan }],
+        }
+      },
+      presentResult: (_args, result) => {
+        const planPath = typeof _args.path === 'string' && _args.path.trim().length > 0 ? _args.path.trim() : 'implementation_plan.md'
+        return {
+          card: 'generic',
+          title: 'Implementation Plan Recorded',
+          locations: [{ path: planPath }],
+          content: result.content,
+        }
+      },
     }))
   }
 
