@@ -8,7 +8,9 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
   private let client = HarnessClient()
   // Editable field, not a label: labelWithString: fields are non-editable
   // and cannot become first responder, so keystrokes would go nowhere.
-  private let entryField = NSTextField(string: "")
+  // The subclass permits window movement so the panel drags by its entry
+  // line, Spotlight-style (AppKit still delivers click-to-edit).
+  private let entryField = DragTextField(string: "")
   private let promptMark = NSTextField(labelWithString: ">")
   private let answerView = NSTextView()
   private let footerLabel = NSTextField(labelWithString: "")
@@ -73,7 +75,7 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
   required init?(coder: NSCoder) { nil }
 
   private func buildContent() {
-    let hud = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 640, height: BlueantPanel.compactHeight))
+    let hud = DragHUDView(frame: NSRect(x: 0, y: 0, width: 640, height: BlueantPanel.compactHeight))
     hud.material = .hudWindow
     hud.blendingMode = .behindWindow
     hud.state = .active
@@ -298,14 +300,18 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
     speech.stop()
   }
 
-  /// Interim transcript: rendered grey with a trailing ellipsis over the
-  /// snapshot of whatever the user had typed before speaking. Never submitted.
+  /// Interim transcript: a bare red dot marks recording (the waveform tile
+  /// already carries state); the partial itself renders grey with a trailing
+  /// ellipsis over the snapshot of whatever the user had typed before
+  /// speaking. Never submitted.
   private func renderPartial(_ partial: String) {
-    let text = NSMutableAttributedString(string: "● listening ")
+    let text = NSMutableAttributedString(string: "● ")
     text.addAttributes([.foregroundColor: NSColor.systemRed], range: NSRange(location: 0, length: text.length))
-    text.append(NSAttributedString(string: (partial.isEmpty ? "" : partial + "…"), attributes: [
-      .foregroundColor: NSColor.secondaryLabelColor,
-    ]))
+    if !partial.isEmpty {
+      text.append(NSAttributedString(string: partial + "…", attributes: [
+        .foregroundColor: NSColor.secondaryLabelColor,
+      ]))
+    }
     entryField.attributedStringValue = text
   }
 
@@ -521,10 +527,12 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
   // MARK: Rendering
 
   /// Plain-attributed MVP rendering: status line first, streamed text below.
-  /// Any content in the answer area expands the panel; empty collapses it
-  /// back to the Spotlight-compact card.
+  /// Real content — an answer or a message the user must read — expands the
+  /// panel downward; transient progress markers ("…", "Waking Anton…") keep
+  /// it slim, like Spotlight growing only when results appear.
   private func renderAnswer(status: String) {
-    applySize(compact: answer.isEmpty && status.isEmpty, animate: true)
+    let transient = status.isEmpty || status == "…" || status == "Waking Anton…"
+    applySize(compact: answer.isEmpty && transient, animate: true)
     let text = NSMutableAttributedString()
     if !status.isEmpty {
       text.append(NSAttributedString(string: status + "\n\n", attributes: [
@@ -605,4 +613,18 @@ final class MicButton: NSButton {
       alphaValue = newValue ? 1.0 : 0.4
     }
   }
+}
+
+/// HUD background that hands drags to the window: without this,
+/// `isMovableByWindowBackground` has nothing to grab — NSVisualEffectView
+/// reports `mouseDownCanMoveWindow == false` by default.
+final class DragHUDView: NSVisualEffectView {
+  override var mouseDownCanMoveWindow: Bool { true }
+}
+
+/// Entry field that still takes click-to-edit but also starts a window drag
+/// when the user moves the mouse — Spotlight drags exactly this way, by its
+/// search field.
+final class DragTextField: NSTextField {
+  override var mouseDownCanMoveWindow: Bool { true }
 }
