@@ -11,13 +11,16 @@ const contextRoot = resolve(sourceRoot, 'c0ntext')
 // Never rewrite the installed app in place: the running Harness lazily imports
 // provider modules and launches rg from that tree. An in-place rsync --delete
 // can therefore make a live turn lose a module or executable halfway through.
-// Build into a hidden staging bundle, then swap it in with rename(2) after the
-// caller quits the old app; the replaced bundle is kept one generation deep
-// for instant rollback. The staging name is not a documented interface, so
-// nothing outside this script targets it.
+// Build into a hidden staging bundle under the repo's dist/ (a build-artifact
+// directory, never the install location), then install it into ANTON_INSTALL_DIR
+// (default /Applications) with rename(2) after quitting the old app; the
+// replaced bundle is kept one generation deep for instant rollback. The
+// staging name is not a documented interface, so nothing outside this script
+// targets it.
 const appRoot = resolve(harnessRoot, 'dist/.anton-staging.app')
-const installedRoot = resolve(harnessRoot, 'dist/Anton.app')
-const previousRoot = resolve(harnessRoot, 'dist/Anton.previous.app')
+const installDir = process.env.ANTON_INSTALL_DIR ?? '/Applications'
+const installedRoot = join(installDir, 'Anton.app')
+const previousRoot = join(installDir, 'Anton.previous.app')
 const contents = join(appRoot, 'Contents')
 const resources = join(contents, 'Resources')
 const macOS = join(contents, 'MacOS')
@@ -144,6 +147,7 @@ run(['swiftc', '-parse-as-library',
   '-framework', 'Metal', '-framework', 'MetalKit', '-framework', 'Accelerate',
   join(bridgeRoot, 'macos', 'AntonApp.swift'),
   join(bridgeRoot, 'macos', 'BlueantPanel.swift'),
+  join(bridgeRoot, 'macos', 'ApprovalPanel.swift'),
   join(bridgeRoot, 'macos', 'SpeechController.swift'),
   join(bridgeRoot, 'macos', 'WhisperEngine.swift'),
   join(bridgeRoot, 'macos', 'HotkeyCenter.swift'),
@@ -169,6 +173,42 @@ if (!existsSync(bundledPluginManifest)) {
 }
 assertLibOnlyHarnessBundle()
 
+/**
+ * End-to-end boot smoke: run the staged bridge exactly as the app would
+ * (temp DSH_HOME, private ports, bundled node) and require the harness to
+ * reach ready. This exercises the full profile composition — every plugin
+ * the app will load, including profile-linked dev plugins — so a broken
+ * entry fails the build instead of shipping a bundle that dies on launch.
+ * The bridge keeps running once ready, so the spawnSync timeout is the
+ * ordinary stop for a passing run; readiness prints `dsh web:` long before.
+ */
+function smokeBootStaging(): void {
+  const tempHome = mkdtempSync(join(tmpdir(), 'anton-smoke-'))
+  const bridgeEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    ANTON_DSH_ROOT: join(resources, 'deepseek-harness'),
+    ANTON_CONTEXT_PLUGIN_ROOT: join(resources, 'c0ntext', 'deepseek-harness-plugin'),
+    ANTON_DSH_HOME: join(tempHome, 'dsh'),
+    ANTON_BRIDGE_PORT: '3797',
+    ANTON_HARNESS_PORT: '3197',
+    ANTON_NODE_BINARY: join(resources, 'node', 'bin', 'node'),
+    ANTON_AUTO_START: 'true',
+  }
+  let output = ''
+  try {
+    const result = spawnSync(join(resources, 'bin', 'anton-bridge'), [], {
+      env: bridgeEnv, encoding: 'utf8', timeout: 120_000, killSignal: 'SIGTERM',
+    })
+    output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`
+    if (!output.includes('dsh web:')) {
+      throw new Error(`boot smoke failed — the staged harness never reached ready. Last output:\n${output.split('\n').slice(-40).join('\n')}`)
+    }
+    console.log('Boot smoke passed: staged harness reached ready under the full profile composition')
+  } finally {
+    rmSync(tempHome, { recursive: true, force: true })
+  }
+}
+smokeBootStaging()
 run(['codesign', '--force', '--sign', '-', '-i', 'dev.antoncode.anton.bridge', '-r=designated => identifier "dev.antoncode.anton.bridge"', join(resources, 'bin', 'anton-bridge')])
 run(['codesign', '--force', '--sign', '-', '-i', 'dev.antoncode.anton.node', '-r=designated => identifier "dev.antoncode.anton.node"', join(resources, 'node', 'bin', 'node')])
 run(['codesign', '--force', '--sign', '-', '-i', 'dev.antoncode.anton', '-r=designated => identifier "dev.antoncode.anton"', appRoot])
@@ -176,12 +216,77 @@ run(['codesign', '--force', '--sign', '-', '-i', 'dev.antoncode.anton', '-r=desi
 console.log(`Built ${appRoot}`)
 console.log(`Size: use du -sh ${appRoot}`)
 
-// Install: refuse to touch a running app, keep the outgoing bundle for
-// rollback, then relaunch. Quit Anton before rebuilding.
-const running = spawnSync('pgrep', ['-f', 'dist/Anton\\.app/Contents'], { encoding: 'utf8' })
-if (running.status === 0) throw new Error('Anton is running; quit it before rebuilding the bundle')
+// Install: keep the outgoing bundle for rollback, then relaunch. The normal
+// path refuses to touch a running app — quit Anton before rebuilding. The
+// in-place path (ANTON_IN_PLACE_SWAP=1, used by the recovery repair agent)
+// swaps without quitting: running processes keep their open file handles and
+// the next bridge/harness start picks up the new bundle.
+const inPlaceSwap = process.env.ANTON_IN_PLACE_SWAP === '1'
+if (!inPlaceSwap) {
+  // Quit the running app first: graceful AppleEvent quit, then a bounded
+  // wait, then force-kill stragglers. Owning the quit makes the whole flow
+  // one command — build, smoke, swap, launch, verify.
+  const running = spawnSync('pgrep', ['-f', 'Anton\\.app/Contents'], { encoding: 'utf8' })
+  if (running.status === 0) {
+    console.log('Anton is running; quitting it for the rebuild')
+    spawnSync('osascript', ['-e', 'quit app "Anton"'], { stdio: 'ignore' })
+    for (let elapsed = 0; elapsed < 10_000; elapsed += 500) {
+      if (spawnSync('pgrep', ['-f', 'Anton\\.app/Contents'], { encoding: 'utf8' }).status !== 0) break
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500)
+    }
+    if (spawnSync('pgrep', ['-f', 'Anton\\.app/Contents'], { encoding: 'utf8' }).status === 0) {
+      spawnSync('pkill', ['-f', 'Anton\\.app/Contents'], { stdio: 'ignore' })
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2000)
+    }
+    if (spawnSync('pgrep', ['-f', 'Anton\\.app/Contents'], { encoding: 'utf8' }).status === 0) {
+      throw new Error('Anton processes did not stop; refusing to swap the bundle under a running app')
+    }
+  }
+}
 rmSync(previousRoot, { recursive: true, force: true })
 if (existsSync(installedRoot)) renameSync(installedRoot, previousRoot)
-renameSync(appRoot, installedRoot)
-run(['open', installedRoot])
-console.log(`Installed ${installedRoot}; previous bundle kept at ${previousRoot}`)
+// The staging bundle lives in the repo's dist/ while the install dir may be
+// another volume (/Applications on a separate disk): rename(2) then EXDEV
+// fallback to ditto, which preserves the bundle's symlinks verbatim.
+try {
+  renameSync(appRoot, installedRoot)
+} catch (error) {
+  if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error
+  run(['ditto', appRoot, installedRoot])
+  rmSync(appRoot, { recursive: true, force: true })
+}
+// One-time migration: earlier builds installed into the repo's dist/. A stale
+// copy there would shadow nothing, but LaunchServices could pick it up; remove
+// it once the real install location owns the app.
+const legacyInstall = resolve(harnessRoot, 'dist/Anton.app')
+if (legacyInstall !== installedRoot && existsSync(legacyInstall)) {
+  rmSync(legacyInstall, { recursive: true, force: true })
+  console.log(`Removed legacy install at ${legacyInstall}`)
+}
+if (inPlaceSwap) {
+  console.log(`Swapped ${installedRoot} in place; previous bundle kept at ${previousRoot}. Restart the harness to activate it.`)
+} else {
+  run(['open', installedRoot])
+  // Own the launch: a queued launch can lose the race with the last dying
+  // process of the previous install, so verify the tray came up and retry
+  // once before reporting success. A launch that still fails is a loud
+  // warning, not a failed build — the bundle itself is already installed.
+  const trayUp = (): boolean =>
+    spawnSync('pgrep', ['-f', 'Anton\\.app/Contents/MacOS/Anton'], { encoding: 'utf8' }).status === 0
+  let launched = false
+  for (let elapsed = 0; elapsed < 15_000; elapsed += 1_000) {
+    if (trayUp()) { launched = true; break }
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000)
+  }
+  if (!launched) {
+    console.warn('Anton did not appear within 15s; retrying launch once')
+    run(['open', installedRoot])
+    for (let elapsed = 0; elapsed < 15_000; elapsed += 1_000) {
+      if (trayUp()) { launched = true; break }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000)
+    }
+  }
+  console.log(launched
+    ? `Installed ${installedRoot} and Anton is running; previous bundle kept at ${previousRoot}`
+    : `Installed ${installedRoot} but Anton did not launch — open it manually. Previous bundle: ${previousRoot}`)
+}
