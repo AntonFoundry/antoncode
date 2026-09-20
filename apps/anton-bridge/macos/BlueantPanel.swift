@@ -20,6 +20,7 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
   private var answer = ""
   private var streamingSessionId: String?
   private var lastQuestion = ""
+  private var lastProvenance: String?
   private var waking = false
   private var hasPositioned = false
   // Spotlight behavior: compact (entry + keybar only) until answer content
@@ -381,11 +382,13 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
     entryField.stringValue = ""
     answer = ""
     lastQuestion = text
+    let contextSnapshot = DesktopContext.snapshot()
+    lastProvenance = contextSnapshot.provenance
     renderAnswer(status: "…")
 
     let todayKey = Self.sessionPrefix + Self.todayStamp()
     let proceed: (String) -> Void = { [weak self] sessionId in
-      self?.sendPrompt(sessionId: sessionId, text: DesktopContext.collect() + text)
+      self?.sendPrompt(sessionId: sessionId, text: contextSnapshot.context + text)
     }
     client.harnessRunning { [weak self] running in
       DispatchQueue.main.async {
@@ -534,6 +537,14 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
     let transient = status.isEmpty || status == "…" || status == "Waking Anton…"
     applySize(compact: answer.isEmpty && transient, animate: true)
     let text = NSMutableAttributedString()
+    // Provenance header, Arivu-style: what this answer's context read. Only
+    // shows once there is an answer to attribute.
+    if !answer.isEmpty, let provenance = lastProvenance {
+      text.append(NSAttributedString(string: "Read: " + provenance + "\n\n", attributes: [
+        .font: NSFont.systemFont(ofSize: 11),
+        .foregroundColor: NSColor.tertiaryLabelColor,
+      ]))
+    }
     if !status.isEmpty {
       text.append(NSAttributedString(string: status + "\n\n", attributes: [
         .font: NSFont.systemFont(ofSize: 12),
