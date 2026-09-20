@@ -19,8 +19,43 @@ export function ensureBlueantPreset({ dshHome }: EnsureBlueantPresetOptions): vo
   const ymlPath = join(presetDir, 'agent.cordis.yml')
   const metaPath = join(presetDir, 'preset.yml')
   const restrictPath = join(presetDir, 'plugins', 'restrict-tools.js')
+  const notifyPath = join(presetDir, 'plugins', 'notify.js')
   mkdirSync(presetDir, { recursive: true })
   mkdirSync(dirname(restrictPath), { recursive: true })
+
+  if (!existsSync(notifyPath)) {
+    writeFileSync(notifyPath, `${[
+      '// Act tier v0: blueant_notify posts a macOS notification through the',
+      '// bridge inbox (POST /bridge/api/notify); the Mac app polls, delivers it',
+      '// via UNUserNotificationCenter, and acks. Loopback only and no Origin',
+      '// header, so the browser-CSRF fence does not apply.',
+      "export const name = 'blueant-notify'",
+      "export const inject = ['tools']",
+      '',
+      'export function apply(ctx) {',
+      '  ctx.effect(() => ctx.tools.register({',
+      "    name: 'blueant_notify',",
+      "    description: 'Post a macOS notification to the user. Use when a long task finishes or the user asked to be alerted. Keep the body under two sentences.',",
+      '    parameters: {',
+      "      body: { type: 'string', required: true, description: 'Notification text (max ~2000 chars)' },",
+      "      title: { type: 'string', description: 'Short title; defaults to Blueant' },",
+      '    },',
+      "    output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: String(value) }] },",
+      '    async execute(args, exec) {',
+      "      const res = await fetch('http://127.0.0.1:3742/bridge/api/notify', {",
+      "        method: 'POST',",
+      "        headers: { 'content-type': 'application/json' },",
+      '        body: JSON.stringify({ title: args.title, body: args.body }),',
+      '        signal: exec.signal,',
+      '      })',
+      '      if (!res.ok) throw new Error(`blueant_notify failed: HTTP ${res.status}`)',
+      "      return 'notification queued'",
+      '    },',
+      '  }), \'blueant.notify\')',
+      '}',
+      '',
+    ].join('\n')}`)
+  }
 
   if (!existsSync(restrictPath)) {
     writeFileSync(restrictPath, `${[
@@ -56,7 +91,9 @@ export function ensureBlueantPreset({ dshHome }: EnsureBlueantPresetOptions): vo
       '- id: restrict-tools',
       '  name: ./plugins/restrict-tools.js',
       '  config:',
-      '    allow: [c0ntext_search, c0ntext_remember, recipe_search, web_search, read_image]',
+      '    allow: [c0ntext_search, c0ntext_remember, recipe_search, web_search, read_image, blueant_notify]',
+      '- id: notify',
+      '  name: ./plugins/notify.js',
       // NOTE: no c0ntext row here. The plugin registers its toolMatcher service
       // at mount, so a preset-scope second mount fails loud ("service
       // toolMatcher has been registered"); retrieval tuning (retrieveMode,
