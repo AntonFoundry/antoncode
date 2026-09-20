@@ -218,24 +218,73 @@ final class HarnessClient {
   }
 }
 
-/// Desktop context v0: zero-permission signals prepended to each ask. The
+/// Desktop context v1: zero-permission signals prepended to each ask, plus a
+/// user-facing provenance line for the answer header ("Read: …"). The
 /// frontmost app needs no consent; the browser URL uses AppleScript only when
-/// automation consent already exists — one failure disables it for the
-/// process lifetime so the user never sees a permission prompt storm.
+/// automation consent already exists; the window title uses the Accessibility
+/// API only when accessibility trust already exists — any failure disables
+/// that probe for the process lifetime so the user never sees a prompt storm.
 enum DesktopContext {
+  /// What the ask read, phrased for the popup's answer header.
+  struct Snapshot {
+    let context: String
+    let provenance: String?
+  }
+
   private static var browserScriptDisabled = false
+  private static var accessibilityDisabled = false
   private static let browsers = ["Safari", "Google Chrome", "Arc", "Microsoft Edge", "Brave Browser", "Firefox"]
 
-  static func collect() -> String {
+  static func snapshot() -> Snapshot {
     var lines: [String] = []
+    var provenanceParts: [String] = []
     if let app = NSWorkspace.shared.frontmostApplication {
-      lines.append("- Frontmost app: \(app.localizedName ?? "?") (\(app.bundleIdentifier ?? "?"))")
-      if !browserScriptDisabled, let url = browserURL(appName: app.localizedName ?? "") {
+      let appName = app.localizedName ?? "?"
+      lines.append("- Frontmost app: \(appName) (\(app.bundleIdentifier ?? "?"))")
+      provenanceParts.append(appName)
+      if !accessibilityDisabled, let title = windowTitle(processId: app.processIdentifier) {
+        lines.append("- Window title: \(title)")
+        provenanceParts.append("“" + DesktopContext.truncate(title, 60) + "”")
+      }
+      if !browserScriptDisabled, let url = browserURL(appName: appName) {
         lines.append("- Browser URL: \(url)")
+        provenanceParts.append(url)
       }
     }
-    guard !lines.isEmpty else { return "" }
-    return "<desktop-context>\n" + lines.joined(separator: "\n") + "\n</desktop-context>\n\n"
+    let provenance = provenanceParts.isEmpty ? nil : provenanceParts.joined(separator: " — ")
+    guard !lines.isEmpty else { return Snapshot(context: "", provenance: nil) }
+    return Snapshot(context: "<desktop-context>\n" + lines.joined(separator: "\n") + "\n</desktop-context>\n\n",
+                    provenance: provenance)
+  }
+
+  /// Convenience wrapper for callers that only need the prompt prefix.
+  static func collect() -> String { snapshot().context }
+
+  /// Truncate with an ellipsis for provenance display only; the model always
+  /// receives the full line.
+  private static func truncate(_ value: String, _ maxCount: Int) -> String {
+    value.count > maxCount ? value.prefix(maxCount) + "…" : value
+  }
+
+  /// Focused window title via the Accessibility API. Reads only the title of
+  /// the already-focused window; when the app or the system has not granted
+  /// accessibility trust the call fails and the probe disables itself.
+  private static func windowTitle(processId: pid_t) -> String? {
+    let axApp = AXUIElementCreateApplication(processId)
+    var windowRef: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(axApp, kAXFocusedWindowAttribute as CFString, &windowRef) == .success,
+          windowRef != nil else {
+      return nil
+    }
+    var titleRef: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(windowRef as! AXUIElement, kAXTitleAttribute as CFString, &titleRef) == .success,
+          let title = titleRef as? String, !title.isEmpty else {
+      // An app that refuses the title read (or an untrusted process) should
+      // not retry every ask; treat the failure like a consent denial.
+      accessibilityDisabled = true
+      return nil
+    }
+    return title
   }
 
   private static func browserURL(appName: String) -> String? {
