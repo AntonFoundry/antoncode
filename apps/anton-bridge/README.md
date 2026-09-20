@@ -2,17 +2,20 @@
 
 Anton Bridge is the first local-runtime layer for Anton. It is a small Bun
 daemon that starts and supervises a DeepSeek Harness Web process, confirms the
-health of the local c0ntext engine, and presents Harness at a stable local URL.
+health of the configured memory service, and presents Harness at a stable local
+URL.
 
-It intentionally does **not** replace DeepSeek Harness or c0ntext. The
-existing native c0ntext plugin remains enabled in the DeepSeek Harness `web`
-profile, while this bridge owns local lifecycle and is the future home for the
-tray app, browser extension pairing, permissions, and durable agents.
+It intentionally does **not** replace DeepSeek Harness or the memory service.
+The memory plugin remains enabled in the DeepSeek Harness `web` profile, while
+this bridge owns local lifecycle and is the future home for the tray app,
+browser extension pairing, permissions, and durable agents.
 
-The c0ntext plugin is endpoint-neutral. Its profile has a safe local default,
+The memory plugin is endpoint-neutral. Its profile has a safe local default,
 but Anton Bridge supplies `ANTON_CONTEXT_ENDPOINT` to Harness at launch. That
-lets one Harness installation target any approved local c0ntext worker now and
-the same configuration seam can later target a hosted endpoint.
+lets one Harness installation target any approved service endpoint now and the
+same configuration seam can later target a hosted endpoint. The service itself
+is a separate product: this codebase ships only the client plugin and never
+references the service's implementation.
 
 ## Run locally
 
@@ -20,7 +23,8 @@ Prerequisites:
 
 - Bun 1.3 or newer.
 - This DeepSeek Harness checkout.
-- c0ntext beside the checkout at `../c0ntext` (or set `ANTON_CONTEXT_ROOT`).
+- The memory plugin beside the checkout at `../c0ntext/deepseek-harness-plugin`
+  (or set `ANTON_CONTEXT_PLUGIN_ROOT`).
 - The harness built to `lib/` — the bridge launches the built CLI
   (`apps/cli/lib/bin.js`), not the TypeScript source: `npm run build:lib:host`
   (the bridge falls back to `src/bin.ts` only when you set
@@ -70,11 +74,9 @@ reuse it and deliberately refuses to kill a process it does not own.
 | `ANTON_HARNESS_ENTRY` | built CLI (`apps/cli/lib/bin.js`) | Override the bundled/installed Harness CLI entrypoint. |
 | `ANTON_HARNESS_LOADER` | *(empty — built JavaScript)* | Node import loader for a TypeScript Harness entrypoint; set `tsx/esm` when running from source, leave empty for built JavaScript. |
 | `ANTON_NODE_BINARY` | `node` | Node executable used to launch Harness. |
-| `ANTON_CONTEXT_ENDPOINT` | `http://127.0.0.1:8090` | c0ntext worker health endpoint. |
-| `ANTON_BRIDGE_CONFIG` | `~/.anton/bridge.json` | Persistent Bridge preferences, including c0ntext endpoint. |
-| `ANTON_CONTEXT_ROOT` | sibling `c0ntext` directory | Compose source used to start the local engine. |
-| `ANTON_DOCKER_BINARY` | `docker` | Docker-compatible CLI (Docker Desktop or OrbStack). |
-| `ANTON_CONTEXT_AUTO_START` | `false` | Start the local c0ntext Compose stack on bridge launch. |
+| `ANTON_CONTEXT_ENDPOINT` | `http://127.0.0.1:8090` | Memory-service health endpoint. |
+| `ANTON_CONTEXT_PLUGIN_ROOT` | sibling checkout or bundled plugin | Memory-plugin package linked into the Harness profile. |
+| `ANTON_BRIDGE_CONFIG` | `~/.anton/bridge.json` | Persistent Bridge preferences, including the memory-service endpoint. |
 | `ANTON_AUTO_START` | `true` | Set to `false` to start Harness only from the control page. |
 
 ## Build a local executable
@@ -97,19 +99,17 @@ pnpm run anton:build:macos
 open dist/Anton.app
 ```
 
-The bundle contains the compiled Bridge, a Node runtime, the full local
-DeepSeek Harness source/runtime, and the c0ntext Harness plugin. On first
+The bundle contains the compiled Bridge, a Node runtime, the built local
+DeepSeek Harness runtime, and the memory-service client plugin. On first
 launch it creates an app-owned Harness profile at
-`~/Library/Application Support/Anton/dsh`, with the bundled c0ntext plugin
-enabled. Harness sessions in this app are therefore isolated from an existing
+`~/Library/Application Support/Anton/dsh`, with the bundled plugin enabled.
+Harness sessions in this app are therefore isolated from an existing
 developer `~/.dsh` installation.
 
 The app is ad-hoc signed for local development only; it is **not** notarized or
-ready for public distribution. It also needs Docker Desktop or OrbStack to run
-the local c0ntext engine, because XTDB, Lucene, and the worker are separate
-container services rather than embedded Bun code. The app starts that local
-Compose stack on launch (or reuses it if it is already healthy); the Bridge
-control page also has a **Start local c0ntext** action.
+ready for public distribution. It reaches the memory service at the configured
+endpoint (`ANTON_CONTEXT_ENDPOINT` or the control-page field) and ships no
+service implementation of its own.
 
 ## Security boundary
 

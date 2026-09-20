@@ -33,21 +33,45 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
   private var pollTimer: Timer?
   private var harnessState: HarnessState = .transitioning
   private var consecutivePollFailures = 0
+  private var blueantPanel: BlueantPanel?
+  private var hotkeyCenter: HotkeyCenter?
   // The bridge listens on the loopback address it reports as `listening_on`.
   // Polling 127.0.0.1 (not the antoncode.localhost alias) keeps ATS and the
   // system resolver out of the status path entirely.
   private let bridgeURL = URL(string: "http://127.0.0.1:3742")!
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    // Single instance: a second launch (double-open, script launching the
+    // binary directly after a failed `open`) would register a duplicate
+    // status item and a duplicate hotkey. The first instance wins; this one
+    // exits before installing any UI or the bridge.
+    let others = NSRunningApplication.runningApplications(withBundleIdentifier: "dev.antoncode.anton")
+      .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
+    if let existing = others.first {
+      NSLog("Anton: instance already running (pid \(existing.processIdentifier)) — exiting")
+      exit(0)
+    }
     NSApp.setActivationPolicy(.accessory)
     installMenu()
+    installBlueant()
     launchBridge()
     beginStatusPolling()
   }
 
   func applicationWillTerminate(_ notification: Notification) {
     pollTimer?.invalidate()
+    hotkeyCenter?.unregister()
     bridge?.terminate()
+  }
+
+  /// Blueant popup: menu item toggles the panel; ⇧⌥Space toggles it from
+  /// anywhere. A failed hotkey registration only costs the shortcut.
+  private func installBlueant() {
+    let panel = BlueantPanel()
+    blueantPanel = panel
+    let center = HotkeyCenter()
+    center.register { [weak panel] in panel?.toggle() }
+    hotkeyCenter = center
   }
 
   private func installMenu() {
@@ -56,6 +80,9 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let menu = NSMenu()
     menu.delegate = self
     menu.autoenablesItems = false
+    let blueant = NSMenuItem(title: "Open Blueant", action: #selector(toggleBlueant), keyEquivalent: "b")
+    blueant.target = self
+    menu.addItem(blueant)
     menu.addItem(NSMenuItem(title: "Open Anton", action: #selector(openAnton), keyEquivalent: "o"))
     let start = NSMenuItem(title: "Start Harness", action: #selector(startHarness), keyEquivalent: "s")
     start.target = self
@@ -91,13 +118,11 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     process.executableURL = resources.appendingPathComponent("bin/anton-bridge")
     var environment = ProcessInfo.processInfo.environment
     environment["ANTON_DSH_ROOT"] = resources.appendingPathComponent("deepseek-harness").path
-    environment["ANTON_CONTEXT_ROOT"] = resources.appendingPathComponent("c0ntext").path
     environment["ANTON_CONTEXT_PLUGIN_ROOT"] = resources
       .appendingPathComponent("c0ntext/deepseek-harness-plugin").path
     environment["ANTON_DSH_HOME"] = support.appendingPathComponent("dsh").path
     environment["ANTON_BRIDGE_CONFIG"] = support.appendingPathComponent("bridge.json").path
     environment["ANTON_NODE_BINARY"] = resources.appendingPathComponent("node/bin/node").path
-    environment["ANTON_CONTEXT_AUTO_START"] = "true"
     process.environment = environment
     let logURL = support.appendingPathComponent("bridge.log")
     FileManager.default.createFile(atPath: logURL.path, contents: nil)
@@ -116,6 +141,15 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
   @objc private func openAnton() {
     NSWorkspace.shared.open(bridgeURL)
+  }
+
+  @objc private func toggleBlueant() {
+    guard let panel = blueantPanel else { return }
+    if !panel.isVisible {
+      // Fresh opens anchor under the status item.
+      panel.positionUnder(anchorRect: nil)
+    }
+    panel.toggle()
   }
 
   @objc private func startHarness() {

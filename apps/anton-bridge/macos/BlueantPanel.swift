@@ -1,0 +1,608 @@
+import Cocoa
+
+/// The Blueant popup: a borderless, non-activating HUD panel anchored under
+/// the menubar. One line of entry, a streamed answer area, a footer keybar.
+/// Esc hides (cancelling any in-flight turn); focus loss hides; the frame
+/// persists across launches in UserDefaults.
+final class BlueantPanel: NSPanel, NSWindowDelegate {
+  private let client = HarnessClient()
+  // Editable field, not a label: labelWithString: fields are non-editable
+  // and cannot become first responder, so keystrokes would go nowhere.
+  private let entryField = NSTextField(string: "")
+  private let promptMark = NSTextField(labelWithString: ">")
+  private let answerView = NSTextView()
+  private let footerLabel = NSTextField(labelWithString: "")
+  private let scroll = NSScrollView()
+  private let divider = NSBox()
+  private var mux: HarnessClient.MuxStream?
+  private var answer = ""
+  private var streamingSessionId: String?
+  private var lastQuestion = ""
+  private var waking = false
+  private var hasPositioned = false
+  // Spotlight behavior: compact (entry + keybar only) until answer content
+  // exists, then expands; the dragged position persists, the height adapts.
+  private var isCompact = true
+  private static let compactHeight: CGFloat = 100
+  private static let expandedHeight: CGFloat = 420
+  // Voice mode (Phase 3): push-to-talk via the waveform tile and panel-local ⌥Space.
+  private let micButton = MicButton()
+  private let speech = SpeechController()
+  private var voiceKeyMonitor: Any?
+  private var micDownAt: Date?
+  private var entrySnapshot = ""
+  private var speechDisabledForSession = false
+  private static let micHoldToggleThreshold: TimeInterval = 0.25
+
+  private static let frameKey = "blueant.panel.frame"
+  private static let sessionPrefix = "blueant.session."
+  private static let workspacePath: String = {
+    let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    return support.appendingPathComponent("Anton", isDirectory: true)
+      .appendingPathComponent("blueant", isDirectory: true).path
+  }()
+
+  init() {
+    super.init(contentRect: NSRect(x: 0, y: 0, width: 640, height: BlueantPanel.compactHeight),
+               styleMask: [.borderless, .nonactivatingPanel],
+               backing: .buffered, defer: false)
+    level = .floating
+    isReleasedWhenClosed = false
+    hidesOnDeactivate = true
+    collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+    isOpaque = false
+    backgroundColor = .clear
+    appearance = NSAppearance(named: .darkAqua)
+    animationBehavior = .utilityWindow
+    isMovableByWindowBackground = true // drag anywhere on the chrome, Spotlight-style
+    delegate = self
+    buildContent()
+    if let saved = UserDefaults.standard.string(forKey: Self.frameKey) {
+      let rect = NSRectFromString(saved)
+      if rect.width > 100 {
+        // Restore the dragged position and width, but always open compact —
+        // the height adapts to content again.
+        var frame = rect
+        frame.size.height = Self.compactHeight
+        setFrame(frame, display: false)
+        hasPositioned = true
+      }
+    }
+  }
+
+  required init?(coder: NSCoder) { nil }
+
+  private func buildContent() {
+    let hud = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 640, height: BlueantPanel.compactHeight))
+    hud.material = .hudWindow
+    hud.blendingMode = .behindWindow
+    hud.state = .active
+    hud.wantsLayer = true
+    hud.layer?.cornerRadius = 12
+    contentView = hud
+
+    let promptMark = self.promptMark
+    promptMark.font = NSFont.monospacedSystemFont(ofSize: 15, weight: .medium)
+    promptMark.textColor = .secondaryLabelColor
+    hud.addSubview(promptMark)
+
+    entryField.font = NSFont.monospacedSystemFont(ofSize: 15, weight: .regular)
+    entryField.placeholderString = "Ask Blueant…"
+    entryField.isBezeled = false
+    entryField.isBordered = false
+    entryField.drawsBackground = false
+    entryField.focusRingType = .none
+    entryField.target = self
+    entryField.action = #selector(submit)
+    hud.addSubview(entryField)
+
+    divider.boxType = .separator
+    hud.addSubview(divider)
+
+    answerView.isEditable = false
+    answerView.drawsBackground = false
+    answerView.textContainerInset = NSSize(width: 4, height: 8)
+    answerView.font = NSFont.systemFont(ofSize: 13)
+    scroll.hasVerticalScroller = true
+    scroll.borderType = .noBorder
+    scroll.drawsBackground = false
+    scroll.documentView = answerView
+    hud.addSubview(scroll)
+
+    footerLabel.font = NSFont.systemFont(ofSize: 11)
+    footerLabel.textColor = .tertiaryLabelColor
+    footerLabel.stringValue = "⏎ ask · ⌘N new thread · ⌘C copy · ⌘P promote · ⌘E open in Anton · hold ⌥Space talk · Esc close"
+    hud.addSubview(footerLabel)
+
+    micButton.target = self
+    micButton.action = nil // handled by mouseDown/mouseUp (hold-to-talk)
+    micButton.onDown = { [weak self] in
+      guard let self else { return }
+      if self.speech.isListening && self.micDownAt == nil {
+        self.micClickedWhileListening() // quick click while hands-free: stop
+      } else {
+        self.micDown()
+      }
+    }
+    micButton.onUp = { [weak self] in self?.micUp() }
+    hud.addSubview(micButton)
+
+    layoutContent(in: NSRect(x: 0, y: 0, width: 640, height: BlueantPanel.compactHeight))
+    hud.postsFrameChangedNotifications = true
+    NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: hud, queue: .main) { [weak self] _ in
+      guard let self, let hud = self.contentView else { return }
+      self.layoutContent(in: hud.bounds)
+    }
+  }
+
+  private func layoutContent(in bounds: NSRect) {
+    let width = bounds.width
+    let height = bounds.height
+    let micWidth: CGFloat = 30
+    micButton.frame = NSRect(x: width - micWidth - 12, y: height - 46, width: micWidth, height: 26)
+    entryField.frame = NSRect(x: 40, y: height - 44, width: width - 56 - micWidth - 4, height: 24)
+    promptMark.frame = NSRect(x: 16, y: height - 44, width: 16, height: 22)
+    divider.frame = NSRect(x: 16, y: height - 52, width: width - 32, height: 4)
+    scroll.frame = NSRect(x: 12, y: 30, width: width - 24, height: height - 90)
+    scroll.isHidden = isCompact
+    footerLabel.frame = NSRect(x: 16, y: 8, width: width - 32, height: 16)
+  }
+
+  /// Grow or shrink between the Spotlight-compact card and the full answer
+  /// window, keeping the top edge (the entry line) anchored in place.
+  private func applySize(compact: Bool, animate: Bool) {
+    guard isCompact != compact else { return }
+    isCompact = compact
+    var frame = self.frame
+    let oldHeight = frame.height
+    frame.size.height = compact ? Self.compactHeight : Self.expandedHeight
+    frame.origin.y += oldHeight - frame.size.height
+    setFrame(frame, display: true, animate: animate)
+    UserDefaults.standard.set(NSStringFromRect(self.frame), forKey: Self.frameKey)
+  }
+
+  // MARK: Show / hide
+
+  func toggle() {
+    if isVisible { closePanel() } else { showPanel() }
+  }
+
+  func showPanel() {
+    if !hasPositioned { positionUnder(anchorRect: nil) }
+    applySize(compact: answer.isEmpty, animate: false)
+    NSApp.activate(ignoringOtherApps: true)
+    makeKeyAndOrderFront(nil)
+    makeFirstResponder(entryField)
+    installVoiceKeyMonitor()
+  }
+
+  func closePanel() {
+    stopVoice(forHide: true)
+    removeVoiceKeyMonitor()
+    cancelStreaming()
+    UserDefaults.standard.set(NSStringFromRect(frame), forKey: Self.frameKey)
+    orderOut(nil)
+  }
+
+  /// Default placement: horizontally centered, roughly a third down from the
+  /// top of the screen — where Spotlight and Alfred appear. Clamped to the
+  /// main screen's visible frame.
+  func positionUnder(anchorRect: NSRect?) {
+    guard let screen = NSScreen.main else { return }
+    let visible = screen.visibleFrame
+    var origin: NSPoint
+    if let anchorRect {
+      origin = NSPoint(x: anchorRect.midX - frame.width / 2, y: anchorRect.minY - frame.height - 8)
+    } else {
+      origin = NSPoint(x: visible.midX - frame.width / 2,
+                       y: visible.maxY - visible.height * 0.30 - frame.height)
+    }
+    origin.x = min(max(visible.minX + 8, origin.x), visible.maxX - frame.width - 8)
+    origin.y = min(max(visible.minY + 8, origin.y), visible.maxY - frame.height - 8)
+    setFrameOrigin(origin)
+    hasPositioned = true
+  }
+
+  override var canBecomeKey: Bool { true }
+
+  func windowDidResignKey(_ notification: Notification) {
+    // Focus loss hides. (App-level deactivation is covered by hidesOnDeactivate.)
+    if isVisible { closePanel() }
+  }
+
+  /// Key equivalents are consulted before the field editor consumes keys.
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    guard mods == [.command] else { return super.performKeyEquivalent(with: event) }
+    switch event.charactersIgnoringModifiers {
+    case "n":
+      newThread(nil)
+      return true
+    case "c":
+      copyAnswer(nil)
+      return true
+    case "e":
+      openInAnton(nil)
+      return true
+    case "p":
+      promote(nil)
+      return true
+    default:
+      return super.performKeyEquivalent(with: event)
+    }
+  }
+
+  override func cancelOperation(_ sender: Any?) {
+    closePanel()
+  }
+
+  // MARK: Voice mode (push-to-talk)
+
+  /// The waveform tile doubles as hold-to-talk and toggle:
+  /// - mouseDown starts; mouseUp stops if held ≥250 ms (hold-to-talk);
+  /// - a click shorter than 250 ms toggles hands-free mode (click to start,
+  ///   click again to stop).
+  /// ⌥Space works the same way via a panel-local key monitor (only while the
+  /// panel is key). Plain ⌥Space was chosen over the global Carbon ⇧⌥Space
+  /// hotkey because key-up tracking would otherwise need a global event tap
+  /// and Accessibility permission.
+  private func micDown() {
+    guard !speechDisabledForSession, !speech.isListening else { return }
+    micDownAt = Date()
+    entrySnapshot = entryField.stringValue
+    startListening()
+  }
+
+  private func micUp() {
+    guard let downAt = micDownAt else { return }
+    micDownAt = nil
+    let held = Date().timeIntervalSince(downAt)
+    if held >= Self.micHoldToggleThreshold {
+      stopListening()
+    }
+    // Held < threshold: treated as a click — keep listening (toggle state).
+  }
+
+  private func micClickedWhileListening() {
+    stopListening()
+  }
+
+  private func startListening() {
+    SpeechController.requestPermissions { [weak self] granted, denial in
+      guard let self else { return }
+      guard granted else {
+        self.speechDisabledForSession = true
+        self.micButton.isEnabled = false
+        self.renderAnswer(status: "Microphone/Speech permission denied (\(denial ?? "permission")) — type instead")
+        return
+      }
+      self.speech.start(callbacks: SpeechController.Callbacks(
+        onPartial: { [weak self] partial in self?.renderPartial(partial) },
+        onLevel: { [weak self] level in self?.micButton.setLevel(level) },
+        onFinish: { [weak self] final in self?.landFinalTranscript(final) },
+        onFailure: { [weak self] message in
+          guard let self else { return }
+          self.speechDisabledForSession = true
+          self.micButton.isEnabled = false
+          self.micButton.setListening(false)
+          self.renderAnswer(status: message)
+        }
+      ))
+      self.micButton.setListening(true)
+      self.renderPartial("")
+    }
+  }
+
+  private func stopListening() {
+    micButton.setListening(false)
+    speech.stop()
+  }
+
+  /// Interim transcript: rendered grey with a trailing ellipsis over the
+  /// snapshot of whatever the user had typed before speaking. Never submitted.
+  private func renderPartial(_ partial: String) {
+    let text = NSMutableAttributedString(string: "● listening ")
+    text.addAttributes([.foregroundColor: NSColor.systemRed], range: NSRange(location: 0, length: text.length))
+    text.append(NSAttributedString(string: (partial.isEmpty ? "" : partial + "…"), attributes: [
+      .foregroundColor: NSColor.secondaryLabelColor,
+    ]))
+    entryField.attributedStringValue = text
+  }
+
+  /// Final transcript replaces the partial in the entry field and focus moves
+  /// back to the field for review; the user submits with ⏎ themselves.
+  private func landFinalTranscript(_ final: String) {
+    micButton.setListening(false)
+    let trimmed = final.trimmingCharacters(in: .whitespacesAndNewlines)
+    var combined = entrySnapshot
+    if !trimmed.isEmpty {
+      combined = combined.isEmpty ? trimmed : combined + " " + trimmed
+    }
+    entryField.stringValue = combined
+    makeFirstResponder(entryField)
+    if let editor = entryField.currentEditor() {
+      editor.moveToEndOfDocument(nil)
+    }
+  }
+
+  private func installVoiceKeyMonitor() {
+    guard voiceKeyMonitor == nil else { return }
+    voiceKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+      guard let self, self.isKeyPanel else { return event }
+      let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+      guard event.keyCode == 49, mods == [.option] else { return event }
+      if self.speechDisabledForSession { return nil }
+      switch event.type {
+      case .keyDown:
+        if !self.speech.isListening { self.micDown() }
+      case .keyUp:
+        if self.micDownAt != nil { self.micUp() }
+      default:
+        break
+      }
+      return nil // swallow: ⌥Space belongs to push-to-talk while the panel is key
+    }
+  }
+
+  private func removeVoiceKeyMonitor() {
+    if let monitor = voiceKeyMonitor {
+      NSEvent.removeMonitor(monitor)
+      voiceKeyMonitor = nil
+    }
+  }
+
+  private var isKeyPanel: Bool { isKeyWindow }
+
+  /// Panel hid or resigned key: abort recognition with no final transcript
+  /// and restore the pre-dictation entry text (partials are discarded).
+  private func stopVoice(forHide: Bool) {
+    guard speech.isListening || micDownAt != nil else { return }
+    micDownAt = nil
+    micButton.setListening(false)
+    speech.abort()
+    entryField.stringValue = entrySnapshot
+  }
+
+  // MARK: Asking
+
+  @objc private func submit() {
+    ask(entryField.stringValue)
+  }
+
+  func ask(_ rawText: String) {
+    let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty, !waking else { return }
+    entryField.stringValue = ""
+    answer = ""
+    lastQuestion = text
+    renderAnswer(status: "…")
+
+    let todayKey = Self.sessionPrefix + Self.todayStamp()
+    let proceed: (String) -> Void = { [weak self] sessionId in
+      self?.sendPrompt(sessionId: sessionId, text: DesktopContext.collect() + text)
+    }
+    client.harnessRunning { [weak self] running in
+      DispatchQueue.main.async {
+        guard let self else { return }
+        if running {
+          self.resolveSession(key: todayKey, then: proceed)
+          return
+        }
+        // Harness down: wake it first, then continue.
+        self.waking = true
+        self.renderAnswer(status: "Waking Anton…")
+        self.client.startHarness { [weak self] _ in
+          DispatchQueue.main.async {
+            guard let self else { return }
+            self.waking = false
+            self.resolveSession(key: todayKey, then: proceed)
+          }
+        }
+      }
+    }
+  }
+
+  /// Returns the stored id for today when present; otherwise creates a fresh
+  /// session through the API and stores it under the day key.
+  private func resolveSession(key: String, then proceed: @escaping (String) -> Void) {
+    if let stored = UserDefaults.standard.string(forKey: key), !stored.isEmpty {
+      proceed(stored)
+      return
+    }
+    try? FileManager.default.createDirectory(atPath: Self.workspacePath, withIntermediateDirectories: true)
+    client.createSession(cwd: Self.workspacePath, preset: "blueant") { [weak self] result in
+      DispatchQueue.main.async {
+        guard let self else { return }
+        switch result {
+        case .success(let sessionId):
+          UserDefaults.standard.set(sessionId, forKey: key)
+          proceed(sessionId)
+        case .failure(let error):
+          self.renderAnswer(status: "Blueant could not open a session: \(error.localizedDescription)")
+        }
+      }
+    }
+  }
+
+  private func sendPrompt(sessionId: String, text: String) {
+    guard !sessionId.isEmpty else { return }
+    streamingSessionId = sessionId
+    let stream = HarnessClient.MuxStream()
+    stream.onDelta = { [weak self] delta in
+      self?.answer += delta
+      self?.renderAnswer(status: "")
+    }
+    stream.onTurnEnd = { [weak self] in
+      self?.finishStreaming()
+    }
+    stream.onError = { [weak self] message in
+      self?.finishStreaming()
+      self?.renderAnswer(status: " ⚠︎ \(message)")
+    }
+    mux = stream
+    stream.connect(sessionId: sessionId)
+    client.prompt(sessionId: sessionId, text: text) { [weak self] result in
+      DispatchQueue.main.async {
+        if case .failure(let error) = result {
+          self?.finishStreaming()
+          self?.renderAnswer(status: " ⚠︎ \(error.localizedDescription)")
+        }
+      }
+    }
+  }
+
+  /// Esc or re-ask while streaming: abandon the in-flight turn but keep the
+  /// rolling thread.
+  private func cancelStreaming() {
+    guard let sessionId = streamingSessionId else { return }
+    client.cancel(sessionId: sessionId)
+    finishStreaming()
+  }
+
+  private func finishStreaming() {
+    mux?.close()
+    mux = nil
+    streamingSessionId = nil
+  }
+
+  /// ⌘N: abandon today's thread; the next ask opens a fresh session.
+  @objc func newThread(_ sender: Any?) {
+    cancelStreaming()
+    UserDefaults.standard.removeObject(forKey: Self.sessionPrefix + Self.todayStamp())
+    answer = ""
+    renderAnswer(status: "New thread ready.")
+    makeFirstResponder(entryField)
+  }
+
+  @objc func copyAnswer(_ sender: Any?) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(answer, forType: .string)
+  }
+
+  // MARK: Session promotion
+
+  /// ⌘E: open the web GUI. The GUI has no per-session URL (its only deep
+  /// link is the `#ws=<workspaceId>` board pin), so this lands on the session
+  /// list where the Blueant thread is the most recent entry.
+  @objc func openInAnton(_ sender: Any?) {
+    guard let url = URL(string: "http://127.0.0.1:3742/") else { return }
+    NSWorkspace.shared.open(url)
+  }
+
+  /// ⌘P: fork today's Blueant thread into a standalone coding session titled
+  /// after the last question, then open the GUI so the copy is topmost in the
+  /// session list. Cancels any in-flight stream first; the fork carries the
+  /// full transcript, so the answer seeds the coding session without
+  /// copy-paste.
+  @objc func promote(_ sender: Any?) {
+    let todayKey = Self.sessionPrefix + Self.todayStamp()
+    guard let sessionId = UserDefaults.standard.string(forKey: todayKey), !sessionId.isEmpty,
+          !answer.isEmpty else {
+      renderAnswer(status: "Nothing to promote yet — ask first.")
+      return
+    }
+    cancelStreaming()
+    let seedTitle = "Blueant: " + String(lastQuestion.prefix(60))
+    client.fork(sessionId: sessionId) { [weak self] result in
+      DispatchQueue.main.async {
+        guard let self else { return }
+        switch result {
+        case .success(let childId):
+          self.client.rename(sessionId: childId, title: seedTitle) { _ in
+            DispatchQueue.main.async { self.openInAnton(nil) }
+          }
+        case .failure(let error):
+          self.renderAnswer(status: " ⚠︎ promote failed: \(error.localizedDescription)")
+        }
+      }
+    }
+  }
+
+  // MARK: Rendering
+
+  /// Plain-attributed MVP rendering: status line first, streamed text below.
+  /// Any content in the answer area expands the panel; empty collapses it
+  /// back to the Spotlight-compact card.
+  private func renderAnswer(status: String) {
+    applySize(compact: answer.isEmpty && status.isEmpty, animate: true)
+    let text = NSMutableAttributedString()
+    if !status.isEmpty {
+      text.append(NSAttributedString(string: status + "\n\n", attributes: [
+        .font: NSFont.systemFont(ofSize: 12),
+        .foregroundColor: NSColor.secondaryLabelColor,
+      ]))
+    }
+    text.append(NSAttributedString(string: answer, attributes: [
+      .font: NSFont.systemFont(ofSize: 13),
+      .foregroundColor: NSColor.labelColor,
+    ]))
+    answerView.textStorage?.setAttributedString(text)
+    answerView.scrollToEndOfDocument(nil)
+  }
+
+  private static func todayStamp() -> String {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyyy-MM-dd"
+    return formatter.string(from: Date())
+  }
+}
+
+/// The push-to-talk tile: the SF Symbol "waveform" rendered white on a
+/// rounded-rect tint, echoing Apple's waveform glyph. `action` is unused;
+/// mouseDown/mouseUp are reported to the owning panel via closures so
+/// hold-vs-click timing lives in BlueantPanel. While listening the tile
+/// tints red and the level meter pulses tint and brightness (NSButton has
+/// no symbol-effect API, so the pulse is driven from the audio level).
+final class MicButton: NSButton {
+  var onDown: (() -> Void)?
+  var onUp: (() -> Void)?
+  private static let idleTile = NSColor.white.withAlphaComponent(0.14)
+  private static let liveTile = NSColor.systemRed.withAlphaComponent(0.45)
+
+  init() {
+    super.init(frame: NSRect(x: 0, y: 0, width: 30, height: 26))
+    image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Talk")
+    symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 12, weight: .medium)
+    isBordered = false
+    imageScaling = .scaleProportionallyDown
+    contentTintColor = .white
+    wantsLayer = true
+    layer?.cornerRadius = 6
+    layer?.masksToBounds = true
+    layer?.backgroundColor = Self.idleTile.cgColor
+    setAccessibilityLabel("Talk")
+  }
+
+  required init?(coder: NSCoder) { nil }
+
+  override func mouseDown(with event: NSEvent) {
+    onDown?()
+  }
+
+  override func mouseUp(with event: NSEvent) {
+    onUp?()
+  }
+
+  func setListening(_ listening: Bool) {
+    layer?.backgroundColor = (listening ? Self.liveTile : Self.idleTile).cgColor
+    if !listening { alphaValue = isEnabled ? 1.0 : 0.4 }
+  }
+
+  /// Average input power in dB (−60…0); pulses the tile tint and glyph while
+  /// listening. NSButton carries no symbol-effect API, so the level meter
+  /// drives the animation.
+  func setLevel(_ level: Float) {
+    guard isEnabled else { return }
+    let normalized = CGFloat(max(0, min(1, (level + 60) / 60)))
+    alphaValue = 0.55 + 0.45 * normalized
+    contentTintColor = NSColor.white.blended(withFraction: 0.3 * normalized, of: .systemPink)
+  }
+
+  override var isEnabled: Bool {
+    get { super.isEnabled }
+    set {
+      super.isEnabled = newValue
+      alphaValue = newValue ? 1.0 : 0.4
+    }
+  }
+}

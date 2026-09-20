@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { ensureBlueantPreset, ensureBlueantProfileLink } from './blueant-preset.ts'
 
 const bridgePort = portFromEnv('ANTON_BRIDGE_PORT', 3742)
 const harnessPort = portFromEnv('ANTON_HARNESS_PORT', 3080)
@@ -10,8 +11,6 @@ const nodeBinary = process.env.ANTON_NODE_BINARY ?? 'node'
 // no import loader is needed. A deployment that runs from source sets
 // ANTON_HARNESS_LOADER=tsx/esm and points ANTON_HARNESS_ENTRY at src/bin.ts.
 const harnessLoader = process.env.ANTON_HARNESS_LOADER ?? ''
-const dockerBinary = process.env.ANTON_DOCKER_BINARY ?? 'docker'
-const autoStartContext = process.env.ANTON_CONTEXT_AUTO_START === 'true'
 const autoStart = process.env.ANTON_AUTO_START !== 'false'
 const harnessUrl = `http://127.0.0.1:${harnessPort}`
 const harnessWebSocketUrl = `ws://127.0.0.1:${harnessPort}`
@@ -94,30 +93,34 @@ function defaultHarnessRoot(): string {
 const harnessRoot = defaultHarnessRoot()
 const harnessEntry = process.env.ANTON_HARNESS_ENTRY ?? resolve(harnessRoot, 'apps', 'cli', 'lib', 'bin.js')
 
-function defaultContextRoot(): string {
+/**
+ * Locate the memory-plugin package the harness profile links. Development
+ * uses the sibling checkout; the packaged app ships it under Resources. The
+ * memory service itself is a separate product — only this client plugin
+ * belongs to the app.
+ */
+function defaultContextPluginRoot(): string | undefined {
   return firstDefined(
     [
-      process.env.ANTON_CONTEXT_ROOT,
-      resolve(harnessRoot, '..', 'c0ntext'),
-      resolve(process.cwd(), '..', 'c0ntext'),
-      resolve(process.cwd(), 'c0ntext'),
+      process.env.ANTON_CONTEXT_PLUGIN_ROOT,
+      resolve(harnessRoot, '..', 'c0ntext', 'deepseek-harness-plugin'),
+      resolve(process.cwd(), '..', 'c0ntext', 'deepseek-harness-plugin'),
+      resolve(process.cwd(), 'c0ntext', 'deepseek-harness-plugin'),
     ].filter((candidate): candidate is string => Boolean(candidate)),
-    candidate => existsSync(join(candidate, 'docker-compose.yml')),
+    candidate => existsSync(join(candidate, 'package.json')),
   )
 }
 
-const contextRoot = defaultContextRoot()
+const bundledContextPluginRoot = defaultContextPluginRoot() ?? resolve(harnessRoot, '..', 'c0ntext', 'deepseek-harness-plugin')
 // Development and the packaged app use the same profile assembly. The app
 // supplies Application Support paths; checkout development gets ~/.anton/dsh
 // so it cannot accidentally mutate a developer's ordinary ~/.dsh profile.
 const dshHome = process.env.ANTON_DSH_HOME ?? join(homedir(), '.anton', 'dsh')
 
 /**
- * Resolve the c0ntext engine key for the harness process. The credentials
+ * Resolve the memory-service API key for the harness process. The credentials
  * file is flat `KEY: value` YAML written by the app; only this exact key name
- * is read and it is never logged. The engine rejects unauthenticated queries,
- * so a harness launched without `ANTON_CONTEXT_API_KEY` set loses every
- * c0ntext turn even though `/health` still answers.
+ * is read and it is never logged.
  */
 function resolveContextApiKey(): string {
   const existing = process.env.ANTON_CONTEXT_API_KEY?.trim()
@@ -130,26 +133,20 @@ function resolveContextApiKey(): string {
     }
   } catch {
     // Absent or unreadable credentials file — the caller still launches the
-    // harness; the engine per-request rejection will surface the gap.
+    // harness; the service per-request rejection will surface the gap.
   }
   return ''
 }
-const bundledContextPluginRoot = process.env.ANTON_CONTEXT_PLUGIN_ROOT
-  ?? join(contextRoot, 'deepseek-harness-plugin')
 
 /**
  * The Anton profile patch body: the deployment overlay this app writes on
  * first launch (existing profiles keep whatever patch they already have).
  *
- * Context policy is eviction-first. Eviction is cheap, deterministic, and
- * reversible — evicted ranges stay mirrored in the engine and come back
- * through bitemporal search — while LLM compaction is expensive and freezes a
- * summary of a problem that has often already moved on by the time pressure
- * accumulates. So the c0ntext evictor owns working-set reduction at a fraction
- * of the window far below any summarization threshold, and proactive
- * compaction is switched off: only the reactive overflow recovery and manual
- * `/compact` remain, and both route their one-shot summarizer to a free
- * OpenCode model instead of the conversation's own paid route.
+ * Memory policy is eviction-first: the plugin's evictor owns working-set
+ * reduction and proactive compaction stays off, with the reactive overflow
+ * recovery and manual `/compact` summarizing through a free OpenCode model
+ * instead of the conversation's own paid route. Key semantics live in the
+ * plugin's own schema documentation; this file only pins deployment values.
  */
 function patchBody(toolsMode: string): string {
   return [
@@ -167,33 +164,17 @@ function patchBody(toolsMode: string): string {
     '    tokenBudget: 1200',
     '    requestedZones: [goal, constraints, active_plan, active_tabs, focus_artifact, findings, next_actions, project_decisions, project_facts, project_investigations, episodes, investigations, agent_cases, hypotheses]',
     '    mirrorSession: true',
-    '    # Human-memory policy: evict only when the surface reaches 80% of the',
-    '    # declared window. No sweep watermark: selection evicts the contiguous',
-    '    # low-value historical range (task-linked and pinned events anchor the',
-    '    # boundary). Everything outside that selected range remains; there is',
-    '    # no minimum retained-token floor or sweep target. Evicted ranges are',
-    '    # mirrored into the engine first; bitemporal search resuscitates them',
-    '    # when a later query needs them.',
+    '    # Dream distillation reuses the ongoing chat route (dreamProvider:',
+    '    # current); background sweeps resolve the most recent session route.',
+    '    dreamProvider: current',
     '    maxSurfaceRatio: 0.80',
-    '    # Evictor on: working-set reduction is the deployment policy. The',
-    '    # Settings > General "Context evictor" row flips this live through the',
-    '    # plugin\'s own settings section; set false here to ship it off.',
+    '    # Live toggle: Settings > General "Context evictor".',
     '    evictorEnabled: true',
     '    searchToolEnabled: true',
     '    imageFallbackEnabled: true',
     '    visionProvider: kimi-coding',
     '    visionModel: k3',
     '    visionMaxTokens: 1200',
-    "    # Evicted pages are archived to the engine's POST /pages/archive, which",
-    '    # owns all corpus-level topic intelligence upstream. Any LLM word-cloud',
-    '    # enrichment is ENGINE config (c0ntext gateway/worker), never plugin',
-    '    # config — this row stays a thin mirror/evict/search shim.',
-    '    # Compaction stays mounted as an armed safety net, not a policy: the',
-    '    # evictor caps the working set far below its 80% threshold, so its',
-    '    # proactive path is unreachable while eviction is healthy — but keeping',
-    '    # it automatic preserves provider-overflow recovery if the evictor ever',
-    '    # cannot keep up. Both remaining paths summarize through the free',
-    "    # OpenCode tier instead of the conversation's own paid route.",
     '- id: compaction-basic',
     '  config:',
     '    summarizationProvider: opencode-free',
@@ -274,33 +255,6 @@ async function waitForHarnessStopped(timeoutMs = 10_000): Promise<boolean> {
   return false
 }
 
-async function waitForContext(timeoutMs = 60_000): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    if (await requestHealth(`${contextEndpoint}/health`)) return true
-    await Bun.sleep(500)
-  }
-  return false
-}
-
-async function runCompose(args: string[]): Promise<void> {
-  if (!existsSync(join(contextRoot, 'docker-compose.yml'))) {
-    throw new Error(`c0ntext compose source was not found at ${contextRoot}`)
-  }
-  const child = Bun.spawn([dockerBinary, 'compose', ...args], { cwd: contextRoot, stdout: 'pipe', stderr: 'pipe' })
-  const exitCode = await child.exited
-  if (exitCode === 0) return
-  const stderr = await new Response(child.stderr).text()
-  throw new Error(stderr.trim() || `${dockerBinary} compose ${args.join(' ')} failed with status ${exitCode}`)
-}
-
-async function startContext(): Promise<{ started: boolean; reused: boolean }> {
-  if (await requestHealth(`${contextEndpoint}/health`)) return { started: false, reused: true }
-  await runCompose(['up', '-d'])
-  if (!(await waitForContext())) throw new Error('c0ntext did not become healthy within 60 seconds')
-  return { started: true, reused: false }
-}
-
 async function startHarness(): Promise<{ started: boolean; reused: boolean }> {
   if (await harnessRunning()) return { started: false, reused: true }
   if (harnessProcess && harnessProcess.exitCode === null) return { started: false, reused: false }
@@ -312,6 +266,8 @@ async function startHarness(): Promise<{ started: boolean; reused: boolean }> {
     throw new Error(`DeepSeek Harness entry was not found at ${harnessEntry}. Build the harness first (npm run build:lib:host) or set ANTON_HARNESS_ENTRY to its built CLI.`)
   }
   ensureBundledContextProfile()
+  ensureBlueantPreset({ dshHome, profile, harnessRoot })
+  ensureBlueantProfileLink({ dshHome, profile, harnessRoot })
 
   const child = Bun.spawn(
     [nodeBinary, ...(harnessLoader === '' ? [] : ['--import', harnessLoader]), harnessEntry, '--profile', profile, '--port', String(harnessPort)],
@@ -390,8 +346,6 @@ async function status() {
       healthy: context,
       endpoint: contextEndpoint,
       configured_in: process.env.ANTON_CONTEXT_ENDPOINT === undefined ? configPath : 'ANTON_CONTEXT_ENDPOINT',
-      root: contextRoot,
-      docker_command: dockerBinary,
     },
   }
 }
@@ -465,8 +419,8 @@ function controlPage(): Response {
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Anton Bridge</title>
 <style>body{font:16px system-ui,sans-serif;background:#10141d;color:#e9edf5;margin:0;padding:3rem;max-width:56rem}h1{margin-top:0}code{background:#1b2330;padding:.18rem .35rem;border-radius:.25rem}button,a{display:inline-block;background:#7c5cff;color:#fff;border:0;border-radius:.4rem;padding:.65rem .9rem;margin:.25rem .4rem .25rem 0;font:inherit;text-decoration:none;cursor:pointer}button.secondary{background:#334155}pre{background:#151b25;padding:1rem;border-radius:.5rem;overflow:auto}.bad{color:#ff9b9b}.good{color:#9ce6b0}</style>
-<h1>Anton Bridge</h1><p>Local control plane for DeepSeek Harness and c0ntext.</p>
-<p><a href="/">Open Harness</a><button id="start">Start Harness</button><button class="secondary" id="stop">Stop Harness</button><button class="secondary" id="startContext">Start local c0ntext</button></p>
+<h1>Anton Bridge</h1><p>Local control plane for DeepSeek Harness.</p>
+<p><a href="/">Open Harness</a><button id="start">Start Harness</button><button class="secondary" id="stop">Stop Harness</button></p>
 <p><label>c0ntext endpoint <input id="endpoint" type="url" size="42" placeholder="http://127.0.0.1:8090"></label> <button class="secondary" id="saveEndpoint">Apply endpoint</button></p>
 <pre id="status">Loading status…</pre>
 <script>
@@ -476,7 +430,6 @@ async function refresh(){const r=await fetch('/bridge/api/status'); const s=awai
 async function action(path){const r=await fetch(path,{method:'POST'}); const body=await r.json(); if(!r.ok) alert(body.error || 'Request failed'); await refresh();}
 document.querySelector('#start').onclick=()=>action('/bridge/api/harness/start');
 document.querySelector('#stop').onclick=()=>action('/bridge/api/harness/stop');
-document.querySelector('#startContext').onclick=()=>action('/bridge/api/context/start');
 document.querySelector('#saveEndpoint').onclick=async()=>{const r=await fetch('/bridge/api/context/config',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({contextEndpoint:endpoint.value})});const body=await r.json();if(!r.ok)alert(body.error||'Request failed');await refresh();};
 refresh(); setInterval(refresh,3000);
 </script></html>`, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } })
@@ -571,15 +524,6 @@ const server = Bun.serve<BridgeSocketData>({
       }
     }
 
-    if (pathname === '/bridge/api/context/start' && request.method === 'POST') {
-      if (!sameOrigin(request)) return json({ error: 'cross_origin_request_rejected' }, { status: 403 })
-      try {
-        return json({ ...(await startContext()), status: await status() })
-      } catch (error) {
-        return json({ error: error instanceof Error ? error.message : 'unable_to_start_context' }, { status: 503 })
-      }
-    }
-
     if (pathname === '/bridge/api/harness/start' && request.method === 'POST') {
       // Lifecycle controls accept origin-less loopback callers (curl, agent
       // tools); a browser-supplied Origin must still match exactly.
@@ -635,12 +579,6 @@ console.info(`Local controls: ${bridgeUrl}/bridge`)
 if (autoStart) {
   void startHarness().then((result) => {
     console.info(result.reused ? 'Using an already-running DeepSeek Harness instance' : 'DeepSeek Harness started by Anton Bridge')
-  }).catch(error => console.error(error))
-}
-
-if (autoStartContext) {
-  void startContext().then((result) => {
-    console.info(result.reused ? 'Using an already-running c0ntext engine' : 'c0ntext started by Anton Bridge')
   }).catch(error => console.error(error))
 }
 
