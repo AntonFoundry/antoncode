@@ -35,6 +35,6 @@
 
 ## What this unblocks
 
-- Phase 4b capture (selection/screenshots) can append to the same
-  snapshot; the provenance header becomes the single "what did you read"
-  surface for every future source.
+- Realized the same day: the capture tier (selection, screenshot,
+  on-demand clipboard) appends to this snapshot — see
+  2026-09-20-blueant-capture-tier.md.

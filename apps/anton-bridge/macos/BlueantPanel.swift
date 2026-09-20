@@ -382,7 +382,7 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
     entryField.stringValue = ""
     answer = ""
     lastQuestion = text
-    let contextSnapshot = DesktopContext.snapshot()
+    let contextSnapshot = DesktopContext.snapshot(prompt: text)
     lastProvenance = contextSnapshot.provenance
     renderAnswer(status: "…")
 
