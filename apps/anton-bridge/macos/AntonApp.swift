@@ -34,6 +34,7 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let notifications: [Notification]
     struct Notification: Decodable {
       let id: String
+      let kind: String?
       let title: String
       let body: String
     }
@@ -307,14 +308,26 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let freshIds = Set(pending.notifications.map(\.id)).subtracting(self.claimedNotificationIds)
         let fresh = pending.notifications.filter { freshIds.contains($0.id) }
         let stale = pending.notifications.filter { !freshIds.contains($0.id) }
-        self.ackNotifications((fresh + stale).map(\.id))
-        guard !fresh.isEmpty else { return }
-        self.claimedNotificationIds.formUnion(freshIds)
+        // Proposals are the exception to ack-on-sight: the id is claimed so
+        // the panel shows once, but the ack waits for the human decision —
+        // until then the bridge keeps the entry so a closed panel can be
+        // reopened by... nothing yet (v0: closing the panel denies).
+        let proposals = fresh.filter { $0.kind == "proposal" }
+        let plain = fresh.filter { $0.kind != "proposal" }
+        for proposal in proposals {
+          self.claimedNotificationIds.insert(proposal.id)
+          self.approvalPanel.present(id: proposal.id, command: proposal.body) { [weak self] approved in
+            self?.decideProposal(id: proposal.id, approved: approved)
+          }
+        }
+        self.ackNotifications((plain + stale).map(\.id))
+        guard !plain.isEmpty else { return }
+        self.claimedNotificationIds.formUnion(Set(plain.map(\.id)))
         let center = UNUserNotificationCenter.current()
         center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
           guard granted else { return }
           center.delegate = self.notificationDelegate
-          for note in fresh {
+          for note in plain {
             let content = UNMutableNotificationContent()
             content.title = note.title
             content.body = note.body
@@ -324,6 +337,19 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
       }
     }.resume()
+  }
+
+  /// Post the human's verdict and pull the proposal off the inbox queue.
+  private func decideProposal(id: String, approved: Bool) {
+    let payload = try? JSONSerialization.data(withJSONObject: ["id": id, "approved": approved])
+    if let payload {
+      var request = URLRequest(url: bridgeURL.appendingPathComponent("bridge/api/propose/decide"))
+      request.httpMethod = "POST"
+      request.httpBody = payload
+      request.setValue("application/json", forHTTPHeaderField: "content-type")
+      URLSession.shared.dataTask(with: request).resume()
+    }
+    ackNotifications([id])
   }
 
   /// Ids already claimed for delivery or ack by a previous poll cycle.
@@ -341,6 +367,9 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
   /// Foreground presentation: Anton is an accessory app; its notifications
   /// must be visible even while the user is working elsewhere in it.
   private lazy var notificationDelegate: NotificationDelegate = NotificationDelegate()
+
+  /// The propose-then-approve panel; one instance, re-presented per proposal.
+  private lazy var approvalPanel = ApprovalPanel()
 
   private func refreshHarnessState() {
     let statusURL = bridgeURL.appendingPathComponent("bridge/api/status")

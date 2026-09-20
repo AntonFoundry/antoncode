@@ -735,6 +735,72 @@ const server = Bun.serve<BridgeSocketData>({
       }
     }
 
+    if (pathname === '/bridge/api/propose' && request.method === 'POST') {
+      // Act tier: propose-then-approve. The blueant_propose tool enqueues a
+      // shell command; the Mac app surfaces an Approve/Run panel; the
+      // decision (and, when approved, the command output) lands in
+      // proposalDecisions for the tool to poll.
+      if (!loopbackControlAllowed(request)) return json({ error: 'cross_origin_request_rejected' }, { status: 403 })
+      try {
+        const payload: unknown = await request.json()
+        const body = typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {}
+        const command = typeof body.command === 'string' ? body.command.trim().slice(0, 4000) : ''
+        if (command === '') return json({ error: 'command_required' }, { status: 400 })
+        const id = `propose-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        proposalDecisions.set(id, { state: 'pending', command })
+        pendingNotifications.push({ id, kind: 'proposal', title: 'Blueant wants to run a command', body: command })
+        if (pendingNotifications.length > 20) pendingNotifications.splice(0, pendingNotifications.length - 20)
+        return json({ id, queued: true })
+      } catch {
+        return json({ error: 'invalid_json' }, { status: 400 })
+      }
+    }
+
+    if (pathname === '/bridge/api/propose/decide' && request.method === 'POST') {
+      if (!loopbackControlAllowed(request)) return json({ error: 'cross_origin_request_rejected' }, { status: 403 })
+      try {
+        const payload: unknown = await request.json()
+        const body = typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {}
+        const id = typeof body.id === 'string' ? body.id : ''
+        const proposal = id === '' ? undefined : proposalDecisions.get(id)
+        if (proposal === undefined) return json({ error: 'unknown_proposal' }, { status: 404 })
+        if (proposal.state !== 'pending') return json({ id, ...proposal })
+        const approved = body.approved === true
+        if (!approved) {
+          proposal.state = 'denied'
+          return json({ id, state: 'denied' })
+        }
+        // Approved: run in the Blueant workspace, bounded — 30s wall clock,
+        // 10 KB of combined output. The human gate is the click that got us
+        // here; this execution is the action that click approved.
+        proposal.state = 'approved'
+        const proc = Bun.spawn(['bash', '-c', proposal.command], {
+          cwd: blueantWorkspacePath(),
+          stdout: 'pipe',
+          stderr: 'pipe',
+        })
+        const timer = setTimeout(() => proc.kill(), 30_000)
+        const [stdout, exitCode] = await Promise.all([
+          new Response(proc.stdout).text(),
+          proc.exited,
+        ])
+        const stderr = await new Response(proc.stderr).text()
+        clearTimeout(timer)
+        proposal.exitCode = exitCode
+        proposal.output = `${stdout}\n${stderr}`.trim().slice(0, 10_000)
+        return json({ id, state: 'approved', exitCode, output: proposal.output })
+      } catch (error) {
+        return json({ error: error instanceof Error ? error.message : 'decision_failed' }, { status: 500 })
+      }
+    }
+
+    if (pathname === '/bridge/api/propose/decision' && request.method === 'GET') {
+      const id = new URL(request.url).searchParams.get('id') ?? ''
+      const proposal = id === '' ? undefined : proposalDecisions.get(id)
+      if (proposal === undefined) return json({ error: 'unknown_proposal' }, { status: 404 })
+      return json({ id, ...proposal })
+    }
+
     return proxyHarness(request)
   },
   websocket: {
@@ -762,8 +828,29 @@ console.info(`Local controls: ${bridgeUrl}/bridge`)
  * polls /bridge/api/notify/pending, delivers through UNUserNotificationCenter,
  * and acks by id. Bounded — see the route handlers above.
  */
-interface PendingNotification { id: string; title: string; body: string }
+interface PendingNotification { id: string; kind?: 'proposal'; title: string; body: string }
 const pendingNotifications: PendingNotification[] = []
+
+/**
+ * Propose-then-approve ledger: blueant_propose enqueues a command, the Mac
+ * app's Approve/Run panel posts the decision, approved commands execute here
+ * (bounded), and the tool polls the verdict. Entries live for the process
+ * lifetime — proposals are single-ask, not a durable queue.
+ */
+interface ProposalDecision {
+  state: 'pending' | 'approved' | 'denied'
+  command: string
+  exitCode?: number
+  output?: string
+}
+const proposalDecisions = new Map<string, ProposalDecision>()
+
+/// The Blueant agent workspace: approved commands run here, not in the
+/// harness checkout.
+function blueantWorkspacePath(): string {
+  const support = process.env.HOME ?? ''
+  return `${support}/Library/Application Support/Anton/blueant`
+}
 
 /**
  * The automatic repair turn, driven only while the recovery profile carries

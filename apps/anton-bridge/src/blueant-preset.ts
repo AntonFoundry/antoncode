@@ -20,8 +20,56 @@ export function ensureBlueantPreset({ dshHome }: EnsureBlueantPresetOptions): vo
   const metaPath = join(presetDir, 'preset.yml')
   const restrictPath = join(presetDir, 'plugins', 'restrict-tools.js')
   const notifyPath = join(presetDir, 'plugins', 'notify.js')
+  const proposePath = join(presetDir, 'plugins', 'propose.js')
   mkdirSync(presetDir, { recursive: true })
   mkdirSync(dirname(restrictPath), { recursive: true })
+
+  if (!existsSync(proposePath)) {
+    writeFileSync(proposePath, [
+      '// Act tier: blueant_propose asks before running. Enqueues the command',
+      '// for the Mac app approval panel, polls the decision, and returns the',
+      '// verdict plus (when approved) the bounded command output. Nothing',
+      '// runs unless the user clicks Approve & Run.',
+      "export const name = 'blueant-propose'",
+      "export const inject = ['tools']",
+      '',
+      'export function apply(ctx) {',
+      '  ctx.effect(() => ctx.tools.register({',
+      "    name: 'blueant_propose',",
+      "    description: 'Propose a shell command for the user to approve. The user sees the exact command and clicks Approve & Run or Deny. Use for any action beyond reading: opening apps, moving files, sending things, changing settings. Waits for the decision and returns the output.',",
+      '    parameters: {',
+      "      command: { type: 'string', required: true, description: 'The exact shell command to propose (max 4000 chars)' },",
+      "      rationale: { type: 'string', description: 'Optional one-line reason shown to the user' },",
+      "      waitMs: { type: 'number', description: 'How long to wait for the decision (default 90000, max 300000)' },",
+      '    },',
+      "    output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: String(value) }] },",
+      '    async execute(args, exec) {',
+      "      const res = await fetch('http://127.0.0.1:3742/bridge/api/propose', {",
+      "        method: 'POST',",
+      "        headers: { 'content-type': 'application/json' },",
+      '        body: JSON.stringify({ command: args.command, rationale: args.rationale }),',
+      '        signal: exec.signal,',
+      '      })',
+      '      if (!res.ok) throw new Error(`blueant_propose failed: HTTP ${res.status}`)',
+      '      const { id } = await res.json()',
+      '      const deadline = Date.now() + Math.min(Number(args.waitMs) || 90000, 300000)',
+      '      while (Date.now() < deadline) {',
+      '        if (exec.signal.aborted) throw new Error(`blueant_propose cancelled while awaiting decision (proposal ${id})`)',
+      '        await new Promise(resolve => setTimeout(resolve, 2000))',
+      '        const check = await fetch(`http://127.0.0.1:3742/bridge/api/propose/decision?id=${encodeURIComponent(id)}`, { signal: exec.signal })',
+      '        if (!check.ok) continue',
+      '        const verdict = await check.json()',
+      "        if (verdict.state === 'pending') continue",
+      "        if (verdict.state === 'denied') return 'DENIED: the user declined this command. Do not retry it without asking why.'",
+      '        return `APPROVED (exit ${verdict.exitCode})\\n${verdict.output || "(no output)"}`',
+      '      }',
+      '      return `TIMEOUT: no decision within the wait window (proposal ${id}). The proposal stays on screen; ask the user to decide.`',
+      '    },',
+      "  }), 'blueant.propose')",
+      '}',
+      '',
+    ].join('\n'))
+  }
 
   if (!existsSync(notifyPath)) {
     writeFileSync(notifyPath, `${[
@@ -91,9 +139,11 @@ export function ensureBlueantPreset({ dshHome }: EnsureBlueantPresetOptions): vo
       '- id: restrict-tools',
       '  name: ./plugins/restrict-tools.js',
       '  config:',
-      '    allow: [c0ntext_search, c0ntext_remember, recipe_search, web_search, read_image, blueant_notify]',
+      '    allow: [c0ntext_search, c0ntext_remember, recipe_search, web_search, read_image, blueant_notify, blueant_propose]',
       '- id: notify',
       '  name: ./plugins/notify.js',
+      '- id: propose',
+      '  name: ./plugins/propose.js',
       // NOTE: no c0ntext row here. The plugin registers its toolMatcher service
       // at mount, so a preset-scope second mount fails loud ("service
       // toolMatcher has been registered"); retrieval tuning (retrieveMode,

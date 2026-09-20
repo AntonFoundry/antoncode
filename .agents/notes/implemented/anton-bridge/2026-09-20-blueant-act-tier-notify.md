@@ -47,8 +47,7 @@
 
 ## What this unblocks
 
-- Phase 4c remainder: propose-then-approve shell actions in the popup —
-  the approval UI rides the same poll-and-ack inbox pattern with an
-  action payload instead of prose.
+- Realized the same day: propose-then-approve rides this inbox with a
+  `kind: 'proposal'` payload — see 2026-09-20-blueant-propose-approve.md.
 - Phase 5 consolidation ("power nap") can announce finished dream cycles
   through `blueant_notify` for free.
