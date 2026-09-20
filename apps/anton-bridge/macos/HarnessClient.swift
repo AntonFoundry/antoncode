@@ -1,4 +1,5 @@
 import Cocoa
+import ScreenCaptureKit
 
 /// URLSession client for the Anton bridge and, through it, the Harness API.
 /// Unary calls speak the harness apiproxy envelope
@@ -221,9 +222,11 @@ final class HarnessClient {
 /// Desktop context v1: zero-permission signals prepended to each ask, plus a
 /// user-facing provenance line for the answer header ("Read: …"). The
 /// frontmost app needs no consent; the browser URL uses AppleScript only when
-/// automation consent already exists; the window title uses the Accessibility
-/// API only when accessibility trust already exists — any failure disables
-/// that probe for the process lifetime so the user never sees a prompt storm.
+/// automation consent already exists; the window title and selected text use
+/// the Accessibility API only when accessibility trust already exists; the
+/// screenshot is captured only when Screen Recording trust already exists
+/// (the macOS dialog is requested at most once). Every consent-gated probe
+/// self-disables on failure so the user never sees a prompt storm.
 enum DesktopContext {
   /// What the ask read, phrased for the popup's answer header.
   struct Snapshot {
@@ -233,9 +236,10 @@ enum DesktopContext {
 
   private static var browserScriptDisabled = false
   private static var accessibilityDisabled = false
+  private static var screenAccessRequested = false
   private static let browsers = ["Safari", "Google Chrome", "Arc", "Microsoft Edge", "Brave Browser", "Firefox"]
 
-  static func snapshot() -> Snapshot {
+  static func snapshot(prompt: String = "") -> Snapshot {
     var lines: [String] = []
     var provenanceParts: [String] = []
     if let app = NSWorkspace.shared.frontmostApplication {
@@ -246,10 +250,27 @@ enum DesktopContext {
         lines.append("- Window title: \(title)")
         provenanceParts.append("“" + DesktopContext.truncate(title, 60) + "”")
       }
+      // Selected text rides the same Accessibility trust as the title; an
+      // app with no selection is normal, not a consent failure.
+      if !accessibilityDisabled, let selection = selectedText(processId: app.processIdentifier) {
+        lines.append("- Selected text: \(truncate(selection, 500))")
+        provenanceParts.append("selection")
+      }
       if !browserScriptDisabled, let url = browserURL(appName: appName) {
         lines.append("- Browser URL: \(url)")
         provenanceParts.append(url)
       }
+    }
+    if let shotPath = screenshotIfPermitted() {
+      lines.append("- Screenshot saved at: \(shotPath) — read this file with the read_image tool to see the user's screen")
+      provenanceParts.append("screenshot")
+    }
+    // Clipboard is strictly on demand: attached only when the question
+    // refers to it, never as ambient capture.
+    let asked = prompt.lowercased()
+    if asked.contains("clipboard") || asked.contains("copied") || asked.contains("copy ") , let clip = clipboardText() {
+      lines.append("- Clipboard text: \(truncate(clip, 500))")
+      provenanceParts.append("clipboard")
     }
     let provenance = provenanceParts.isEmpty ? nil : provenanceParts.joined(separator: " — ")
     guard !lines.isEmpty else { return Snapshot(context: "", provenance: nil) }
@@ -264,6 +285,81 @@ enum DesktopContext {
   /// receives the full line.
   private static func truncate(_ value: String, _ maxCount: Int) -> String {
     value.count > maxCount ? value.prefix(maxCount) + "…" : value
+  }
+
+  /// Selected text of the focused element via the Accessibility API. Trust
+  /// failures (apiDisabled, cannotComplete) disable AX probes for the process
+  /// lifetime; a missing selection is expected and silent.
+  private static func selectedText(processId: pid_t) -> String? {
+    let axApp = AXUIElementCreateApplication(processId)
+    var elementRef: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(axApp, kAXFocusedUIElementAttribute as CFString, &elementRef) == .success,
+          elementRef != nil else {
+      return nil
+    }
+    var textRef: CFTypeRef?
+    let result = AXUIElementCopyAttributeValue(elementRef as! AXUIElement, kAXSelectedTextAttribute as CFString, &textRef)
+    if result == .apiDisabled || result == .cannotComplete {
+      accessibilityDisabled = true
+      return nil
+    }
+    guard let text = textRef as? String, !text.isEmpty else { return nil }
+    return text
+  }
+
+  /// Clipboard text as plain string; nil when the pasteboard holds nothing
+  /// readable as text.
+  private static func clipboardText() -> String? {
+    guard let text = NSPasteboard.general.string(forType: .string), !text.isEmpty else { return nil }
+    return text
+  }
+
+  /// Capture the frontmost window via ScreenCaptureKit to the Blueant
+  /// attachments folder. The Screen Recording permission dialog is the
+  /// approve-once gate: requested at most once per process lifetime; a
+  /// denial means screenshots silently never appear. SCScreenshotManager is
+  /// async, so the ask thread parks on a semaphore for the duration of one
+  /// frame capture.
+  private static func screenshotIfPermitted() -> String? {
+    guard CGPreflightScreenCaptureAccess() else {
+      if !screenAccessRequested {
+        screenAccessRequested = true
+        CGRequestScreenCaptureAccess()
+      }
+      return nil
+    }
+    if #unavailable(macOS 14.0) { return nil }
+    var captured: CGImage?
+    let done = DispatchSemaphore(value: 0)
+    Task {
+      defer { done.signal() }
+      guard let app = NSWorkspace.shared.frontmostApplication else { return }
+      guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true),
+            let window = content.windows.first(where: {
+              $0.owningApplication?.processID == app.processIdentifier && $0.frame.width > 200 && $0.frame.height > 100
+            }) else { return }
+      let filter = SCContentFilter(desktopIndependentWindow: window)
+      let config = SCStreamConfiguration()
+      config.captureResolution = .best
+      config.showsCursor = true
+      captured = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+    }
+    done.wait()
+    guard let image = captured else { return nil }
+    let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("Anton", isDirectory: true)
+      .appendingPathComponent("blueant", isDirectory: true)
+      .appendingPathComponent("attachments", isDirectory: true)
+    try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyyyMMdd-HHmmss"
+    let url = support.appendingPathComponent("ask-\(formatter.string(from: Date())).png")
+    guard let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else {
+      return nil
+    }
+    CGImageDestinationAddImage(destination, image, nil)
+    guard CGImageDestinationFinalize(destination) else { return nil }
+    return url.path
   }
 
   /// Focused window title via the Accessibility API. Reads only the title of

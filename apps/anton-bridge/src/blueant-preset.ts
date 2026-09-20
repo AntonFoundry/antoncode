@@ -56,7 +56,7 @@ export function ensureBlueantPreset({ dshHome }: EnsureBlueantPresetOptions): vo
       '- id: restrict-tools',
       '  name: ./plugins/restrict-tools.js',
       '  config:',
-      '    allow: [c0ntext_search, c0ntext_remember, recipe_search, web_search]',
+      '    allow: [c0ntext_search, c0ntext_remember, recipe_search, web_search, read_image]',
       // NOTE: no c0ntext row here. The plugin registers its toolMatcher service
       // at mount, so a preset-scope second mount fails loud ("service
       // toolMatcher has been registered"); retrieval tuning (retrieveMode,
