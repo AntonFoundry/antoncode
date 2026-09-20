@@ -1,4 +1,5 @@
 import Cocoa
+import UserNotifications
 
 @main
 struct AntonMain {
@@ -25,14 +26,36 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let running: Bool
   }
 
+  private struct RecoveryState: Decodable {
+    let repair: String
+  }
+
+  private struct NotifyPending: Decodable {
+    let notifications: [Notification]
+    struct Notification: Decodable {
+      let id: String
+      let title: String
+      let body: String
+    }
+  }
+
   private var bridge: Process?
   private var statusItem: NSStatusItem?
   private var startItem: NSMenuItem?
   private var stopItem: NSMenuItem?
   private var restartItem: NSMenuItem?
+  private var recoveryItem: NSMenuItem?
   private var pollTimer: Timer?
   private var harnessState: HarnessState = .transitioning
   private var consecutivePollFailures = 0
+  // Watchdog: a harness that stays down without a user stop, or a bridge that
+  // dies repeatedly, escalates into the recovery profile.
+  private var recoveryMode = false
+  private var terminatingBridge = false
+  private var userStopped = false
+  private var stoppedSince: Date?
+  private var bridgeDeaths: [Date] = []
+  private var recoveryUIOpened = false
   private var blueantPanel: BlueantPanel?
   private var hotkeyCenter: HotkeyCenter?
   // The bridge listens on the loopback address it reports as `listening_on`.
@@ -61,6 +84,7 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
   func applicationWillTerminate(_ notification: Notification) {
     pollTimer?.invalidate()
     hotkeyCenter?.unregister()
+    terminatingBridge = true
     bridge?.terminate()
   }
 
@@ -93,6 +117,13 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let restart = NSMenuItem(title: "Restart", action: #selector(restartAnton), keyEquivalent: "r")
     restart.target = self
     menu.addItem(restart)
+    let exitRecoveryItem = NSMenuItem(title: "Exit Recovery Mode", action: #selector(exitRecovery), keyEquivalent: "")
+    exitRecoveryItem.target = self
+    menu.addItem(exitRecoveryItem)
+    recoveryItem = exitRecoveryItem
+    let openLog = NSMenuItem(title: "Open bridge.log", action: #selector(openBridgeLog), keyEquivalent: "")
+    openLog.target = self
+    menu.addItem(openLog)
     menu.addItem(NSMenuItem.separator())
     let quit = NSMenuItem(title: "Quit Anton", action: #selector(quitAnton), keyEquivalent: "q")
     quit.target = self
@@ -108,7 +139,7 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     updatePresentation()
   }
 
-  private func launchBridge() {
+  private func launchBridge(profile bridgeProfile: String = "web") {
     guard let resources = Bundle.main.resourceURL else { return }
     let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
       .appendingPathComponent("Anton", isDirectory: true)
@@ -123,6 +154,7 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     environment["ANTON_DSH_HOME"] = support.appendingPathComponent("dsh").path
     environment["ANTON_BRIDGE_CONFIG"] = support.appendingPathComponent("bridge.json").path
     environment["ANTON_NODE_BINARY"] = resources.appendingPathComponent("node/bin/node").path
+    environment["ANTON_DSH_PROFILE"] = bridgeProfile
     process.environment = environment
     let logURL = support.appendingPathComponent("bridge.log")
     FileManager.default.createFile(atPath: logURL.path, contents: nil)
@@ -131,12 +163,31 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
       process.standardOutput = log
       process.standardError = log
     }
+    process.terminationHandler = { [weak self] _ in
+      DispatchQueue.main.async { self?.bridgeExited() }
+    }
     do {
       try process.run()
       bridge = process
     } catch {
       showError("Anton could not start its local bridge: \(error.localizedDescription)")
     }
+  }
+
+  /// The bridge died on its own: relaunch it on the same profile, escalating
+  /// to recovery after repeated rapid deaths. Deliberate swaps
+  /// (enterRecovery/exitRecovery/quit) clear the handler first.
+  private func bridgeExited() {
+    guard bridge != nil, !terminatingBridge else { return }
+    bridge = nil
+    bridgeDeaths.append(Date())
+    bridgeDeaths.removeAll { Date().timeIntervalSince($0) > 300 }
+    if !recoveryMode && bridgeDeaths.count >= 3 {
+      enterRecovery()
+      return
+    }
+    setHarnessState(.transitioning)
+    launchBridge(profile: recoveryMode ? "recovery" : "web")
   }
 
   @objc private func openAnton() {
@@ -153,10 +204,12 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
   }
 
   @objc private func startHarness() {
+    userStopped = false
     requestHarness("start", successState: .running, openAfterSuccess: true)
   }
 
   @objc private func stopHarness() {
+    userStopped = true
     requestHarness("stop", successState: .stopped)
   }
 
@@ -201,12 +254,81 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }.resume()
   }
 
+  @objc private func openBridgeLog() {
+    let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("Anton/bridge.log")
+    NSWorkspace.shared.open(support)
+  }
+
+  /// In recovery mode, watch the bridge's repair turn: when it completes,
+  /// swap back onto the main profile automatically — the loop closes without
+  /// a human. A failed turn stays in recovery for the user to take over.
+  private func pollRecoveryState() {
+    guard recoveryMode else { return }
+    let stateURL = bridgeURL.appendingPathComponent("bridge/api/recovery/state")
+    URLSession.shared.dataTask(with: stateURL) { [weak self] data, response, _ in
+      guard let self, let data, let response = response as? HTTPURLResponse,
+            (200..<300).contains(response.statusCode) else { return }
+      guard let state = try? JSONDecoder().decode(RecoveryState.self, from: data) else { return }
+      DispatchQueue.main.async {
+        if state.repair == "done" && self.recoveryMode { self.exitRecovery() }
+      }
+    }.resume()
+  }
+
   private func beginStatusPolling() {
     refreshHarnessState()
     pollTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
       self?.refreshHarnessState()
+      self?.pollRecoveryState()
+      self?.pollNotifications()
     }
   }
+
+  /// Act-tier delivery: pull notifications the bridge inbox queued for us
+  /// (blueant_notify and any loopback caller), present each through
+  /// UNUserNotificationCenter, and ack by id so the bridge queue drains.
+  /// Notification authorization is requested lazily on the first delivery —
+  /// the macOS permission dialog is the approve-once gate.
+  private func pollNotifications() {
+    guard !recoveryMode else { return }
+    let url = bridgeURL.appendingPathComponent("bridge/api/notify/pending")
+    URLSession.shared.dataTask(with: url) { [weak self] data, response, _ in
+      guard let self, let data, let response = response as? HTTPURLResponse,
+            (200..<300).contains(response.statusCode) else { return }
+      guard let pending = try? JSONDecoder().decode(NotifyPending.self, from: data), !pending.notifications.isEmpty else { return }
+      let center = UNUserNotificationCenter.current()
+      center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+        guard granted else {
+          // Denied: ack everything so the queue drains without nagging.
+          self.ackNotifications(pending.notifications.map(\.id))
+          return
+        }
+        center.delegate = self.notificationDelegate
+        for note in pending.notifications {
+          let content = UNMutableNotificationContent()
+          content.title = note.title
+          content.body = note.body
+          let request = UNNotificationRequest(identifier: note.id, content: content, trigger: nil)
+          center.add(request) { _ in }
+        }
+        self.ackNotifications(pending.notifications.map(\.id))
+      }
+    }.resume()
+  }
+
+  private func ackNotifications(_ ids: [String]) {
+    guard !ids.isEmpty, let payload = try? JSONSerialization.data(withJSONObject: ["ids": ids]) else { return }
+    var request = URLRequest(url: bridgeURL.appendingPathComponent("bridge/api/notify/ack"))
+    request.httpMethod = "POST"
+    request.httpBody = payload
+    request.setValue("application/json", forHTTPHeaderField: "content-type")
+    URLSession.shared.dataTask(with: request).resume()
+  }
+
+  /// Foreground presentation: Anton is an accessory app; its notifications
+  /// must be visible even while the user is working elsewhere in it.
+  private lazy var notificationDelegate: NotificationDelegate = NotificationDelegate()
 
   private func refreshHarnessState() {
     let statusURL = bridgeURL.appendingPathComponent("bridge/api/status")
@@ -227,13 +349,59 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
       DispatchQueue.main.async {
         self.consecutivePollFailures = 0
         self.setHarnessState(status.harness.running ? .running : .stopped)
+        self.evaluateEscalation()
       }
     }.resume()
+  }
+
+  /// Escalate to the recovery profile when the harness stays down longer than
+  /// a deliberate stop explains. A user stop never escalates on its own; only
+  /// a crash-looping harness or bridge does.
+  private func evaluateEscalation() {
+    if harnessState == .running {
+      stoppedSince = nil
+      return
+    }
+    if harnessState == .stopped && stoppedSince == nil && !userStopped {
+      stoppedSince = Date()
+    }
+    guard !recoveryMode, !userStopped, let since = stoppedSince,
+          Date().timeIntervalSince(since) > 60 else { return }
+    enterRecovery()
+  }
+
+  /// Swap the bridge onto the first-party-only recovery profile and open its
+  /// web UI — the place where a broken main profile gets repaired.
+  private func enterRecovery() {
+    recoveryMode = true
+    stoppedSince = nil
+    recoveryUIOpened = false
+    swapBridge(profile: "recovery")
+  }
+
+  @objc private func exitRecovery() {
+    recoveryMode = false
+    userStopped = false
+    stoppedSince = nil
+    swapBridge(profile: "web")
+  }
+
+  private func swapBridge(profile: String) {
+    terminatingBridge = true
+    bridge?.terminate()
+    bridge = nil
+    terminatingBridge = false
+    setHarnessState(.transitioning)
+    launchBridge(profile: profile)
   }
 
   private func setHarnessState(_ state: HarnessState) {
     harnessState = state
     updatePresentation()
+    if recoveryMode && state == .running && !recoveryUIOpened {
+      recoveryUIOpened = true
+      openAnton()
+    }
   }
 
   /// The Anton graph mark: three linked nodes, the same glyph the web UI uses
@@ -266,15 +434,17 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     startItem?.isEnabled = harnessState == .stopped
     stopItem?.isEnabled = harnessState == .running
     restartItem?.isEnabled = harnessState != .transitioning
+    recoveryItem?.isHidden = !recoveryMode
     let tint: NSColor?
     let background: NSColor
     let label: String
     switch harnessState {
     case .running:
-      // Explicit state chip: white mark on a green rounded square.
+      // Explicit state chip: white mark on a green rounded square; amber
+      // while the recovery profile carries the surface.
       tint = .white
-      background = .systemGreen
-      label = "Anton: Harness running"
+      background = recoveryMode ? .systemYellow : .systemGreen
+      label = recoveryMode ? "Anton: recovery mode" : "Anton: Harness running"
     case .transitioning:
       tint = .white
       background = .systemOrange
@@ -305,5 +475,15 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     alert.messageText = "Anton"
     alert.informativeText = message
     alert.runModal()
+  }
+}
+
+/// Presents Blueant notifications even when the app is frontmost; without
+/// this delegate macOS silently drops banners for accessory apps in the
+/// foreground.
+final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+  func userNotificationCenter(_ center: UNUserNotificationCenter,
+                              willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+    [.banner, .sound]
   }
 }

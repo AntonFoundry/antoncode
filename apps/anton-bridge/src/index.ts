@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { ensureBlueantPreset, ensureBlueantProfileLink } from './blueant-preset.ts'
@@ -183,11 +183,146 @@ function patchBody(toolsMode: string): string {
   ].join('\n')
 }
 
+/**
+ * The recovery profile: first-party bundles only — no memory plugin, no
+ * profile-linked third-party plugins. Anything a bad plugin breaks, this
+ * profile does not load, so it boots even when the main profile cannot.
+ * The Swift watchdog relaunches the bridge with ANTON_DSH_PROFILE=recovery
+ * after persistent harness failures; its web UI is where repair happens.
+ */
+function ensureRecoveryProfile(): void {
+  const profileDir = join(dshHome, 'profiles', 'recovery')
+  const manifestPath = join(profileDir, 'package.json')
+  const patchPath = join(profileDir, 'cordis.patch.yml')
+  mkdirSync(profileDir, { recursive: true })
+  if (!existsSync(manifestPath)) {
+    writeFileSync(manifestPath, `${JSON.stringify({
+      name: 'anton-profile-recovery',
+      private: true,
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] } },
+    }, null, 2)}\n`)
+  }
+  if (!existsSync(patchPath)) {
+    const toolsMode = process.env.ANTON_TOOLS_MODE ?? 'paged'
+    writeFileSync(patchPath, ['- id: tools', '  config:', `    mode: ${toolsMode}`, ''].join('\n'))
+  }
+}
+
+/**
+ * The repair profile: the base bundle plus the one-shot agent spine. This is
+ * the composition the bridge drives automatically in recovery mode — one
+ * bounded turn that diagnoses the boot failure, fixes the source, rebuilds,
+ * and swaps the app bundle in place.
+ */
+function ensureRepairProfile(): void {
+  const profileDir = join(dshHome, 'profiles', 'repair')
+  const manifestPath = join(profileDir, 'package.json')
+  const patchPath = join(profileDir, 'cordis.patch.yml')
+  mkdirSync(profileDir, { recursive: true })
+  if (!existsSync(manifestPath)) {
+    writeFileSync(manifestPath, `${JSON.stringify({
+      name: 'anton-profile-repair',
+      private: true,
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-agent-spine-demo'] } },
+    }, null, 2)}\n`)
+  }
+  if (!existsSync(patchPath)) {
+    const toolsMode = process.env.ANTON_TOOLS_MODE ?? 'paged'
+    writeFileSync(patchPath, ['- id: tools', '  config:', `    mode: ${toolsMode}`, ''].join('\n'))
+  }
+}
+
+/**
+ * First-run provisioning: put a `dsh` launcher on PATH (~/.local/bin/dsh)
+ * so the CLI is available from any terminal on a fresh system. Only the
+ * packaged app installs it — a checkout developer already has `pnpm dsh`.
+ * The launcher embeds this bundle's absolute paths (self-contained Node and
+ * CLI), preferring a $DSH_ROOT override or a dev checkout when one exists.
+ * Idempotent: an existing file is replaced only when it carries the Anton
+ * marker line, so a user's own `dsh` script is never clobbered.
+ */
+function ensureDshLauncher(): void {
+  if (process.env.ANTON_INSTALL_DSH_LAUNCHER === 'false') return
+  // Bundle mode only: this bridge's own executable path names the app bundle
+  // (.../Anton.app/Contents/Resources/bin). Path-derived, never a stat of the
+  // bundle contents — sandboxed environments may deny stats inside .app
+  // bundles and a false negative must not silently skip first-run setup.
+  const execPath = process.execPath
+  if (!execPath.includes('.app/Contents/')) return
+  const resourcesRoot = resolve(execPath, '..', '..')
+  const marker = '# dsh-launcher: anton'
+  const script = [
+    '#!/bin/sh',
+    marker,
+    '# dsh — DeepSeek Harness CLI launcher (installed by Anton).',
+    '# Resolution: $DSH_ROOT override, a dev checkout if present, this app bundle.',
+    'set -eu',
+    // One home: the terminal CLI shares Anton's profiles, credentials, and
+    // settings — no second configuration tree to maintain.
+    'export DSH_HOME="${DSH_HOME:-$HOME/.anton/dsh}"',
+    'NODE_BIN="$(command -v node || true)"',
+    'REPO="$HOME/Development/Projects/ML/antoncode/deepseek-harness"',
+    `BUNDLE="${resourcesRoot}"`,
+    'if [ -n "${DSH_ROOT:-}" ] && [ -f "$DSH_ROOT/apps/cli/lib/bin.js" ]; then ROOT="$DSH_ROOT"',
+    'elif [ -f "$REPO/apps/cli/lib/bin.js" ]; then ROOT="$REPO"',
+    'elif [ -f "$BUNDLE/deepseek-harness/apps/cli/lib/bin.js" ]; then ROOT="$BUNDLE/deepseek-harness"',
+    '  NODE_BIN="$BUNDLE/node/bin/node"',
+    'else echo "dsh: no harness found (set DSH_ROOT or reinstall Anton)" >&2; exit 1',
+    'fi',
+    'if [ -z "$NODE_BIN" ] || [ ! -x "$NODE_BIN" ]; then echo "dsh: no usable node runtime" >&2; exit 1; fi',
+    'exec "$NODE_BIN" "$ROOT/apps/cli/lib/bin.js" "$@"',
+  ].join('\n')
+  const binDir = join(homedir(), '.local', 'bin')
+  const launcher = join(binDir, 'dsh')
+  mkdirSync(binDir, { recursive: true })
+  try {
+    const existing = existsSync(launcher) ? readFileSync(launcher, 'utf8') : undefined
+    if (existing !== undefined && !existing.includes(marker)) return
+    if (existing === script) return
+    writeFileSync(launcher, `${script}\n`)
+    chmodSync(launcher, 0o755)
+    console.info(`Installed dsh launcher at ${launcher}`)
+    if (!(process.env.PATH ?? '').includes(binDir)) {
+      console.info(`Hint: add ${binDir} to PATH (echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc)`)
+    }
+  } catch (error) {
+    // A read-only home or restricted environment never blocks the app itself.
+    console.warn(`dsh launcher install skipped: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+/**
+ * The headless one-shot profile in Anton's home: the product
+ * `dsh --profile headless "task"` surface, provisioned beside the app's own
+ * profiles so the terminal launcher and the app share one DSH_HOME.
+ */
+function ensureHeadlessProfile(): void {
+  const profileDir = join(dshHome, 'profiles', 'headless')
+  const manifestPath = join(profileDir, 'package.json')
+  const patchPath = join(profileDir, 'cordis.patch.yml')
+  mkdirSync(profileDir, { recursive: true })
+  if (!existsSync(manifestPath)) {
+    writeFileSync(manifestPath, `${JSON.stringify({
+      name: 'anton-profile-headless',
+      private: true,
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'] } },
+    }, null, 2)}\n`)
+  }
+  if (!existsSync(patchPath)) {
+    const toolsMode = process.env.ANTON_TOOLS_MODE ?? 'paged'
+    writeFileSync(patchPath, ['- id: tools', '  config:', `    mode: ${toolsMode}`, ''].join('\n'))
+  }
+}
+
 function ensureBundledContextProfile(): void {
   if (!existsSync(bundledContextPluginRoot)) {
     throw new Error(`Bundled c0ntext plugin was not found at ${bundledContextPluginRoot}`)
   }
 
+  ensureRecoveryProfile()
+  ensureRepairProfile()
+  ensureHeadlessProfile()
+  ensureDshLauncher()
   const profileDir = join(dshHome, 'profiles', profile)
   const manifestPath = join(profileDir, 'package.json')
   const patchPath = join(profileDir, 'cordis.patch.yml')
@@ -510,6 +645,10 @@ const server = Bun.serve<BridgeSocketData>({
 
     if (pathname === '/bridge' || pathname === '/bridge/') return controlPage()
     if (pathname === '/bridge/api/status' && request.method === 'GET') return json(await status())
+    if (pathname === '/bridge/api/recovery/state' && request.method === 'GET') {
+      if (!sameOrigin(request)) return json({ error: 'cross_origin_request_rejected' }, { status: 403 })
+      return json({ profile, repair: repairStatus })
+    }
 
     if (pathname === '/bridge/api/context/config' && request.method === 'POST') {
       if (!sameOrigin(request)) return json({ error: 'cross_origin_request_rejected' }, { status: 403 })
@@ -554,6 +693,48 @@ const server = Bun.serve<BridgeSocketData>({
       }
     }
 
+    if (pathname === '/bridge/api/notify' && request.method === 'POST') {
+      // Act tier inbox: any loopback caller (the blueant_notify tool) may
+      // enqueue a notification; the Mac app polls, delivers it through
+      // UNUserNotificationCenter, and acks. Queue is small and bounded so a
+      // chatty agent cannot flood the notification center.
+      if (!loopbackControlAllowed(request)) return json({ error: 'cross_origin_request_rejected' }, { status: 403 })
+      try {
+        const payload: unknown = await request.json()
+        const body = typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {}
+        const text = typeof body.body === 'string' ? body.body.slice(0, 2000) : ''
+        if (text === '') return json({ error: 'body_required' }, { status: 400 })
+        const title = typeof body.title === 'string' && body.title !== '' ? body.title.slice(0, 200) : 'Blueant'
+        const id = `notify-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        pendingNotifications.push({ id, title, body: text })
+        if (pendingNotifications.length > 20) pendingNotifications.splice(0, pendingNotifications.length - 20)
+        return json({ id, queued: true })
+      } catch {
+        return json({ error: 'invalid_json' }, { status: 400 })
+      }
+    }
+
+    if (pathname === '/bridge/api/notify/pending' && request.method === 'GET') {
+      return json({ notifications: pendingNotifications })
+    }
+
+    if (pathname === '/bridge/api/notify/ack' && request.method === 'POST') {
+      if (!loopbackControlAllowed(request)) return json({ error: 'cross_origin_request_rejected' }, { status: 403 })
+      try {
+        const payload: unknown = await request.json()
+        const ids = typeof payload === 'object' && payload !== null && Array.isArray((payload as { ids?: unknown }).ids)
+          ? (payload as { ids: unknown[] }).ids.filter((id): id is string => typeof id === 'string')
+          : []
+        const idSet = new Set(ids)
+        for (let i = pendingNotifications.length - 1; i >= 0; i -= 1) {
+          if (idSet.has(pendingNotifications[i].id)) pendingNotifications.splice(i, 1)
+        }
+        return json({ acked: ids.length })
+      } catch {
+        return json({ error: 'invalid_json' }, { status: 400 })
+      }
+    }
+
     return proxyHarness(request)
   },
   websocket: {
@@ -576,9 +757,62 @@ const server = Bun.serve<BridgeSocketData>({
 console.info(`Anton Bridge listening at ${bridgeUrl}`)
 console.info(`Local controls: ${bridgeUrl}/bridge`)
 
+/**
+ * Act-tier notification inbox: blueant_notify enqueues here, the Mac app
+ * polls /bridge/api/notify/pending, delivers through UNUserNotificationCenter,
+ * and acks by id. Bounded — see the route handlers above.
+ */
+interface PendingNotification { id: string; title: string; body: string }
+const pendingNotifications: PendingNotification[] = []
+
+/**
+ * The automatic repair turn, driven only while the recovery profile carries
+ * the surface. One bounded one-shot agent run per recovery entry: diagnose
+ * the recorded boot failure, fix the source checkout, rebuild, and swap the
+ * app bundle in place. Output lands in bridge.log beside the failure it
+ * answers. ANTON_AUTO_REPAIR=false disables the run; the recovery web UI
+ * stays available for manual repair either way.
+ */
+let repairStatus: 'off' | 'running' | 'done' | 'failed' = 'off'
+let repairProcess: Bun.Subprocess | undefined
+
+function launchRepairRun(): void {
+  if (repairProcess !== undefined || repairStatus === 'running') return
+  // Source checkout: the app bundle sits at <repo>/dist/Anton.app, so the
+  // repo root is three levels above the bundled harness tree.
+  const sourceRoot = resolve(harnessRoot, '..', '..', '..')
+  const task = [
+    'Anton crashed out of its main profile and is running in recovery mode; you are its built-in repair agent.',
+    `1. Read the last 300 lines of ${join(homedir(), 'Library', 'Application Support', 'Anton', 'bridge.log')} and identify the harness boot failure (loader entry, plugin error, or missing file).`,
+    `2. Fix the root cause in the source checkout${existsSync(join(sourceRoot, 'package.json')) ? ` at ${sourceRoot}` : ''} — the failing plugin may live in the main repo or a sibling checkout (mail-plugin, c0ntext/deepseek-harness-plugin). Keep changes minimal.`,
+    '3. Rebuild what you changed (pnpm run build in the changed checkout), then rebuild and swap the app in place: cd to the deepseek-harness repo and run ANTON_IN_PLACE_SWAP=1 pnpm run anton:build:macos.',
+    `4. Write a short diagnosis and outcome to ${join(homedir(), 'Library', 'Application Support', 'Anton', 'repair-result.md')}.`,
+    'If the failure is beyond a code fix, write the diagnosis and stop.',
+  ].join('\n')
+  repairStatus = 'running'
+  console.info('Recovery: starting automatic repair turn')
+  const child = Bun.spawn([nodeBinary, harnessEntry, '--profile', 'repair', task], {
+    cwd: harnessRoot,
+    stdin: 'ignore', stdout: 'inherit', stderr: 'inherit',
+    env: {
+      ...process.env,
+      ANTON_CONTEXT_ENDPOINT: contextEndpoint,
+      ANTON_CONTEXT_API_KEY: resolveContextApiKey(),
+      DSH_HOME: dshHome,
+    },
+  })
+  repairProcess = child
+  void child.exited.then((exitCode) => {
+    repairProcess = undefined
+    repairStatus = exitCode === 0 ? 'done' : 'failed'
+    console.info(`Recovery: repair turn exited with status ${exitCode} (${repairStatus})`)
+  })
+}
+
 if (autoStart) {
   void startHarness().then((result) => {
     console.info(result.reused ? 'Using an already-running DeepSeek Harness instance' : 'DeepSeek Harness started by Anton Bridge')
+    if (profile === 'recovery' && process.env.ANTON_AUTO_REPAIR !== 'false') launchRepairRun()
   }).catch(error => console.error(error))
 }
 
