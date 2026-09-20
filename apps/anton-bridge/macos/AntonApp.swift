@@ -288,6 +288,9 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
   /// Act-tier delivery: pull notifications the bridge inbox queued for us
   /// (blueant_notify and any loopback caller), present each through
   /// UNUserNotificationCenter, and ack by id so the bridge queue drains.
+  /// Delivery is once-per-id: poll cycles overlap (the first one parks on
+  /// the authorization dialog), so ids are claimed on the main queue before
+  /// delivery and an already-claimed id is skipped and acked.
   /// Notification authorization is requested lazily on the first delivery —
   /// the macOS permission dialog is the approve-once gate.
   private func pollNotifications() {
@@ -297,25 +300,34 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
       guard let self, let data, let response = response as? HTTPURLResponse,
             (200..<300).contains(response.statusCode) else { return }
       guard let pending = try? JSONDecoder().decode(NotifyPending.self, from: data), !pending.notifications.isEmpty else { return }
-      let center = UNUserNotificationCenter.current()
-      center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-        guard granted else {
-          // Denied: ack everything so the queue drains without nagging.
-          self.ackNotifications(pending.notifications.map(\.id))
-          return
+      DispatchQueue.main.async {
+        // Claim ids synchronously so overlapping poll cycles see each
+        // other's claims; anything new is delivered, anything already
+        // claimed is just acked off the queue.
+        let freshIds = Set(pending.notifications.map(\.id)).subtracting(self.claimedNotificationIds)
+        let fresh = pending.notifications.filter { freshIds.contains($0.id) }
+        let stale = pending.notifications.filter { !freshIds.contains($0.id) }
+        self.ackNotifications((fresh + stale).map(\.id))
+        guard !fresh.isEmpty else { return }
+        self.claimedNotificationIds.formUnion(freshIds)
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+          guard granted else { return }
+          center.delegate = self.notificationDelegate
+          for note in fresh {
+            let content = UNMutableNotificationContent()
+            content.title = note.title
+            content.body = note.body
+            let request = UNNotificationRequest(identifier: note.id, content: content, trigger: nil)
+            center.add(request) { _ in }
+          }
         }
-        center.delegate = self.notificationDelegate
-        for note in pending.notifications {
-          let content = UNMutableNotificationContent()
-          content.title = note.title
-          content.body = note.body
-          let request = UNNotificationRequest(identifier: note.id, content: content, trigger: nil)
-          center.add(request) { _ in }
-        }
-        self.ackNotifications(pending.notifications.map(\.id))
       }
     }.resume()
   }
+
+  /// Ids already claimed for delivery or ack by a previous poll cycle.
+  private var claimedNotificationIds = Set<String>()
 
   private func ackNotifications(_ ids: [String]) {
     guard !ids.isEmpty, let payload = try? JSONSerialization.data(withJSONObject: ["ids": ids]) else { return }
