@@ -84,8 +84,7 @@ pnpm run demo:acp       # ACP automation server (needs DEEPSEEK_API_KEY)
 The app ships only built `lib/` output, so rebuild changed packages first (`npx tsc -b tsconfig.client.json` + `pnpm --filter <pkg> run bundle`, or a full `pnpm run build`), then:
 
 ```sh
-pnpm run anton:build:macos  # assemble + codesign the candidate at dist/Anton.next.app
-bash dist/install-anton.sh  # quit the running app, swap Anton.next.app → Anton.app (old becomes Anton.previous.app), relaunch
+pnpm run anton:build:macos  # quit Anton first; builds into a hidden staging bundle, then installs dist/Anton.app (old bundle kept as Anton.previous.app) and relaunches
 ```
 
 To bounce just the Harness process without touching the app, POST `http://127.0.0.1:3742/bridge/api/harness/restart` — it reloads the tree the bridge serves: the bundle inside `Anton.app` for the installed app (so app code changes still need the rebuild + install above), or this checkout under `pnpm run anton:dev`, which runs the bridge from source.

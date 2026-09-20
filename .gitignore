@@ -40,3 +40,7 @@ worktrees/
 .typert-*/
 
 dist/
+
+# whisper.cpp cmake build tree (reproducible from Vox/voxkit/ext/whisper.cpp)
+apps/anton-bridge/macos/vendor/build/
+!apps/anton-bridge/macos/vendor/lib/

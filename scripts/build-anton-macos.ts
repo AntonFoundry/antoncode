@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -8,13 +8,16 @@ const harnessRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const sourceRoot = resolve(harnessRoot, '..')
 const bridgeRoot = resolve(harnessRoot, 'apps', 'anton-bridge')
 const contextRoot = resolve(sourceRoot, 'c0ntext')
-const outputArgument = process.argv[2]
 // Never rewrite the installed app in place: the running Harness lazily imports
 // provider modules and launches rg from that tree. An in-place rsync --delete
 // can therefore make a live turn lose a module or executable halfway through.
-// Build a complete side-by-side candidate, then install it only after stopping
-// the old app.
-const appRoot = resolve(harnessRoot, outputArgument ?? 'dist/Anton.next.app')
+// Build into a hidden staging bundle, then swap it in with rename(2) after the
+// caller quits the old app; the replaced bundle is kept one generation deep
+// for instant rollback. The staging name is not a documented interface, so
+// nothing outside this script targets it.
+const appRoot = resolve(harnessRoot, 'dist/.anton-staging.app')
+const installedRoot = resolve(harnessRoot, 'dist/Anton.app')
+const previousRoot = resolve(harnessRoot, 'dist/Anton.previous.app')
 const contents = join(appRoot, 'Contents')
 const resources = join(contents, 'Resources')
 const macOS = join(contents, 'MacOS')
@@ -126,7 +129,26 @@ run(['bun', 'build', '--compile', '--outfile', join(resources, 'bin', 'anton-bri
 bundledNode(join(resources, 'node'))
 cpSync(join(bridgeRoot, 'macos', 'Info.plist'), join(contents, 'Info.plist'))
 appIcon(join(resources, 'Anton.icns'))
-run(['swiftc', '-parse-as-library', '-framework', 'Cocoa', join(bridgeRoot, 'macos', 'AntonApp.swift'), '-o', join(macOS, 'Anton')])
+// whisper.cpp static libs (Metal embedded, arm64) built once into
+// apps/anton-bridge/macos/vendor: cmake -S <whisper.cpp checkout> -B vendor/build
+// -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON -DBUILD_SHARED_LIBS=OFF
+// -DWHISPER_BUILD_EXAMPLES=OFF -DCMAKE_OSX_ARCHITECTURES=arm64. Link order
+// matters: whisper before ggml, ggml before its backends (cpu/metal/blas).
+const vendor = join(bridgeRoot, 'macos', 'vendor')
+run(['swiftc', '-parse-as-library',
+  '-import-objc-header', join(bridgeRoot, 'macos', 'WhisperBridge.h'),
+  '-I', join(vendor, 'include', 'whisper'), '-I', join(vendor, 'include', 'ggml'),
+  '-L', join(vendor, 'lib'),
+  '-lwhisper', '-lggml', '-lggml-metal', '-lggml-blas', '-lggml-cpu', '-lggml-base', '-lc++',
+  '-framework', 'Cocoa', '-framework', 'AVFoundation', '-framework', 'Speech',
+  '-framework', 'Metal', '-framework', 'MetalKit', '-framework', 'Accelerate',
+  join(bridgeRoot, 'macos', 'AntonApp.swift'),
+  join(bridgeRoot, 'macos', 'BlueantPanel.swift'),
+  join(bridgeRoot, 'macos', 'SpeechController.swift'),
+  join(bridgeRoot, 'macos', 'WhisperEngine.swift'),
+  join(bridgeRoot, 'macos', 'HotkeyCenter.swift'),
+  join(bridgeRoot, 'macos', 'HarnessClient.swift'),
+  '-o', join(macOS, 'Anton')])
 
 // Harness runs from its built lib/ tree. The workspace's own src/ dirs and
 // every *.ts/*.tsx file are excluded so the bundle carries no readable
@@ -134,25 +156,13 @@ run(['swiftc', '-parse-as-library', '-framework', 'Cocoa', join(bridgeRoot, 'mac
 // ship their runtime JS there). Stale bun-build bridge artifacts are dead
 // weight. Keep node_modules: workspace symlinks remain valid because the
 // whole tree is copied together.
-syncDirectory(harnessRoot, join(resources, 'deepseek-harness'), ['/.git', '/dist', '/.turbo', 'packages/*/*/src', 'apps/*/src', '*.ts', '*.tsx', '*.map', '*.bun-build', 'apps/anton-bridge/dist'])
-// Runtime memory is user data, never an application asset. Docker will build
-// the engine images from the remaining compose source on first local start.
-// The c0ntext plugin ships its built lib/ (readable TypeScript excluded).
-syncDirectory(contextRoot, join(resources, 'c0ntext'), ['/.git', '/runtime', '__pycache__', '*.pyc', '*.ts', '*.tsx', '*.map', 'deepseek-harness-plugin/src', '/docker-compose.yml'])
-// The engine is decoupled from the bundle: the checked-out compose stack
-// (code mounts, /runtime volume, persistent XTDB config) lives in the
-// c0ntext checkout, so the bundle ships a one-line include stub that keeps
-// the bridge's `docker compose` management pointed at the checkout.
-writeFileSync(join(resources, 'c0ntext', 'docker-compose.yml'), [
-  '# The c0ntext engine is decoupled from the Anton app bundle: this stub',
-  '# includes the standalone stack from the c0ntext checkout (code, config,',
-  '# and the /runtime data volume all live there).',
-  'include:',
-  '  - /Users/pankajdoharey/Development/Projects/ML/antoncode/c0ntext/docker-compose.yml',
-  '',
-].join('\n'))
+syncDirectory(harnessRoot, join(resources, 'deepseek-harness'), ['/.git', '/dist', '/.turbo', 'packages/*/*/src', 'apps/*/src', '*.ts', '*.tsx', '*.map', '*.bun-build', 'apps/anton-bridge/dist', 'apps/anton-bridge/macos/vendor/build'])
+// Anton bundles the memory-service client plugin only. The service itself is
+// a separate product reached over its configured endpoint — no service
+// implementation, configuration, or infrastructure files enter the bundle.
+syncDirectory(join(contextRoot, 'deepseek-harness-plugin'), join(resources, 'c0ntext', 'deepseek-harness-plugin'), ['/src', '/tests', '/README.md', '/CHANGELOG.md', '/pnpm-lock.yaml', '/tsconfig.json', '/tsdown.config.ts', '*.ts', '*.tsx', '*.map'])
 // Fail the candidate build rather than shipping a bridge which can listen but
-// cannot launch Harness because its native c0ntext plugin is absent.
+// cannot launch Harness because its memory plugin is absent.
 const bundledPluginManifest = join(resources, 'c0ntext', 'deepseek-harness-plugin', 'package.json')
 if (!existsSync(bundledPluginManifest)) {
   throw new Error(`Bundled c0ntext plugin was not copied to ${bundledPluginManifest}`)
@@ -165,3 +175,13 @@ run(['codesign', '--force', '--sign', '-', '-i', 'dev.antoncode.anton', '-r=desi
 
 console.log(`Built ${appRoot}`)
 console.log(`Size: use du -sh ${appRoot}`)
+
+// Install: refuse to touch a running app, keep the outgoing bundle for
+// rollback, then relaunch. Quit Anton before rebuilding.
+const running = spawnSync('pgrep', ['-f', 'dist/Anton\\.app/Contents'], { encoding: 'utf8' })
+if (running.status === 0) throw new Error('Anton is running; quit it before rebuilding the bundle')
+rmSync(previousRoot, { recursive: true, force: true })
+if (existsSync(installedRoot)) renameSync(installedRoot, previousRoot)
+renameSync(appRoot, installedRoot)
+run(['open', installedRoot])
+console.log(`Installed ${installedRoot}; previous bundle kept at ${previousRoot}`)

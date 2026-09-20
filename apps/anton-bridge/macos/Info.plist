@@ -29,5 +29,9 @@
   <string>Anton needs access to files in your Documents when running workspace commands.</string>
   <key>NSDownloadsFolderUsageDescription</key>
   <string>Anton needs access to files in your Downloads when running workspace commands.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Blueant transcribes your voice questions locally before sending them to the assistant.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>Blueant uses on-device speech recognition to convert your spoken question into text.</string>
 </dict>
 </plist>
