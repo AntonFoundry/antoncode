@@ -77,6 +77,8 @@ interface BenchOptions {
   /** The hub's steer-all face (empty-draft accelerated Enter). */
   steerQueue?: () => void
   variant?: 'hero' | 'composer'
+  /** Layout span of the hosting pane (overlay scope: page mask vs pane mask). */
+  layoutSpan?: 'single' | 'multi'
   placeholder?: string
   t?: InputBarProps['t']
   command?: (line: string) => Promise<boolean>
@@ -181,6 +183,7 @@ function bench(over?: BenchOptions) {
     t: over?.t ?? makeTranslate(zh, commonZh),
     renderSlot,
     variant: over?.variant ?? 'composer',
+    ...(over?.layoutSpan !== undefined ? { layoutSpan: over.layoutSpan } : {}),
     ...(over?.inert === true ? { disabled: true } : {}),
     ...(over?.workspacePickerOpen !== undefined ? { workspacePickerOpen: over.workspacePickerOpen } : {}),
     ...(over?.onRequestWorkspace !== undefined ? { onRequestWorkspace: over.onRequestWorkspace } : {}),
@@ -222,39 +225,82 @@ describe('image draft rail', () => {
     expect(shell.snapshot.draft).toBe('同时粘贴的文字')
   })
 
-  it('accepts a drop anywhere on the page under the full-page overlay', () => {
+  it('accepts a drop on the composer pane only, under the pane-scoped overlay', () => {
     const addImages = vi.fn(() => null)
     const { view } = bench({ addImages })
+    const pane = view.container.firstElementChild as HTMLElement
     const image = new File([Uint8Array.of(1)], 'dropped.png', { type: 'image/png' })
     const dataTransfer = { types: ['Files'], files: [image], dropEffect: 'none' }
-    // The drag never touches the composer card: the listeners are page-wide.
-    expect(fireEvent.dragEnter(document.body, { dataTransfer })).toBe(false)
+    // The drag touches THIS composer's card: pane-scoped handlers resolve the
+    // drop against this instance's session only.
+    expect(fireEvent.dragEnter(pane, { dataTransfer })).toBe(false)
+    expect(view.getByRole('status').getAttribute('data-variant')).toBe('page')
     expect(view.getByRole('status').textContent).toContain('图片拖动到此处即可添加')
-    expect(fireEvent.dragOver(document.body, { dataTransfer })).toBe(false)
+    expect(fireEvent.dragOver(pane, { dataTransfer })).toBe(false)
     expect(dataTransfer.dropEffect).toBe('copy')
-    expect(fireEvent.drop(document.body, { dataTransfer })).toBe(false)
+    expect(fireEvent.drop(pane, { dataTransfer })).toBe(false)
     expect(addImages).toHaveBeenCalledWith([image])
     expect(view.queryByRole('status')).toBeNull()
   })
 
-  it('keeps text drags native and hides the overlay when the drag leaves or ends', () => {
+  it('keeps text drags native and hides the overlay when the drag leaves the pane', () => {
     const addImages = vi.fn(() => null)
-    const { view } = bench({ addImages })
+    const { view, textarea } = bench({ addImages })
+    const pane = view.container.firstElementChild as HTMLElement
     // A text drag carries no Files type: no overlay, native behavior stays.
-    fireEvent.dragEnter(document.body, { dataTransfer: { types: ['text/plain'], files: [], dropEffect: 'none' } })
+    fireEvent.dragEnter(pane, { dataTransfer: { types: ['text/plain'], files: [], dropEffect: 'none' } })
     expect(view.queryByRole('status')).toBeNull()
     const dataTransfer = { types: ['Files'], files: [], dropEffect: 'none' }
-    fireEvent.dragEnter(document.body, { dataTransfer })
+    fireEvent.dragEnter(pane, { dataTransfer })
     expect(view.getByRole('status')).toBeTruthy()
-    fireEvent.dragLeave(document.body, { dataTransfer })
+    fireEvent.dragLeave(pane, { dataTransfer })
     expect(view.queryByRole('status')).toBeNull()
-    // An aborted drag (Escape) fires dragend without a balancing leave.
-    fireEvent.dragEnter(document.body, { dataTransfer })
-    fireEvent.dragEnter(document.querySelector('textarea')!, { dataTransfer })
+    // Enter/leave pairs across child elements keep the depth count: the
+    // overlay stays up until the drag leaves the pane itself.
+    fireEvent.dragEnter(pane, { dataTransfer })
+    fireEvent.dragEnter(textarea, { dataTransfer })
     expect(view.getByRole('status')).toBeTruthy()
-    fireEvent.dragEnd(window, { dataTransfer })
+    fireEvent.dragLeave(textarea, { dataTransfer })
+    expect(view.getByRole('status')).toBeTruthy()
+    fireEvent.dragLeave(pane, { dataTransfer })
     expect(view.queryByRole('status')).toBeNull()
     expect(addImages).not.toHaveBeenCalled()
+  })
+
+  it('scopes the overlay to the pane when the layout holds several panes (layoutSpan multi)', () => {
+    const addImages = vi.fn(() => null)
+    const { view } = bench({ addImages, layoutSpan: 'multi' })
+    const pane = view.container.firstElementChild as HTMLElement
+    const dataTransfer = { types: ['Files'], files: [], dropEffect: 'none' }
+    fireEvent.dragEnter(pane, { dataTransfer })
+    expect(view.getByRole('status').getAttribute('data-variant')).toBe('pane')
+    fireEvent.dragLeave(pane, { dataTransfer })
+    expect(view.queryByRole('status')).toBeNull()
+  })
+
+  it('isolates panes: a drop on one composer attaches only to its own session draft', () => {
+    const addImagesA = vi.fn(() => null)
+    const addImagesB = vi.fn(() => null)
+    const a = bench({ addImages: addImagesA })
+    const b = bench({ addImages: addImagesB })
+    const paneA = a.view.container.firstElementChild as HTMLElement
+    const paneB = b.view.container.firstElementChild as HTMLElement
+    const image = new File([Uint8Array.of(1)], 'for-a.png', { type: 'image/png' })
+    const dataTransfer = { types: ['Files'], files: [image], dropEffect: 'none' }
+    fireEvent.dragEnter(paneA, { dataTransfer })
+    // Only A's overlay lights up; B's own tree shows no drop state at all.
+    expect(a.view.getByRole('status')).toBeTruthy()
+    expect(b.view.container.querySelector('[role="status"]')).toBeNull()
+    fireEvent.drop(paneA, { dataTransfer })
+    expect(addImagesA).toHaveBeenCalledTimes(1)
+    expect(addImagesA).toHaveBeenCalledWith([image])
+    expect(addImagesB).not.toHaveBeenCalled()
+    expect(a.view.queryByRole('status')).toBeNull()
+    // The untouched pane still accepts its own drop afterwards.
+    const imageB = new File([Uint8Array.of(2)], 'for-b.png', { type: 'image/png' })
+    fireEvent.drop(paneB, { dataTransfer: { types: ['Files'], files: [imageB], dropEffect: 'none' } })
+    expect(addImagesB).toHaveBeenCalledWith([imageB])
+    expect(addImagesA).toHaveBeenCalledTimes(1)
   })
 
   it('pre-checks projected limits at intake: whole-batch refusal with product copy, none added', () => {
@@ -266,18 +312,18 @@ describe('image draft rail', () => {
       mediaTypes: ['image/png'] as const,
     }
     const png = (bytes: number, name: string) => new File([new ArrayBuffer(bytes)], name, { type: 'image/png' })
-    const drop = (files: File[]) => {
-      fireEvent.drop(document.body, { dataTransfer: { types: ['Files'], files, dropEffect: 'none' } })
+    const dropOn = (view: { container: HTMLElement }, files: File[]) => {
+      fireEvent.drop(view.container.firstElementChild as HTMLElement, { dataTransfer: { types: ['Files'], files, dropEffect: 'none' } })
     }
     // Count: three at once over a two-image limit → the whole batch refused.
     const overCount = bench({ addImages: vi.fn(() => null), imageLimits: limits })
-    drop([png(8, 'a.png'), png(8, 'b.png'), png(8, 'c.png')])
+    dropOn(overCount.view, [png(8, 'a.png'), png(8, 'b.png'), png(8, 'c.png')])
     expect(overCount.view.getByRole('alert').textContent).toContain('一条消息最多添加 2 张图片')
     expect(overCount.props.addImages).not.toHaveBeenCalled()
     cleanup()
     // Per-file bytes.
     const overFile = bench({ addImages: vi.fn(() => null), imageLimits: limits })
-    drop([png(1024 * 1024 + 1, 'big.png')])
+    dropOn(overFile.view, [png(1024 * 1024 + 1, 'big.png')])
     expect(overFile.view.getByRole('alert').textContent).toContain('单张图片不能超过 1MB')
     expect(overFile.props.addImages).not.toHaveBeenCalled()
     cleanup()
@@ -285,14 +331,14 @@ describe('image draft rail', () => {
     const held = new File([new ArrayBuffer(1024 * 1024 * 1.5)], 'held.png', { type: 'image/png' })
     const attachment = { kind: 'image' as const, id: 'draft-1' as DraftAttachmentId, file: held, previewUrl: 'blob:held' }
     const overTotal = bench({ addImages: vi.fn(() => null), imageLimits: limits, attachments: [attachment] })
-    drop([png(1024 * 1024, 'more.png')])
+    dropOn(overTotal.view, [png(1024 * 1024, 'more.png')])
     expect(overTotal.view.getByRole('alert').textContent).toContain('图片总大小超过 2MB')
     expect(overTotal.props.addImages).not.toHaveBeenCalled()
     cleanup()
     // Within every limit: the batch passes through to addImages.
     const within = bench({ addImages: vi.fn(() => null), imageLimits: limits })
     const fits = png(16, 'fits.png')
-    drop([fits])
+    dropOn(within.view, [fits])
     expect(within.props.addImages).toHaveBeenCalledWith([fits])
     expect(within.view.queryByRole('alert')).toBeNull()
   })
@@ -314,7 +360,7 @@ describe('image draft rail', () => {
       new File([new ArrayBuffer(64)], 'a.pdf', { type: 'application/pdf' }),
       new File([new ArrayBuffer(64)], 'b.pdf', { type: 'application/pdf' }),
     ]
-    fireEvent.drop(document.body, { dataTransfer: { types: ['Files'], files, dropEffect: 'none' } })
+    fireEvent.drop(view.container.firstElementChild as HTMLElement, { dataTransfer: { types: ['Files'], files, dropEffect: 'none' } })
     expect(addImages).toHaveBeenCalledWith(files)
     expect(view.getByRole('alert').textContent).toContain('仅支持 PNG、JPG、WebP、GIF 格式的图片')
   })
@@ -330,7 +376,7 @@ describe('image draft rail', () => {
         mediaTypes: ['image/png'] as const,
       },
     })
-    fireEvent.dragEnter(document.body, { dataTransfer: { types: ['Files'], files: [], dropEffect: 'none' } })
+    fireEvent.dragEnter(view.container.firstElementChild as HTMLElement, { dataTransfer: { types: ['Files'], files: [], dropEffect: 'none' } })
     expect(view.getByRole('status').textContent).toContain('最多 20 张，每张 5MB')
   })
 
@@ -354,13 +400,14 @@ describe('image draft rail', () => {
   it('shows the blocked overlay and refuses the drop while the composer is locked', () => {
     const addImages = vi.fn(() => null)
     const { view } = bench({ addImages, inert: true })
+    const pane = view.container.firstElementChild as HTMLElement
     const image = new File([Uint8Array.of(1)], 'dropped.png', { type: 'image/png' })
     const dataTransfer = { types: ['Files'], files: [image], dropEffect: 'copy' }
-    fireEvent.dragEnter(document.body, { dataTransfer })
+    fireEvent.dragEnter(pane, { dataTransfer })
     expect(view.getByRole('status').textContent).toContain('当前无法添加图片')
-    fireEvent.dragOver(document.body, { dataTransfer })
+    fireEvent.dragOver(pane, { dataTransfer })
     expect(dataTransfer.dropEffect).toBe('none')
-    fireEvent.drop(document.body, { dataTransfer })
+    fireEvent.drop(pane, { dataTransfer })
     expect(addImages).not.toHaveBeenCalled()
     expect(view.queryByRole('status')).toBeNull()
   })

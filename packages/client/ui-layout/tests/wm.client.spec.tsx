@@ -13,9 +13,10 @@ import { useSyncExternalStore } from 'react'
 import {
   WM_LEAF_CONVERSATION, WM_LEAF_DETAILS, WM_LEAF_SIDEBAR,
   canClose, countLeaves, defaultTree, findLeaf, findSplit, firstLeafId, focusDirection, keepOnlyLeaf, killBuffer,
+  migrateLegacyConversation, sessionBuffer,
   moveLeaf, moveLeafTabbed, tabInto, tabNeighborLeaf, toggleTabbed,
-  SCRATCH_BUFFER_ID,
-  lastLeafId, leafIds, normalizeTree, openBuffer, removeLeaf, setBuffer, setWeights, splitLeaf,
+  SCRATCH_BUFFER_ID, SESSION_BUFFER_ID,
+  lastLeafId, leafIds, normalizeTree, openBuffer, removeLeaf, setBuffer, setWeights, splitLeaf, swapBuffer,
 } from '@deepseek-ai/dsh-client-ui-layout/src/client/wm.ts'
 import { createLayoutStore, createScratchStore, createWmStore } from '@deepseek-ai/dsh-client-ui-layout/src/client/stores.ts'
 import { SIDEBAR_DEFAULT } from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
@@ -111,7 +112,7 @@ describe('wm tree operations', () => {
         {
           kind: 'split', id: 'wm:inner', dir: 'column', weights: [0.5, 0.5],
           children: [
-            { kind: 'leaf', id: WM_LEAF_CONVERSATION, buffer: 'conversation' },
+            { kind: 'leaf', id: WM_LEAF_CONVERSATION, buffer: SESSION_BUFFER_ID },
             { kind: 'leaf', id: WM_LEAF_DETAILS, buffer: 'details' },
           ],
         },
@@ -372,6 +373,8 @@ describe('LayoutController wm paths', () => {
 
 const selectedSession = { current: 's-test' as SessionId | undefined }
 const selectedSessionBlank = { current: false }
+/** Extra session summaries the useSessions stub exposes beside the current one. */
+const extraSessions: { id: string; displayTitle: string }[] = []
 let frameWidth = 1920
 
 /** Observer stub: captures the callback so tests can fire resizes manually. */
@@ -415,7 +418,7 @@ const openPathLog: string[] = []
 /** Records theme loads (M-x load-theme path). */
 const loadedThemes: string[] = []
 
-function mountFrame(initialTree?: WmNode, workspaces?: { id: string; title: string }[]) {
+function mountFrame(initialTree?: WmNode, workspaces?: { id: string; title: string; sessionIds?: string[] }[]) {
   window.innerWidth = frameWidth
   const layout = createLayoutStore().create()
   const wm = createWmStore().create()
@@ -435,16 +438,19 @@ function mountFrame(initialTree?: WmNode, workspaces?: { id: string; title: stri
       ids: current === undefined ? [] : [current],
       byId: current === undefined
         ? {}
-        : { [current]: { id: current, displayTitle: 'Test', cwd: '/proj/wm', running: false, blank: selectedSessionBlank.current, updatedAt: 1 } },
+        : {
+          [current]: { id: current, displayTitle: 'Test', cwd: '/proj/wm', running: false, blank: selectedSessionBlank.current, updatedAt: 1 },
+          ...Object.fromEntries(extraSessions.map(s => [s.id, { ...s, running: false, blank: false, updatedAt: 1 }])),
+        },
       current,
       phase: 'ready',
-    } as SessionListState
+    } as unknown as SessionListState
     return sel(sessionState)
   }) as never
   const workspaceState: WorkspaceListState = {
     items: (workspaces ?? []).map(w => ({
       workspaceId: w.id as never, path: `/projects/${w.id}`, title: w.title,
-      sessionIds: [] as never[], createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+      sessionIds: (w.sessionIds ?? []) as never[], createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
     })),
     archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
     baselinesReady: true, recentWorkspaceId: undefined,
@@ -462,6 +468,14 @@ function mountFrame(initialTree?: WmNode, workspaces?: { id: string; title: stri
       themeList={() => [{ id: 'anton-dark', colorScheme: 'dark' }, { id: 'paper', colorScheme: 'light' }]}
       loadTheme={(id) => { loadedThemes.push(id) }}
       reconcileBuffers={() => { act(() => { wm.actions.reconcile() }) }}
+      rebindPane={(leafId, sessionId) => {
+        const snapshot = wm.getSnapshot()
+        const buffer = sessionBuffer(sessionId)
+        act(() => {
+          wm.actions.setBuffers([...snapshot.buffers.filter(b => b.id !== buffer.id), buffer])
+          wm.actions.setTree(swapBuffer(snapshot.tree, leafId, buffer.id))
+        })
+      }}
       writeScratch={(text) => { act(() => { scratch.actions.setText(text) }) }}
       listDirectory={listDirectoryStub}
       openPath={openPathStub}
@@ -507,6 +521,7 @@ beforeEach(() => {
   frameWidth = 1920
   selectedSession.current = 's-test' as SessionId
   selectedSessionBlank.current = false
+  extraSessions.length = 0
   window.localStorage.clear()
   vi.useFakeTimers()
   vi.stubGlobal('ResizeObserver', ResizeObserverStub)
@@ -556,7 +571,10 @@ describe('WmFrame render', () => {
     const sidebar = slotCalls.filter(c => c.key === 'sidebar').at(-1)!
     // Viewport 1920: the untouched preference takes the 18% share (346).
     expect(sidebar.props).toEqual({ collapsed: false, width: 346, brandInFrame: true })
-    expect(slotCalls.find(c => c.key === 'conversation')!.props).toEqual({})
+    expect(slotCalls.find(c => c.key === 'conversation')!.props).toEqual({
+      layoutSpan: 'single',
+      rebindPane: expect.any(Function),
+    })
     expect(slotCalls.map(c => c.key)).toContain('shell.overlay')
   })
 
@@ -565,14 +583,14 @@ describe('WmFrame render', () => {
     const closeButtonOf = (buffer: string): HTMLButtonElement =>
       container.querySelector(`[data-buffer="${buffer}"] button[aria-label="Close"]`) as HTMLButtonElement
     // The conversation pane closes too: chat returns through C-x b.
-    act(() => { closeButtonOf('conversation').click() })
+    act(() => { closeButtonOf('session').click() })
     expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR])
     expect([...container.querySelectorAll('[class*=bufferName]')].some(el => el.textContent === 'Chat')).toBe(false)
   })
 
   it('single-pane mode line keeps tidy + expand/restore; only flip and close need a sibling', () => {
     const { container, wm } = mountFrame(keepOnlyLeaf(defaultTree(), WM_LEAF_CONVERSATION))
-    const conv = '[data-buffer="conversation"] '
+    const conv = '[data-buffer="session"] '
     // Tidy and Expand stay reachable on the last window (C-x 1 must be
     // clickable there, and expanding must leave a visible restore).
     expect(container.querySelector(`${conv}button[aria-label="Tidy panes"]`)).toBeTruthy()
@@ -598,7 +616,7 @@ describe('WmFrame render', () => {
     expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
     // The pane is pinned to the context sidebar natural width (CONTEXT_DEFAULT = 552px).
     expect(wrapperOf('details')?.style.flex).toBe('0 0 552px')
-    expect(wrapperOf('conversation')?.style.flex).toBe('1 1 0%')
+    expect(wrapperOf('session')?.style.flex).toBe('1 1 0%')
     act(() => { getByLabelText('Toggle context panel').click() })
     expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
   })
@@ -620,7 +638,7 @@ describe('WmFrame render', () => {
     // Dragging left widens the right-hand context column: 552 + 100 = 652.
     expect(layout.getSnapshot().details).toBe(652)
     // Tidy panes restores the original context width (CONTEXT_DEFAULT = 552).
-    const tidy = container.querySelector('[data-buffer="conversation"] button[aria-label="Tidy panes"]') as HTMLElement
+    const tidy = container.querySelector('[data-buffer="session"] button[aria-label="Tidy panes"]') as HTMLElement
     act(() => { tidy.click() })
     expect(layout.getSnapshot().details).toBe(552)
   })
@@ -634,7 +652,7 @@ describe('WmFrame render', () => {
       weights: [0.18, 0.41, 0.41],
       children: [
         { kind: 'leaf', id: WM_LEAF_SIDEBAR, buffer: 'sidebar' },
-        { kind: 'leaf', id: WM_LEAF_CONVERSATION, buffer: 'conversation' },
+        { kind: 'leaf', id: WM_LEAF_CONVERSATION, buffer: SESSION_BUFFER_ID },
         {
           kind: 'split',
           id: 'wm:split:context-col',
@@ -653,7 +671,7 @@ describe('WmFrame render', () => {
     const detailsWrapper = wrapperOf('details')
     const columnSplitWrapper = detailsWrapper?.closest('[class*=split]')?.parentElement
     expect(columnSplitWrapper?.style.flex).toBe('0 0 552px')
-    expect(wrapperOf('conversation')?.style.flex).toBe('1 1 0%')
+    expect(wrapperOf('session')?.style.flex).toBe('1 1 0%')
   })
 
   it('context expands fully when no other content windows exist in the split', () => {
@@ -704,7 +722,7 @@ describe('WmFrame render', () => {
   it('⌘⇧E tabs the container: strip renders one tab per window, clicking focuses', () => {
     const { container, wm } = mountFrame()
     // Split the conversation right so the root container has three leaves.
-    act(() => { (container.querySelector('[data-buffer="conversation"] button[aria-label="Split right"]') as HTMLElement).click() })
+    act(() => { (container.querySelector('[data-buffer="session"] button[aria-label="Split right"]') as HTMLElement).click() })
     // ⌘⇧E converts the focused container into a tabbed group.
     press('E', { metaKey: true, shiftKey: true, code: 'KeyE' })
     const tree = wm.getSnapshot().tree
@@ -732,7 +750,7 @@ describe('WmFrame render', () => {
     const { container, wm } = mountFrame()
     // The conversation pane's Split right clones the buffer into a second
     // window beside it (a buffer is content; windows are views).
-    const convSplit = container.querySelector('[data-buffer="conversation"] button[aria-label="Split right"]') as HTMLButtonElement
+    const convSplit = container.querySelector('[data-buffer="session"] button[aria-label="Split right"]') as HTMLButtonElement
     act(() => { convSplit.click() })
     expect(leafIds(wm.getSnapshot().tree)).toHaveLength(3)
     expect([...container.querySelectorAll('[class*=bufferName]')].filter(el => el.textContent === 'Chat')).toHaveLength(2)
@@ -835,6 +853,95 @@ describe('WmFrame render', () => {
   })
 })
 
+describe('per-window session buffers', () => {
+  /** A tree whose chat leaf is pinned to session s-1 (registry entry present). */
+  function pinnedFrame() {
+    extraSessions.push({ id: 's-1', displayTitle: 'Alpha' })
+    const tree: WmNode = {
+      kind: 'split', id: 'wm:root', dir: 'row', weights: [0.2, 0.8],
+      children: [
+        { kind: 'leaf', id: WM_LEAF_SIDEBAR, buffer: 'sidebar' },
+        { kind: 'leaf', id: WM_LEAF_CONVERSATION, buffer: 'buffer:session:s-1' },
+      ],
+    }
+    const frame = mountFrame(tree)
+    act(() => {
+      frame.wm.actions.setBuffers([...frame.wm.getSnapshot().buffers.filter(b => b.id !== 'buffer:session:s-1'), sessionBuffer('s-1')])
+    })
+    return frame
+  }
+
+  it('a pinned pane renders the conversation slot with the pin in opts + owner props and a titled mode line', () => {
+    const { slotCalls, container } = pinnedFrame()
+    const conv = slotCalls.filter(c => c.key === 'conversation').at(-1)!
+    expect(conv.props).toMatchObject({ scopeSessionId: 's-1', layoutSpan: 'single' })
+    expect([...container.querySelectorAll('[class*=bufferName]')].some(el => el.textContent === 'Chat · Alpha')).toBe(true)
+  })
+
+  it('splitting a pinned pane clones into a NEW registry entry with the same session', () => {
+    const { container, wm } = pinnedFrame()
+    act(() => {
+      ;(container.querySelector('[data-buffer="session"] button[aria-label="Split right"]') as HTMLElement).click()
+    })
+    const pins = wm.getSnapshot().buffers.filter(b => b.kind === 'session' && b.sessionId === 's-1')
+    expect(pins.length).toBe(2)
+    expect(new Set(pins.map(b => b.id)).size).toBe(2)
+    // Both windows show a buffer pinned to s-1.
+    const buffersOf = (t: WmNode): string[] => (t.kind === 'leaf' ? [t.buffer] : t.children.flatMap(buffersOf))
+    expect(buffersOf(wm.getSnapshot().tree).filter(id => id.startsWith('buffer:session:')).length).toBe(2)
+  })
+
+  it('C-x b lists one candidate per workspace session and Enter pins the focused window', () => {
+    extraSessions.push({ id: 's-1', displayTitle: 'Alpha' })
+    const { getByLabelText, wm } = mountFrame(undefined, [{ id: 'ws-1', title: 'One', sessionIds: ['s-1'] }])
+    act(() => { wm.actions.setFocus(WM_LEAF_SIDEBAR) })
+    press('x', { ctrlKey: true })
+    press('b')
+    const input = getByLabelText('Switch buffer') as HTMLInputElement
+    typeInput(input, 'Alpha')
+    act(() => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+    // The focused sidebar window switched to the pinned session buffer; the
+    // registry gained its entry (Emacs: a switch, never a split).
+    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('buffer:session:s-1')
+    expect(wm.getSnapshot().buffers.some(b => b.id === 'buffer:session:s-1')).toBe(true)
+    expect(leafIds(wm.getSnapshot().tree)).toHaveLength(2)
+  })
+
+  it('a sidebar current change re-binds ONLY the focused chat window', () => {
+    const { rerenderFrame, wm } = pinnedFrame()
+    extraSessions.push({ id: 's-next', displayTitle: 'Next' })
+    act(() => { wm.actions.setFocus(WM_LEAF_CONVERSATION) })
+    selectedSession.current = 's-next' as SessionId
+    act(() => { rerenderFrame() })
+    // The focused chat pane pinned itself to the new current…
+    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_CONVERSATION)?.buffer).toBe('buffer:session:s-next')
+    expect(wm.getSnapshot().buffers.some(b => b.id === 'buffer:session:s-next')).toBe(true)
+    // …and the sidebar leaf kept its buffer (only the focused window moved).
+    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('sidebar')
+  })
+
+  it('two chat windows report layoutSpan multi; one reports single', () => {
+    const { container, slotCalls } = pinnedFrame()
+    expect((slotCalls.filter(c => c.key === 'conversation').at(-1)!.props as { layoutSpan: string }).layoutSpan).toBe('single')
+    act(() => {
+      ;(container.querySelector('[data-buffer="session"] button[aria-label="Split right"]') as HTMLElement).click()
+    })
+    expect((slotCalls.filter(c => c.key === 'conversation').at(-1)!.props as { layoutSpan: string }).layoutSpan).toBe('multi')
+  })
+
+  it("the pane-bound rebindPane owner prop re-pins exactly that leaf (a composer's new session)", () => {
+    extraSessions.push({ id: 's-2', displayTitle: 'Beta' })
+    const { slotCalls, wm } = pinnedFrame()
+    const { rebindPane } = slotCalls.filter(c => c.key === 'conversation').at(-1)!.props as { rebindPane: (sessionId: string) => void }
+    act(() => { rebindPane('s-2') })
+    // The chat leaf re-pinned to s-2; the sidebar leaf and the global
+    // selection (sessionsListSnapshot.current) stayed put.
+    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_CONVERSATION)?.buffer).toBe('buffer:session:s-2')
+    expect(wm.getSnapshot().buffers.some(b => b.id === 'buffer:session:s-2')).toBe(true)
+    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('sidebar')
+  })
+})
+
 describe('WmFrame narrow viewport', () => {
   it('drops the sidebar leaf below 900px and restores it on widen (persisted tree had it)', () => {
     frameWidth = 800
@@ -869,7 +976,7 @@ describe('focused leaf + commands', () => {
     const panes = container.querySelectorAll('[data-buffer]')
     act(() => { panes[1]!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })) })
     expect(wm.getSnapshot().focusedLeafId).toBe(WM_LEAF_CONVERSATION)
-    expect(container.querySelector('[data-buffer="conversation"]')!.hasAttribute('data-focused')).toBe(true)
+    expect(container.querySelector('[data-buffer="session"]')!.hasAttribute('data-focused')).toBe(true)
     expect(container.querySelector('[data-buffer="sidebar"]')!.hasAttribute('data-focused')).toBe(false)
   })
 
@@ -879,7 +986,7 @@ describe('focused leaf + commands', () => {
     // Effective focus normalizes (no pane marked focused-stale); the frame
     // still renders, and the first pane holds the highlight resolution.
     expect(container.querySelector('[data-buffer]')).toBeTruthy()
-    act(() => { container.querySelector('[data-buffer="conversation"]')!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })) })
+    act(() => { container.querySelector('[data-buffer="session"]')!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })) })
     expect(wm.getSnapshot().focusedLeafId).toBe(WM_LEAF_CONVERSATION)
   })
 })
@@ -893,10 +1000,10 @@ describe('Emacs chords (window listener)', () => {
     // Emacs semantics: the new window shows the SAME buffer — a buffer is
     // content, windows are views onto it; singletons clone like any other.
     const buffers = (t: WmNode): string[] => (t.kind === 'leaf' ? [t.buffer] : t.children.flatMap(buffers))
-    expect(buffers(wm.getSnapshot().tree)).toEqual(['sidebar', 'conversation', 'conversation'])
+    expect(buffers(wm.getSnapshot().tree)).toEqual(['sidebar', SESSION_BUFFER_ID, SESSION_BUFFER_ID])
     press('x', { ctrlKey: true })
     press('3')
-    expect(buffers(wm.getSnapshot().tree)).toEqual(['sidebar', 'conversation', 'conversation', 'conversation'])
+    expect(buffers(wm.getSnapshot().tree)).toEqual(['sidebar', SESSION_BUFFER_ID, SESSION_BUFFER_ID, SESSION_BUFFER_ID])
   })
 
   it('C-x 0 closes the focused leaf but never the last window standing', () => {
@@ -940,8 +1047,8 @@ describe('Emacs chords (window listener)', () => {
     act(() => { prompt.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
     const buffers = (t: WmNode): string[] => (t.kind === 'leaf' ? [t.buffer] : t.children.flatMap(buffers))
     // A swap, not a split: two windows, both showing Chat.
-    expect(buffers(wm.getSnapshot().tree)).toEqual(['conversation', 'conversation'])
-    expect(findLeaf(wm.getSnapshot().tree, wm.getSnapshot().focusedLeafId ?? '')?.buffer).toBe('conversation')
+    expect(buffers(wm.getSnapshot().tree)).toEqual([SESSION_BUFFER_ID, SESSION_BUFFER_ID])
+    expect(findLeaf(wm.getSnapshot().tree, wm.getSnapshot().focusedLeafId ?? '')?.buffer).toBe(SESSION_BUFFER_ID)
   })
 
   it('C-x b to an unshown buffer swaps the focused window (Emacs: never a split)', () => {
@@ -967,7 +1074,7 @@ describe('Emacs chords (window listener)', () => {
     const prompt = getByLabelText('Switch buffer') as HTMLInputElement
     act(() => { prompt.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', ctrlKey: true, bubbles: true })) })
     act(() => { prompt.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
-    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('conversation')
+    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe(SESSION_BUFFER_ID)
     // C-p from the top clamps at the first candidate: Enter swaps back.
     press('x', { ctrlKey: true })
     press('b')
@@ -1071,22 +1178,92 @@ describe('Emacs chords (window listener)', () => {
 describe('buffer registry', () => {
   it('seeds the singletons, migrates pre-registry snapshots, and reconciles', () => {
     const instance = createWmStore().create()
-    expect(instance.getSnapshot().buffers.map(b => b.id)).toEqual(['sidebar', 'conversation', 'details', 'settings'])
+    expect(instance.getSnapshot().buffers.map(b => b.id)).toEqual(['sidebar', SESSION_BUFFER_ID, 'details', 'settings'])
     // Old persisted snapshot: leaves carry bare kind ids, no buffers array.
     // The ids ARE the singleton ids, so the tree renders as-is; reconcile
     // heals the registry side.
     act(() => { instance.actions.reconcile() })
-    expect(instance.getSnapshot().buffers.map(b => b.id)).toEqual(['sidebar', 'conversation', 'details', 'settings'])
+    expect(instance.getSnapshot().buffers.map(b => b.id)).toEqual(['sidebar', SESSION_BUFFER_ID, 'details', 'settings'])
   })
 
-  it('killBuffer refuses singletons, swaps leaves to scratch, and prunes the registry', () => {
+  it('sessionBuffer: undefined pins follow-current, a session id yields the deterministic pinned id', () => {
+    expect(sessionBuffer()).toEqual({ id: SESSION_BUFFER_ID, kind: 'session' })
+    expect(sessionBuffer('s-1')).toEqual({ id: 'buffer:session:s-1', kind: 'session', sessionId: 's-1' })
+  })
+
+  it('defaultTree seeds a follow-current session buffer in the chat leaf', () => {
+    expect(findLeaf(defaultTree(), WM_LEAF_CONVERSATION)?.buffer).toBe(SESSION_BUFFER_ID)
+  })
+
+  it('migrateLegacyConversation rewrites legacy buffers and leaves, idempotently', () => {
+    const legacyBuffers = [
+      { id: 'sidebar', kind: 'sidebar' as const },
+      { id: 'conversation', kind: 'conversation' as const },
+      { id: 'details', kind: 'details' as const },
+    ]
+    const legacyTree: WmNode = {
+      kind: 'split', id: 'wm:root', dir: 'row', weights: [0.2, 0.8],
+      children: [
+        { kind: 'leaf', id: WM_LEAF_SIDEBAR, buffer: 'sidebar' },
+        { kind: 'leaf', id: WM_LEAF_CONVERSATION, buffer: 'conversation' },
+      ],
+    }
+    const migrated = migrateLegacyConversation(legacyBuffers, legacyTree)
+    expect(migrated.buffers.map(b => b.id)).toEqual(['sidebar', SESSION_BUFFER_ID, 'details'])
+    expect(findLeaf(migrated.tree, WM_LEAF_CONVERSATION)?.buffer).toBe(SESSION_BUFFER_ID)
+    // Idempotent: a second pass changes nothing.
+    const again = migrateLegacyConversation(migrated.buffers, migrated.tree)
+    expect(again.buffers).toEqual(migrated.buffers)
+    expect(again.tree).toEqual(migrated.tree)
+    // A pinned session buffer survives the migration untouched.
+    const withPin = [...migrated.buffers, sessionBuffer('s-9')]
+    expect(migrateLegacyConversation(withPin, migrated.tree).buffers).toContainEqual(sessionBuffer('s-9'))
+  })
+
+  it('store reconcile migrates a persisted legacy conversation snapshot (both halves)', () => {
+    window.localStorage.setItem('dsh.layout.wm', JSON.stringify({
+      tree: {
+        kind: 'split', id: 'wm:root', dir: 'row', weights: [0.2, 0.8],
+        children: [
+          { kind: 'leaf', id: WM_LEAF_SIDEBAR, buffer: 'sidebar' },
+          { kind: 'leaf', id: WM_LEAF_CONVERSATION, buffer: 'conversation' },
+        ],
+      },
+      buffers: [{ id: 'sidebar', kind: 'sidebar' }, { id: 'conversation', kind: 'conversation' }, { id: 'details', kind: 'details' }, { id: 'settings', kind: 'settings' }],
+      focusedLeafId: undefined,
+    }))
+    const instance = createWmStore().create()
+    act(() => { instance.actions.reconcile() })
+    expect(instance.getSnapshot().buffers.some(b => b.kind === 'conversation')).toBe(false)
+    expect(instance.getSnapshot().buffers.some(b => b.id === SESSION_BUFFER_ID)).toBe(true)
+    expect(findLeaf(instance.getSnapshot().tree, WM_LEAF_CONVERSATION)?.buffer).toBe(SESSION_BUFFER_ID)
+    // Running again is a no-op (idempotent under repeated reconcile).
+    const after = instance.getSnapshot()
+    act(() => { instance.actions.reconcile() })
+    expect(instance.getSnapshot().buffers).toEqual(after.buffers)
+    expect(instance.getSnapshot().tree).toEqual(after.tree)
+  })
+
+  it('killBuffer refuses the follow-current singleton, re-homes pinned session panes, and swaps files leaves to scratch', () => {
     const tree = defaultTree()
-    const buffers = [{ id: 'sidebar', kind: 'sidebar' as const }, { id: 'conversation', kind: 'conversation' as const }, { id: 'details', kind: 'details' as const }, { id: 'buffer:files:1', kind: 'files' as const, path: '/tmp' }]
-    // Singleton kill is refused.
-    const refused = killBuffer({ buffers, tree }, 'conversation')
-    expect(refused.buffers.map(b => b.id)).toEqual(['sidebar', 'conversation', 'details', 'buffer:files:1'])
-    // A files buffer kills through: its leaf swaps to *scratch*, which is
-    // created on demand.
+    const buffers = [
+      { id: 'sidebar', kind: 'sidebar' as const },
+      sessionBuffer(),
+      { id: 'details', kind: 'details' as const },
+      sessionBuffer('s-1'),
+      { id: 'buffer:files:1', kind: 'files' as const, path: '/tmp' },
+    ]
+    // The follow-current singleton kill is refused.
+    const refused = killBuffer({ buffers, tree }, SESSION_BUFFER_ID)
+    expect(refused.buffers.map(b => b.id)).toEqual(['sidebar', SESSION_BUFFER_ID, 'details', 'buffer:session:s-1', 'buffer:files:1'])
+    // A pinned session buffer's kill re-homes its windows to follow-current
+    // and prunes the registry (the chat surface never dies; the pin does).
+    const pinnedTree = splitLeaf(tree, WM_LEAF_CONVERSATION, 'row', 'buffer:session:s-1', 'leaf-pin')
+    const unpinned = killBuffer({ buffers, tree: pinnedTree }, 'buffer:session:s-1')
+    expect(unpinned.buffers.some(b => b.id === 'buffer:session:s-1')).toBe(false)
+    expect(findLeaf(unpinned.tree, 'leaf-pin')?.buffer).toBe(SESSION_BUFFER_ID)
+    // A files buffer kills through: its leaf swaps to *scratch*, created on
+    // demand.
     const killed = killBuffer({ buffers, tree: splitLeaf(tree, WM_LEAF_CONVERSATION, 'row', 'buffer:files:1', 'leaf-x') }, 'buffer:files:1')
     expect(killed.buffers.some(b => b.id === 'buffer:files:1')).toBe(false)
     expect(killed.buffers.some(b => b.id === 'buffer:scratch')).toBe(true)
@@ -1208,7 +1385,7 @@ describe('winner mode + new chords (window listener)', () => {
     // Registry order: Workspace, Chat, Context, Settings, *scratch*. Chat is
     // shown in its own window — cycling lands on it anyway (clones, not skips).
     press('ArrowRight')
-    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('conversation')
+    expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe(SESSION_BUFFER_ID)
     press('x', { ctrlKey: true })
     press('ArrowRight')
     expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('details')
@@ -1327,7 +1504,7 @@ describe('weight-normalization regression (pane placement bug)', () => {
       dir: 'row',
       children: [
         { kind: 'leaf', id: 'a', buffer: 'sidebar' },
-        { kind: 'leaf', id: 'b', buffer: 'conversation' },
+        { kind: 'leaf', id: 'b', buffer: SESSION_BUFFER_ID },
       ],
       weights: [0.3, 0.3],
     }
@@ -1353,7 +1530,7 @@ describe('weight-normalization regression (pane placement bug)', () => {
       dir: 'row',
       children: [
         { kind: 'leaf', id: WM_LEAF_SIDEBAR, buffer: 'sidebar' },
-        { kind: 'leaf', id: WM_LEAF_CONVERSATION, buffer: 'conversation' },
+        { kind: 'leaf', id: WM_LEAF_CONVERSATION, buffer: SESSION_BUFFER_ID },
       ],
       weights: [0.36, 0.24],
     }
@@ -1410,10 +1587,10 @@ describe('echo area (StatusLine)', () => {
   it('split and close leave feedback in the echo area', () => {
     const { container, wm } = mountFrame()
     const echoText = () => container.querySelector('[data-echo] > span') as HTMLElement
-    act(() => { (container.querySelector('[data-buffer="conversation"] button[aria-label="Split right"]') as HTMLElement).click() })
+    act(() => { (container.querySelector('[data-buffer="session"] button[aria-label="Split right"]') as HTMLElement).click() })
     expect(echoText().textContent).toBe('Split right')
     // Close the cloned (second) conversation window.
-    const convCloses = container.querySelectorAll('[data-buffer="conversation"] button[aria-label="Close"]')
+    const convCloses = container.querySelectorAll('[data-buffer="session"] button[aria-label="Close"]')
     act(() => { (convCloses[convCloses.length - 1] as HTMLElement).click() })
     expect(echoText().textContent).toBe('Closed window')
     act(() => { (container.querySelector('[data-buffer="sidebar"] button[aria-label="Close"]') as HTMLElement).click() })

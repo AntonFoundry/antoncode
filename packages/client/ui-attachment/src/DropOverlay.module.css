@@ -26,6 +26,19 @@
   }
 }
 
+/* Pane-local drop invitation (multi-pane layouts): absolutely scoped to the
+   hosting pane instead of the viewport, so sibling panes keep their own drop
+   targets and nothing blurs the whole screen. The composer card is the
+   positioning context. pointer-events stays none, as for the page mask. */
+.paneMask {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  outline: 2px solid var(--dsw-alias-brand-text);
+  outline-offset: -2px;
+  backdrop-filter: none;
+}
+
 .wrap {
   display: flex;
   flex-direction: column;

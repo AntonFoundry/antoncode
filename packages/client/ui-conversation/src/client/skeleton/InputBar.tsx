@@ -37,6 +37,27 @@ import css from './InputBar.module.css'
 /** Decoration product of the no-session state (no machine, empty draft). */
 const INERT_DECORATIONS: DraftDecorations = { token: null, chips: [], textRefs: [], hint: null }
 
+// One document-level drop guard for every composer mounted on the page
+// (module-level lazy singleton, guarded by a module flag): it only
+// preventDefaults file drags that reach the document without meeting any
+// composer pane, so the browser does not navigate away when a drop misses
+// every pane. It attaches nothing, resolves no drop target, and is never
+// removed per instance — the guard lives for the page lifetime. Non-Files
+// drags (text into the textarea) pass through untouched.
+let documentDropGuardInstalled = false
+const ensureDocumentDropGuard = (): void => {
+  if (documentDropGuardInstalled) return
+  documentDropGuardInstalled = true
+  const hasFiles = (event: globalThis.DragEvent): boolean =>
+    event.dataTransfer?.types.includes('Files') ?? false
+  document.addEventListener('dragover', (event) => {
+    if (hasFiles(event)) event.preventDefault()
+  })
+  document.addEventListener('drop', (event) => {
+    if (hasFiles(event)) event.preventDefault()
+  })
+}
+
 /** Rail thumbnail carrying its source attachment for the open/remove callbacks. */
 interface ComposerRailItem extends AttachmentRailItem {
   attachment: ComposerAttachment
@@ -50,6 +71,7 @@ export function InputBar({
   renderSlot, useNotices, useLexicon, useMenuLauncher,
   useProjection, sessionId, variant, disabled: inert = false, blocked,
   workspacePickerOpen = false, onRequestWorkspace,
+  layoutSpan = 'single',
   placeholder, accessory, overlay, leftItems, rightItems, footer,
 }: InputBarProps) {
   const input = useInput(s => s)
@@ -464,62 +486,47 @@ export function InputBar({
     if (rejected !== null) showToast(rejected)
   }, [addImages, attachments, imageLimits, showToast, t])
 
-  // Whole-page file-drop intake (DeepSeek Chat behavior): the listeners live
-  // on the document so a drop anywhere over the window adds images, not only
-  // over the composer card. Safe as document-level state: the composer-bar
-  // slot is `kind: 'single'`, so at most one bar is mounted to bind these.
-  // Text drags carry no 'Files' type and pass through untouched, keeping the
-  // native drop-text-into-textarea path. The overlay layer itself is
+  // Whole-pane file-drop intake (DeepSeek Chat behavior, pane-scoped): the
+  // handlers live on this composer's root card, so a drop attaches images
+  // only to the session this instance renders — with several panes each
+  // composer is its own drop target and no full-screen mask stacks up. The
+  // document-level navigation guard is the module singleton above. Text
+  // drags carry no 'Files' type and are never preventDefaulted here, keeping
+  // the native drop-text-into-textarea path. The overlay layer itself is
   // pointer-inert, so it never disturbs the enter/leave count.
   const canAcceptDrop = !locked && !machineBusy && addImages !== undefined
   useEffect(() => {
-    const hasFiles = (event: globalThis.DragEvent): boolean =>
-      event.dataTransfer?.types.includes('Files') ?? false
-    const reset = (): void => {
-      dragDepthRef.current = 0
-      setDragActive(false)
-    }
-    const onDragEnter = (event: globalThis.DragEvent): void => {
-      if (!hasFiles(event)) return
-      event.preventDefault()
-      dragDepthRef.current += 1
-      setDragActive(true)
-    }
-    const onDragOver = (event: globalThis.DragEvent): void => {
-      if (!hasFiles(event) || event.dataTransfer === null) return
-      event.preventDefault()
-      event.dataTransfer.dropEffect = canAcceptDrop ? 'copy' : 'none'
-    }
-    const onDragLeave = (event: globalThis.DragEvent): void => {
-      if (!hasFiles(event)) return
-      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
-      if (dragDepthRef.current === 0) setDragActive(false)
-      // Leaving through the viewport edge does not balance the count on every
-      // engine; a page-root leave at the border means the drag left the window.
-      const leavingViewport = event.clientX <= 0 || event.clientY <= 0
-        || event.clientX >= window.innerWidth || event.clientY >= window.innerHeight
-      if ((event.target === document.documentElement || event.target === document.body) && leavingViewport) reset()
-    }
-    const onDrop = (event: globalThis.DragEvent): void => {
-      if (!hasFiles(event)) return
-      event.preventDefault()
-      reset()
-      if (!canAcceptDrop) return
-      intakeImages([...(event.dataTransfer?.files ?? [])])
-    }
-    document.addEventListener('dragenter', onDragEnter)
-    document.addEventListener('dragover', onDragOver)
-    document.addEventListener('dragleave', onDragLeave)
-    document.addEventListener('drop', onDrop)
-    window.addEventListener('dragend', reset)
-    return () => {
-      document.removeEventListener('dragenter', onDragEnter)
-      document.removeEventListener('dragover', onDragOver)
-      document.removeEventListener('dragleave', onDragLeave)
-      document.removeEventListener('drop', onDrop)
-      window.removeEventListener('dragend', reset)
-    }
-  }, [canAcceptDrop, intakeImages])
+    ensureDocumentDropGuard()
+  }, [])
+  const hasFiles = (event: React.DragEvent<HTMLDivElement>): boolean =>
+    event.dataTransfer?.types.includes('Files') ?? false
+  const resetDrag = (): void => {
+    dragDepthRef.current = 0
+    setDragActive(false)
+  }
+  const onPaneDragEnter = (event: React.DragEvent<HTMLDivElement>): void => {
+    if (!hasFiles(event)) return
+    event.preventDefault()
+    dragDepthRef.current += 1
+    setDragActive(true)
+  }
+  const onPaneDragOver = (event: React.DragEvent<HTMLDivElement>): void => {
+    if (!hasFiles(event) || event.dataTransfer === null) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = canAcceptDrop ? 'copy' : 'none'
+  }
+  const onPaneDragLeave = (event: React.DragEvent<HTMLDivElement>): void => {
+    if (!hasFiles(event)) return
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+    if (dragDepthRef.current === 0) setDragActive(false)
+  }
+  const onPaneDrop = (event: React.DragEvent<HTMLDivElement>): void => {
+    if (!hasFiles(event)) return
+    event.preventDefault()
+    resetDrag()
+    if (!canAcceptDrop) return
+    intakeImages([...(event.dataTransfer?.files ?? [])])
+  }
 
   const closePreview = useCallback(() => { setPreview(null) }, [])
 
@@ -654,10 +661,17 @@ export function InputBar({
   }
 
   return (
-    <div className={clsx(css.root, variant === 'hero' && css.hero)}>
+    <div
+      className={clsx(css.root, variant === 'hero' && css.hero)}
+      onDragEnter={onPaneDragEnter}
+      onDragOver={onPaneDragOver}
+      onDragLeave={onPaneDragLeave}
+      onDrop={onPaneDrop}
+    >
       {dragActive && (
         <DropOverlay
           disabled={!canAcceptDrop}
+          variant={layoutSpan === 'single' ? 'page' : 'pane'}
           labels={dropOverlayLabels(t, canAcceptDrop, imageLimits === undefined ? undefined : {
             count: imageLimits.maxImagesPerMessage,
             size: imageSizeText(imageLimits.maxImageBytes),

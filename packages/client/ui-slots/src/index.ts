@@ -225,6 +225,12 @@ export interface RenderOpts<EntryKey extends string = string> {
   entryKey?: EntryKey
   only?: string
   fallback?: ReactNode
+  /**
+   * Pin the slot's session scope to this session id instead of the enclosing
+   * current-session provider (wm session buffers: each pane shows one
+   * session). Absent = follow the enclosing scope as before.
+   */
+  scopeSessionId?: string
   /** Type-erased runtime seat; PropsRenderSlots narrows or removes it per slot declaration. */
   hookContext?: unknown
 }

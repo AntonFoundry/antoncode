@@ -29,7 +29,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { PropsRenderSlots, PropsRuntime, PropsStore, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DirectoryListing } from '@deepseek-ai/dsh-api-remotes/client'
 import { BrandWordmark, IconCloseOutline16, IconPanelLeftOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { SidebarOwnerProps } from './index.ts'
+import type { SidebarOwnerProps, ConvOwnerProps } from './index.ts'
 import {
   clampWidth, CONTEXT_DEFAULT, CONTEXT_MAX, CONTEXT_MIN,
   DETAILS_DEFAULT, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN,
@@ -49,9 +49,11 @@ import { StatusLine } from './StatusLine.tsx'
 import { ScratchBuffer } from './ScratchBuffer.tsx'
 import { FilesBuffer } from './FilesBuffer.tsx'
 import {
-  SINGLETON_BUFFERS, SCRATCH_BUFFER_ID, WM_LEAF_DETAILS, WM_LEAF_SIDEBAR, bufferRoster, bufferTitle, canClose, defaultTree,
+  SINGLETON_BUFFERS, SCRATCH_BUFFER_ID, SESSION_BUFFER_ID, WM_LEAF_DETAILS, WM_LEAF_SIDEBAR, bufferRoster, bufferTitle,
+  canClose, defaultTree, migrateLegacyConversation,
   isSingletonBuffer,
-  ensureBuffer, findBuffer, findLeaf, findSplit, firstLeafId, focusDirection, lastLeafId, moveLeafTabbed, normalizeTree,
+  ensureBuffer, ensureSingletons, findBuffer, findLeaf, findSplit, firstLeafId, focusDirection, lastLeafId, moveLeafTabbed, normalizeTree,
+  sessionBuffer,
   tabNeighborLeaf,
   SIDEBAR_REATTACH_WEIGHT,
   toggleTabbed,
@@ -93,6 +95,12 @@ export interface WmFrameInjected {
   setMode: (mode: LayoutMode) => void
   /** Heal a pre-registry persisted snapshot (seed the singleton buffers). */
   reconcileBuffers: () => void
+  /**
+   * Re-pin one pane's window to a session by id (per-window session
+   * buffers): ensure the session buffer registry entry and swap that leaf's
+   * buffer, without touching the global selection.
+   */
+  rebindPane: (leafId: string, sessionId: string) => void
   /** Write the sidebar width preference (px) — the pinned sidebar pane resizes through it. */
   setSidebarWidth: (px: number) => void
   /** Persist the *scratch* text. */
@@ -170,6 +178,30 @@ function hasLeafBuffer(node: WmNode, buffer: WmBufferKind): boolean {
 }
 
 /**
+ * Whether a subtree contains any leaf showing a chat surface: a session
+ * buffer (any pin state) or the legacy conversation id pre-migration.
+ */
+function hasChatLeaf(node: WmNode): boolean {
+  if (node.kind === 'leaf') {
+    return node.buffer === SESSION_BUFFER_ID || node.buffer === 'conversation' || node.buffer.startsWith('buffer:session:')
+  }
+  return node.children.some(hasChatLeaf)
+}
+
+/**
+ * Mode-line title of one registry buffer: the base title, with a PINNED
+ * session buffer refined by its session's display title (follow-current
+ * stays the plain 'Chat').
+ */
+function bufferDisplayTitle(buffer: WmBuffer, sessionsById: Record<string, { displayTitle: string } | undefined>): string {
+  if (buffer.kind === 'session' && buffer.sessionId !== undefined) {
+    const summary = sessionsById[buffer.sessionId]
+    return `Chat · ${summary?.displayTitle ?? buffer.sessionId}`
+  }
+  return bufferTitle(buffer)
+}
+
+/**
  * Whether one split child represents the workspace sidebar in a row split:
  * either a standalone leaf displaying the sidebar buffer, or a column-split
  * container containing the sidebar alongside stacked tools (but not conversation).
@@ -177,7 +209,7 @@ function hasLeafBuffer(node: WmNode, buffer: WmBufferKind): boolean {
 function isSidebarPane(child: WmNode, dir: WmDirection): boolean {
   if (dir !== 'row') return false
   if (child.kind === 'leaf') return child.buffer === 'sidebar'
-  return child.dir === 'column' && hasLeafBuffer(child, 'sidebar') && !hasLeafBuffer(child, 'conversation')
+  return child.dir === 'column' && hasLeafBuffer(child, 'sidebar') && !hasChatLeaf(child)
 }
 
 /**
@@ -188,7 +220,7 @@ function isSidebarPane(child: WmNode, dir: WmDirection): boolean {
 function isContextPane(child: WmNode, dir: WmDirection): boolean {
   if (dir !== 'row') return false
   if (child.kind === 'leaf') return child.buffer === 'details'
-  return child.dir === 'column' && hasLeafBuffer(child, 'details') && !hasLeafBuffer(child, 'conversation')
+  return child.dir === 'column' && hasLeafBuffer(child, 'details') && !hasChatLeaf(child)
 }
 
 /** Determine the sidebar kind of a child in a row split, if any. */
@@ -367,6 +399,12 @@ interface NodeRenderProps {
   onSash: (splitId: string, base: SashDragBase) => void
   onDragging: (dragging: boolean) => void
   workspacePath?: string | undefined
+  /** Display titles keyed by session id (pinned session-buffer mode lines). */
+  sessionsById: Record<string, { displayTitle: string } | undefined>
+  /** Conversation-visible window count ('multi' when a second chat window exists). */
+  layoutSpan: 'single' | 'multi'
+  /** Re-pin one leaf's window to a session by id (per-window session buffers). */
+  rebindPane: (leafId: string, sessionId: string) => void
   onTerminalSessionCreated?: (bufferId: string, sessionId: string) => void
 }
 
@@ -393,12 +431,24 @@ function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf
   const {
     node, tree, focusedId, buffers, renderSlot, sidebarOwner, scratch, files, readTextFile,
     onFocus, onSplit, onClose, onMove, onToggleExpand, expanded, onTidy, workspacePath, onTerminalSessionCreated,
+    sessionsById, layoutSpan, rebindPane,
   } = props
   const buffer = findBuffer(buffers, node.buffer)
   // A leaf referencing a registry gap falls back by id so a hand-edited or
   // partially migrated snapshot still renders the shell.
   const bufferKind: WmBufferKind = buffer?.kind ?? (isSingletonBuffer(node.buffer) ? node.buffer as WmBufferKind : 'scratch')
-  const owner = bufferKind === 'sidebar' ? sidebarOwner : {}
+  // Conversation owner props: the pane facts a per-window session surface
+  // needs — the pin (scopeSessionId), the chat-window count, and the
+  // leaf-bound re-pin (a composer minting a session inside a pinned pane).
+  const owner: SidebarOwnerProps & { brandInFrame: true } | ConvOwnerProps = bufferKind === 'sidebar'
+    ? sidebarOwner
+    : bufferKind === 'session' || bufferKind === 'conversation'
+      ? {
+        layoutSpan,
+        ...(buffer?.sessionId !== undefined ? { scopeSessionId: buffer.sessionId } : {}),
+        rebindPane: (sessionId: string) => { rebindPane(node.id, sessionId) },
+      } satisfies ConvOwnerProps
+      : { layoutSpan } satisfies ConvOwnerProps
   const closeable = canClose(tree, node.id)
   const focused = focusedId === node.id
   const body = bufferKind === 'scratch'
@@ -424,10 +474,17 @@ function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf
           })
           : bufferKind === 'settings'
             ? renderSlot('settings.view', {})
-            : renderSlot(bufferKind as 'sidebar' | 'conversation' | 'details', owner)
+            : bufferKind === 'session'
+              ? renderSlot('conversation', owner as ConvOwnerProps,
+                buffer?.sessionId !== undefined ? { scopeSessionId: buffer.sessionId } : undefined)
+              : bufferKind === 'sidebar'
+                ? renderSlot('sidebar', sidebarOwner)
+                : renderSlot(bufferKind as 'details', owner as ConvOwnerProps)
   // The title uses the same id-based fallback as the kind: a registry gap
   // (stale snapshot before reconcile) still names singleton leaves.
-  const title = buffer !== undefined ? bufferTitle(buffer) : bufferTitle({ id: node.buffer, kind: bufferKind })
+  const title = buffer !== undefined
+    ? bufferDisplayTitle(buffer, sessionsById)
+    : bufferTitle({ id: node.buffer, kind: bufferKind })
   // A focused terminal buffer must receive keyboard input immediately: the
   // xterm capture textarea inside the slot occupant takes DOM focus.
   const paneRef = useRef<HTMLDivElement | null>(null)
@@ -539,6 +596,7 @@ function NodeView(props: NodeRenderProps & { node: WmNode }) {
       const leafBuffer = leaf !== undefined ? findBuffer(buffers, leaf.buffer) : undefined
       const leafKind: WmBufferKind = leafBuffer?.kind
         ?? (leaf !== undefined && isSingletonBuffer(leaf.buffer) ? leaf.buffer as WmBufferKind : 'scratch')
+      if (leafBuffer !== undefined) return bufferDisplayTitle(leafBuffer, props.sessionsById)
       return bufferTitle({ id: leaf?.buffer ?? '', kind: leafKind })
     }
     const activeChild = node.children.find(child => tabIdOf(child) === active)
@@ -724,6 +782,7 @@ export function WmFrame({
   readTextFile,
   listDirectory,
   openPath,
+  rebindPane,
   disposeTerminalSession,
 }: WmFrameProps) {
   const panels = useStore(s => s)
@@ -806,6 +865,10 @@ export function WmFrame({
     setTree(next)
   }, [setTree])
 
+  // Feed snapshots for the workspace candidates (both are standard seats).
+  const workspaceSnapshot = useWorkspaces(s => s)
+  const sessionsListSnapshot = useSessions(s => s)
+
   // The echo area's resting face: the focused window's buffer (the registry
   // gap fallback mirrors LeafPane's body resolution so the name always
   // matches what the window shows).
@@ -814,9 +877,9 @@ export function WmFrame({
     const leaf = findLeaf(tree, focusedId)
     if (leaf === undefined) return '(none)'
     const b = findBuffer(buffers, leaf.buffer)
-    if (b !== undefined) return bufferTitle(b)
+    if (b !== undefined) return bufferDisplayTitle(b, sessionsListSnapshot.byId)
     return isSingletonBuffer(leaf.buffer) ? leaf.buffer : 'scratch'
-  }, [tree, buffers, focusedId])
+  }, [tree, buffers, focusedId, sessionsListSnapshot.byId])
 
   /** Weight-only write (sash drag): no winner-history entry. */
   const writeWeights = useCallback((next: WmNode) => { setTree(next) }, [setTree])
@@ -929,12 +992,21 @@ export function WmFrame({
     const leaf = findLeaf(t, leafId)
     if (leaf === undefined) return
     // Emacs C-x 2 / C-x 3: the new window shows the SAME buffer. A buffer
-    // is content and a window is a view onto it — singletons clone like any
-    // other buffer (two Chat windows are two views of the one session
-    // surface; the registry keeps exactly one buffer of each kind).
+    // is content and a window is a view onto it. A PINNED session buffer
+    // clones into a fresh registry entry (same sessionId — one session, two
+    // independent windows); the follow-current singleton and every other
+    // buffer re-show by id.
+    const source = findBuffer(buffersRef.current, leaf.buffer)
+    if (source?.kind === 'session' && source.sessionId !== undefined) {
+      const clone: WmBuffer = { id: freshId('buffer:session'), kind: 'session', sessionId: source.sessionId }
+      setBuffers(ensureBuffer(buffersRef.current, clone))
+      writeTree(splitLeaf(t, leafId, dir, clone.id, freshLeafId()))
+      notify(dir === 'column' ? 'Split below' : 'Split right')
+      return
+    }
     writeTree(splitLeaf(t, leafId, dir, leaf.buffer, freshLeafId()))
     notify(dir === 'column' ? 'Split below' : 'Split right')
-  }, [notify, writeTree])
+  }, [notify, setBuffers, writeTree])
 
   const onClose = useCallback((leafId: string) => {
     const t = treeRef.current
@@ -1080,22 +1152,59 @@ export function WmFrame({
     if (anchor !== undefined) writeTree(splitLeaf(t, anchor, 'row', 'sidebar', WM_LEAF_SIDEBAR, 'before'))
   }, [writeTree])
 
-  // Feed snapshots for the workspace candidates (both are standard seats).
-  const workspaceSnapshot = useWorkspaces(s => s)
-  const sessionsListSnapshot = useSessions(s => s)
+  // Sidebar selection = switch-to-buffer in the FOCUSED window (Emacs
+  // semantics): when the global current session changes, the focused chat
+  // window re-binds to a session buffer pinned to the new current, so it
+  // keeps showing what was clicked even if the selection moves again.
+  // Every other chat window without a pin keeps following the global
+  // provider, and non-chat windows never re-bind.
+  const prevCurrentRef = useRef(sessionsListSnapshot.current)
+  useEffect(() => {
+    const current = sessionsListSnapshot.current
+    const prev = prevCurrentRef.current
+    prevCurrentRef.current = current
+    if (current === undefined || prev === current) return
+    const focusId = focusRef.current ?? firstLeafId(treeRef.current)
+    if (focusId === undefined) return
+    const leaf = findLeaf(treeRef.current, focusId)
+    if (leaf === undefined) return
+    const shown = findBuffer(buffersRef.current, leaf.buffer)
+    const isChat = shown?.kind === 'session' || shown?.kind === 'conversation'
+    if (!isChat) return
+    rebindPane(focusId, current)
+  }, [sessionsListSnapshot.current, rebindPane])
 
   // Switch-buffer candidates: the full roster (singletons + scratch + every
   // registered buffer, any kind); open buffers hint "open", others
-  // "new window".
+  // "new window". One candidate per workspace session rides on top — a chat
+  // window can pin itself to any of them (id `buffer:session:<id>`); a
+  // registry entry with the same id (an already-pinned pane) is replaced by
+  // the titled form.
   const bufferCandidates = useMemo<MinibufferCandidate[]>(() => {
     const openIds = new Set(leafIds(tree).map(id => findLeaf(tree, id)?.buffer))
-    const registry = bufferRoster(buffers)
-    return registry.map(b => ({
-      id: b.id,
-      label: bufferTitle(b),
-      hint: openIds.has(b.id) ? 'open' : 'new window',
-    }))
-  }, [tree, buffers])
+    const candidates = new Map<string, MinibufferCandidate>()
+    for (const b of bufferRoster(buffers)) {
+      candidates.set(b.id, {
+        id: b.id,
+        label: bufferDisplayTitle(b, sessionsListSnapshot.byId),
+        hint: openIds.has(b.id) ? 'open' : 'new window',
+      })
+    }
+    const shownOf = (leafBufferId: string | undefined, sessionId: string): boolean => {
+      const b = leafBufferId === undefined ? undefined : findBuffer(buffers, leafBufferId)
+      if (b?.kind !== 'session') return false
+      return b.sessionId === sessionId || (b.sessionId === undefined && sessionId === sessionsListSnapshot.current)
+    }
+    for (const w of workspaceSnapshot.items) {
+      for (const sessionId of w.sessionIds) {
+        const id = `buffer:session:${sessionId}`
+        const visible = leafIds(tree).some(leafId => shownOf(findLeaf(tree, leafId)?.buffer, sessionId))
+        const label = sessionsListSnapshot.byId[sessionId]?.displayTitle ?? sessionId
+        candidates.set(id, { id, label, hint: visible ? 'open' : 'new window' })
+      }
+    }
+    return [...candidates.values()]
+  }, [tree, buffers, workspaceSnapshot.items, sessionsListSnapshot])
 
   // Kill-buffer candidates (compos C-x k): the focused leaf's buffer leads
   // the list — Enter with an empty query kills it — then every other buffer
@@ -1201,6 +1310,16 @@ export function WmFrame({
       }))
     } catch { /* private mode */ }
   }, [])
+  /**
+   * Apply a persisted (possibly legacy) tree + registry pair through the
+   * conversation migration: every stash/restore path lands session-buffer
+   * state, whatever the snapshot's age.
+   */
+  const applySnapshot = useCallback((snapTree: WmNode, snapBuffers: WmBuffer[] | undefined) => {
+    const migrated = migrateLegacyConversation(ensureSingletons(snapBuffers), snapTree)
+    setBuffers(migrated.buffers)
+    setTree(migrated.tree)
+  }, [setBuffers, setTree])
   useEffect(() => {
     const ws = activeWorkspaceId
     if (ws === undefined) return
@@ -1232,8 +1351,7 @@ export function WmFrame({
         setExpanded(false)
       }
     } else {
-      setTree(parsed.tree)
-      if (parsed.buffers !== undefined) setBuffers(parsed.buffers)
+      applySnapshot(parsed.tree, parsed.buffers)
       if (parsed.mode !== undefined) setMode(parsed.mode)
       if (parsed.agentBoard !== undefined) setBoardPrefs(parsed.agentBoard)
       setFocus(undefined)
@@ -1243,7 +1361,7 @@ export function WmFrame({
     const view = workspaceSnapshot.items.find(w => w.workspaceId === ws)
     wsLabelRef.current = view?.title ?? ws
     // Runs on workspace change only; the prev guard makes re-runs no-ops.
-  }, [activeWorkspaceId, workspaceSnapshot.items, setTree, setBuffers, setFocus, setMode, stashWs])
+  }, [activeWorkspaceId, workspaceSnapshot.items, setFocus, setMode, stashWs, applySnapshot])
   // Mid-workspace edits: debounce-save into the CURRENT workspace's stash, so
   // refresh (not just workspace switches) restores the latest arrangement.
   // Runs after the load effect above; the prev guard there ran first.
@@ -1348,8 +1466,7 @@ export function WmFrame({
         const name = id.slice('named:'.length)
         const snap = readNamedLayouts()[name]
         if (snap?.tree !== undefined) {
-          setTree(snap.tree)
-          if (snap.buffers !== undefined) setBuffers(snap.buffers)
+          applySnapshot(snap.tree, snap.buffers)
           if (snap.mode !== undefined) setMode(snap.mode)
           setFocus(undefined)
           preExpandRef.current = undefined
@@ -1362,8 +1479,7 @@ export function WmFrame({
         const wsId = id.slice('ws:'.length)
         const snap = readWsStash(wsId)
         if (snap?.tree !== undefined) {
-          setTree(snap.tree)
-          if (snap.buffers !== undefined) setBuffers(snap.buffers)
+          applySnapshot(snap.tree, snap.buffers)
           if (snap.mode !== undefined) setMode(snap.mode)
           setFocus(undefined)
           preExpandRef.current = undefined
@@ -1389,8 +1505,13 @@ export function WmFrame({
     // than yanking focus across the frame (windows are views).
     const anchor = focusRef.current
     if (anchor === undefined) return
-    // Scratch exists once you ask for it (compos: on-demand scratch).
+    // Scratch exists once you ask for it (compos: on-demand scratch); a
+    // session candidate (`buffer:session:<id>`) ensures its pinned registry
+    // entry the same way.
     if (id === SCRATCH_BUFFER_ID) setBuffers(ensureBuffer(buffers, scratchBuffer()))
+    if (id.startsWith('buffer:session:')) {
+      setBuffers(ensureBuffer(buffers, sessionBuffer(id.slice('buffer:session:'.length))))
+    }
     writeTree(swapBuffer(t, anchor, id))
     setFocus(anchor)
   }, [buffers, killBufferById, openFilesBuffer, openWorkspace, setBuffers, setFocus, writeTree])
@@ -1708,6 +1829,18 @@ export function WmFrame({
     onNavigate: navigateBuffer,
     onKill: killBufferById,
   }
+  // Conversation-visible window count: chat windows beyond the first flip
+  // per-pane affordances on in the conversation surface (owner props).
+  const layoutSpan: 'single' | 'multi' = useMemo(() => {
+    let chat = 0
+    for (const leafId of leafIds(tree)) {
+      const leaf = findLeaf(tree, leafId)
+      if (leaf === undefined) continue
+      const b = findBuffer(buffers, leaf.buffer)
+      if (b?.kind === 'session' || b?.kind === 'conversation' || leaf.buffer === 'conversation') chat += 1
+    }
+    return chat > 1 ? 'multi' : 'single'
+  }, [tree, buffers])
   const scratchShared: ScratchBufferShared = {
     text: scratchText,
     onWrite: writeScratch,
@@ -1735,6 +1868,9 @@ export function WmFrame({
     onSash,
     onDragging: setDragging,
     workspacePath: activeWorkspacePath,
+    sessionsById: sessionsListSnapshot.byId,
+    layoutSpan,
+    rebindPane: rebindPane,
     onTerminalSessionCreated,
   }
 

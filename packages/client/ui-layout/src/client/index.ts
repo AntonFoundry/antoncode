@@ -14,7 +14,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { PanelActions } from './service.ts'
 import { TopbarChrome, WmFrame } from './WmFrame.tsx'
 import { createLayoutStore, createScratchStore, createWmStore } from './stores.ts'
-import { ensureBuffer, firstLeafId, splitLeaf } from './wm.ts'
+import { ensureBuffer, firstLeafId, sessionBuffer, splitLeaf, swapBuffer } from './wm.ts'
 import { watchHarnessBoot } from './bridge.ts'
 import { LayoutController } from './service.ts'
 import { ThemePresenter } from './theme-presenter.ts'
@@ -143,8 +143,32 @@ export interface SidebarOwnerProps {
   brandInFrame?: boolean
 }
 
-/** Conversation owner share: business state and actions belong to the registrant. */
-export interface ConvOwnerProps {}
+/**
+ * Conversation owner share: business state and actions belong to the
+ * registrant; the frame contributes the pane facts a per-window session
+ * surface needs. Kept in this file so ui-conversation can adopt it without a
+ * dependency cycle.
+ */
+export interface ConvOwnerProps {
+  /**
+   * How many conversation-visible windows the frame currently shows: 'multi'
+   * enables per-pane affordances (e.g. pane-local drag targets); 'single' is
+   * the one-window layout.
+   */
+  layoutSpan: 'single' | 'multi'
+  /**
+   * The session this pane is pinned to (a wm session buffer with a defined
+   * sessionId); undefined = the pane follows the global current session.
+   */
+  scopeSessionId?: string | undefined
+  /**
+   * Re-pin THIS pane to a session by id (leaf-bound by the frame). A
+   * composer minting a new session inside a pinned pane calls this instead
+   * of `sessions.open`, so the other panes keep their sessions; unpinned
+   * panes keep `sessions.open`.
+   */
+  rebindPane?: ((sessionId: string) => void) | undefined
+}
 
 /** Details owner share: empty — sessionId arrives as a framework-standard prop. */
 export interface DetailsOwnerProps {}
@@ -215,6 +239,14 @@ export function apply(ctx: ClientContext): void {
             try { window.localStorage.setItem(THEME_STORAGE_KEY, id) } catch { /* private mode */ }
           },
           reconcileBuffers: () => { wm.actions.reconcile() },
+          // Pane-aware re-pin (per-window session buffers): pin one leaf's
+          // window to a session buffer without touching the global selection.
+          rebindPane: (leafId: string, sessionId: string) => {
+            const snapshot = wm.store.getSnapshot()
+            const buffer = sessionBuffer(sessionId)
+            wm.actions.setBuffers(ensureBuffer(snapshot.buffers, buffer))
+            wm.actions.setTree(swapBuffer(snapshot.tree, leafId, buffer.id))
+          },
           writeScratch: (text: string) => { scratch.actions.setText(text) },
           openSession: (sessionId: string) => (ctx.sessions as unknown as { open(id: string): void }).open(sessionId),
           interruptSession: (sessionId: string) =>
@@ -306,7 +338,19 @@ export function apply(ctx: ClientContext): void {
       try { ctx.theme.setTheme(stored) } catch { /* a race with registration is not user-facing */ }
     }
     presenter.apply(ctx.theme.getTheme())
-    const off = ctx.on('theme/change', (snapshot) => { presenter.apply(snapshot) })
+    const off = ctx.on('theme/change', (snapshot) => {
+      // An explicit built-in choice (Settings → Appearance row) releases the
+      // stored palette so it cannot resurrect on the next boot. The adopt()
+      // guard in ui-theme means no other built-in publish can arrive while a
+      // palette is active, and this listener attaches only after the boot
+      // restore, so boot traffic cannot race it.
+      if (snapshot.preference === 'light' || snapshot.preference === 'dark' || snapshot.preference === 'system') {
+        try {
+          if (window.localStorage.getItem(THEME_STORAGE_KEY) !== null) window.localStorage.removeItem(THEME_STORAGE_KEY)
+        } catch { /* private mode */ }
+      }
+      presenter.apply(snapshot)
+    })
     return () => {
       off()
       presenter.dispose()

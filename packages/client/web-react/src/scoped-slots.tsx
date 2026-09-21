@@ -10,7 +10,7 @@ import {
   type SlotScope, type StoredEntry, type Translate,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import {
-  HostContext, SessionMaybeProvider, SessionProvider, SlotAssemblyError, maybeObservableHook,
+  HostContext, SessionMaybeProvider, SessionPinProvider, SessionProvider, SlotAssemblyError, maybeObservableHook,
   observableHook, projectionHook, useHost, useSessionMaybeProvideInfo,
 } from './session-provider.tsx'
 
@@ -666,15 +666,24 @@ function SlotOutlet({ slotKey, ownerProps, opts }: {
   // bodies re-derive their `t` seat at the new revision (fresh identity).
   useLocaleRevision(host.locale)
   const sessionInfo = useSessionMaybeProvideInfo()
+  // Pinned dispatch (`RenderOpts.scopeSessionId`): the outlet resolves the
+  // slot's provide bundle BY session id instead of the enclosing current
+  // session, and wraps the anchor body in SessionPinProvider so NESTED slot
+  // dispatch inside the pinned subtree resolves the same pinned bundle.
+  const pinnedId = opts?.scopeSessionId
+  const pinnedInfo = pinnedId !== undefined ? host.sessions.provideInfoFor(pinnedId) : undefined
   // Anchor contract: every slot render site exposes a stable
   // `[data-slot="<key>"]` wrapper — the addressable seam dynamic styles
   // target — and `display:contents` keeps it layout-neutral. The wrapper
   // rides the outlet, not the dispatch outcome: fallback, crash-face, and
   // undeclared-empty states all render inside it, so the anchor's presence
   // never flickers with registration churn.
+  const body = renderOutletContent(host, slotKey, ownerProps, opts, pinnedInfo ?? sessionInfo)
   return (
     <div data-slot={slotKey} style={ANCHOR_STYLE}>
-      {renderOutletContent(host, slotKey, ownerProps, opts, sessionInfo)}
+      {pinnedId !== undefined && pinnedInfo !== undefined
+        ? <SessionPinProvider sessionId={pinnedId}>{body}</SessionPinProvider>
+        : body}
     </div>
   )
 }

@@ -14,7 +14,7 @@ import {
 } from './columns.ts'
 import { SINGLETON_BUFFERS as SINGLETONS } from './wm.ts'
 import {
-  defaultTree, ensureSingletons, type WmBuffer, type WmNode,
+  defaultTree, ensureSingletons, migrateLegacyConversation, type WmBuffer, type WmNode,
 } from './wm.ts'
 
 /**
@@ -129,7 +129,7 @@ export type WmActions = {
   setTree: (draft: WmState, tree: WmNode) => void
   setFocus: (draft: WmState, leafId: string | undefined) => void
   setBuffers: (draft: WmState, buffers: WmBuffer[]) => void
-  /** Heal a pre-registry persisted snapshot: seed the singleton buffers. */
+  /** Heal a pre-registry persisted snapshot: seed the singletons, migrate the legacy conversation buffer. */
   reconcile: (draft: WmState) => void
   /** Enter expanded mode: stash the current tree as the restore target. */
   beginExpand: (draft: WmState, expanded: WmNode) => void
@@ -155,7 +155,13 @@ export function createWmStore(): EngineStoreHandle<WmState, WmActions> {
       setTree: (d, tree: WmNode) => { d.tree = tree },
       setFocus: (d, leafId: string | undefined) => { d.focusedLeafId = leafId },
       setBuffers: (d, buffers: WmBuffer[]) => { d.buffers = buffers },
-      reconcile: (d) => { d.buffers = ensureSingletons(d.buffers) },
+      // Reconcile heals BOTH halves: the singleton seed plus the legacy
+      // `conversation` → follow-current session-buffer migration (idempotent).
+      reconcile: (d) => {
+        const migrated = migrateLegacyConversation(ensureSingletons(d.buffers), d.tree)
+        d.buffers = migrated.buffers
+        d.tree = migrated.tree
+      },
       beginExpand: (d, expanded: WmNode) => { d.preExpandTree = d.tree; d.tree = expanded; d.focusedLeafId = undefined },
       endExpand: (d) => {
         if (d.preExpandTree !== undefined) { d.tree = d.preExpandTree; d.preExpandTree = undefined }

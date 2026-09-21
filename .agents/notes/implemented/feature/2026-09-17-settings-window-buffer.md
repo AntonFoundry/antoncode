@@ -8,7 +8,7 @@ The settings shell (`ui-settings-general`) rendered a centered modal: a full-vie
 
 ## Decision
 
-**Settings is a buffer.** The `settings` buffer kind joins the WM's singleton registry (seeded like sidebar/conversation/details; killing it re-homes its leaves to the conversation buffer), rendered through a new frame-level slot `settings.view` declared by ui-layout beside `terminal.view`. `ctx.layout` grows `openSettings`/`closeSettings`/`toggleSettings` mirroring the details-panel face: open splits the rightmost leaf row-wise into the canonical settings leaf; the pane participates in splits, focus, cycling (`C-x b` lists it), and per-workspace tree persistence like any other window.
+**Settings is a buffer.** The `settings` buffer kind joins the WM's singleton registry (seeded like sidebar/chat/details; killing it re-homes its leaves to the follow-current chat session buffer — the `session` singleton that replaced the `conversation` kind when chat sessions became per-window buffers, see [per-window session buffers](../feature/2026-09-21-per-window-session-buffers.md)), rendered through a new frame-level slot `settings.view` declared by ui-layout beside `terminal.view`. `ctx.layout` grows `openSettings`/`closeSettings`/`toggleSettings` mirroring the details-panel face: open splits the rightmost leaf row-wise into the canonical settings leaf; the pane participates in splits, focus, cycling (`C-x b` lists it), and per-workspace tree persistence like any other window.
 
 The shell split in two occupants, both owned by `ui-settings-general`:
 

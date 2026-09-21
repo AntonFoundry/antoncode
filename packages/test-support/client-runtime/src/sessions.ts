@@ -364,6 +364,17 @@ export class TestSessions implements ISessions {
   }
 
   /**
+   * Resolve one session's standard-props bundle by id (production
+   * `provideInfoFor` mirror — the pinned-slot pinning feed): identity-stable
+   * per session; unknown ids return the static no-session projection.
+   * @param id - session id.
+   * @returns a definite or no-session provide bundle.
+   */
+  provideInfoFor(id: string): SessionMaybeProvideInfo {
+    return this.provideInfo(id) ?? this.channel.maybeInfo
+  }
+
+  /**
    * Resolve (mint on first touch) the session-scoped Cordis context through
    * the production `createScope`, so real `scopeOf`/scope-addressed services
    * resolve it.

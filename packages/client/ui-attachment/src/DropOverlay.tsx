@@ -1,4 +1,5 @@
 import { createPortal } from 'react-dom'
+import clsx from 'clsx'
 import css from './DropOverlay.module.css'
 
 /** Drop-overlay strings the owner resolves from its own locale namespace. */
@@ -10,31 +11,41 @@ export interface DropOverlayLabels {
 }
 
 /**
- * Full-viewport invitation shown while a file drag is over the page
+ * Drop invitation shown while a file drag is over the drop target
  * (DeepSeek Chat's DragMask). Decoration only: `pointer-events: none` keeps
- * drag targeting on the page below, so the owner's document-level listeners
- * keep an accurate enter/leave count and own accept/reject. Rendered through
- * a body portal for the same transformed-ancestor reason as the lightbox.
+ * drag targeting on the content below, so the owner's enter/leave count stays
+ * accurate and the owner accepts or rejects. The `page` variant renders
+ * through a body portal (same transformed-ancestor reason as the lightbox);
+ * the `pane` variant renders inline, absolutely positioned inside the nearest
+ * positioned ancestor, so a multi-pane layout lights up only the pane under
+ * the drag.
  *
  * @param props.disabled - drops are currently refused; renders the blocked
  * illustration and drops the desc line.
  * @param props.labels - resolved title and limits strings.
+ * @param props.variant - `page` (default) covers the viewport; `pane` covers
+ * only the hosting pane.
  * @returns the overlay layer.
  */
-export function DropOverlay({ disabled, labels }: {
+export function DropOverlay({ disabled, labels, variant = 'page' }: {
   disabled: boolean
   labels: DropOverlayLabels
+  variant?: 'page' | 'pane'
 }) {
-  return createPortal(
-    <div className={css.mask} role="status">
-      <div className={css.wrap}>
-        <div className={css.illustration} aria-hidden="true">
-          {disabled ? <UploadDisabledIllustration /> : <UploadIllustration />}
-        </div>
-        <div className={css.title}>{labels.title}</div>
-        {!disabled && labels.desc !== undefined && <div className={css.desc}>{labels.desc}</div>}
+  const content = (
+    <div className={css.wrap}>
+      <div className={css.illustration} aria-hidden="true">
+        {disabled ? <UploadDisabledIllustration /> : <UploadIllustration />}
       </div>
-    </div>,
+      <div className={css.title}>{labels.title}</div>
+      {!disabled && labels.desc !== undefined && <div className={css.desc}>{labels.desc}</div>}
+    </div>
+  )
+  if (variant === 'pane') {
+    return <div className={clsx(css.mask, css.paneMask)} role="status" data-variant="pane">{content}</div>
+  }
+  return createPortal(
+    <div className={css.mask} role="status" data-variant="page">{content}</div>,
     document.body,
   )
 }
