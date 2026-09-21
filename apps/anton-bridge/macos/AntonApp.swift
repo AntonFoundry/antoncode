@@ -58,6 +58,9 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
   private var bridgeDeaths: [Date] = []
   private var recoveryUIOpened = false
   private var blueantPanel: BlueantPanel?
+  private var wakeWord: WakeWordListener?
+  private var wakeItem: NSMenuItem?
+  private let harnessClient = HarnessClient()
   private var hotkeyCenter: HotkeyCenter?
   // The bridge listens on the loopback address it reports as `listening_on`.
   // Polling 127.0.0.1 (not the antoncode.localhost alias) keeps ATS and the
@@ -78,6 +81,7 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     NSApp.setActivationPolicy(.accessory)
     installMenu()
     installBlueant()
+    installWakeWord()
     launchBridge()
     beginStatusPolling()
   }
@@ -97,6 +101,74 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let center = HotkeyCenter()
     center.register { [weak panel] in panel?.toggle() }
     hotkeyCenter = center
+    NotificationCenter.default.addObserver(self, selector: #selector(panelVisibilityChanged),
+                                           name: BlueantPanel.visibilityDidChange, object: panel)
+  }
+
+  /// The wake-word listener only runs while the popup is closed: its trigger
+  /// opens the popup, and dictation taps the same input.
+  @objc private func panelVisibilityChanged(_ notification: Notification) {
+    let visible = notification.userInfo?[BlueantPanel.isVisibleKey] as? Bool ?? false
+    wakeWord?.setSuppressed(visible)
+  }
+
+  /// Phase 7b: ambient "hey Blueant". Opt-in via settings; the listener owns
+  /// nothing but a rolling buffer and hands off to the popup on trigger.
+  private func installWakeWord() {
+    NotificationCenter.default.addObserver(self, selector: #selector(wakeWordSettingChanged),
+                                           name: BlueantSettingsPane.wakeWordDidChange, object: nil)
+    fetchWakeSetting(attempt: 0)
+  }
+
+  /// The bridge is still booting at launch, so the first polls retry until it
+  /// answers; a permanently dark bridge just leaves the listener off.
+  private func fetchWakeSetting(attempt: Int) {
+    guard attempt < 6 else { return }
+    harnessClient.fetchSettings { [weak self] result in
+      switch result {
+      case .success(let settings):
+        let enabled = settings["wakeWordEnabled"] as? Bool ?? false
+        DispatchQueue.main.async { self?.applyWake(enabled: enabled) }
+      case .failure:
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+          self?.fetchWakeSetting(attempt: attempt + 1)
+        }
+      }
+    }
+  }
+
+  private func applyWake(enabled: Bool) {
+    if enabled {
+      if wakeWord == nil {
+        wakeWord = WakeWordListener(whisper: .shared) { [weak self] in self?.wakeFired() }
+      }
+      wakeWord?.setDesired(true)
+    } else {
+      wakeWord?.setDesired(false)
+    }
+    wakeItem?.state = enabled ? .on : .off
+  }
+
+  /// Settings-pane toggle or the tray item flipped the stored setting.
+  @objc private func wakeWordSettingChanged(_ notification: Notification) {
+    let enabled = notification.userInfo?[BlueantSettingsPane.wakeEnabledKey] as? Bool ?? false
+    applyWake(enabled: enabled)
+  }
+
+  /// Tray toggle: persist, then apply from the write's echo.
+  @objc private func toggleWakeWord() {
+    let enabling = wakeItem?.state != .on
+    harnessClient.putSettings(["wakeWordEnabled": enabling]) { [weak self] _ in
+      DispatchQueue.main.async { self?.applyWake(enabled: enabling) }
+    }
+  }
+
+  /// Wake fired: open the popup (which suppresses the listener) and start
+  /// dictation hands-free. The panel's own permission guards apply.
+  private func wakeFired() {
+    guard let panel = blueantPanel else { return }
+    if !panel.isVisible { panel.showPanel() }
+    panel.beginWakeDictation()
   }
 
   private func installMenu() {
@@ -111,6 +183,11 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let blueantSettings = NSMenuItem(title: "Blueant Settings…", action: #selector(openBlueantSettings), keyEquivalent: ",")
     blueantSettings.target = self
     menu.addItem(blueantSettings)
+    let wake = NSMenuItem(title: "Wake Word", action: #selector(toggleWakeWord), keyEquivalent: "w")
+    wake.target = self
+    wake.state = .off
+    menu.addItem(wake)
+    wakeItem = wake
     menu.addItem(NSMenuItem(title: "Open Anton", action: #selector(openAnton), keyEquivalent: "o"))
     let start = NSMenuItem(title: "Start Harness", action: #selector(startHarness), keyEquivalent: "s")
     start.target = self
@@ -225,22 +302,12 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     requestHarness("stop", successState: .stopped)
   }
 
-  /// Restart the whole Anton stack (Harness → bridge → tray). Spawns a
-  /// detached relauncher so it survives this instance terminating, then quits
-  /// cleanly; the cascade (Swift → bridge SIGTERM → harness stop) shuts down
-  /// before the relauncher reopens the app.
+  /// Restart the Harness through the bridge, matching `dsh anton restart`.
+  /// The tray and bridge remain alive while the managed Harness child is
+  /// replaced, so every normal runtime restart uses the same path.
   @objc private func restartAnton() {
-    let bundle = Bundle.main.bundleURL
-    let relauncher = Process()
-    relauncher.executableURL = URL(fileURLWithPath: "/bin/sh")
-    relauncher.arguments = ["-c", "sleep 2; open \"\(bundle.path)\""]
-    do {
-      try relauncher.run()
-    } catch {
-      showError("Anton could not schedule a restart: \(error.localizedDescription)")
-      return
-    }
-    NSApp.terminate(nil)
+    userStopped = false
+    requestHarness("restart", successState: .running, openAfterSuccess: true)
   }
 
   private func requestHarness(_ action: String, successState: HarnessState, openAfterSuccess: Bool = false) {

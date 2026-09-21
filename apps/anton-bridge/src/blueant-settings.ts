@@ -19,11 +19,13 @@ export interface BlueantModelSelection {
 export interface BlueantSettings {
   /** Ambient journal capture + triage loops run only when true. */
   journalEnabled: boolean
+  /** Ambient wake-word listening ("hey Blueant") runs only when true. */
+  wakeWordEnabled: boolean
   /** Preferred model for new Blueant sessions; null = harness default. */
   model: BlueantModelSelection | null
 }
 
-const DEFAULT_SETTINGS: BlueantSettings = { journalEnabled: true, model: null }
+const DEFAULT_SETTINGS: BlueantSettings = { journalEnabled: true, wakeWordEnabled: false, model: null }
 
 function settingsPath(): string {
   return join(homedir(), 'Library', 'Application Support', 'Anton', 'blueant', 'settings.json')
@@ -35,8 +37,9 @@ function loadSettings(): BlueantSettings {
   try {
     const raw = JSON.parse(readFileSync(settingsPath(), 'utf8')) as Partial<BlueantSettings>
     const journalEnabled = typeof raw.journalEnabled === 'boolean' ? raw.journalEnabled : DEFAULT_SETTINGS.journalEnabled
+    const wakeWordEnabled = typeof raw.wakeWordEnabled === 'boolean' ? raw.wakeWordEnabled : DEFAULT_SETTINGS.wakeWordEnabled
     const model = isModelSelection(raw.model) ? raw.model : null
-    return { journalEnabled, model }
+    return { journalEnabled, wakeWordEnabled, model }
   } catch {
     return { ...DEFAULT_SETTINGS }
   }
@@ -55,6 +58,7 @@ export function getBlueantSettings(): BlueantSettings {
 export function updateBlueantSettings(patch: Partial<BlueantSettings>): BlueantSettings {
   const next: BlueantSettings = {
     journalEnabled: typeof patch.journalEnabled === 'boolean' ? patch.journalEnabled : current.journalEnabled,
+    wakeWordEnabled: typeof patch.wakeWordEnabled === 'boolean' ? patch.wakeWordEnabled : current.wakeWordEnabled,
     model: patch.model === null || isModelSelection(patch.model) ? patch.model : current.model,
   }
   const path = settingsPath()

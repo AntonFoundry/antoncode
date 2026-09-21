@@ -9,6 +9,12 @@ import Foundation
 /// queued completion whose generation no longer matches is dropped, so
 /// `cancelAll()` immediately silences pending and future emissions.
 final class WhisperEngine {
+  /// Process-wide shared context: push-to-talk and the wake-word listener
+  /// share one model (whisper small is ~466 MB resident). The serial
+  /// transcription queue serializes jobs; the wake listener suspends during
+  /// dictation, so the shared generation counter never cancels live work.
+  static let shared = WhisperEngine()
+
   private var context: OpaquePointer?
   private let transcriptionQueue = DispatchQueue(label: "dev.antoncode.blueant.whisper", qos: .userInitiated)
   /// Guards `context` and `generation`; transcription runs synchronously on

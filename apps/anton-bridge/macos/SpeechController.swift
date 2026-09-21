@@ -81,7 +81,7 @@ final class SpeechController: NSObject {
       return
     }
 
-    if whisper == nil { whisper = WhisperEngine() }
+    if whisper == nil { whisper = WhisperEngine.shared }
     if let engine = whisper, engine.available {
       NSLog("Blueant STT engine: whisper.cpp (Metal)")
       startWhisper(engine)

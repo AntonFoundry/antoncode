@@ -190,6 +190,8 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
     makeKeyAndOrderFront(nil)
     makeFirstResponder(entryField)
     installVoiceKeyMonitor()
+    NotificationCenter.default.post(name: Self.visibilityDidChange, object: self,
+                                  userInfo: [Self.isVisibleKey: true])
   }
 
   func closePanel() {
@@ -198,6 +200,23 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
     cancelStreaming()
     UserDefaults.standard.set(NSStringFromRect(frame), forKey: Self.frameKey)
     orderOut(nil)
+    NotificationCenter.default.post(name: Self.visibilityDidChange, object: self,
+                                    userInfo: [Self.isVisibleKey: false])
+  }
+
+  /// Posted on every show and close; `userInfo[isVisibleKey: Bool]` lets the
+  /// wake-word listener suspend while the popup is up.
+  static let visibilityDidChange = Notification.Name("blueantPanelVisibilityDidChange")
+  static let isVisibleKey = "isVisible"
+
+
+  /// Wake-word entry: the keyword fired elsewhere; open the popup first
+  /// (caller), then start dictation hands-free without touching the mic tile.
+  func beginWakeDictation() {
+    guard !speechDisabledForSession, !speech.isListening else { return }
+    micDownAt = nil
+    entrySnapshot = entryField.stringValue
+    startListening()
   }
 
   /// Default placement: horizontally centered, roughly a third down from the
@@ -647,8 +666,14 @@ private let client: HarnessClient
 /// session.models needs a live session to enumerate its catalog.
 private let resolve: (@escaping (String?) -> Void) -> Void
 private let journalSwitch = NSSwitch()
+private let wakeSwitch = NSSwitch()
 private let modelMenu = NSPopUpButton()
 private let statusLine = NSTextField(labelWithString: "")
+
+/// Posted after a wake-word toggle so the app reconfigures its listener
+/// without polling; `userInfo[wakeEnabledKey: Bool]` carries the new state.
+static let wakeWordDidChange = Notification.Name("blueantWakeWordDidChange")
+static let wakeEnabledKey = "wakeEnabled"
 
 init(client: HarnessClient, resolve: @escaping (@escaping (String?) -> Void) -> Void) {
   self.client = client
@@ -665,7 +690,7 @@ override func loadView() {
   // preferredContentSize below instead of an under-constrained fittingSize —
   // deriving the size from the row constraints once squeezed every row into
   // whatever width the popover guessed, overlapping label and switch).
-  let container = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 132))
+  let container = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 164))
 
   let journalLabel = NSTextField(labelWithString: "Journal (ambient capture)")
   journalLabel.font = .systemFont(ofSize: 12, weight: .medium)
@@ -673,6 +698,13 @@ override func loadView() {
   journalSwitch.controlSize = .small
   journalSwitch.target = self
   journalSwitch.action = #selector(journalToggled(_:))
+
+  let wakeLabel = NSTextField(labelWithString: "Wake word (\"hey Blueant\")")
+  wakeLabel.font = .systemFont(ofSize: 12, weight: .medium)
+  wakeLabel.lineBreakMode = .byTruncatingTail
+  wakeSwitch.controlSize = .small
+  wakeSwitch.target = self
+  wakeSwitch.action = #selector(wakeToggled(_:))
 
   let modelLabel = NSTextField(labelWithString: "Model")
   modelLabel.font = .systemFont(ofSize: 12, weight: .medium)
@@ -686,7 +718,7 @@ override func loadView() {
   statusLine.stringValue = "Journal writes desktop context to the daily log."
   statusLine.lineBreakMode = .byTruncatingTail
 
-  for sub in [journalLabel, journalSwitch, modelLabel, modelMenu, statusLine] {
+  for sub in [journalLabel, journalSwitch, wakeLabel, wakeSwitch, modelLabel, modelMenu, statusLine] {
     sub.translatesAutoresizingMaskIntoConstraints = false
     container.addSubview(sub)
   }
@@ -696,7 +728,12 @@ override func loadView() {
     journalSwitch.centerYAnchor.constraint(equalTo: journalLabel.centerYAnchor),
     journalSwitch.leadingAnchor.constraint(greaterThanOrEqualTo: journalLabel.trailingAnchor, constant: 12),
     journalSwitch.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
-    modelLabel.topAnchor.constraint(equalTo: journalLabel.bottomAnchor, constant: 16),
+    wakeLabel.topAnchor.constraint(equalTo: journalLabel.bottomAnchor, constant: 16),
+    wakeLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+    wakeSwitch.centerYAnchor.constraint(equalTo: wakeLabel.centerYAnchor),
+    wakeSwitch.leadingAnchor.constraint(greaterThanOrEqualTo: wakeLabel.trailingAnchor, constant: 12),
+    wakeSwitch.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+    modelLabel.topAnchor.constraint(equalTo: wakeLabel.bottomAnchor, constant: 16),
     modelLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
     modelMenu.centerYAnchor.constraint(equalTo: modelLabel.centerYAnchor),
     modelMenu.leadingAnchor.constraint(equalTo: modelLabel.trailingAnchor, constant: 10),
@@ -720,6 +757,7 @@ private func reload() {
         return
       }
       self.journalSwitch.state = (settings["journalEnabled"] as? Bool ?? true) ? .on : .off
+      self.wakeSwitch.state = (settings["wakeWordEnabled"] as? Bool ?? false) ? .on : .off
       self.loadModels(stored: settings["model"] as? [String: Any])
     }
   }
@@ -765,6 +803,17 @@ private func loadModels(stored: [String: Any]?) {
         self.modelMenu.selectItem(at: selected)
       }
     }
+  }
+}
+
+@objc private func wakeToggled(_ sender: NSSwitch) {
+  let enabled = sender.state == .on
+  statusLine.stringValue = enabled ? "Wake word on — say \"hey Blueant\" anywhere."
+                                   : "Wake word off — push-to-talk only."
+  client.putSettings(["wakeWordEnabled": enabled]) { [weak self] _ in
+    NotificationCenter.default.post(name: Self.wakeWordDidChange, object: nil,
+                                    userInfo: [Self.wakeEnabledKey: enabled])
+    DispatchQueue.main.async { self?.reload() }
   }
 }
 

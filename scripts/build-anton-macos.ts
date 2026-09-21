@@ -147,6 +147,7 @@ run(['swiftc', '-parse-as-library',
   '-framework', 'Metal', '-framework', 'MetalKit', '-framework', 'Accelerate',
   join(bridgeRoot, 'macos', 'AntonApp.swift'),
   join(bridgeRoot, 'macos', 'BlueantPanel.swift'),
+  join(bridgeRoot, 'macos', 'WakeWordListener.swift'),
   join(bridgeRoot, 'macos', 'ApprovalPanel.swift'),
   join(bridgeRoot, 'macos', 'SpeechController.swift'),
   join(bridgeRoot, 'macos', 'WhisperEngine.swift'),
@@ -248,6 +249,16 @@ if (!inPlaceSwap) {
     }
     if (spawnSync('pgrep', ['-f', 'Anton\\.app/Contents'], { encoding: 'utf8' }).status === 0) {
       throw new Error('Anton processes did not stop; refusing to swap the bundle under a running app')
+    }
+    // The process list can clear just before the bridge releases its listener.
+    // Do not install and relaunch into that short-lived port race.
+    for (let elapsed = 0; elapsed < 10_000; elapsed += 250) {
+      const bridge = spawnSync('curl', ['--fail', '--silent', '--max-time', '1', 'http://127.0.0.1:3742/bridge/api/status'], { encoding: 'utf8' })
+      if (bridge.status !== 0) break
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250)
+    }
+    if (spawnSync('curl', ['--fail', '--silent', '--max-time', '1', 'http://127.0.0.1:3742/bridge/api/status'], { encoding: 'utf8' }).status === 0) {
+      throw new Error('Anton bridge is still listening; refusing to replace the bundle while the old runtime is alive')
     }
   }
 }
