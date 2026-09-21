@@ -2,6 +2,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, 
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { ensureBlueantPreset, ensureBlueantProfileLink } from './blueant-preset.ts'
+import { startMobileIngest } from './inbox.ts'
 import { startJournalCollector } from './journal.ts'
 import { startJournalTriage } from './triage.ts'
 import { startJournalConsolidation } from './consolidate.ts'
@@ -682,6 +683,8 @@ const server = Bun.serve<BridgeSocketData>({
         const body = typeof payload === 'object' && payload !== null ? payload as { journalEnabled?: unknown; model?: unknown } : {}
         const patch = {
           journalEnabled: typeof body.journalEnabled === 'boolean' ? body.journalEnabled : undefined,
+          mobileIngestEnabled: typeof (body as { mobileIngestEnabled?: unknown }).mobileIngestEnabled === 'boolean'
+            ? (body as { mobileIngestEnabled: boolean }).mobileIngestEnabled : undefined,
           model: body.model === null || (typeof body.model === 'object' && body.model !== null
             && typeof (body.model as { provider?: unknown }).provider === 'string'
             && typeof (body.model as { model?: unknown }).model === 'string') ? body.model as never : undefined,
@@ -872,6 +875,7 @@ console.info(`Local controls: ${bridgeUrl}/bridge`)
 // Phase 5a: the ambient ingestion lane. Runs for the bridge's lifetime,
 // sampling desktop context into the daily journal — fail-soft by design.
 startJournalCollector({ intervalMs: Number(process.env.ANTON_JOURNAL_INTERVAL_MS) || 60_000 })
+startMobileIngest({ intervalMs: Number(process.env.ANTON_INBOX_INTERVAL_MS) || 15_000 })
 
 // Phase 5b: cheap-model triage — untriaged journal entries become durable
 // c0ntext evidence. Same fail-soft posture; watermark-driven, never

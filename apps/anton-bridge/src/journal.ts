@@ -94,7 +94,7 @@ export function startJournalCollector(options: JournalCollectorOptions = {}): vo
 }
 
 /** Local timestamp for the entry heading: HH:MM:SS on the user's clock. */
-function timestamp(): string {
+export function timestamp(): string {
   const now = new Date()
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
@@ -141,8 +141,8 @@ function captureScreenshot(screenshotsDir: string): string | undefined {
   return name
 }
 
-/** Append to today's journal, creating the file with a dated header on first write. */
-function appendEntry(dir: string, entry: string): void {
+/** Append to today's journal, creating the file with a dated header on first write. Shared with the mobile-ingest collector. */
+export function appendEntry(dir: string, entry: string): void {
   const now = new Date()
   const pad = (n: number) => String(n).padStart(2, '0')
   const day = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`

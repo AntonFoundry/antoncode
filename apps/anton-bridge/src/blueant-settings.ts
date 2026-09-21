@@ -21,11 +21,13 @@ export interface BlueantSettings {
   journalEnabled: boolean
   /** Ambient wake-word listening ("hey Blueant") runs only when true. */
   wakeWordEnabled: boolean
+  /** Mobile inbox polling (iCloud Drive "Anton Inbox" folder) runs only when true. */
+  mobileIngestEnabled: boolean
   /** Preferred model for new Blueant sessions; null = harness default. */
   model: BlueantModelSelection | null
 }
 
-const DEFAULT_SETTINGS: BlueantSettings = { journalEnabled: true, wakeWordEnabled: false, model: null }
+const DEFAULT_SETTINGS: BlueantSettings = { journalEnabled: true, wakeWordEnabled: false, mobileIngestEnabled: true, model: null }
 
 function settingsPath(): string {
   return join(homedir(), 'Library', 'Application Support', 'Anton', 'blueant', 'settings.json')
@@ -38,8 +40,9 @@ function loadSettings(): BlueantSettings {
     const raw = JSON.parse(readFileSync(settingsPath(), 'utf8')) as Partial<BlueantSettings>
     const journalEnabled = typeof raw.journalEnabled === 'boolean' ? raw.journalEnabled : DEFAULT_SETTINGS.journalEnabled
     const wakeWordEnabled = typeof raw.wakeWordEnabled === 'boolean' ? raw.wakeWordEnabled : DEFAULT_SETTINGS.wakeWordEnabled
+    const mobileIngestEnabled = typeof raw.mobileIngestEnabled === 'boolean' ? raw.mobileIngestEnabled : DEFAULT_SETTINGS.mobileIngestEnabled
     const model = isModelSelection(raw.model) ? raw.model : null
-    return { journalEnabled, wakeWordEnabled, model }
+    return { journalEnabled, wakeWordEnabled, mobileIngestEnabled, model }
   } catch {
     return { ...DEFAULT_SETTINGS }
   }
@@ -59,6 +62,7 @@ export function updateBlueantSettings(patch: Partial<BlueantSettings>): BlueantS
   const next: BlueantSettings = {
     journalEnabled: typeof patch.journalEnabled === 'boolean' ? patch.journalEnabled : current.journalEnabled,
     wakeWordEnabled: typeof patch.wakeWordEnabled === 'boolean' ? patch.wakeWordEnabled : current.wakeWordEnabled,
+    mobileIngestEnabled: typeof patch.mobileIngestEnabled === 'boolean' ? patch.mobileIngestEnabled : current.mobileIngestEnabled,
     model: patch.model === null || isModelSelection(patch.model) ? patch.model : current.model,
   }
   const path = settingsPath()
@@ -78,6 +82,10 @@ export function updateBlueantSettings(patch: Partial<BlueantSettings>): BlueantS
 /** Cheap flag read for the journal loops' per-tick guard. */
 export function journalEnabled(): boolean {
   return current.journalEnabled
+}
+
+export function mobileIngestEnabled(): boolean {
+  return current.mobileIngestEnabled
 }
 
 // A missing settings file materializes with defaults on first write, not on
