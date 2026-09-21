@@ -32,6 +32,7 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
   private let micButton = MicButton()
   // Settings (gear at the entry line's right): journal toggle + model pick.
   private let settingsButton = NSButton()
+  private var settingsPopover: NSPopover?
   private let speech = SpeechController()
   private var voiceKeyMonitor: Any?
   private var micDownAt: Date?
