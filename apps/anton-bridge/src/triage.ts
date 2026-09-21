@@ -2,6 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, write
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { journalEnabled } from './blueant-settings.ts'
+import { cheapChat, extractJson } from './cheap-model.ts'
 
 /**
  * Phase 5b — cheap-model triage: walk untriaged journal entries (byte
@@ -181,110 +182,16 @@ function chunk<T>(items: T[], size: number): T[][] {
   return out
 }
 
-/**
- * One cheap-model call per batch over the deployment's own Kimi For Coding
- * route: Anthropic-messages API at api.kimi.com/coding, credential
- * `KIMI_CODING_API_KEY` from the bridge's .credentials.yaml — the same
- * store resolveContextApiKey reads, the route class the harness's agent
- * default model rides. Key/model overridable without code changes.
- */
+/** One cheap-model call per batch; the shared route handles tiers/fallbacks. */
 async function classify(entries: JournalEntry[], modelOverride?: string): Promise<TriageVerdict[]> {
   const listing = entries.map((entry, index) => `${index}. [${entry.stamp}] ${entry.text}`).join('\n')
-  const kimiKey = process.env.ANTON_TRIAGE_API_KEY ?? readCredential('KIMI_CODING_API_KEY')
-  const model = modelOverride ?? process.env.ANTON_TRIAGE_MODEL ?? 'kimi-for-coding-highspeed'
-  if (kimiKey !== '') {
-    try {
-      return await callKimiTriage(kimiKey, model, listing, entries.length)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      // Quota exhaustion on the coding subscription is expected weekly; the
-      // store's Z.ai key with glm-5.3-flash is the standing cheap tier — the
-      // same route Phase 7a plans for the Blueant main loop.
-      if (!/usage limit|quota|rate.?limit|429|403/i.test(message)) throw error
-      console.warn('[triage] Kimi Coding quota exhausted — falling back to Z.ai glm-5.3-flash')
-    }
-  }
-  const zaiKey = readCredential('ZAI_API_KEY')
-  if (zaiKey === '') {
-    console.warn('[triage] no usable triage credential (Kimi exhausted, no ZAI_API_KEY) — skipping cycle')
-    console.warn('[triage] no usable triage credential (Kimi exhausted, no DEEPSEEK_API_KEY) — skipping cycle')
-    return []
-  }
-  return await callOpenAiCompatibleTriage(zaiKey, 'https://api.z.ai/api/paas/v4/chat/completions', 'glm-5.3-flash', listing, entries.length)
-}
-
-/** Read one `NAME: value` line from the bridge credentials file. */
-function readCredential(name: string): string {
-  try {
-    for (const line of readFileSync(join(homedir(), 'Library', 'Application Support', 'Anton', 'dsh', '.credentials.yaml'), 'utf8').split('\n')) {
-      if (line.startsWith(`${name}:`)) return line.slice(name.length + 1).trim()
-    }
-  } catch {
-    // Absent credentials file: the caller's named warning covers it.
-  }
-  return ''
-}
-
-async function callKimiTriage(apiKey: string, model: string, listing: string, count: number): Promise<TriageVerdict[]> {
-  const response = await fetch('https://api.kimi.com/coding/v1/messages', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({
-      model,
-      max_tokens: 1200,
-      system: TRIAGE_SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: `Journal entries:\n${listing}\n\nClassify all ${count} entries.` }],
-    }),
-    signal: AbortSignal.timeout(60_000),
+  const text = await cheapChat({
+    model: modelOverride,
+    system: TRIAGE_SYSTEM_PROMPT,
+    user: `Journal entries:\n${listing}\n\nClassify all ${entries.length} entries.`,
+    maxTokens: 1200,
   })
-  if (!response.ok) throw new Error(`triage model HTTP ${response.status}: ${(await response.text()).slice(0, 200)}`)
-  const payload = await response.json() as { content?: Array<{ type?: unknown; text?: unknown }> }
-  const content = Array.isArray(payload.content)
-    ? payload.content.filter(part => part.type === 'text' && typeof part.text === 'string').map(part => part.text as string).join('')
-    : ''
-  const unwrapped = JSON.parse(extractJson(content)) as { entries?: TriageVerdict[] } | TriageVerdict[]
-  const parsed = Array.isArray(unwrapped) ? unwrapped : unwrapped.entries ?? []
-  return parsed.filter(v => typeof v?.index === 'number' && typeof v?.keep === 'boolean')
-}
-
-/**
- * Models wrap JSON in prose or markdown fences despite instructions; take
- * the outermost brace-to-brace span and parse that.
- */
-function extractJson(text: string): string {
-  const start = text.indexOf('{')
-  const end = text.lastIndexOf('}')
-  if (start === -1 || end <= start) return text
-  return text.slice(start, end + 1)
-}
-
-/** OpenAI-compatible fallback tier (Z.ai glm-5.3-flash): same prompt, different wire shape. */
-async function callOpenAiCompatibleTriage(
-  apiKey: string,
-  baseUrl: string,
-  model: string,
-  listing: string,
-  count: number,
-): Promise<TriageVerdict[]> {
-  const response = await fetch(baseUrl, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: TRIAGE_SYSTEM_PROMPT },
-        { role: 'user', content: `Journal entries:\n${listing}\n\nClassify all ${count} entries.` },
-      ],
-      temperature: 0,
-      max_tokens: 1200,
-      response_format: { type: 'json_object' },
-    }),
-    signal: AbortSignal.timeout(60_000),
-  })
-  if (!response.ok) throw new Error(`triage model HTTP ${response.status}: ${(await response.text()).slice(0, 200)}`)
-  const payload = await response.json() as { choices?: Array<{ message?: { content?: unknown } }> }
-  const raw = typeof payload.choices?.[0]?.message?.content === 'string' ? payload.choices[0].message.content : ''
-  const unwrapped = JSON.parse(extractJson(raw)) as { entries?: TriageVerdict[] } | TriageVerdict[]
+  const unwrapped = JSON.parse(extractJson(text)) as { entries?: TriageVerdict[] } | TriageVerdict[]
   const parsed = Array.isArray(unwrapped) ? unwrapped : unwrapped.entries ?? []
   return parsed.filter(v => typeof v?.index === 'number' && typeof v?.keep === 'boolean')
 }
