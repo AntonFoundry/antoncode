@@ -160,7 +160,15 @@ run(['swiftc', '-parse-as-library',
 // ship their runtime JS there). Stale bun-build bridge artifacts are dead
 // weight. Keep node_modules: workspace symlinks remain valid because the
 // whole tree is copied together.
-syncDirectory(harnessRoot, join(resources, 'deepseek-harness'), ['/.git', '/dist', '/.turbo', 'packages/*/*/src', 'apps/*/src', '*.ts', '*.tsx', '*.map', '*.bun-build', 'apps/anton-bridge/dist', 'apps/anton-bridge/macos/vendor/build'])
+syncDirectory(harnessRoot, join(resources, 'deepseek-harness'), ['/.git', '/dist', '/.turbo', 'packages/*/*/src', 'apps/*/src', '*.ts', '*.tsx', '*.map', '*.bun-build', 'apps/anton-bridge/dist', 'apps/anton-bridge/macos/vendor/build',
+  // Repository-only surfaces never needed at runtime: internal notes and
+  // planning docs, generated docs and the website projection, build scripts,
+  // and the runnable-examples leaves. Shipping them leaks internal material
+  // and adds dead weight; agents load AGENTS.md from their workspace, not
+  // from the app bundle.
+  '/*.md', '/.agents/notes', '/docs', '/website', '/scripts', '/examples',
+  // Dev-run residue and repo-local tooling configs: never runtime inputs.
+  '/.sessions', '/.artifacts', '/knip.json', '/lefthook.yml', '/CONTRIBUTING.i18n.yaml'])
 // Anton bundles the memory-service client plugin only. The service itself is
 // a separate product reached over its configured endpoint — no service
 // implementation, configuration, or infrastructure files enter the bundle.
