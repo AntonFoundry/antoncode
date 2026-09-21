@@ -538,6 +538,13 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
     popover.show(relativeTo: settingsButton.bounds, of: settingsButton, preferredEdge: .minY)
   }
 
+  /// Tray-menu entry point: surface the panel first when hidden, then the
+  /// settings popover — the gear inside the popup is easy to miss.
+  func showSettings() {
+    if !isVisible { toggle() }
+    openSettings(nil)
+  }
+
   /// Apply the stored model preference to a session (no-op when unset).
   private func applyStoredModel(to sessionId: String, then completion: @escaping (Bool) -> Void) {
     client.fetchSettings { result in

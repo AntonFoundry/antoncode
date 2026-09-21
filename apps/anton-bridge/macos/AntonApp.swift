@@ -108,6 +108,9 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let blueant = NSMenuItem(title: "Open Blueant", action: #selector(toggleBlueant), keyEquivalent: "b")
     blueant.target = self
     menu.addItem(blueant)
+    let blueantSettings = NSMenuItem(title: "Blueant Settings…", action: #selector(openBlueantSettings), keyEquivalent: ",")
+    blueantSettings.target = self
+    menu.addItem(blueantSettings)
     menu.addItem(NSMenuItem(title: "Open Anton", action: #selector(openAnton), keyEquivalent: "o"))
     let start = NSMenuItem(title: "Start Harness", action: #selector(startHarness), keyEquivalent: "s")
     start.target = self
@@ -202,6 +205,14 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
       panel.positionUnder(anchorRect: nil)
     }
     panel.toggle()
+  }
+
+  @objc private func openBlueantSettings() {
+    guard let panel = blueantPanel else { return }
+    if !panel.isVisible {
+      panel.positionUnder(anchorRect: nil)
+    }
+    panel.showSettings()
   }
 
   @objc private func startHarness() {
