@@ -81,13 +81,15 @@ pnpm run demo:acp       # ACP automation server (needs DEEPSEEK_API_KEY)
 
 ### Anton macOS app (apps/anton-bridge)
 
-The app ships only built `lib/` output, so rebuild changed packages first (`npx tsc -b tsconfig.client.json` + `pnpm --filter <pkg> run bundle`, or a full `pnpm run build`), then:
+The app ships only built `lib/` output, so rebuild changed packages first (`npx tsc -b tsconfig.client.json` + `pnpm --filter <pkg> run bundle`, or a full `pnpm run build`; the `dsh` CLI runtime additionally needs `npm run build:lib:host`), then:
 
 ```sh
-pnpm run anton:build:macos  # quit Anton first; builds into a hidden staging bundle, then installs dist/Anton.app (old bundle kept as Anton.previous.app) and relaunches
+pnpm run anton:build:macos  # self-contained: quits a running Anton, builds + boot-smokes a staging bundle in dist/, installs /Applications/Anton.app (override with ANTON_INSTALL_DIR; previous bundle kept as Anton.previous.app), relaunches, and verifies
 ```
 
-To bounce just the Harness process without touching the app, POST `http://127.0.0.1:3742/bridge/api/harness/restart` — it reloads the tree the bridge serves: the bundle inside `Anton.app` for the installed app (so app code changes still need the rebuild + install above), or this checkout under `pnpm run anton:dev`, which runs the bridge from source.
+**Controlling the running app — always use `dsh anton`, never hand-crafted quit/kill/open chains**: `dsh anton status` reads bridge + harness + memory-service health; `dsh anton restart` reloads the harness tree the bridge serves (installed bundle or this checkout under `pnpm run anton:dev`) while the app itself stays up; `dsh anton stop`/`start` are deliberate lifecycle calls. `dsh anton restart` replaces the raw `POST http://127.0.0.1:3742/bridge/api/harness/restart` (still available) — all are safe under an interrupted tool call: read-only or idempotent, and none can quit the app.
+
+Boot resilience, in layers: the build boot-smokes the staged bundle end to end (a broken plugin fails the build, not the launch); the profile boot retries with a failing loader entry disabled (degraded, loud — one broken plugin costs its own features, not the surface); and the Mac app's watchdog escalates persistent harness/bridge failures onto the first-party-only `recovery` profile (amber chip, "Exit Recovery Mode" menu) whose web UI is where repair happens, with a one-shot repair agent on the `repair` profile that diagnoses from `bridge.log`, fixes, rebuilds, and swaps the bundle in place (`ANTON_IN_PLACE_SWAP=1`). First run installs a `dsh` launcher into `~/.local/bin` sharing the app's `~/.anton/dsh` home (profiles `web`, `recovery`, `repair`, `headless`; `dsh models` lists a composition's providers and models).
 
 ### Host sandbox failures
 
