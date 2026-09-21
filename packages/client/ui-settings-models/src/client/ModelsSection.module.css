@@ -86,6 +86,58 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/* A catalog-disabled provider keeps its row (the profile is intact) but reads
+   as paused: the caption tone the page already uses for annotations. */
+.rowNameDisabled {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* Catalog-visibility switch, sized to the dense row capsules it sits beside
+   (28px actions): a 36x20 track, 14px knob, 16px travel. */
+.providerSwitch {
+  position: relative;
+  flex: none;
+  box-sizing: border-box;
+  width: 36px;
+  height: 20px;
+  margin-right: 4px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.providerSwitch[aria-checked='true'] {
+  background: var(--dsw-alias-brand-primary);
+}
+
+.providerSwitch:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.providerSwitch:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--dsw-alias-border-l3);
+}
+
+.providerSwitchKnob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--dsw-alias-label-primary-foreground);
+  transition: transform 120ms ease;
+}
+
+.providerSwitch[aria-checked='true'] .providerSwitchKnob {
+  transform: translateX(16px);
+}
+
 /* Reads as an annotation on the name, not as a second name: caption size and
    the secondary label tone, so it never competes with the row's own title. It
    sits inside `rowIdentity` with the credential dot, which is what keeps it

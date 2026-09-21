@@ -79,6 +79,7 @@ import type {} from '@deepseek-ai/dsh-skill'
 // provider still serves every other domain.
 import { SettingsConflictError, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from '@deepseek-ai/dsh-settings'
+import z from '@deepseek-ai/schemastery'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 // Value edge: foldSessionTitle reads the source title a forkExcluding rename
 // builds on; the rename impl narrows the title service's validation failure.
@@ -282,6 +283,35 @@ function ok<T>(request: RpcRequest<unknown>, value: T): RpcResponse<T> {
   return { rpcId: request.rpcId, result: { ok: true, value } }
 }
 
+/** Stored catalog visibility for providers the user toggled off. */
+export interface ModelCatalogSettings {
+  /** Provider route ids hidden from the model catalog and failures. */
+  disabledProviders: string[]
+}
+
+/** Schema of the model-catalog settings section. */
+export const MODEL_CATALOG_SETTINGS_SCHEMA: z<ModelCatalogSettings> = z.object({
+  disabledProviders: z.array(z.string()).default([]),
+})
+
+/** Settings namespace carrying the model catalog's per-provider visibility. */
+export const MODEL_CATALOG_SETTINGS_NAMESPACE = settingsNamespace('model-catalog')
+
+/**
+ * Read the resolved catalog visibility section. Registration lives in the
+ * gateway plugin, so the namespace is present whenever the settings service
+ * is; the unregistered arm covers a composition without one, where every
+ * provider is enabled.
+ * @param ctx - the host context.
+ * @returns the resolved section, or the all-enabled default.
+ */
+function modelCatalogSettings(ctx: Context): ModelCatalogSettings {
+  // The schema resolves the stored document, so the resolved value carries
+  // the declared shape; the cast only restores it from `unknown`.
+  return ctx.get('settings')?.get(MODEL_CATALOG_SETTINGS_NAMESPACE) as ModelCatalogSettings | undefined
+    ?? { disabledProviders: [] }
+}
+
 /**
  * Build the provider/model catalog over every registered route. Shared by the
  * session-scoped `session.models` and host-scoped `llm.models`. Catalog
@@ -289,52 +319,58 @@ function ok<T>(request: RpcRequest<unknown>, value: T): RpcResponse<T> {
  * provider dispatch, but is not injected back into the selector after its
  * owning catalog stops advertising it. Per-provider failures ride `failures`
  * without failing the sound groups; groups that advertise nothing are dropped.
+ * Providers the user disabled in the `model-catalog` settings namespace are
+ * omitted from both groups and failures — the advisory rule covers them too,
+ * so a current selection on a disabled provider keeps serving.
  */
 async function buildModelCatalog(ctx: Context): Promise<{
   groups: ModelProviderGroup[]
   failures: ModelCatalogFailure[]
 }> {
-  const catalog = await Promise.all(ctx.llm.listProviders().map(async (provider) => {
-    try {
-      const models = await ctx.llm.listModels(provider.id)
-      const entries = await Promise.all(models.map(async (model) => {
-        const resolved = await ctx.llm.resolveModelInfo(provider.id, model.id)
-        const reasoning: ModelReasoning | undefined = resolved.reasoning === undefined
-          ? undefined
-          : {
-            efforts: resolved.reasoning.efforts.map(effort => ({
-              id: effort.id,
-              name: effort.name,
-              ...effort.description === undefined
+  const disabled = new Set(modelCatalogSettings(ctx).disabledProviders)
+  const catalog = await Promise.all(ctx.llm.listProviders()
+    .filter(provider => !disabled.has(provider.id))
+    .map(async (provider) => {
+      try {
+        const models = await ctx.llm.listModels(provider.id)
+        const entries = await Promise.all(models.map(async (model) => {
+          const resolved = await ctx.llm.resolveModelInfo(provider.id, model.id)
+          const reasoning: ModelReasoning | undefined = resolved.reasoning === undefined
+            ? undefined
+            : {
+              efforts: resolved.reasoning.efforts.map(effort => ({
+                id: effort.id,
+                name: effort.name,
+                ...effort.description === undefined
+                  ? {}
+                  : { description: effort.description },
+              })),
+              ...resolved.reasoning.defaultEffort === undefined
                 ? {}
-                : { description: effort.description },
-            })),
-            ...resolved.reasoning.defaultEffort === undefined
-              ? {}
-              : { defaultEffort: resolved.reasoning.defaultEffort },
+                : { defaultEffort: resolved.reasoning.defaultEffort },
+            }
+          return {
+            id: model.id,
+            name: model.name,
+            ...model.description === undefined ? {} : { description: model.description },
+            ...reasoning === undefined ? {} : { reasoning },
           }
-        return {
-          id: model.id,
-          name: model.name,
-          ...model.description === undefined ? {} : { description: model.description },
-          ...reasoning === undefined ? {} : { reasoning },
+        }))
+        const group: ModelProviderGroup = {
+          id: provider.id,
+          name: provider.name,
+          models: entries,
         }
-      }))
-      const group: ModelProviderGroup = {
-        id: provider.id,
-        name: provider.name,
-        models: entries,
+        return { kind: 'group' as const, group }
+      } catch (error: unknown) {
+        const failure: ModelCatalogFailure = {
+          id: provider.id,
+          name: provider.name,
+          message: error instanceof Error ? error.message : String(error),
+        }
+        return { kind: 'failure' as const, failure }
       }
-      return { kind: 'group' as const, group }
-    } catch (error: unknown) {
-      const failure: ModelCatalogFailure = {
-        id: provider.id,
-        name: provider.name,
-        message: error instanceof Error ? error.message : String(error),
-      }
-      return { kind: 'failure' as const, failure }
-    }
-  }))
+    }))
   return {
     groups: catalog.flatMap(item => item.kind === 'group' ? [item.group] : []).filter(group => group.models.length > 0),
     failures: catalog.flatMap(item => item.kind === 'failure' ? [item.failure] : []),

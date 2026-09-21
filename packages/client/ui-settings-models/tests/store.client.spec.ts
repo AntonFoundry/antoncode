@@ -95,7 +95,34 @@ describe('ModelsSettingsStore', () => {
     expect(byProvider.get('anthropic')).toMatchObject({ configured: false, removable: false })
     expect(byProvider.get('anthropic')?.apiKeyEnv).toBeUndefined()
     expect(byProvider.get('ghost')).toMatchObject({ configured: false, removable: false })
+    // No catalog-visibility namespace described: every provider is enabled.
+    expect(byProvider.get('deepseek-official')?.enabled).toBe(true)
     expect(state.namespaces.get('llm-pi-ai')?.ns).toBe('llm-pi-ai')
+  })
+
+  it('derives per-provider catalog visibility from the model-catalog namespace', async () => {
+    const { face } = api({
+      describeSettings: () => Promise.resolve(ok({
+        writable: true,
+        hasDocument: true,
+        namespaces: [
+          ...NAMESPACES,
+          {
+            ns: 'model-catalog',
+            schema: {},
+            value: { disabledProviders: ['openai'] },
+            applies: 'live' as const,
+            secrets: [],
+            revision: 3,
+          },
+        ],
+      })),
+    })
+    const store = new ModelsSettingsStore(face)
+    await store.load()
+    const byProvider = new Map(store.store.getSnapshot().rows.map(row => [row.entry.provider, row]))
+    expect(byProvider.get('openai')?.enabled).toBe(false)
+    expect(byProvider.get('deepseek-official')?.enabled).toBe(true)
   })
 
   it('degrades the credential badge, not the page, when the credential domain fails', async () => {
