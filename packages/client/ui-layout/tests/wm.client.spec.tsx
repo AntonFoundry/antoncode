@@ -425,6 +425,8 @@ function mountFrame(initialTree?: WmNode, workspaces?: { id: string; title: stri
   const scratch = createScratchStore().create()
   if (initialTree !== undefined) act(() => { wm.actions.setTree(initialTree) })
   const slotCalls: { key: string; props: unknown }[] = []
+  /** Every syncStagedSessions push (newest last) — the pinned-pane staging sync log. */
+  const stagedLog: string[][] = []
   const renderSlot = ((key: string, owner: object) => {
     slotCalls.push({ key, props: owner })
     if (key === 'sidebar') return <div data-testid="sidebar-content" />
@@ -477,6 +479,7 @@ function mountFrame(initialTree?: WmNode, workspaces?: { id: string; title: stri
         })
       }}
       writeScratch={(text) => { act(() => { scratch.actions.setText(text) }) }}
+      syncStagedSessions={(ids) => { stagedLog.push([...ids]) }}
       listDirectory={listDirectoryStub}
       openPath={openPathStub}
       openWorkspace={openWorkspaceStub}
@@ -487,7 +490,7 @@ function mountFrame(initialTree?: WmNode, workspaces?: { id: string; title: stri
     />
   )
   const utils = render(element())
-  return { wm, scratch, layout, slotCalls, rerenderFrame: () => { utils.rerender(element()) }, ...utils }
+  return { wm, scratch, layout, slotCalls, stagedLog, rerenderFrame: () => { utils.rerender(element()) }, ...utils }
 }
 
 /** Records the workspace-open resolutions (C-x w Enter path). */
@@ -570,7 +573,7 @@ describe('WmFrame render', () => {
     const { slotCalls } = mountFrame()
     const sidebar = slotCalls.filter(c => c.key === 'sidebar').at(-1)!
     // Viewport 1920: the untouched preference takes the 18% share (346).
-    expect(sidebar.props).toEqual({ collapsed: false, width: 346, brandInFrame: true })
+    expect(sidebar.props).toMatchObject({ collapsed: false, width: 346, brandInFrame: true, scopeSessionId: 's-test' })
     expect(slotCalls.find(c => c.key === 'conversation')!.props).toEqual({
       layoutSpan: 'single',
       rebindPane: expect.any(Function),
@@ -911,13 +914,24 @@ describe('per-window session buffers', () => {
     const { rerenderFrame, wm } = pinnedFrame()
     extraSessions.push({ id: 's-next', displayTitle: 'Next' })
     act(() => { wm.actions.setFocus(WM_LEAF_CONVERSATION) })
+    // Sidebar rows do not move focus away from the protected sidebar pane;
+    // the last chat pane remains the session target.
+    act(() => { wm.actions.setFocus(WM_LEAF_SIDEBAR) })
     selectedSession.current = 's-next' as SessionId
     act(() => { rerenderFrame() })
-    // The focused chat pane pinned itself to the new current…
+    // The last chat pane pinned itself to the new current…
     expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_CONVERSATION)?.buffer).toBe('buffer:session:s-next')
     expect(wm.getSnapshot().buffers.some(b => b.id === 'buffer:session:s-next')).toBe(true)
     // …and the sidebar leaf kept its buffer (only the focused window moved).
     expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('sidebar')
+  })
+
+  it('C-x b labels session candidates with their workspace', () => {
+    extraSessions.push({ id: 's-1', displayTitle: 'Alpha' })
+    const { getByLabelText } = mountFrame(undefined, [{ id: 'ws-1', title: 'Project One', sessionIds: ['s-1'] }])
+    press('x', { ctrlKey: true })
+    press('b')
+    expect(getByLabelText('Switch buffer').parentElement?.textContent).toContain('Project One · Alpha')
   })
 
   it('two chat windows report layoutSpan multi; one reports single', () => {
@@ -939,6 +953,35 @@ describe('per-window session buffers', () => {
     expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_CONVERSATION)?.buffer).toBe('buffer:session:s-2')
     expect(wm.getSnapshot().buffers.some(b => b.id === 'buffer:session:s-2')).toBe(true)
     expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('sidebar')
+  })
+
+  it('pins sync the sessions service stage set; unpinning clears it (no ghost blank rows)', () => {
+    extraSessions.push({ id: 's-2', displayTitle: 'Beta' })
+    const { slotCalls, stagedLog, wm } = pinnedFrame()
+    // The persisted pinned buffer staged its session through the same sync.
+    expect(stagedLog.at(-1)).toEqual(['s-1'])
+    const { rebindPane } = slotCalls.filter(c => c.key === 'conversation').at(-1)!.props as { rebindPane: (sessionId: string) => void }
+    act(() => { rebindPane('s-2') })
+    expect(stagedLog.at(-1)).toEqual(['s-2'])
+    // Unpin: the leaf returns to follow-current, the stage empties.
+    act(() => {
+      const snapshot = wm.getSnapshot()
+      wm.actions.setTree(swapBuffer(snapshot.tree, WM_LEAF_CONVERSATION, SESSION_BUFFER_ID))
+    })
+    expect(stagedLog.at(-1)).toEqual([])
+  })
+
+  it('a persisted pinned buffer stages its session at boot restore', () => {
+    extraSessions.push({ id: 's-9', displayTitle: 'Restored' })
+    const { wm, stagedLog } = mountFrame()
+    expect(stagedLog.at(-1)).toEqual([])
+    act(() => {
+      const snapshot = wm.getSnapshot()
+      const buffer = sessionBuffer('s-9')
+      wm.actions.setBuffers([...snapshot.buffers, buffer])
+      wm.actions.setTree(swapBuffer(snapshot.tree, WM_LEAF_CONVERSATION, buffer.id))
+    })
+    expect(stagedLog.at(-1)).toEqual(['s-9'])
   })
 })
 

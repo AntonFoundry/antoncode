@@ -1,7 +1,7 @@
 /**
  * Derives the workspace browser tree from Host Workspace order and membership.
- * Unassigned Sessions trail under Ungrouped; only the selected blank Session
- * remains visible.
+ * Unassigned Sessions trail under Ungrouped; among blank Sessions, the
+ * current one and any staged in a visible wm pane remain visible.
  */
 import {
   indexSubagentDescendants, type PendingInteractionStatus, type SessionId, type SessionListState,
@@ -114,16 +114,31 @@ function byRecency(a: SessionSummary, b: SessionSummary): number {
   return a.id < b.id ? -1 : 1
 }
 
+/** Empty stand-in for a list snapshot predating the `staged` field. */
+const NO_STAGED: ReadonlySet<SessionId> = new Set()
+
+/** The pinned-pane stage set of a list snapshot: `staged` when published, empty otherwise. */
+function stagedOf(list: SessionListState): ReadonlySet<SessionId> {
+  return list.staged === undefined ? NO_STAGED : new Set(list.staged)
+}
+
 /**
- * Ordinary sessions are visible; among blank sessions, only the current one
- * is visible. Subagent children use their parent header catalog; archived
- * sessions are visible nowhere, while their accounting slots remain so
- * unarchiving restores position.
+ * Ordinary sessions are visible; among blank sessions, the current one and
+ * any displayed in a visible wm window (the pinned-pane stage set) are
+ * visible — a pinned pane minting a New Session must not strand its row.
+ * Subagent children use their parent header catalog; archived sessions are
+ * visible nowhere, while their accounting slots remain so unarchiving
+ * restores position.
  */
-function sessionVisible(session: SessionSummary, current: SessionId | undefined, archived: ReadonlySet<SessionId>): boolean {
+function sessionVisible(
+  session: SessionSummary,
+  current: SessionId | undefined,
+  archived: ReadonlySet<SessionId>,
+  staged: ReadonlySet<SessionId>,
+): boolean {
   return session.origin !== 'subagent'
     && !archived.has(session.id)
-    && (!session.blank || session.id === current)
+    && (!session.blank || session.id === current || staged.has(session.id))
 }
 
 /**
@@ -184,13 +199,14 @@ function groupByWorkspace(
 ): Group[] {
   const groups: Group[] = []
   const accounted = new Set<SessionId>()
+  const staged = stagedOf(list)
   for (const workspace of workspaces) {
     const members: SessionSummary[] = []
     for (const id of workspace.sessionIds) {
       const summary = list.byId[id]
       if (summary === undefined) continue // account may lead the list pull; the row appears when the summary lands
       accounted.add(id)
-      if (!sessionVisible(summary, list.current, archived)) continue
+      if (!sessionVisible(summary, list.current, archived, staged)) continue
       members.push(summary)
     }
     groups.push(buildGroup(
@@ -201,7 +217,7 @@ function groupByWorkspace(
   const stray = list.ids
     .map(id => list.byId[id])
     .filter((s): s is SessionSummary =>
-      s !== undefined && !accounted.has(s.id) && sessionVisible(s, list.current, archived))
+      s !== undefined && !accounted.has(s.id) && sessionVisible(s, list.current, archived, staged))
   if (stray.length > 0) {
     groups.push(buildGroup(
       UNGROUPED_KEY,
@@ -296,10 +312,11 @@ export function deriveFlat(
   const archived = new Set(archivedSessionIds)
   const descendants = indexSubagentDescendants(list.byId)
   const jobCounts = liveJobCounts(list.jobsBySession)
+  const staged = stagedOf(list)
   const rows: SessionSummary[] = []
   for (const id of list.ids) {
     const s = list.byId[id]
-    if (s === undefined || !sessionVisible(s, list.current, archived)) continue
+    if (s === undefined || !sessionVisible(s, list.current, archived, staged)) continue
     rows.push(s)
   }
   rows.sort(byRecency)
@@ -340,6 +357,7 @@ export function deriveSearchResults(
   const archived = new Set(archivedSessionIds)
   const descendants = indexSubagentDescendants(list.byId)
   const jobCounts = liveJobCounts(list.jobsBySession)
+  const staged = stagedOf(list)
 
   const workspaceBySession = new Map<SessionId, string>()
   for (const workspace of workspaces) {
@@ -359,7 +377,7 @@ export function deriveSearchResults(
     const summary = list.byId[id]
     // Blank placeholders never match a query (their canonical title displays
     // localized, so matching it would tie search to one language).
-    if (summary === undefined || summary.blank || !sessionVisible(summary, list.current, archived)) continue
+    if (summary === undefined || summary.blank || !sessionVisible(summary, list.current, archived, staged)) continue
     if (
       sessionTitle(summary).toLowerCase().includes(q)
       || labelOf(summary).toLowerCase().includes(q)
@@ -379,7 +397,7 @@ export function deriveSearchResults(
   for (const summary of local) include(summary)
   for (const item of content.items) {
     const summary = list.byId[item.sessionId]
-    if (summary !== undefined && !summary.blank && sessionVisible(summary, list.current, archived)) include(summary)
+    if (summary !== undefined && !summary.blank && sessionVisible(summary, list.current, archived, staged)) include(summary)
   }
 
   return {

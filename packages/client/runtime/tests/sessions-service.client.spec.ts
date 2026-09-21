@@ -332,6 +332,45 @@ describe('cell (render-layer session kit)', () => {
     expect(historyCalls().map(c => (c.payload as { sessionId: string }).sessionId)).toEqual(['s1', 's2'])
   })
 
+  it('setStaged stages pinned-only sessions: their window opens without moving current', async () => {
+    const b = bench()
+    await feedList(b, [{ id: 's1' }, { id: 's2' }])
+    b.svc.open(sid('s1'))
+    const historyCalls = () => b.api.calls.filter(c => c.method === 'session.history')
+    b.svc.setStaged([sid('s2')])
+    // The pinned session's window opens; the selection stays on s1.
+    expect(historyCalls().map(c => (c.payload as { sessionId: string }).sessionId)).toEqual(['s1', 's2'])
+    expect(b.svc.list.getSnapshot().current).toBe(sid('s1'))
+    expect(b.svc.list.getSnapshot().staged).toEqual([sid('s2')])
+    // Idempotent: the same set again is a no-op (no re-pull, no republish).
+    b.svc.setStaged([sid('s2')])
+    expect(historyCalls()).toHaveLength(2)
+    // Unpinning drops the id from the published set.
+    b.svc.setStaged([])
+    expect(b.svc.list.getSnapshot().staged).toEqual([])
+  })
+
+  it('a pinned id stages when its list row lands (boot-restore race) and re-listing after removal re-opens', async () => {
+    const b = bench()
+    // Pinned before the row exists (frame restore vs first list pull).
+    b.svc.setStaged([sid('s2')])
+    expect(b.api.calls.filter(c => c.method === 'session.history')).toHaveLength(0)
+    await feedList(b, [{ id: 's1' }, { id: 's2' }])
+    expect(b.api.calls.filter(c => c.method === 'session.history')
+      .map(c => (c.payload as { sessionId: string }).sessionId)).toEqual(['s2'])
+    expect(b.svc.list.getSnapshot().current).toBeUndefined()
+  })
+
+  it('a pinned-only session that leaves the list is not frozen: its scope tears down', async () => {
+    const b = bench()
+    await feedList(b, [{ id: 's1' }, { id: 's2' }])
+    b.svc.open(sid('s1'))
+    b.svc.setStaged([sid('s2')])
+    expect(b.svc.scope(sid('s2'))).toBeDefined()
+    await feedList(b, [{ id: 's1' }])
+    expect(b.svc.scope(sid('s2'))).toBeUndefined()
+  })
+
   it('startup restore: a persisted selection validated by the first projection opens its window unprompted', async () => {
     const storage = new Map<string, string>([
       ['dsh.sessions.current', JSON.stringify({ sessionId: 's1' })],
