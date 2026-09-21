@@ -18,6 +18,34 @@
 - **`src/index.ts`**: the triage loop starts next to the collector and
   receives the already-resolved context endpoint + API key.
 
+## Route correction (same day, after first live run)
+
+The first install showed the real picture: the bridge env carries no
+Moonshot key, and the deployment's working agent route is Kimi For
+Coding — Anthropic-messages API at `https://api.kimi.com/coding`
+(model family `kimi-for-coding` / `-highspeed` / `k3`), credential
+`KIMI_CODING_API_KEY` in the app's
+`~/Library/Application Support/Anton/dsh/.credentials.yaml` — the same
+store `resolveContextApiKey` reads for the engine key. Triage now:
+key `ANTON_TRIAGE_API_KEY` env then `.credentials.yaml`, endpoint
+`/coding/v1/messages`, model `kimi-for-coding-highspeed`
+(`ANTON_TRIAGE_MODEL` override). The settings.yaml moonshotai
+apiKeyEnv block is an unused catalog entry, not the live route.
+
+## Tier fallback and engine scoping (final, verified live)
+
+- Kimi Coding's subscription quota is weekly; on quota-shaped failures
+  (usage limit / 429 / 403) triage falls back to the store's Z.ai key
+  with `glm-5.3-flash` at `api.z.ai/api/paas/v4/chat/completions` —
+  the same cheap route Phase 7a plans for the Blueant main loop. The
+  DeepSeek key in the store has no balance; Z.ai is the standing tier.
+- Model output is parsed through an outermost-brace extractor — both
+  tiers wrap JSON in prose or fences despite instructions.
+- The engine rejects unregistered projects; evidence writes go to the
+  registered `global` project, session `blueant-journal`. Verified end
+  to end: 3 synthetic entries → glm-5.3-flash kept 2 (noise dropped) →
+  3 evidence pages retrievable via `/context/query`.
+
 ## Decisions and their reasons
 
 - **Byte watermark with a write-head rule.** The collector appends
