@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { ensureBlueantPreset, ensureBlueantProfileLink } from './blueant-preset.ts'
 import { startJournalCollector } from './journal.ts'
+import { startJournalTriage } from './triage.ts'
 
 const bridgePort = portFromEnv('ANTON_BRIDGE_PORT', 3742)
 const harnessPort = portFromEnv('ANTON_HARNESS_PORT', 3080)
@@ -827,6 +828,15 @@ console.info(`Local controls: ${bridgeUrl}/bridge`)
 // Phase 5a: the ambient ingestion lane. Runs for the bridge's lifetime,
 // sampling desktop context into the daily journal — fail-soft by design.
 startJournalCollector({ intervalMs: Number(process.env.ANTON_JOURNAL_INTERVAL_MS) || 60_000 })
+
+// Phase 5b: cheap-model triage — untriaged journal entries become durable
+// c0ntext evidence. Same fail-soft posture; watermark-driven, never
+// double-writes.
+startJournalTriage({
+  intervalMs: Number(process.env.ANTON_TRIAGE_INTERVAL_MS) || 5 * 60_000,
+  contextEndpoint: contextEndpoint === '' ? undefined : contextEndpoint,
+  contextApiKey: resolveContextApiKey(),
+})
 
 /**
  * Act-tier notification inbox: blueant_notify enqueues here, the Mac app
