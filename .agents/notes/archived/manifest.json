@@ -15,6 +15,7 @@
     "architecture/2026-07-27-tui-chat-channel-module-split.md": "sha256:d44158d467e6d3d0d1673135337c81528ee0f0f3af1681547aa484a9266f000c",
     "architecture/2026-07-28-consolidated-tui-presentation.md": "sha256:b155b82e1769966b14533595db735dfab4fee9f4a87c37025b8aacfc055bd06e",
     "architecture/2026-07-28-dsh-native-typescript-source-launch.md": "sha256:634efd82e382232c2e99632a71f739884756641b22dc692c15dab3240104b4a7",
+    "architecture/2026-09-21-chrome-acting-as-user-design.md": "sha256:74fadaaef0990a905707cd8045950f496b27db2651a557585f3d27ec87bf8d49",
     "bug-fix/2026-07-20-code-mode-result-card-completeness.md": "sha256:8401e53a40867df4a3b2749e5981c533d2f850bac781e8ed26aa444cf2a1524e",
     "bug-fix/2026-07-22-collapsed-sidebar-control-rail.md": "sha256:29f3af5ff27c9b58f06c0bcf851bc0c9db6dbf61c1e1cdf2d280c6334e5c97ea",
     "bug-fix/2026-07-23-demo-web-builds-client-bundles.md": "sha256:7a03b793940a069a9df578b72eb77e53d7524731a3c1769e83a298430a548eb8",

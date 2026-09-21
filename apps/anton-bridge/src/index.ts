@@ -7,6 +7,7 @@ import { startJournalCollector } from './journal.ts'
 import { startJournalTriage } from './triage.ts'
 import { startJournalConsolidation } from './consolidate.ts'
 import { getBlueantSettings, updateBlueantSettings } from './blueant-settings.ts'
+import { getChromeManager } from './chrome.ts'
 
 const bridgePort = portFromEnv('ANTON_BRIDGE_PORT', 3742)
 const harnessPort = portFromEnv('ANTON_HARNESS_PORT', 3080)
@@ -812,6 +813,24 @@ const server = Bun.serve<BridgeSocketData>({
         const body = typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {}
         const id = typeof body.id === 'string' ? body.id : ''
         const proposal = id === '' ? undefined : proposalDecisions.get(id)
+        const chromeAct = proposal === undefined && id !== '' ? chromeActs.get(id) : undefined
+        if (proposal === undefined && chromeAct === undefined) return json({ error: 'unknown_proposal' }, { status: 404 })
+        if (proposal === undefined && chromeAct !== undefined) {
+          // Page mutation: identical human gate, CDP execution instead of bash.
+          if (chromeAct.state !== 'pending') return json({ id, state: chromeAct.state, output: chromeAct.output })
+          if (body.approved !== true) {
+            chromeAct.state = 'denied'
+            return json({ id, state: 'denied' })
+          }
+          chromeAct.state = 'approved'
+          try {
+            const { action, selector, value, pageTitle } = chromeAct
+            chromeAct.output = await getChromeManager().performAct({ action, selector, value, pageTitle })
+          } catch (error) {
+            chromeAct.output = `FAILED: ${error instanceof Error ? error.message : 'cdp_action_failed'}`
+          }
+          return json({ id, state: 'approved', output: chromeAct.output })
+        }
         if (proposal === undefined) return json({ error: 'unknown_proposal' }, { status: 404 })
         if (proposal.state !== 'pending') return json({ id, ...proposal })
         const approved = body.approved === true
@@ -846,8 +865,71 @@ const server = Bun.serve<BridgeSocketData>({
     if (pathname === '/bridge/api/propose/decision' && request.method === 'GET') {
       const id = new URL(request.url).searchParams.get('id') ?? ''
       const proposal = id === '' ? undefined : proposalDecisions.get(id)
-      if (proposal === undefined) return json({ error: 'unknown_proposal' }, { status: 404 })
-      return json({ id, ...proposal })
+      if (proposal !== undefined) return json({ id, ...proposal })
+      const act = id === '' ? undefined : chromeActs.get(id)
+      if (act !== undefined) return json({ id, state: act.state, command: act.card, exitCode: act.state === 'approved' ? 0 : undefined, output: act.output })
+      return json({ error: 'unknown_proposal' }, { status: 404 })
+    }
+
+    if (pathname === '/bridge/api/chrome/open' && request.method === 'POST') {
+      // Ask tier: navigation inside the isolated agent profile touches no
+      // user state, so it bypasses approval — same posture as chrome_read.
+      if (!loopbackControlAllowed(request)) return json({ error: 'cross_origin_request_rejected' }, { status: 403 })
+      try {
+        const payload: unknown = await request.json()
+        const body = typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {}
+        const rawUrl = typeof body.url === 'string' ? body.url.trim() : ''
+        if (rawUrl === '') return json({ error: 'url_required' }, { status: 400 })
+        const parsed = URL.parse(rawUrl) ?? URL.parse(`https://${rawUrl}`)
+        if (parsed === null || (parsed.protocol !== 'https:' && parsed.protocol !== 'http:')) return json({ error: 'url_must_be_http' }, { status: 400 })
+        const { title } = await getChromeManager().openUrl(parsed.href, body.reuse === true)
+        return json({ ok: true, title })
+      } catch (error) {
+        return json({ error: error instanceof Error ? error.message : 'chrome_open_failed' }, { status: 500 })
+      }
+    }
+
+    if (pathname === '/bridge/api/chrome/read' && request.method === 'GET') {
+      // Ask tier: reading the agent profile's own tab is read-only.
+      if (!loopbackControlAllowed(request)) return json({ error: 'cross_origin_request_rejected' }, { status: 403 })
+      try {
+        return json(await getChromeManager().readActive())
+      } catch (error) {
+        return json({ error: error instanceof Error ? error.message : 'chrome_read_failed' }, { status: 500 })
+      }
+    }
+
+    if (pathname === '/bridge/api/chrome/act' && request.method === 'POST') {
+      // Act tier: enqueue a page mutation as a proposal card. Nothing runs
+      // until the human approves through the same decide flow as shell
+      // commands; the CDP action executes inside the decide handler.
+      if (!loopbackControlAllowed(request)) return json({ error: 'cross_origin_request_rejected' }, { status: 403 })
+      try {
+        const payload: unknown = await request.json()
+        const body = typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {}
+        const action = body.action === 'fill' ? 'fill' : body.action === 'click' ? 'click' : ''
+        if (action === '') return json({ error: 'action_must_be_fill_or_click' }, { status: 400 })
+        const selector = typeof body.selector === 'string' ? body.selector.trim().slice(0, 300) : ''
+        if (selector === '') return json({ error: 'selector_required' }, { status: 400 })
+        const value = typeof body.value === 'string' ? body.value.slice(0, 2000) : undefined
+        if (action === 'fill' && value === undefined) return json({ error: 'value_required_for_fill' }, { status: 400 })
+        const pageTitle = typeof body.pageTitle === 'string' ? body.pageTitle.slice(0, 200) : ''
+        const valuePreview = value === undefined ? '' : `'${value.slice(0, 12)}${value.length > 12 ? '…' : ''}'`
+        const card = action === 'fill' ? `Fill '${selector}' with ${valuePreview} on '${pageTitle}'` : `Click '${selector}' on '${pageTitle}'`
+        const id = `chrome-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        chromeActs.set(id, { state: 'pending', card, action, selector, value, pageTitle })
+        if (chromeActs.size > 20) {
+          for (const [key, entry] of chromeActs) {
+            if (entry.state !== 'pending') chromeActs.delete(key)
+            if (chromeActs.size <= 20) break
+          }
+        }
+        pendingNotifications.push({ id, kind: 'proposal', title: action === 'fill' ? 'Blueant wants to fill a form field' : 'Blueant wants to click', body: card })
+        if (pendingNotifications.length > 20) pendingNotifications.splice(0, pendingNotifications.length - 20)
+        return json({ id, queued: true })
+      } catch {
+        return json({ error: 'invalid_json' }, { status: 400 })
+      }
     }
 
     return proxyHarness(request)
@@ -916,6 +998,23 @@ interface ProposalDecision {
   output?: string
 }
 const proposalDecisions = new Map<string, ProposalDecision>()
+
+/**
+ * Chrome act ledger: blueant_chrome fill/click enqueues a proposal card, the
+ * Mac app's same Approve panel posts the decision, and approval executes the
+ * CDP action here. Nothing in this map runs without a human decision — the
+ * ChromeManager.performAct call lives only in the decide handler above.
+ */
+interface ChromeAct {
+  state: 'pending' | 'approved' | 'denied'
+  card: string
+  action: 'fill' | 'click'
+  selector: string
+  value?: string
+  pageTitle: string
+  output?: string
+}
+const chromeActs = new Map<string, ChromeAct>()
 
 /// The Blueant agent workspace: approved commands run here, not in the
 /// harness checkout.
