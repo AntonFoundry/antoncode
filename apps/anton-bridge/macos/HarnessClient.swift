@@ -115,6 +115,69 @@ final class HarnessClient {
     rpc("session.cancel", ["sessionId": sessionId]) { _ in }
   }
 
+  // MARK: - Blueant settings + model selection
+
+  /// GET /bridge/api/settings — the Blueant store (journal toggle, model preference).
+  func fetchSettings(_ completion: @escaping (Result<[String: Any], Error>) -> Void) {
+    let url = baseURL.appendingPathComponent("bridge/api/settings")
+    session.dataTask(with: url) { data, _, error in
+      if let error {
+        completion(.failure(error))
+        return
+      }
+      guard let data, let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+        completion(.failure(HarnessError(message: "settings response was not an object")))
+        return
+      }
+      completion(.success(obj))
+    }.resume()
+  }
+
+  /// PUT /bridge/api/settings — partial update of the Blueant store.
+  func putSettings(_ body: [String: Any], completion: @escaping (Result<Void, Error>) -> Void) {
+    var request = URLRequest(url: baseURL.appendingPathComponent("bridge/api/settings"))
+    request.httpMethod = "PUT"
+    request.timeoutInterval = 10
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.httpBody = (try? JSONSerialization.data(withJSONObject: body)) ?? Data()
+    session.dataTask(with: request) { _, response, error in
+      if let error {
+        completion(.failure(error))
+        return
+      }
+      guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+        completion(.failure(HarnessError(message: "settings update failed")))
+        return
+      }
+      completion(.success(()))
+    }.resume()
+  }
+
+  /// RPC session.models — the provider groups available to one session.
+  func listModels(sessionId: String, completion: @escaping (Result<[[String: Any]], Error>) -> Void) {
+    rpc("session.models", ["sessionId": sessionId]) { result in
+      switch result {
+      case .success(let payload):
+        let groups = (payload as? [String: Any])?["groups"] as? [[String: Any]] ?? []
+        completion(.success(groups))
+      case .failure(let error):
+        completion(.failure(error))
+      }
+    }
+  }
+
+  /// RPC session.selectModel — set the provider/model route on a live session.
+  func selectModel(sessionId: String, provider: String, model: String, completion: @escaping (Result<Void, Error>) -> Void) {
+    rpc("session.selectModel", ["sessionId": sessionId, "provider": provider, "model": model]) { result in
+      switch result {
+      case .success:
+        completion(.success(()))
+      case .failure(let error):
+        completion(.failure(error))
+      }
+    }
+  }
+
   /// POST /api/session.fork — copies the session; the response carries the
   /// child sessionId. The full transcript (question and answer) travels with
   /// the copy.

@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { journalEnabled } from './blueant-settings.ts'
 
 /**
  * Phase 5b — cheap-model triage: walk untriaged journal entries (byte
@@ -46,7 +47,7 @@ export function startJournalTriage(options: TriageOptions = {}): void {
   let running = false
 
   const run = async (): Promise<void> => {
-    if (running) return
+    if (running || !journalEnabled()) return
     running = true
     try {
       await triageOnce(options)
