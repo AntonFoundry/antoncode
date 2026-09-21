@@ -47,6 +47,16 @@ switch (invocation.mode) {
     runDumpConfig(invocation.profile, invocation.defaultOnly, invocation.patches)
     break
   }
+  case 'models': {
+    const { runModels } = await import('./models.ts')
+    await runModels(invocation.profile)
+    break
+  }
+  case 'anton': {
+    const { runAnton } = await import('./anton.ts')
+    process.exit(await runAnton(invocation.action))
+    break
+  }
   default:
     invocation satisfies never
     throw new Error(`dsh: unhandled invocation mode ${JSON.stringify(invocation)}`)
