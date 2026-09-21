@@ -132,6 +132,23 @@ export function SessionMaybeProvider({ children }: { children: ReactNode }) {
   )
 }
 
+/**
+ * Pinned-session binding provider: overrides the enclosing current-session
+ * bundle with one resolved BY id (`sessions.provideInfoFor`) — the seam that
+ * lets a window-manager pane show a session that is not the global current
+ * one. The outlet's render dispatch resolves the same info for its entries;
+ * this provider covers NESTED slot dispatch inside the pinned subtree.
+ */
+export function SessionPinProvider({ sessionId, children }: { sessionId: string; children: ReactNode }) {
+  const host = useHost()
+  const info = host.sessions.provideInfoFor(sessionId)
+  return (
+    <BindingContext.Provider value={info}>
+      {children}
+    </BindingContext.Provider>
+  )
+}
+
 /** SessionProvider API: render-prop body plus the no-session branch. */
 export interface SessionProviderProps {
   /** No-session body (also covers a current id whose session cannot be resolved). */

@@ -647,6 +647,21 @@ export class SessionRuntime implements ISessions {
   }
 
   /**
+   * Resolve one session's render-layer standard-props bundle BY ID — the
+   * pinning feed for panes that show a non-current session (wm session
+   * buffers scope their conversation slot through this projection). Returns
+   * the scope record's materialized bundle (stable identity per session; the
+   * record's bundle reference is replaced, not mutated, on roster changes) or
+   * the static no-session projection for unknown ids. Pure resolution — no
+   * staging, no window side effects.
+   * @param id - session id.
+   * @returns the per-session provide bundle.
+   */
+  provideInfoFor(id: string): SessionMaybeProvideInfo {
+    return this.provideInfo(id) ?? this.provideChannel.maybeInfo
+  }
+
+  /**
    * Move the stage to the list's current session: sweep teardowns deferred
    * behind the previous occupant and pull the new occupant's history window.
    * Staging IS the open signal — the window opens ⟺ the session is on stage

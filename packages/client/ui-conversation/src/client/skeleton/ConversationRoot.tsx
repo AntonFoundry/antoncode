@@ -12,10 +12,11 @@ import css from './ConversationRoot.module.css'
 /** Full props composed from the slot contract. */
 export type ConversationRootProps = ConversationSlotProps
 
-export function ConversationRoot({
-  sessionId, useSession, useSessions, useWorkspaces, useInput, useComposerBlock,
-  renderSlot, renderSlotChain, selectWorkspace, t,
-}: ConversationRootProps) {
+export function ConversationRoot(props: ConversationRootProps) {
+  const {
+    sessionId, useSession, useSessions, useWorkspaces, useInput, useComposerBlock,
+    renderSlot, renderSlotChain, selectWorkspace, t,
+  } = props
   const openState = useSession(s => s.openState)
   const composerPhase = useSession(s => s.composerPhase)
   const pending = useSession(s => s.pending) ?? []
@@ -133,8 +134,16 @@ export function ConversationRoot({
   // one disabled textarea, never a second tree. The no-workspace state wins
   // when both hold — picking a workspace is the earlier prerequisite.
   const blocked = !inert && composerBlock !== undefined
+  // The layout owner (ui-layout's ConvOwnerProps) states how many conversation
+  // panes are on screen; the bar uses it to scope its file-drop overlay. Read
+  // structurally so this package stays independent of the layout owner's
+  // type surface; absent behaves as `single` (the bar's own default).
+  const { layoutSpan } = props as ConversationRootProps & {
+    layoutSpan?: 'single' | 'multi'
+  }
   const inputBar = renderSlot('conversation.composer.bar', {
     variant: hero ? 'hero' : 'composer',
+    ...(layoutSpan !== undefined ? { layoutSpan } : {}),
     ...(inert
       ? {
         disabled: true,

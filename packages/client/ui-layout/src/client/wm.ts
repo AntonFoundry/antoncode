@@ -16,24 +16,35 @@
 export type WmDirection = 'row' | 'column'
 
 /** The buffer kinds the registry knows. */
-export type WmBufferKind = 'sidebar' | 'conversation' | 'details' | 'settings' | 'scratch' | 'files' | 'terminal' | 'file'
+export type WmBufferKind = 'sidebar' | 'conversation' | 'session' | 'details' | 'settings' | 'scratch' | 'files' | 'terminal' | 'file'
 
 /**
  * One registry entry. `path` is present only on `files` buffers (the
- * directory currently listed; navigation replaces it in place). The four
- * shell kinds are singletons — exactly one buffer of each exists, always,
- * and they cannot be killed.
+ * directory currently listed; navigation replaces it in place). The shell
+ * singletons are exactly one each, always, and cannot be killed.
  */
 export interface WmBuffer {
   id: string
   kind: WmBufferKind
   path?: string
-  /** Present on `terminal` buffers: the interactive PTY session this buffer shows. */
+  /**
+   * Present on `terminal` buffers (the interactive PTY session this buffer
+   * shows) and on `session` buffers: the session the pane is pinned to.
+   * Undefined on a session buffer means FOLLOW-CURRENT — the pane renders
+   * the global current session through the unpinned scope.
+   */
   sessionId?: string
 }
 
-/** Stable ids of the four singleton buffers (their ids ARE their kind names). */
-export const SINGLETON_BUFFER_IDS: readonly string[] = ['sidebar', 'conversation', 'details', 'settings']
+/**
+ * The follow-current session buffer's fixed id — the chat surface's
+ * singleton registry entry (always present, renders the global current
+ * session).
+ */
+export const SESSION_BUFFER_ID = 'buffer:session'
+
+/** Stable ids of the singleton buffers (sidebar / follow-current session / details / settings). */
+export const SINGLETON_BUFFER_IDS: readonly string[] = ['sidebar', SESSION_BUFFER_ID, 'details', 'settings']
 
 /** The scratch buffer's fixed id (compos's *scratch*). */
 export const SCRATCH_BUFFER_ID = 'buffer:scratch'
@@ -45,17 +56,35 @@ export const SCRATCH_BUFFER_ID = 'buffer:scratch'
  */
 export const SIDEBAR_REATTACH_WEIGHT = 0.18
 
-/** The four singleton registry entries, in shell order. */
+/** The singleton registry entries, in shell order. */
 export const SINGLETON_BUFFERS: readonly WmBuffer[] = [
   { id: 'sidebar', kind: 'sidebar' },
-  { id: 'conversation', kind: 'conversation' },
+  { id: SESSION_BUFFER_ID, kind: 'session' },
   { id: 'details', kind: 'details' },
   { id: 'settings', kind: 'settings' },
 ]
 
-/** Fresh scratch registry entry. */
+/**
+ * Fresh scratch registry entry.
+ * @returns the *scratch* registry entry.
+ */
 export function scratchBuffer(): WmBuffer {
   return { id: SCRATCH_BUFFER_ID, kind: 'scratch' }
+}
+
+/**
+ * Fresh session-buffer registry entry — one chat surface, optionally pinned
+ * to one session. `sessionId === undefined` yields the follow-current
+ * singleton ({@link SESSION_BUFFER_ID}); a defined id yields
+ * `buffer:session:<sessionId>` (deterministic, so two panes pinned to the
+ * same session share one registry entry unless the caller mints a fresh id).
+ * @param sessionId - session to pin, or undefined for follow-current.
+ * @returns the registry entry.
+ */
+export function sessionBuffer(sessionId?: string): WmBuffer {
+  return sessionId === undefined
+    ? { id: SESSION_BUFFER_ID, kind: 'session' }
+    : { id: `buffer:session:${sessionId}`, kind: 'session', sessionId }
 }
 
 /**
@@ -78,7 +107,7 @@ export function bufferRoster(buffers: readonly WmBuffer[]): WmBuffer[] {
 /**
  * Whether a buffer id is one of the unhittable singletons.
  * @param id - buffer id.
- * @returns true for sidebar/conversation/details.
+ * @returns true for sidebar/session/details.
  */
 export function isSingletonBuffer(id: string): boolean {
   return SINGLETON_BUFFER_IDS.includes(id)
@@ -92,7 +121,8 @@ export function isSingletonBuffer(id: string): boolean {
 export function bufferTitle(buffer: WmBuffer): string {
   switch (buffer.kind) {
     case 'sidebar': return 'Workspace'
-    case 'conversation': return 'Chat'
+    case 'conversation':
+    case 'session': return 'Chat'
     case 'details': return 'Context'
     case 'settings': return 'Settings'
     case 'scratch': return '*scratch*'
@@ -103,8 +133,8 @@ export function bufferTitle(buffer: WmBuffer): string {
 }
 
 /**
- * Seed/repair a registry: the three singletons always exist (persisted state
- * from before the registry, or a hand-edited one, heals to this shape).
+ * Seed/repair a registry: the singletons always exist (persisted state from
+ * before the registry, or a hand-edited one, heals to this shape).
  * @param buffers - the stored registry (possibly undefined from an old snapshot).
  * @returns the registry with every singleton present, original order preserved.
  */
@@ -114,6 +144,54 @@ export function ensureSingletons(buffers: readonly WmBuffer[] | undefined): WmBu
     if (!list.some(b => b.id === singleton.id)) list.push({ ...singleton })
   }
   return list
+}
+
+/**
+ * Rewrite the legacy `conversation` singleton into the session-buffer model:
+ * `kind:'conversation'` registry entries drop (the follow-current session
+ * singleton re-seeds in their place) and `buffer:'conversation'` leaves
+ * re-point at {@link SESSION_BUFFER_ID}. Idempotent — reconcile runs this on
+ * every load, and a migrated snapshot passes through unchanged.
+ * @param buffers - stored registry.
+ * @param tree - stored tree.
+ * @returns both halves with legacy conversation state rewritten (the inputs
+ * untouched; the output shares references when nothing needed rewriting).
+ */
+export function migrateLegacyConversation(
+  buffers: readonly WmBuffer[],
+  tree: WmNode,
+): { buffers: WmBuffer[]; tree: WmNode } {
+  let changed = false
+  const kept: WmBuffer[] = []
+  // Already migrated? Then no singleton re-seed happens (idempotency).
+  let seeded = buffers.some(b => b.id === SESSION_BUFFER_ID)
+  for (const b of buffers) {
+    if (b.kind === 'conversation') {
+      changed = true
+      // The session singleton takes the legacy entry's roster position.
+      if (!seeded) {
+        kept.push(sessionBuffer())
+        seeded = true
+      }
+      continue
+    }
+    kept.push(b)
+  }
+  if (!seeded) {
+    kept.push(sessionBuffer())
+    changed = true
+  }
+  const map = (n: WmNode): WmNode => {
+    if (n.kind === 'leaf') {
+      if (n.buffer !== 'conversation') return n
+      changed = true
+      return { ...n, buffer: SESSION_BUFFER_ID }
+    }
+    const children = n.children.map(map)
+    return children.every((c, i) => c === n.children[i]) ? n : { ...n, children }
+  }
+  const nextTree = map(tree)
+  return changed ? { buffers: kept, tree: nextTree } : { buffers: [...buffers], tree }
 }
 
 /**
@@ -181,7 +259,7 @@ export function defaultTree(): WmNode {
     dir: 'row',
     children: [
       { kind: 'leaf', id: WM_LEAF_SIDEBAR, buffer: 'sidebar' },
-      { kind: 'leaf', id: WM_LEAF_CONVERSATION, buffer: 'conversation' },
+      { kind: 'leaf', id: WM_LEAF_CONVERSATION, buffer: SESSION_BUFFER_ID },
     ],
     weights: [0.2, 0.8],
   }
@@ -423,10 +501,10 @@ export function killBuffer(
   // shell always keeps one of each registered (compos: the buffer survives,
   // the window shows something else).
   if (isSingletonBuffer(bufferId)) {
-    if (bufferId === 'conversation') return { buffers: [...state.buffers], tree: state.tree }
+    if (bufferId === SESSION_BUFFER_ID) return { buffers: [...state.buffers], tree: state.tree }
     if (bufferId === 'details' || bufferId === 'settings') {
       const map = (n: WmNode): WmNode => {
-        if (n.kind === 'leaf') return n.buffer === bufferId ? { ...n, buffer: 'conversation' } : n
+        if (n.kind === 'leaf') return n.buffer === bufferId ? { ...n, buffer: SESSION_BUFFER_ID } : n
         return { ...n, children: n.children.map(map) }
       }
       return { buffers: [...state.buffers], tree: normalizeTree(map(state.tree)) }
@@ -437,6 +515,15 @@ export function killBuffer(
       return { buffers: [...state.buffers], tree: state.tree }
     }
     return { buffers: [...state.buffers], tree: normalizeTree(removeLeaf(state.tree, sidebarLeaf)) }
+  }
+  // A pinned session buffer's kill re-homes its windows to the follow-current
+  // session singleton (the chat surface never dies; the pin does).
+  if (buffer.kind === 'session') {
+    const map = (n: WmNode): WmNode => {
+      if (n.kind === 'leaf') return n.buffer === bufferId ? { ...n, buffer: SESSION_BUFFER_ID } : n
+      return { ...n, children: n.children.map(map) }
+    }
+    return { buffers: state.buffers.filter(b => b.id !== bufferId), tree: normalizeTree(map(state.tree)) }
   }
   const buffers = ensureBuffer(
     state.buffers.filter(b => b.id !== bufferId),

@@ -476,6 +476,14 @@ export interface ComposerBarOwnerProps {
   /** Hero = empty-state centered card; composer = resident bottom bar. */
   variant: 'hero' | 'composer'
   /**
+   * Layout span of the pane hosting this bar: `single` = the only
+   * conversation pane on screen, `multi` = one pane among several. Chooses
+   * the file-drop overlay scope: a full-viewport mask when `single`, a
+   * pane-local highlight when `multi`. Optional until the layout owner
+   * supplies it; absent behaves as `single`.
+   */
+  layoutSpan?: 'single' | 'multi'
+  /**
    * A block another plugin raised for this session: the bar refuses input and
    * shows the blocker's reason as the placeholder, but — unlike `disabled` —
    * keeps the model seat live. Every block this contract has is one the user

@@ -171,6 +171,14 @@ export interface SlotRendererHost {
      * undefined while no current session resolves.
      */
     provideInfo: HostObservable<SessionMaybeProvideInfo>
+    /**
+     * Resolve one session's provide bundle BY ID (pinned-slot scoping —
+     * `RenderOpts.scopeSessionId`): stable per-session info objects; unknown
+     * ids return the static no-session projection.
+     * @param id - session id.
+     * @returns the per-session provide bundle.
+     */
+    provideInfoFor(id: string): SessionMaybeProvideInfo
   }
   /** Workspace-side standard-kit sources. */
   workspaces: {

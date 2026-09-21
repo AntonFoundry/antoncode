@@ -41,6 +41,15 @@ export interface ISessions {
   /** Atomic current-session provide projection (the renderer host's `sessions.provideInfo` feed). */
   readonly currentProvideInfo: HostObservable<SessionMaybeProvideInfo>
   /**
+   * Resolve one session's render-layer standard-props bundle by id — the
+   * pinning feed for panes scoped to a non-current session (wm session
+   * buffers). Stable per-session info; unknown ids return the no-session
+   * projection.
+   * @param id - session id.
+   * @returns the per-session provide bundle.
+   */
+  provideInfoFor(id: string): SessionMaybeProvideInfo
+  /**
    * The `session.search` result bound the wire schema fixes, exposed to
    * presentation as injected data. Not per-connection state: every transport
    * (fixture included) reports the same number.
