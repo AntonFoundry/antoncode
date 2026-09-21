@@ -199,8 +199,35 @@ function suppressShutdownError(ctx: Context, signal: AbortSignal, error: unknown
 }
 
 /**
+ * Extract the include-entry id of the loader entry whose application failed,
+ * walking the error's cause chain: the loader wraps the plugin's own error
+ * ("failed to apply loader entry mail (dsh-mail-client): …").
+ * @param error - the boot failure.
+ * @returns the failing entry id, or `undefined` when the failure names none.
+ */
+function failingEntryId(error: unknown): string | undefined {
+  const pattern = /failed to apply loader entry ([^\s(]+) \(([^)]+)\)/
+  let current: unknown = error
+  for (let depth = 0; depth < 8 && current instanceof Error; depth += 1) {
+    const match = pattern.exec(current.message)
+    if (match !== null) return match[1]
+    current = (current as Error & { cause?: unknown }).cause
+  }
+  return undefined
+}
+
+/** Cap on degraded-boot retries so a pathological profile still fails loud. */
+const MAX_DEGRADED_RETRIES = 2
+
+/**
  * Boot one profile invocation end to end and leave process lifetime to the
  * mounted plugins (or to a one-shot runner the composition mounts).
+ *
+ * Fail-soft boot: when a single loader entry throws during application, the
+ * boot retries with that entry disabled and a loud degraded-mode warning —
+ * one broken plugin costs its own features, not the whole surface. The
+ * disabled overlays join the composed overlays so live reloads and any
+ * re-composition keep the entry off; every retry names the entry it drops.
  * @param options - environment snapshot, profile name, overlays, and the booted app's own arguments.
  * @returns the settled root context and the shutdown controller.
  */
@@ -245,18 +272,34 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   ])
   // Cloned for the same insert-aliasing reason as composeLive: the boot
   // application must not mutate the objects later reloads recompose from.
-  const ctx = await boot(NAME, rootConfig, structuredClone(allPatches(composed)), (hostCtx) => {
-    app.current = hostCtx
-    // Before any config-tree entry mounts, so plugins resolve all launch-time
-    // environment values from the same immutable provenance snapshot.
-    hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
-    // The command line and bounded exit request are launcher facts available
-    // to every app plugin that injects the argument snapshot.
-    provideCmdline(hostCtx, {
-      args: options.args,
-      exit: code => void shutdown.shutdown(code),
-    })
-  })
+  // Degraded retries re-clone because each retry appends one disabled-entry
+  // overlay to composed.overlays (see allPatches).
+  let ctx: Context | undefined
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      ctx = await boot(NAME, rootConfig, structuredClone(allPatches(composed)), (hostCtx) => {
+        app.current = hostCtx
+        // Before any config-tree entry mounts, so plugins resolve all launch-time
+        // environment values from the same immutable provenance snapshot.
+        hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
+        // The command line and bounded exit request are launcher facts available
+        // to every app plugin that injects the argument snapshot.
+        provideCmdline(hostCtx, {
+          args: options.args,
+          exit: code => void shutdown.shutdown(code),
+        })
+      })
+      break
+    } catch (error) {
+      const entryId = failingEntryId(error)
+      if (entryId === undefined || attempt >= MAX_DEGRADED_RETRIES) throw error
+      const message = error instanceof Error ? error.message.split('\n')[0] : String(error)
+      console.error(`${NAME}: degraded boot — entry "${entryId}" failed (${message}); retrying without it`)
+      composed.overlays.push({ id: entryId, disabled: true })
+    }
+  }
+  // The loop only exits through break (context settled) or throw.
+  if (ctx === undefined) throw new Error(`${NAME}: boot loop exited without a context`)
   app.current = ctx
   // A surface can dispose the whole tree while boot or this post-boot watcher
   // setup is still in flight — a signal, or a fast one-shot's appExit. Loader
