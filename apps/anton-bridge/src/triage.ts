@@ -88,7 +88,9 @@ export async function triageOnce(options: TriageOptions = {}): Promise<{ kept: n
       for (const verdict of verdicts) {
         const entry = batch[verdict.index]
         if (entry === undefined || !verdict.keep || verdict.fact === undefined || verdict.fact === '') continue
-        await writeEvidence(endpoint, apiKey, `${entry.stamp} — ${verdict.fact}`)
+        const fact = `${entry.stamp} — ${verdict.fact}`
+        await writeEvidence(endpoint, apiKey, fact)
+        appendTriageLedger(fact)
         kept += 1
       }
     }
