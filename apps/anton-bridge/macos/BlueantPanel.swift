@@ -533,7 +533,8 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
     let popover = NSPopover()
     popover.contentViewController = pane
     popover.behavior = .transient
-    popover.contentSize = pane.view.fittingSize
+    // The pane owns its size (preferredContentSize set in loadView); deriving
+    // it here from fittingSize raced the pane's under-constrained rows.
     settingsPopover = popover
     popover.show(relativeTo: settingsButton.bounds, of: settingsButton, preferredEdge: .minY)
   }
@@ -659,11 +660,16 @@ init(client: HarnessClient, resolve: @escaping (@escaping (String?) -> Void) -> 
 required init?(coder: NSCoder) { fatalError("programmatic view") }
 
 override func loadView() {
+  // The popover's content view: its frame IS the content size (the root view
+  // keeps translatesAutoresizingMaskIntoConstraints, so NSPopover adopts
+  // preferredContentSize below instead of an under-constrained fittingSize —
+  // deriving the size from the row constraints once squeezed every row into
+  // whatever width the popover guessed, overlapping label and switch).
   let container = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 132))
-  container.translatesAutoresizingMaskIntoConstraints = false
 
   let journalLabel = NSTextField(labelWithString: "Journal (ambient capture)")
   journalLabel.font = .systemFont(ofSize: 12, weight: .medium)
+  journalLabel.lineBreakMode = .byTruncatingTail
   journalSwitch.controlSize = .small
   journalSwitch.target = self
   journalSwitch.action = #selector(journalToggled(_:))
@@ -678,6 +684,7 @@ override func loadView() {
   statusLine.font = .systemFont(ofSize: 10)
   statusLine.textColor = .tertiaryLabelColor
   statusLine.stringValue = "Journal writes desktop context to the daily log."
+  statusLine.lineBreakMode = .byTruncatingTail
 
   for sub in [journalLabel, journalSwitch, modelLabel, modelMenu, statusLine] {
     sub.translatesAutoresizingMaskIntoConstraints = false
@@ -687,16 +694,20 @@ override func loadView() {
     journalLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 16),
     journalLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
     journalSwitch.centerYAnchor.constraint(equalTo: journalLabel.centerYAnchor),
+    journalSwitch.leadingAnchor.constraint(greaterThanOrEqualTo: journalLabel.trailingAnchor, constant: 12),
     journalSwitch.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
-    modelLabel.topAnchor.constraint(equalTo: journalLabel.bottomAnchor, constant: 18),
+    modelLabel.topAnchor.constraint(equalTo: journalLabel.bottomAnchor, constant: 16),
     modelLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
     modelMenu.centerYAnchor.constraint(equalTo: modelLabel.centerYAnchor),
-    modelMenu.leadingAnchor.constraint(equalTo: journalSwitch.leadingAnchor),
+    modelMenu.leadingAnchor.constraint(equalTo: modelLabel.trailingAnchor, constant: 10),
     modelMenu.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
-    statusLine.topAnchor.constraint(equalTo: modelLabel.bottomAnchor, constant: 14),
+    statusLine.topAnchor.constraint(greaterThanOrEqualTo: modelMenu.bottomAnchor, constant: 10),
     statusLine.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+    statusLine.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -16),
+    statusLine.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -14),
   ])
   view = container
+  preferredContentSize = container.frame.size
   reload()
 }
 
