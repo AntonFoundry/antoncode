@@ -2,6 +2,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, 
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { ensureBlueantPreset, ensureBlueantProfileLink } from './blueant-preset.ts'
+import { startJournalCollector } from './journal.ts'
 
 const bridgePort = portFromEnv('ANTON_BRIDGE_PORT', 3742)
 const harnessPort = portFromEnv('ANTON_HARNESS_PORT', 3080)
@@ -822,6 +823,10 @@ const server = Bun.serve<BridgeSocketData>({
 
 console.info(`Anton Bridge listening at ${bridgeUrl}`)
 console.info(`Local controls: ${bridgeUrl}/bridge`)
+
+// Phase 5a: the ambient ingestion lane. Runs for the bridge's lifetime,
+// sampling desktop context into the daily journal — fail-soft by design.
+startJournalCollector({ intervalMs: Number(process.env.ANTON_JOURNAL_INTERVAL_MS) || 60_000 })
 
 /**
  * Act-tier notification inbox: blueant_notify enqueues here, the Mac app
