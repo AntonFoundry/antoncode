@@ -15,8 +15,12 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
+import { installSettingsSection } from '@deepseek-ai/dsh-settings'
 import type { ApiProxy } from './api/index.ts'
-import { createApiProxy, DEFAULT_COLD_BLANK_PROBE_MAX_BYTES } from './api-proxy.ts'
+import {
+  createApiProxy, DEFAULT_COLD_BLANK_PROBE_MAX_BYTES,
+  MODEL_CATALOG_SETTINGS_NAMESPACE, MODEL_CATALOG_SETTINGS_SCHEMA,
+} from './api-proxy.ts'
 import {
   DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
   type SessionLogCompressionLevel,
@@ -27,8 +31,8 @@ export { RpcId } from './api/rpc.ts'
 export { toFetchHandler } from './fetch/handler.ts'
 export { AbstractApiClient, InProcessApiClient } from './fetch/client.ts'
 export type { IApiClient } from './fetch/client.ts'
-export { createApiProxy } from './api-proxy.ts'
-export type { ApiProxyDefaults } from './api-proxy.ts'
+export { createApiProxy, MODEL_CATALOG_SETTINGS_NAMESPACE, MODEL_CATALOG_SETTINGS_SCHEMA } from './api-proxy.ts'
+export type { ApiProxyDefaults, ModelCatalogSettings } from './api-proxy.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -97,6 +101,14 @@ export class ApiProxyService extends Service implements ApiProxy {
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'apiProxy')
+    // Mount the catalog-visibility namespace so clients can describe and
+    // mutate it through the settings domain. The catalog builder reads the
+    // resolved section live per request, so no source tracking is needed
+    // here; both hooks stay empty by design.
+    installSettingsSection(ctx, MODEL_CATALOG_SETTINGS_NAMESPACE, MODEL_CATALOG_SETTINGS_SCHEMA, { disabledProviders: [] }, {
+      setSource: () => {},
+      onChange: () => {},
+    })
     const api = createApiProxy(ctx, {
       defaultModelSelection: () => ctx.agentDefaultModel.currentSelection(),
       saveDefaultModelSelection: selection => ctx.agentDefaultModel.saveSelection(selection),

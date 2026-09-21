@@ -19,6 +19,9 @@ import { getPath, hasPath, nodeAtPath, rehydrateSchema } from '@deepseek-ai/dsh-
  */
 const PROBE_ROUTE = '\u0000probe'
 
+/** The host gateway's catalog-visibility namespace (`ModelCatalogSettings`). */
+export const MODEL_CATALOG_NAMESPACE = 'model-catalog'
+
 /** One provider row the page renders. */
 export interface ProviderRow {
   /** The directory entry (route id, display name, settings address, live state). */
@@ -31,6 +34,8 @@ export interface ProviderRow {
   apiKeyEnv: string | undefined
   /** Credential state for {@link apiKeyEnv}, once described. */
   credential: CredentialView | undefined
+  /** Whether the provider's models appear in the session model catalog. */
+  enabled: boolean
 }
 
 /** Page snapshot. */
@@ -95,6 +100,19 @@ function apiKeyEnvOf(namespace: SettingsNamespaceView | undefined, path: readonl
   return typeof ref === 'string' && ref.length > 0 ? ref : undefined
 }
 
+/**
+ * The provider ids the catalog-visibility section hides. The schema resolves
+ * the stored document to `{ disabledProviders: string[] }`, so a well-formed
+ * list is the only shape; an unmounted namespace means every provider shows.
+ * @param namespace - the `model-catalog` namespace view, when described.
+ * @returns the disabled provider route ids.
+ */
+export function disabledProvidersOf(namespace: SettingsNamespaceView | undefined): readonly string[] {
+  if (namespace === undefined) return []
+  const list = getPath(namespace.value, ['disabledProviders'])
+  return Array.isArray(list) ? list.filter((id): id is string => typeof id === 'string') : []
+}
+
 /** The models settings page controller (one per settings surface). */
 export class ModelsSettingsStore {
   /** The snapshot the section renders from (uSES-safe store). */
@@ -141,6 +159,7 @@ export class ModelsSettingsStore {
       return
     }
     const namespaces = new Map(views.map(view => [view.ns, view]))
+    const disabled = new Set(disabledProvidersOf(namespaces.get(MODEL_CATALOG_NAMESPACE)))
     const rows: ProviderRow[] = providers.map((entry) => {
       const namespace = namespaces.get(entry.settingsNs)
       const configured = namespace !== undefined
@@ -155,6 +174,7 @@ export class ModelsSettingsStore {
         removable,
         apiKeyEnv: apiKeyEnvOf(namespace, entry.settingsPath),
         credential: undefined,
+        enabled: !disabled.has(entry.provider),
       }
     })
     const refs = [...new Set(rows.flatMap(row => row.apiKeyEnv === undefined ? [] : [row.apiKeyEnv]))]

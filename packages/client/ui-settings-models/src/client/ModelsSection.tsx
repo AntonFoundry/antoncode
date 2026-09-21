@@ -18,7 +18,9 @@ import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
 import { Button, IconPlusOutline16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-web-react'
 import { CustomProviderCard } from './CustomProviderCard.tsx'
-import { deriveKeyRef, messageOf, protocolChoices, providerUsable } from './store.ts'
+import {
+  deriveKeyRef, disabledProvidersOf, messageOf, MODEL_CATALOG_NAMESPACE, protocolChoices, providerUsable,
+} from './store.ts'
 import type { ModelsSettingsState, ModelsSettingsStore, ProviderRow } from './store.ts'
 import { ProviderEditor, type ProviderEditorProps } from './ProviderEditor.tsx'
 import type { en } from './locales.ts'
@@ -117,6 +119,43 @@ export async function removeProviderProfile(
 }
 
 /**
+ * Set one provider's catalog visibility: membership in the gateway's
+ * `model-catalog` `disabledProviders` list. The write carries the described
+ * revision so a concurrent edit elsewhere refuses instead of clobbering; the
+ * snapshot is read at call time, so two quick toggles compose rather than
+ * overwrite each other's list.
+ * @param api - the settings wire face.
+ * @param controller - the page store to refresh.
+ * @param provider - the provider route id to enable or disable.
+ * @param enabled - whether the provider's models should appear in the catalog.
+ * @returns the failure message, or undefined once the write and reload landed.
+ */
+export async function setProviderEnabled(
+  api: Pick<IApiClient, 'settings'>,
+  controller: ModelsSettingsStore,
+  provider: string,
+  enabled: boolean,
+): Promise<string | undefined> {
+  const catalog = controller.store.getSnapshot().namespaces.get(MODEL_CATALOG_NAMESPACE)
+  const current = [...disabledProvidersOf(catalog)]
+  const next = enabled
+    ? current.filter(id => id !== provider)
+    : current.includes(provider) ? current : [...current, provider]
+  try {
+    const response = await api.settings.mutate({
+      ns: MODEL_CATALOG_NAMESPACE,
+      ops: [{ op: 'set', path: ['disabledProviders'], value: next }],
+      ...(catalog === undefined ? {} : { expectedRevision: catalog.revision }),
+    })
+    if (!response.result.ok) return response.result.error.message
+  } catch (error) {
+    return messageOf(error)
+  }
+  await controller.load()
+  return undefined
+}
+
+/**
  * Whether a whole-section provider still needs its first key: an unconfigured
  * credential opens the setup card instead of showing a row. This is the
  * first-run posture alone — a user who can already reach some provider gets an
@@ -184,6 +223,8 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
   const [deleteFailure, setDeleteFailure] = useState<string | undefined>(undefined)
   const [savedTarget, setSavedTarget] = useState<ProviderIdentity | undefined>(undefined)
   const [declaring, setDeclaring] = useState(false)
+  const [toggling, setToggling] = useState<ReadonlySet<string>>(() => new Set())
+  const [toggleFailure, setToggleFailure] = useState<string | undefined>(undefined)
   const [dismissedSetup, setDismissedSetup] = useState<ReadonlySet<string>>(() => new Set())
 
   const announceSaved = (target: ProviderIdentity): void => {
@@ -191,6 +232,25 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
     // notice reads its name from: an apply can rename the route, and the
     // target captured when the card opened still carries the old name.
     void controller.load().then(() => { setSavedTarget(target) })
+  }
+
+  /** Flip one provider's catalog visibility through the gateway namespace. */
+  const toggleProvider = (target: EditorTarget): void => {
+    const provider = target.provider
+    setToggleFailure(undefined)
+    setToggling(previous => new Set([...previous, provider]))
+    void setProviderEnabled(api, controller, provider, !controller.store.getSnapshot().rows
+      .find(row => row.entry.provider === provider)?.enabled)
+      .then((failure) => {
+        if (failure !== undefined) setToggleFailure(providerCopy(t('toggleFailed'), target))
+      })
+      .finally(() => {
+        setToggling((previous) => {
+          const next = new Set(previous)
+          next.delete(provider)
+          return next
+        })
+      })
   }
 
   const closeEditor = (changed: boolean, target: ProviderIdentity): void => {
@@ -326,7 +386,9 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
             <li key={row.entry.provider} className={styles['rowCard']}>
               <div className={styles['rowHead']}>
                 <span className={styles['rowIdentity']}>
-                  <span className={styles['rowName']}>{row.entry.displayName}</span>
+                  <span
+                    className={`${styles['rowName']} ${row.enabled ? '' : styles['rowNameDisabled']}`}
+                  >{row.entry.displayName}</span>
                   {/* Only the adapter can tell a hand-declared route from a
                       shipped one it also has a stored profile for, so the tag
                       follows its answer and stays off when it gives none. */}
@@ -354,6 +416,18 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
                       : null}
                 </span>
                 <span className={styles['rowActions']}>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={row.enabled}
+                    aria-label={providerCopy(row.enabled ? t('disableProvider') : t('enableProvider'), target)}
+                    title={providerCopy(row.enabled ? t('disableProvider') : t('enableProvider'), target)}
+                    disabled={!state.writable || toggling.has(row.entry.provider)}
+                    className={styles['providerSwitch']}
+                    onClick={() => { toggleProvider(target) }}
+                  >
+                    <span className={styles['providerSwitchKnob']} />
+                  </button>
                   <button
                     type="button"
                     className={styles['secondaryButton']}
@@ -403,6 +477,9 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
           )
         })}
       </ul>
+      {toggleFailure === undefined
+        ? null
+        : <p className={styles['error']} role="alert">{toggleFailure}</p>}
       <div className={styles['addBlock']}>
         {addTarget !== undefined && addNamespace !== undefined
           ? (

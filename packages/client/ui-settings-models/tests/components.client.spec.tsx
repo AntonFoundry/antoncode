@@ -309,6 +309,7 @@ describe('ModelsSection', () => {
       removable: false,
       apiKeyEnv: 'X',
       credential,
+      enabled: true,
     })
     expect(needsSetup(row(undefined), false)).toBe(true)
     expect(needsSetup(row({ configured: true, writable: true }), false)).toBe(false)
@@ -1330,6 +1331,87 @@ describe('ModelsSection', () => {
       { settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'] },
     )
     expect(failure).toBe('connection lost')
+  })
+})
+
+describe('catalog visibility switch', () => {
+  const MODEL_CATALOG_VIEW: SettingsNamespaceView = {
+    ns: 'model-catalog',
+    schema: {},
+    value: { disabledProviders: ['openai'] },
+    applies: 'live',
+    secrets: [],
+    revision: 7,
+  }
+
+  function scriptedWithCatalog(overrides: Parameters<typeof scriptedFace>[0] = {}) {
+    const scripted = scriptedFace(overrides)
+    scripted.face.settings.describe.mockImplementation(() => Promise.resolve(ok({
+      writable: true,
+      hasDocument: true,
+      namespaces: [...wireNamespaces(), MODEL_CATALOG_VIEW],
+    })))
+    return scripted
+  }
+
+  it('renders per-row switches from the model-catalog join and toggles membership with the revision', async () => {
+    const { mutate } = await mountFace(scriptedWithCatalog())
+    const deepseek = screen.getByRole('switch', { name: deepSeekCopy(en.disableProvider) })
+    expect(deepseek.getAttribute('aria-checked')).toBe('true')
+    const openai = screen.getByRole('switch', { name: openaiCopy(en.enableProvider) })
+    expect(openai.getAttribute('aria-checked')).toBe('false')
+
+    // Enabling openai removes it from the disabled list.
+    fireEvent.click(openai)
+    await waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({
+        ns: 'model-catalog',
+        ops: [{ op: 'set', path: ['disabledProviders'], value: [] }],
+        expectedRevision: 7,
+      })
+    })
+
+    // Disabling DeepSeek extends the described list (the scripted describe
+    // still reports openai disabled, so the snapshot composes rather than
+    // overwrites).
+    fireEvent.click(screen.getByRole('switch', { name: deepSeekCopy(en.disableProvider) }))
+    await waitFor(() => {
+      expect(mutate).toHaveBeenLastCalledWith({
+        ns: 'model-catalog',
+        ops: [{
+          op: 'set',
+          path: ['disabledProviders'],
+          value: ['openai', 'deepseek-official'],
+        }],
+        expectedRevision: 7,
+      })
+    })
+  })
+
+  it('announces a refused write instead of failing the toggle silently', async () => {
+    await mountFace(scriptedWithCatalog({
+      mutate: vi.fn(() => Promise.resolve(fail('read-only document'))),
+    }))
+    fireEvent.click(screen.getByRole('switch', { name: openaiCopy(en.enableProvider) }))
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toBe(openaiCopy(en.toggleFailed))
+    // The switch returns to usable once the failed write settles.
+    await waitFor(() => {
+      expect((screen.getByRole('switch', { name: openaiCopy(en.enableProvider) }) as HTMLButtonElement).disabled)
+        .toBe(false)
+    })
+  })
+
+  it('locks the switch on a read-only settings document', async () => {
+    const scripted = scriptedWithCatalog()
+    scripted.face.settings.describe.mockImplementation(() => Promise.resolve(ok({
+      writable: false,
+      hasDocument: true,
+      namespaces: [...wireNamespaces(), MODEL_CATALOG_VIEW],
+    })))
+    await mountFace(scripted)
+    expect((screen.getByRole('switch', { name: deepSeekCopy(en.disableProvider) }) as HTMLButtonElement).disabled)
+      .toBe(true)
   })
 })
 

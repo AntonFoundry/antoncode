@@ -18,11 +18,13 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 import SessionStore from '@deepseek-ai/dsh-session'
 import type { SessionId } from '@deepseek-ai/dsh-session'
+import { SettingsProvider } from '@deepseek-ai/dsh-settings'
+import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import type { RpcRequest } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
 import { RpcId } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
-import { createApiProxy } from '../src/api-proxy.ts'
+import { createApiProxy, MODEL_CATALOG_SETTINGS_NAMESPACE, MODEL_CATALOG_SETTINGS_SCHEMA } from '../src/api-proxy.ts'
 
 let nextRpc = 1
 function request<P>(payload: P): RpcRequest<P> {
@@ -127,6 +129,24 @@ function registerTextOnly(ctx: Context): void {
       return Promise.resolve({ provider, id: model, name: model, inputModalities: ['text'] })
     }
   }('Text Only', []))
+}
+
+/** The smallest real settings provider: one in-memory document, always writable. */
+class MemorySettings extends SettingsProvider {
+  doc: Record<string, unknown> = {}
+
+  get writable(): boolean {
+    return true
+  }
+
+  protected load(): Promise<Record<string, unknown>> {
+    return Promise.resolve(structuredClone(this.doc))
+  }
+
+  protected persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+    this.doc = { ...this.doc, [ns]: structuredClone(section) }
+    return Promise.resolve()
+  }
 }
 
 describe('Web session model selection', () => {
@@ -502,6 +522,37 @@ describe('Web session model selection', () => {
     expect(catalog.current).toEqual({ provider: 'deleted-gateway', model: 'deleted-model' })
     expect(catalog.groups.flatMap(group => group.models.map(model => `${group.id}/${model.id}`)))
       .not.toContain('deleted-gateway/deleted-model')
+    await ctx.fiber.dispose()
+  })
+
+  it('omits user-disabled providers from both catalog surfaces while their selection keeps serving', async () => {
+    const { ctx, sessionId } = await harness({ provider: 'broken', model: 'quota-model' })
+    const settingsFiber = ctx.plugin(MemorySettings)
+    await settingsFiber.await()
+    ctx.settings.register(MODEL_CATALOG_SETTINGS_NAMESPACE, MODEL_CATALOG_SETTINGS_SCHEMA)
+    await ctx.settings.replace(MODEL_CATALOG_SETTINGS_NAMESPACE, { disabledProviders: ['broken', 'empty'] })
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+
+    const filtered = expectValue(await api.sessions.models(request({ sessionId })))
+    expect(filtered.groups.map(group => group.id)).toEqual(['deepseek-official'])
+    // A disabled provider rides neither groups nor failures.
+    expect(filtered.failures.map(failure => failure.id)).toEqual(['metadata-broken', 'duplicate'])
+    // The disabled route's logged selection stays current and routable —
+    // catalog membership is advisory, and disabling shortens the picker
+    // without stranding the session.
+    expect(filtered.current).toEqual({ provider: 'broken', model: 'quota-model' })
+    expect(filtered.routable).toBe(true)
+    // The host-scoped catalog shares the one filter.
+    expect(expectValue(await api.llm.models(request({}))).groups.map(group => group.id))
+      .toEqual(['deepseek-official'])
+
+    // Re-enabling restores the provider without a restart.
+    await ctx.settings.replace(MODEL_CATALOG_SETTINGS_NAMESPACE, { disabledProviders: [] })
+    expect(expectValue(await api.sessions.models(request({ sessionId }))).failures.map(failure => failure.id))
+      .toEqual(['broken', 'metadata-broken', 'duplicate'])
     await ctx.fiber.dispose()
   })
 })
