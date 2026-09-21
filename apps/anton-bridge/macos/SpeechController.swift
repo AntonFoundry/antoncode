@@ -34,8 +34,8 @@ final class SpeechController: NSObject {
 
   private static let autoStopInterval: TimeInterval = 55
 
-  // Whisper accumulation state (primary engine path).
-  private var whisper: WhisperEngine?
+  // Active transcription engine (whisper or parakeet) + accumulation state.
+  private var engine: TranscriptionEngine?
   private var whisperSamples: [Float] = []
   private var whisperConverter: AVAudioConverter?
   private var lastPartialSampleCount = 0
@@ -81,9 +81,8 @@ final class SpeechController: NSObject {
       return
     }
 
-    if whisper == nil { whisper = WhisperEngine.shared }
-    if let engine = whisper, engine.available {
-      NSLog("Blueant STT engine: whisper.cpp (Metal)")
+    if engine == nil { engine = Self.makeEngine() }
+    if let engine, engine.available {
       startWhisper(engine)
     } else {
       NSLog("Blueant STT engine: SFSpeechRecognizer fallback")
@@ -91,8 +90,8 @@ final class SpeechController: NSObject {
     }
   }
 
-  /// Primary path: whisper.cpp transcription over an accumulated 16 kHz buffer.
-  private func startWhisper(_ engine: WhisperEngine) {
+  /// Primary path: engine transcription over an accumulated 16 kHz buffer.
+  private func startWhisper(_ engine: TranscriptionEngine) {
     guard let audio = buildAudioEngine(tapHandler: { [weak self] buffer, _ in
       guard let self else { return }
       self.appendWhisperSamples(from: buffer)
@@ -190,10 +189,10 @@ final class SpeechController: NSObject {
     // Whisper path: re-transcribe the full buffer as the final result. The
     // generation bump inside transcribe() drops any in-flight partial job.
     stopAudioTap()
-    guard let whisper, awaitingFinal == false else { return }
+    guard let engine, awaitingFinal == false else { return }
     awaitingFinal = true
     let samples = whisperSamples
-    whisper.transcribe(samples) { [weak self] text in
+    engine.transcribe(samples) { [weak self] text in
       self?.finish(withFinal: text)
     }
   }
@@ -201,7 +200,7 @@ final class SpeechController: NSObject {
   /// Tears everything down without reporting a final transcript (panel hid).
   func abort() {
     guard isListening else { return }
-    whisper?.cancelAll()
+    engine?.cancelAll()
     recognitionTask?.cancel()
     teardown()
   }
@@ -272,11 +271,11 @@ final class SpeechController: NSObject {
     guard isListening, !awaitingFinal, !transcribing else { return }
     guard whisperSamples.count >= Self.minimumPartialSamples,
           whisperSamples.count - lastPartialSampleCount >= Self.partialIntervalSamples else { return }
-    guard let whisper else { return }
+    guard let engine else { return }
     transcribing = true
     lastPartialSampleCount = whisperSamples.count
     let samples = whisperSamples
-    whisper.transcribe(samples) { [weak self] text in
+    engine.transcribe(samples) { [weak self] text in
       guard let self else { return }
       transcribing = false
       // A stop() re-transcription may have superseded this partial.
@@ -321,11 +320,34 @@ final class SpeechController: NSObject {
   }
 
   /// Converter from a native input format to the 16 kHz mono Float32 format
-  /// whisper.cpp expects; created once per session from the tap format.
+  /// the engines expect; created once per session from the tap format.
   private static func makeConverter(from format: AVAudioFormat) -> AVAudioConverter? {
     guard let target = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false) else {
       return nil
     }
     return AVAudioConverter(from: format, to: target)
   }
+
+  /// The engine contract both C++ wrappers satisfy; selection happens once
+  /// per session at start().
+  private static func makeEngine() -> TranscriptionEngine {
+    let parakeet = ParakeetEngine()
+    if parakeet.available {
+      NSLog("Blueant STT engine: parakeet TDT (native whisper.cpp)")
+      return parakeet
+    }
+    return WhisperEngine.shared
+  }
 }
+
+/// Shared contract of the vendored transcription engines. The wake-word
+/// listener stays on `WhisperEngine.shared` regardless of dictation engine:
+/// its lifetime is independent of dictation sessions.
+private protocol TranscriptionEngine: AnyObject {
+  var available: Bool { get }
+  func cancelAll()
+  func transcribe(_ samples: [Float], completion: @escaping (String) -> Void)
+}
+
+extension WhisperEngine: TranscriptionEngine {}
+extension ParakeetEngine: TranscriptionEngine {}

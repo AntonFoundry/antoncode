@@ -14,6 +14,10 @@ final class WakeWordListener {
   /// (settings), the rest stay fixed to keep the surface honest.
   struct Config {
     var keyword = "blueant"
+    /// ASR renders the proper noun inconsistently (measured: "Bluint" on
+    /// whisper small, "Bluent" on parakeet TDT); any variant confirms the
+    /// wake. Derived from the keyword, not user-configured.
+    var keywordVariants: [String] { WakeWordListener.variants(of: keyword) }
     /// dB above the adaptive noise floor required for speech onset.
     var onsetMarginDB: Float = 9
     /// Absolute floor: rooms quieter than this never trigger.
@@ -48,6 +52,17 @@ final class WakeWordListener {
   private var desiredOn = false
   private var suppressed = false
   private(set) var active = false
+
+  /// Variants a decoder plausibly emits for the keyword: the joined form,
+  /// the two-word split, and the vowel-swaps both shipped engines produce.
+  static func variants(of keyword: String) -> [String] {
+    let lowered = keyword.lowercased()
+    var result = Set([lowered, lowered.replacingOccurrences(of: " ", with: "")])
+    if lowered.contains(" ") { result.insert(lowered.replacingOccurrences(of: " ", with: "")) }
+    result.insert(lowered.replacingOccurrences(of: "ea", with: "i"))
+    result.insert(lowered.replacingOccurrences(of: "ea", with: "e"))
+    return Array(result.filter { $0.count >= 4 })
+  }
 
   init(whisper: WhisperEngine, onWake: @escaping () -> Void) {
     self.whisper = whisper
@@ -167,7 +182,7 @@ final class WakeWordListener {
       guard let self else { return }
       self.decoding = false
       let normalized = text.lowercased()
-      guard normalized.contains(self.config.keyword) else { return }
+      guard self.config.keywordVariants.contains(where: { normalized.contains($0) }) else { return }
       self.lastWake = Date()
       NSLog("Blueant wake word: triggered")
       self.onWake()
