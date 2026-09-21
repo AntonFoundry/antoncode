@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'node:path'
 import { ensureBlueantPreset, ensureBlueantProfileLink } from './blueant-preset.ts'
 import { startJournalCollector } from './journal.ts'
 import { startJournalTriage } from './triage.ts'
+import { getBlueantSettings, updateBlueantSettings } from './blueant-settings.ts'
 
 const bridgePort = portFromEnv('ANTON_BRIDGE_PORT', 3742)
 const harnessPort = portFromEnv('ANTON_HARNESS_PORT', 3080)
@@ -647,6 +648,26 @@ const server = Bun.serve<BridgeSocketData>({
 
     if (pathname === '/bridge' || pathname === '/bridge/') return controlPage()
     if (pathname === '/bridge/api/status' && request.method === 'GET') return json(await status())
+    if (pathname === '/bridge/api/settings' && request.method === 'GET') {
+      if (!sameOrigin(request)) return json({ error: 'cross_origin_request_rejected' }, { status: 403 })
+      return json(getBlueantSettings())
+    }
+    if (pathname === '/bridge/api/settings' && request.method === 'PUT') {
+      if (!sameOrigin(request)) return json({ error: 'cross_origin_request_rejected' }, { status: 403 })
+      try {
+        const payload: unknown = await request.json()
+        const body = typeof payload === 'object' && payload !== null ? payload as { journalEnabled?: unknown; model?: unknown } : {}
+        const patch = {
+          journalEnabled: typeof body.journalEnabled === 'boolean' ? body.journalEnabled : undefined,
+          model: body.model === null || (typeof body.model === 'object' && body.model !== null
+            && typeof (body.model as { provider?: unknown }).provider === 'string'
+            && typeof (body.model as { model?: unknown }).model === 'string') ? body.model as never : undefined,
+        }
+        return json(updateBlueantSettings(patch))
+      } catch (error) {
+        return json({ error: error instanceof Error ? error.message : 'unable_to_update_settings' }, { status: 400 })
+      }
+    }
     if (pathname === '/bridge/api/recovery/state' && request.method === 'GET') {
       if (!sameOrigin(request)) return json({ error: 'cross_origin_request_rejected' }, { status: 403 })
       return json({ profile, repair: repairStatus })

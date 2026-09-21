@@ -1,6 +1,7 @@
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { journalEnabled } from './blueant-settings.ts'
 
 /**
  * Phase 5a — the journal collector: the always-on bridge periodically
@@ -51,7 +52,7 @@ export function startJournalCollector(options: JournalCollectorOptions = {}): vo
   let ticking = false
 
   const tick = async (): Promise<void> => {
-    if (ticking) return
+    if (ticking || !journalEnabled()) return
     ticking = true
     try {
       const sample = await sampleDesktop()

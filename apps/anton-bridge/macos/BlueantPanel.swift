@@ -30,6 +30,8 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
   private static let expandedHeight: CGFloat = 420
   // Voice mode (Phase 3): push-to-talk via the waveform tile and panel-local ⌥Space.
   private let micButton = MicButton()
+  // Settings (gear at the entry line's right): journal toggle + model pick.
+  private let settingsButton = NSButton()
   private let speech = SpeechController()
   private var voiceKeyMonitor: Any?
   private var micDownAt: Date?
@@ -130,6 +132,15 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
     micButton.onUp = { [weak self] in self?.micUp() }
     hud.addSubview(micButton)
 
+    settingsButton.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "Settings")
+    settingsButton.isBordered = false
+    settingsButton.bezelStyle = .accessoryBar
+    settingsButton.contentTintColor = .tertiaryLabelColor
+    settingsButton.toolTip = "Settings (⌘,)"
+    settingsButton.target = self
+    settingsButton.action = #selector(openSettings(_:))
+    hud.addSubview(settingsButton)
+
     layoutContent(in: NSRect(x: 0, y: 0, width: 640, height: BlueantPanel.compactHeight))
     hud.postsFrameChangedNotifications = true
     NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: hud, queue: .main) { [weak self] _ in
@@ -143,6 +154,7 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
     let height = bounds.height
     let micWidth: CGFloat = 30
     micButton.frame = NSRect(x: width - micWidth - 12, y: height - 46, width: micWidth, height: 26)
+    settingsButton.frame = NSRect(x: width - micWidth - 38, y: height - 44, width: 24, height: 22)
     entryField.frame = NSRect(x: 40, y: height - 44, width: width - 56 - micWidth - 4, height: 24)
     promptMark.frame = NSRect(x: 16, y: height - 44, width: 16, height: 22)
     divider.frame = NSRect(x: 16, y: height - 52, width: width - 32, height: 4)
@@ -230,6 +242,9 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
     case "p":
       promote(nil)
       return true
+    case ",":
+      openSettings(nil)
+      return true
     default:
       return super.performKeyEquivalent(with: event)
     }
@@ -241,7 +256,8 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
 
   // MARK: Voice mode (push-to-talk)
 
-  /// The waveform tile doubles as hold-to-talk and toggle:
+
+/// The waveform tile doubles as hold-to-talk and toggle:
   /// - mouseDown starts; mouseUp stops if held ≥250 ms (hold-to-talk);
   /// - a click shorter than 250 ms toggles hands-free mode (click to start,
   ///   click again to stop).
@@ -425,7 +441,10 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
         switch result {
         case .success(let sessionId):
           UserDefaults.standard.set(sessionId, forKey: key)
-          proceed(sessionId)
+          self.applyStoredModel(to: sessionId) { applied in
+            _ = applied // a failed preference application never blocks the ask
+            proceed(sessionId)
+          }
         case .failure(let error):
           self.renderAnswer(status: "Blueant could not open a session: \(error.localizedDescription)")
         }
@@ -503,6 +522,39 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
   /// session list. Cancels any in-flight stream first; the fork carries the
   /// full transcript, so the answer seeds the coding session without
   /// copy-paste.
+  /// ⌘, / gear: the settings popover — journal switch + model picker.
+  @objc private func openSettings(_ sender: Any?) {
+    let pane = BlueantSettingsPane(client: client, resolve: { [weak self] done in
+      self?.resolveSession(key: Self.sessionPrefix + Self.todayStamp()) { sessionId in
+        done(sessionId.isEmpty ? nil : sessionId)
+      }
+    })
+    let popover = NSPopover()
+    popover.contentViewController = pane
+    popover.behavior = .transient
+    popover.contentSize = pane.view.fittingSize
+    settingsPopover = popover
+    popover.show(relativeTo: settingsButton.bounds, of: settingsButton, preferredEdge: .minY)
+  }
+
+  /// Apply the stored model preference to a session (no-op when unset).
+  private func applyStoredModel(to sessionId: String, then completion: @escaping (Bool) -> Void) {
+    client.fetchSettings { result in
+      DispatchQueue.main.async {
+        guard case .success(let settings) = result,
+              let model = settings["model"] as? [String: Any],
+              let provider = model["provider"] as? String,
+              let name = model["model"] as? String else {
+          completion(false)
+          return
+        }
+        self.client.selectModel(sessionId: sessionId, provider: provider, model: name) { selected in
+          DispatchQueue.main.async { completion(selected.isSuccess) }
+        }
+      }
+    }
+  }
+
   @objc func promote(_ sender: Any?) {
     let todayKey = Self.sessionPrefix + Self.todayStamp()
     guard let sessionId = UserDefaults.standard.string(forKey: todayKey), !sessionId.isEmpty,
@@ -564,6 +616,168 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
     formatter.dateFormat = "yyyy-MM-dd"
     return formatter.string(from: Date())
   }
+}
+
+
+// Convenience for the fire-and-forget paths above.
+private extension Result {
+var isSuccess: Bool {
+  if case .success = self { return true }
+  return false
+}
+}
+
+/// The settings popover content: a journal enable/disable switch (the same
+/// switch idiom as the web GUI's toggles) and a model picker fed by the
+/// harness's live session.models catalog. Writes go to the bridge settings
+/// store; a model pick also selects on the live session for immediate
+/// effect, and the stored preference rides every new day's session.
+final class BlueantSettingsPane: NSViewController {
+private let client: HarnessClient
+/// Resolves today's session id, creating the session when none exists —
+/// session.models needs a live session to enumerate its catalog.
+private let resolve: (@escaping (String?) -> Void) -> Void
+private let journalSwitch = NSSwitch()
+private let modelMenu = NSPopUpButton()
+private let statusLine = NSTextField(labelWithString: "")
+
+init(client: HarnessClient, resolve: @escaping (@escaping (String?) -> Void) -> Void) {
+  self.client = client
+  self.resolve = resolve
+  super.init(nibName: nil, bundle: nil)
+}
+
+@available(*, unavailable)
+required init?(coder: NSCoder) { fatalError("programmatic view") }
+
+override func loadView() {
+  let container = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 132))
+  container.translatesAutoresizingMaskIntoConstraints = false
+
+  let journalLabel = NSTextField(labelWithString: "Journal (ambient capture)")
+  journalLabel.font = .systemFont(ofSize: 12, weight: .medium)
+  journalSwitch.controlSize = .small
+  journalSwitch.target = self
+  journalSwitch.action = #selector(journalToggled(_:))
+
+  let modelLabel = NSTextField(labelWithString: "Model")
+  modelLabel.font = .systemFont(ofSize: 12, weight: .medium)
+  modelMenu.controlSize = .small
+  modelMenu.addItem(withTitle: "Loading…")
+  modelMenu.target = self
+  modelMenu.action = #selector(modelPicked(_:))
+
+  statusLine.font = .systemFont(ofSize: 10)
+  statusLine.textColor = .tertiaryLabelColor
+  statusLine.stringValue = "Journal writes desktop context to the daily log."
+
+  for sub in [journalLabel, journalSwitch, modelLabel, modelMenu, statusLine] {
+    sub.translatesAutoresizingMaskIntoConstraints = false
+    container.addSubview(sub)
+  }
+  NSLayoutConstraint.activate([
+    journalLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 16),
+    journalLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+    journalSwitch.centerYAnchor.constraint(equalTo: journalLabel.centerYAnchor),
+    journalSwitch.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+    modelLabel.topAnchor.constraint(equalTo: journalLabel.bottomAnchor, constant: 18),
+    modelLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+    modelMenu.centerYAnchor.constraint(equalTo: modelLabel.centerYAnchor),
+    modelMenu.leadingAnchor.constraint(equalTo: journalSwitch.leadingAnchor),
+    modelMenu.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+    statusLine.topAnchor.constraint(equalTo: modelLabel.bottomAnchor, constant: 14),
+    statusLine.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+  ])
+  view = container
+  reload()
+}
+
+private func reload() {
+  client.fetchSettings { [weak self] result in
+    DispatchQueue.main.async {
+      guard let self, self.isViewLoaded else { return }
+      guard case .success(let settings) = result else {
+        self.statusLine.stringValue = "Settings unavailable — bridge not answering."
+        return
+      }
+      self.journalSwitch.state = (settings["journalEnabled"] as? Bool ?? true) ? .on : .off
+      self.loadModels(stored: settings["model"] as? [String: Any])
+    }
+  }
+}
+
+private func loadModels(stored: [String: Any]?) {
+  resolve { [weak self] sessionId in
+    guard let self else { return }
+    self.resolvedSessionHolder = sessionId
+    guard let sessionId, !sessionId.isEmpty else {
+      DispatchQueue.main.async {
+        self.modelMenu.removeAllItems()
+        self.modelMenu.addItem(withTitle: "Default (no session yet)")
+      }
+      return
+    }
+    self.client.listModels(sessionId: sessionId) { [weak self] result in
+      DispatchQueue.main.async {
+        guard let self, self.isViewLoaded else { return }
+        self.modelMenu.removeAllItems()
+        self.modelMenu.addItem(withTitle: "Default")
+        guard case .success(let groups) = result else {
+          self.modelMenu.addItem(withTitle: "Models unavailable")
+          return
+        }
+        var selected: Int = 0
+        let storedProvider = stored?["provider"] as? String
+        let storedModel = stored?["model"] as? String
+        for group in groups {
+          let provider = group["id"] as? String ?? "unknown"
+          let providerName = group["name"] as? String ?? provider
+          self.providerIds[providerName] = provider
+          let models = group["models"] as? [[String: Any]] ?? []
+          for entry in models {
+            let id = entry["id"] as? String ?? ""
+            guard !id.isEmpty else { continue }
+            self.modelMenu.addItem(withTitle: "\(providerName) — \(id)")
+            if provider == storedProvider && id == storedModel {
+              selected = self.modelMenu.numberOfItems - 1
+            }
+          }
+        }
+        self.modelMenu.selectItem(at: selected)
+      }
+    }
+  }
+}
+
+@objc private func journalToggled(_ sender: NSSwitch) {
+  let enabled = sender.state == .on
+  statusLine.stringValue = enabled ? "Journal writes desktop context to the daily log."
+                                   : "Journal paused — no new capture or triage."
+  client.putSettings(["journalEnabled": enabled]) { [weak self] _ in
+    DispatchQueue.main.async { self?.reload() }
+  }
+}
+
+@objc private func modelPicked(_ sender: NSPopUpButton) {
+  // Resolve the title back to provider/model ids stored per-item earlier.
+  guard let item = sender.selectedItem else { return }
+  let title = item.title
+  if title == "Default" {
+    client.putSettings(["model": NSNull()]) { _ in }
+    return
+  }
+  guard let sessionIdProvider = resolvedSessionId else { return }
+  let parts = title.components(separatedBy: " — ")
+  guard parts.count == 2 else { return }
+  let (providerName, modelId) = (parts[0], parts[1])
+  let providerId = providerIds[providerName] ?? providerName
+  client.putSettings(["model": ["provider": providerId, "model": modelId]]) { _ in }
+  client.selectModel(sessionId: sessionIdProvider, provider: providerId, model: modelId) { _ in }
+}
+
+private var resolvedSessionId: String? { resolvedSessionHolder }
+private var resolvedSessionHolder: String?
+private var providerIds: [String: String] = [:]
 }
 
 /// The push-to-talk tile: the SF Symbol "waveform" rendered white on a
