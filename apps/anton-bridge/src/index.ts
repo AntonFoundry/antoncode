@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'node:path'
 import { ensureBlueantPreset, ensureBlueantProfileLink } from './blueant-preset.ts'
 import { startJournalCollector } from './journal.ts'
 import { startJournalTriage } from './triage.ts'
+import { startJournalConsolidation } from './consolidate.ts'
 import { getBlueantSettings, updateBlueantSettings } from './blueant-settings.ts'
 
 const bridgePort = portFromEnv('ANTON_BRIDGE_PORT', 3742)
@@ -20,6 +21,8 @@ const harnessWebSocketUrl = `ws://127.0.0.1:${harnessPort}`
 const bridgeUrl = `http://antoncode.localhost:${bridgePort}`
 
 let harnessProcess: Bun.Subprocess | undefined
+/** Serializes bridge lifecycle requests so two callers cannot replace one child concurrently. */
+let harnessLifecycle: Promise<void> = Promise.resolve()
 const startedAt = new Date().toISOString()
 
 type Downlink = '/api/events.mux' | '/api/events.host'
@@ -374,9 +377,10 @@ async function harnessRunning(): Promise<boolean> {
   return requestHealth(`${harnessUrl}/`)
 }
 
-async function waitForHarness(timeoutMs = 30_000): Promise<boolean> {
+async function waitForHarness(timeoutMs = 30_000, child?: Bun.Subprocess): Promise<boolean> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
+    if (child?.exitCode !== null) return false
     if (await harnessRunning()) return true
     await Bun.sleep(250)
   }
@@ -391,6 +395,19 @@ async function waitForHarnessStopped(timeoutMs = 10_000): Promise<boolean> {
     await Bun.sleep(100)
   }
   return false
+}
+
+/** Run one externally requested lifecycle operation after the previous one has quiesced. */
+async function withHarnessLifecycle<T>(operation: () => Promise<T>): Promise<T> {
+  const previous = harnessLifecycle
+  let release!: () => void
+  harnessLifecycle = new Promise<void>((resolve) => { release = resolve })
+  await previous
+  try {
+    return await operation()
+  } finally {
+    release()
+  }
 }
 
 async function startHarness(): Promise<{ started: boolean; reused: boolean }> {
@@ -430,8 +447,12 @@ async function startHarness(): Promise<{ started: boolean; reused: boolean }> {
     }
   })
 
-  if (!(await waitForHarness())) {
+  if (!(await waitForHarness(30_000, child))) {
     child.kill('SIGTERM')
+    await Promise.race([child.exited, Bun.sleep(5_000)])
+    if (child.exitCode === null) child.kill('SIGKILL')
+    await child.exited
+    if (harnessProcess === child) harnessProcess = undefined
     throw new Error('DeepSeek Harness did not become ready within 30 seconds')
   }
   return { started: true, reused: false }
@@ -449,6 +470,8 @@ async function stopHarness(): Promise<void> {
   child.kill('SIGTERM')
   await Promise.race([child.exited, Bun.sleep(5_000)])
   if (child.exitCode === null) child.kill('SIGKILL')
+  await child.exited
+  if (harnessProcess === child) harnessProcess = undefined
   // Process exit and socket shutdown are not observed at exactly the same
   // instant. Restart must not race the old listener and accidentally return
   // `reused`, leaving the Bridge with no managed child after the old process
@@ -680,7 +703,7 @@ const server = Bun.serve<BridgeSocketData>({
         const contextEndpoint = typeof payload === 'object' && payload !== null
           ? (payload as { contextEndpoint?: unknown }).contextEndpoint
           : undefined
-        return json({ ...(await configureContextEndpoint(contextEndpoint)), status: await status() })
+        return json({ ...(await withHarnessLifecycle(() => configureContextEndpoint(contextEndpoint))), status: await status() })
       } catch (error) {
         return json({ error: error instanceof Error ? error.message : 'unable_to_configure_context_endpoint' }, { status: 400 })
       }
@@ -691,7 +714,7 @@ const server = Bun.serve<BridgeSocketData>({
       // tools); a browser-supplied Origin must still match exactly.
       if (!sameOrigin(request)) return json({ error: 'cross_origin_request_rejected' }, { status: 403 })
       try {
-        return json({ ...(await startHarness()), status: await status() })
+        return json({ ...(await withHarnessLifecycle(startHarness)), status: await status() })
       } catch (error) {
         return json({ error: error instanceof Error ? error.message : 'unable_to_start_harness' }, { status: 503 })
       }
@@ -700,7 +723,7 @@ const server = Bun.serve<BridgeSocketData>({
     if (pathname === '/bridge/api/harness/restart' && request.method === 'POST') {
       if (!loopbackControlAllowed(request)) return json({ error: 'cross_origin_request_rejected' }, { status: 403 })
       try {
-        return json({ ...(await restartHarness()), status: await status() })
+        return json({ ...(await withHarnessLifecycle(restartHarness)), status: await status() })
       } catch (error) {
         return json({ error: error instanceof Error ? error.message : 'unable_to_restart_harness' }, { status: 503 })
       }
@@ -709,7 +732,7 @@ const server = Bun.serve<BridgeSocketData>({
     if (pathname === '/bridge/api/harness/stop' && request.method === 'POST') {
       if (!sameOrigin(request)) return json({ error: 'cross_origin_request_rejected' }, { status: 403 })
       try {
-        await stopHarness()
+        await withHarnessLifecycle(stopHarness)
         return json({ stopped: true, status: await status() })
       } catch (error) {
         return json({ error: error instanceof Error ? error.message : 'unable_to_stop_harness' }, { status: 409 })
@@ -857,6 +880,15 @@ startJournalTriage({
   intervalMs: Number(process.env.ANTON_TRIAGE_INTERVAL_MS) || 5 * 60_000,
   contextEndpoint: contextEndpoint === '' ? undefined : contextEndpoint,
   contextApiKey: resolveContextApiKey(),
+})
+
+// Phase 5c: scheduled consolidation — the bridge-timer power nap. The
+// engine's own dream scheduler fires on harness idle; this one runs on
+// wall-clock cadence so an always-active machine still consolidates.
+startJournalConsolidation({
+  contextEndpoint: contextEndpoint === '' ? undefined : contextEndpoint,
+  contextApiKey: resolveContextApiKey(),
+  project: process.env.ANTON_CONSOLIDATE_PROJECT,
 })
 
 /**
