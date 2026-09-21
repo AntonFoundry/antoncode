@@ -192,7 +192,7 @@ export class TestSessions implements ISessions {
   /** Calls observed on the service-level face, newest last. */
   readonly calls: {
     method: 'open' | 'openSubagent' | 'setSubagentCatalogOpen' | 'refreshSubagents' | 'interruptSession' | 'killJob' | 'promptSession' | 'sessionTail'
-      | 'clear' | 'search' | 'fork' | 'forkExcluding'
+      | 'clear' | 'search' | 'fork' | 'forkExcluding' | 'setStaged'
     args: unknown[]
   }[] = []
 
@@ -209,7 +209,7 @@ export class TestSessions implements ISessions {
   constructor(private readonly stabilize: Stabilizer, private readonly rootCtx: Context) {
     this.list = createSnapshotStore<SessionListState>({
       ids: [], byId: {}, current: undefined, phase: 'ready',
-      subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+      subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined, staged: [],
     })
     this.channel = new SessionProvideChannel({
       rebuildBundles: () => {
@@ -372,6 +372,16 @@ export class TestSessions implements ISessions {
    */
   provideInfoFor(id: string): SessionMaybeProvideInfo {
     return this.provideInfo(id) ?? this.channel.maybeInfo
+  }
+
+  /**
+   * Sync the pinned-pane stage set (production `setStaged` mirror): records
+   * the call and publishes the ids on the list snapshot's `staged` field.
+   * @param ids - the session ids currently displayed in pinned panes.
+   */
+  setStaged(ids: readonly SessionId[]): void {
+    this.calls.push({ method: 'setStaged', args: [ids] })
+    this.list.update((draft) => { draft.staged = [...ids] })
   }
 
   /**

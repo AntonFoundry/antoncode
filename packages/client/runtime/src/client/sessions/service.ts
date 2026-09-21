@@ -96,6 +96,12 @@ export interface SessionListState {
   jobsBySession: Readonly<Record<SessionId, readonly JobView[]>>
   /** Current session's catalog-derived address, absent on ordinary navigation. */
   currentAddress: SubagentAddress | undefined
+  /**
+   * Session ids staged beyond `current` (wm session buffers pinned in visible
+   * panes, synced wholesale by the frame). Absent = an empty set — consumers
+   * read absence, never a sentinel.
+   */
+  staged?: readonly SessionId[]
 }
 
 /** Persisted navigation cell: address survives refresh for correct history routing. */
@@ -269,6 +275,15 @@ export class SessionRuntime implements ISessions {
   private watched: SessionId | undefined
   /** Removed-while-staged sessions whose teardown waits for the stage to move away. */
   private readonly deferredRemovals = new Set<SessionId>()
+  /**
+   * Pinned-pane staging: session ids displayed in wm windows without being
+   * `current` (wm session buffers). Synced wholesale by the frame via
+   * {@link SessionRuntime.setStaged}; each id's history window opens like the
+   * watched one's, without moving the selection.
+   */
+  private readonly stagedPins = new Set<SessionId>()
+  /** Published copy of {@link SessionRuntime.stagedPins} riding the list snapshot; identity-stable until the pin set moves. */
+  private stagedSnapshot: readonly SessionId[] = []
 
   /**
    * @param ctx - client root context (scope fibers mount under it).
@@ -302,7 +317,7 @@ export class SessionRuntime implements ISessions {
     )
     this.list = createSnapshotStore<SessionListState>({
       ids: [], byId: {}, current: undefined, phase: 'pending',
-      subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+      subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined, staged: [],
     })
     // The manager owns wire truth; the store is its projection. Manager
     // notifications are already microtask-batched.
@@ -316,6 +331,7 @@ export class SessionRuntime implements ISessions {
     // The current-provide projection follows the same current writes.
     this.list.subscribe(() => {
       this.followCurrent()
+      this.stageStaged()
       this.provideChannel.publishCurrent()
     })
     this.provideChannel = new SessionProvideChannel({
@@ -662,6 +678,42 @@ export class SessionRuntime implements ISessions {
   }
 
   /**
+   * Sync the pinned-pane stage set (see {@link ISessions.setStaged}).
+   * Idempotent: an unchanged set is a no-op; changed sets open each new id's
+   * history window (idempotent per Session) without touching the selection,
+   * and republish the `staged` list-snapshot field.
+   * @param ids - the session ids currently displayed in pinned panes.
+   */
+  setStaged(ids: readonly SessionId[]): void {
+    const next = [...new Set(ids)]
+    if (
+      next.length === this.stagedSnapshot.length
+      && next.every(id => this.stagedSnapshot.includes(id))
+    ) return
+    this.stagedPins.clear()
+    for (const id of next) this.stagedPins.add(id)
+    this.stagedSnapshot = next
+    // Open before publishing so a sidebar reading `staged` never points at a
+    // session whose window is still closed.
+    this.stageStaged()
+    this.list.set({ ...this.list.getSnapshot(), staged: next })
+  }
+
+  /**
+   * Open the history window for every pinned id not already on the watched
+   * stage (followCurrent owns `current`). Called on every list notification —
+   * the retry path for an id pinned before its row landed (boot restore
+   * races the first list pull) — and open() is idempotent per Session.
+   */
+  private stageStaged(): void {
+    for (const id of this.stagedPins) {
+      if (id === this.watched) continue
+      const record = this.resolve(id)
+      if (record !== undefined) void record.session.open()
+    }
+  }
+
+  /**
    * Move the stage to the list's current session: sweep teardowns deferred
    * behind the previous occupant and pull the new occupant's history window.
    * Staging IS the open signal — the window opens ⟺ the session is on stage
@@ -794,7 +846,7 @@ export class SessionRuntime implements ISessions {
         ...(currentAddress === undefined ? {} : { subagentAddress: currentAddress }),
       })
     }
-    this.list.set({ ids, byId, current, phase, subagentsByParent, jobsBySession, currentAddress })
+    this.list.set({ ids, byId, current, phase, subagentsByParent, jobsBySession, currentAddress, staged: this.stagedSnapshot })
     this.pruneScopes()
   }
 

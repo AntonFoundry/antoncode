@@ -101,6 +101,13 @@ export interface WmFrameInjected {
    * buffer, without touching the global selection.
    */
   rebindPane: (leafId: string, sessionId: string) => void
+  /**
+   * Sync the sessions service's pinned-pane stage set to the given ids
+   * (per-window session buffers): every pinned id's history window opens
+   * without moving the global selection, and blank pinned sessions become
+   * sidebar-visible. Called by the frame on every window-tree change.
+   */
+  syncStagedSessions: (sessionIds: readonly string[]) => void
   /** Write the sidebar width preference (px) — the pinned sidebar pane resizes through it. */
   setSidebarWidth: (px: number) => void
   /** Persist the *scratch* text. */
@@ -783,6 +790,7 @@ export function WmFrame({
   listDirectory,
   openPath,
   rebindPane,
+  syncStagedSessions,
   disposeTerminalSession,
 }: WmFrameProps) {
   const panels = useStore(s => s)
@@ -836,6 +844,25 @@ export function WmFrame({
 
   // Heal a pre-registry persisted snapshot once per instance.
   useEffect(() => { reconcileBuffers() }, [reconcileBuffers])
+
+  // Pinned-pane staging (per-window session buffers): every session buffer a
+  // visible leaf shows is staged on the sessions service — its history window
+  // opens without moving the global selection, and a blank pinned session
+  // stays sidebar-visible. The joined key keeps the sync off identity churn
+  // in the tree/buffers arrays.
+  const stagedKey = useMemo(() => {
+    const ids = new Set<string>()
+    for (const leafId of leafIds(tree)) {
+      const leaf = findLeaf(tree, leafId)
+      if (leaf === undefined) continue
+      const buffer = findBuffer(buffers, leaf.buffer)
+      if (buffer?.kind === 'session' && buffer.sessionId !== undefined) ids.add(buffer.sessionId)
+    }
+    return [...ids].sort().join('\n')
+  }, [tree, buffers])
+  useEffect(() => {
+    syncStagedSessions(stagedKey === '' ? [] : stagedKey.split('\n'))
+  }, [stagedKey, syncStagedSessions])
 
   // Winner mode history: frame-local refs (runtime only). Sash weight drags
   // skip history — they are geometry tweaks, not layout changes.

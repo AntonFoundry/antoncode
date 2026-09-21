@@ -9,7 +9,7 @@
  * runtime sessions service. A second effect seats the theme presenter, which
  * projects ctx.theme snapshots onto document.body.
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { PanelActions } from './service.ts'
 import { TopbarChrome, WmFrame } from './WmFrame.tsx'
@@ -246,6 +246,12 @@ export function apply(ctx: ClientContext): void {
             const buffer = sessionBuffer(sessionId)
             wm.actions.setBuffers(ensureBuffer(snapshot.buffers, buffer))
             wm.actions.setTree(swapBuffer(snapshot.tree, leafId, buffer.id))
+          },
+          // Pinned-pane staging sync (the frame calls this on every
+          // window-tree change): staging opens pinned sessions' history
+          // windows without moving the global selection.
+          syncStagedSessions: (sessionIds: readonly string[]) => {
+            ctx.sessions.setStaged(sessionIds as SessionId[])
           },
           writeScratch: (text: string) => { scratch.actions.setText(text) },
           openSession: (sessionId: string) => (ctx.sessions as unknown as { open(id: string): void }).open(sessionId),

@@ -75,7 +75,7 @@ describe('ui-layout client apply', () => {
     // and the workspace/host resolvers.
     expect(Object.keys(injected).sort()).toEqual([
       'disposeTerminalSession', 'fetchSessionModel', 'fetchSessionTail', 'hooks', 'interruptSession', 'listDirectory', 'loadTheme', 'openPath', 'openSession', 'openWorkspace', 'previewTheme', 'promptSession', 'readTextFile',
-      'rebindPane', 'reconcileBuffers', 'setBuffers', 'setFocus', 'setMode', 'setSidebarWidth', 'setTree', 'themeList', 'writeScratch',
+      'rebindPane', 'reconcileBuffers', 'setBuffers', 'setFocus', 'setMode', 'setSidebarWidth', 'setTree', 'syncStagedSessions', 'themeList', 'writeScratch',
     ])
     expect((injected as { hooks: { wm: unknown; scratch: unknown } }).hooks.wm).toHaveProperty('getSnapshot')
     expect((injected as { hooks: { scratch: unknown } }).hooks.scratch).toHaveProperty('getSnapshot')

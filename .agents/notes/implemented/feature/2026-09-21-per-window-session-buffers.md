@@ -28,7 +28,7 @@ The window manager kept exactly one `conversation` buffer (`SINGLETON_BUFFER_IDS
 
 - A workspace can show, compose into, and receive drops for as many sessions as it has panes; the previously global `current` survives only as the follow-current default and the sidebar/agent-board's green marker (AgentGrid untouched).
 - `ISessions` implementors (test-support `TestSessions`) and the slot renderer host face must supply `provideInfoFor`; `ConvOwnerProps` consumers must accept the three new owner props.
-- Sessions shown only in pinned panes never become `current`, so staging stays driven by the global selection; background sessions keep streaming as before.
+- Sessions shown only in pinned panes are staged without becoming `current`: the frame syncs every visible pinned session id to the sessions service (`ISessions.setStaged`, mirrored on `SessionListState.staged`), which opens each id's history window (idempotent, selection untouched) — pinned panes render full backfilled history, and a blank session pinned in any visible pane stays sidebar-visible like the current blank one. Background sessions keep streaming as before.
 - Snapshot-affecting chrome is unchanged for the default layout (titles gain the `Chat · <title>` form only under pinning); the DOM `data-buffer` attribute of chat panes is now `"session"`.
 
 ## Testing

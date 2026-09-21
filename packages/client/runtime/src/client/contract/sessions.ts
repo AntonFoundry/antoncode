@@ -50,6 +50,16 @@ export interface ISessions {
    */
   provideInfoFor(id: string): SessionMaybeProvideInfo
   /**
+   * Sync the pinned-pane stage set: the session ids displayed in wm windows
+   * without being `current` (wm session buffers pinned in visible panes).
+   * Each id's history window opens like the current session's — idempotent,
+   * and the selection never moves. The frame calls this wholesale on every
+   * window-tree change (pin, unpin, boot restore); ids whose list row has not
+   * landed yet stage when it does.
+   * @param ids - the session ids currently displayed in pinned panes.
+   */
+  setStaged(ids: readonly SessionId[]): void
+  /**
    * The `session.search` result bound the wire schema fixes, exposed to
    * presentation as injected data. Not per-connection state: every transport
    * (fixture included) reports the same number.
