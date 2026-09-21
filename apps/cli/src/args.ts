@@ -44,8 +44,20 @@ interface PluginInvocation {
   args: string[]
 }
 
+/** List the providers and models a profile's composition makes available. */
+interface ModelsInvocation {
+  mode: 'models'
+  profile: string
+}
+
+/** Control the local Anton app's harness through its bridge API. */
+interface AntonInvocation {
+  mode: 'anton'
+  action: 'status' | 'start' | 'stop' | 'restart'
+}
+
 /** The resolved `dsh` invocation. Help, version, and errors exit inside {@link parseDshArgs}. */
-export type DshInvocation = ProfileInvocation | DumpConfigInvocation | PluginInvocation
+export type DshInvocation = ProfileInvocation | DumpConfigInvocation | PluginInvocation | ModelsInvocation | AntonInvocation
 
 /** Launcher flags shared by the default command and the `web` alias. */
 interface BootOptions {
@@ -178,6 +190,27 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
       if (options.profile === '') program.error('error: --profile needs a name')
       if (args.length === 0) program.error('error: plugin needs pnpm arguments to forward (e.g. add <package>)')
       resolved = { mode: 'plugin', profile: options.profile, args }
+    })
+
+  const models = program.command('models').description('list the LLM providers and models a profile makes available, then exit')
+  models
+    .option('--profile <name>', 'the profile whose composition to inspect (default: web)')
+    .action((options: { profile?: string }) => {
+      rejectParentOptions('models')
+      const profile = options.profile !== undefined && options.profile !== '' ? options.profile : 'web'
+      resolved = { mode: 'models', profile }
+    })
+
+  const anton = program.command('anton').description('control the local Anton app\'s harness through its bridge (no app restart, no quit)')
+  anton
+    .helpOption(false)
+    .argument('<action>', 'status | start | stop | restart')
+    .action((action: string) => {
+      rejectParentOptions('anton')
+      if (action !== 'status' && action !== 'start' && action !== 'stop' && action !== 'restart') {
+        anton.error('error: action must be status, start, stop, or restart')
+      }
+      resolved = { mode: 'anton', action: action as AntonInvocation['action'] }
     })
 
   try {
