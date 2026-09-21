@@ -139,7 +139,16 @@ export function ensureBlueantPreset({ dshHome }: EnsureBlueantPresetOptions): vo
       '- id: restrict-tools',
       '  name: ./plugins/restrict-tools.js',
       '  config:',
-      '    allow: [c0ntext_search, c0ntext_remember, recipe_search, web_search, read_image, blueant_notify, blueant_propose]',
+      '    allow: [c0ntext_search, c0ntext_remember, recipe_search, web_search, read_image, blueant_notify, blueant_propose, skill]',
+      // Skills as files: the deployment disables host-level skill rows, so the
+      // preset owns local discovery (skill-filesystem registers into this
+      // preset's layer) and mounts the catalog/loader tool. A Blueant skill is
+      // a file under <dshHome>/skills/<name>/SKILL.md — instructions plus tool
+      // usage, no code.
+      '- id: skill-filesystem',
+      "  name: '@deepseek-ai/dsh-skill-filesystem'",
+      '- id: tool-skill',
+      "  name: '@deepseek-ai/dsh-tool-skill'",
       '- id: notify',
       '  name: ./plugins/notify.js',
       '- id: propose',
@@ -167,20 +176,29 @@ export function ensureBlueantPreset({ dshHome }: EnsureBlueantPresetOptions): vo
  * composition — the same mechanism the bridge uses for @c0ntext/dsh-c0ntext.
  */
 export function ensureBlueantProfileLink({ dshHome, profile, harnessRoot }: EnsureBlueantPresetOptions): void {
-  const personaRoot = resolve(harnessRoot, 'packages', 'preset', 'persona')
-  if (!existsSync(personaRoot)) {
-    throw new Error(`Bundled persona package was not found at ${personaRoot}`)
-  }
-  const link = join(dshHome, 'profiles', profile, 'node_modules', '@deepseek-ai', 'dsh-persona')
-  mkdirSync(dirname(link), { recursive: true })
-  try {
-    if (lstatSync(link).isSymbolicLink()) {
-      unlinkSync(link)
-    } else {
-      throw new Error(`Profile path ${link} exists and is not a symlink`)
+  const linkRoot = join(dshHome, 'profiles', profile, 'node_modules', '@deepseek-ai')
+  mkdirSync(linkRoot, { recursive: true })
+  // Persona plus the preset-owned skill packages: preset rows resolve bare
+  // package names from the profile's node_modules.
+  for (const [name, relative] of [
+    ['dsh-persona', join('packages', 'preset', 'persona')],
+    ['dsh-skill-filesystem', join('packages', 'skill', 'skill-filesystem')],
+    ['dsh-tool-skill', join('packages', 'skill', 'tool-skill')],
+  ] as const) {
+    const packageRoot = resolve(harnessRoot, relative)
+    if (!existsSync(packageRoot)) {
+      throw new Error(`Bundled package was not found at ${packageRoot}`)
     }
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    const link = join(linkRoot, name)
+    try {
+      if (lstatSync(link).isSymbolicLink()) {
+        unlinkSync(link)
+      } else if (existsSync(link)) {
+        throw new Error(`Profile path ${link} exists and is not a symlink`)
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+    symlinkSync(packageRoot, link, 'junction')
   }
-  symlinkSync(personaRoot, link, 'junction')
 }

@@ -1,7 +1,8 @@
-# Resume note for crash-interrupted turns
+# Agent Note: Resume note for crash-interrupted turns
 
-Date: 2026-09-21
-Scope: packages/context/resume-note (new), examples/headless-agent fixture, deployment profile
+Status: implemented
+
+English
 
 ## Problem
 
@@ -36,28 +37,31 @@ A new opt-in function plugin, `@deepseek-ai/dsh-resume-note`, on the
 - Package invariant: a note requires a preceding interrupted `turn/end`,
   at most one per interruption.
 
-## Alternatives rejected
+## Testing
 
-- A dedicated `resume-note-delivered` SessionEventMap member: only the
-  plugin-source `user/message` is needed; deferred until a non-plugin
-  consumer appears (would carry `ignorable: true`).
-- Bridge restart_pending marker: strictly weaker than the durable repair.
+Unit: 8 spec cases (inject-once, stacked restarts, step guard, empty log,
+enabled=false, custom text, fiber disposal). Invariant: 4 cases (accept,
+wrong end kind, no end, duplicate). Keyless e2e through the real Loader
+(`runLoaderSmoke`, src + lib modes): a headless fixture drives one completed
+turn, appends a crash-open tail, re-boots, `agents.resume` repairs the tail,
+and the next turn carries exactly one note with verbatim default text,
+sequenced between the interrupted end and the normal end. Live: the first
+post-deployment `dsh anton restart` interrupted the author's own turn and
+the note appeared verbatim in the next turn's context.
 
-## Verification
+## Alternatives considered
 
-- Unit: 8 spec cases (inject-once, stacked restarts, step guard, empty log,
-  enabled=false, custom text, fiber disposal).
-- Invariant: 4 cases (accept, wrong end kind, no end, duplicate).
-- Keyless e2e through the real Loader (`runLoaderSmoke`, src + lib modes):
-  headless fixture drives one completed turn, appends a crash-open tail,
-  re-boots, `agents.resume` repairs the tail, and the next turn carries
-  exactly one note with verbatim default text, sequenced between the
-  interrupted end and the normal end.
+A dedicated `resume-note-delivered` SessionEventMap member: only the
+plugin-source `user/message` is needed; deferred until a non-plugin consumer
+appears (would carry `ignorable: true`). A bridge restart_pending marker:
+strictly weaker than the durable repair — the bridge knows nothing about
+sessions and the SIGTERM grace window cannot guarantee a write.
 
-## Deployment
+## Consequences
 
-Opt-in per repo policy; the Anton web profile wires it via
-`~/.dsh/profiles/web` (package.json link + `cordis.patch.yml` insert row).
-Also fixed in the same change: `scripts/install-lefthook.mjs` still probed
-the translation pairing script deleted by the English-exclusive commit,
-breaking `pnpm install` postinstall; the dead machinery is removed.
+Opt-in per repo policy; the Anton web profile wires it via the live DSH home
+(`Application Support/Anton/dsh/profiles/web` — package link plus
+`cordis.patch.yml` insert row; `~/.dsh` and `~/.anton/dsh` are inert copies).
+Restart-interruption churn now self-explains instead of costing a diagnostic
+turn. The same change removed the dead translation-pairing probe from
+`scripts/install-lefthook.mjs` that broke every `pnpm install` postinstall.
