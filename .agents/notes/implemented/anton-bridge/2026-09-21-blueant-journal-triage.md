@@ -52,7 +52,11 @@ apiKeyEnv block is an unused catalog entry, not the live route.
   concurrently; the last `##` block without a trailing blank line is
   its in-progress write, so the triage parser excludes the trailing
   incomplete block and advances the watermark only past complete ones —
-  entries are never triaged twice and never skipped forever.
+  entries are never triaged twice and never skipped forever. Since
+  [triage backpressure](2026-09-21-triage-backpressure-dedupe.md), the
+  watermark advances per fully processed batch (entries carry byte
+  offsets), so a write-capped cycle resumes at the first unprocessed
+  entry.
 - **The model route mirrors the deployment's own provider config**
   (`apiKeyEnv: MOONSHOTAI_API_KEY` from `~/.dsh/settings.yaml`,
   highspeed tier of the same k2.7 family) rather than introducing a
