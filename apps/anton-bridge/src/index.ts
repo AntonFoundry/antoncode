@@ -684,6 +684,8 @@ const server = Bun.serve<BridgeSocketData>({
         const body = typeof payload === 'object' && payload !== null ? payload as { journalEnabled?: unknown; model?: unknown } : {}
         const patch = {
           journalEnabled: typeof body.journalEnabled === 'boolean' ? body.journalEnabled : undefined,
+          wakeWordEnabled: typeof (body as { wakeWordEnabled?: unknown }).wakeWordEnabled === 'boolean'
+            ? (body as { wakeWordEnabled: boolean }).wakeWordEnabled : undefined,
           mobileIngestEnabled: typeof (body as { mobileIngestEnabled?: unknown }).mobileIngestEnabled === 'boolean'
             ? (body as { mobileIngestEnabled: boolean }).mobileIngestEnabled : undefined,
           model: body.model === null || (typeof body.model === 'object' && body.model !== null
