@@ -57,6 +57,7 @@ const deepseekDefaultsConfigPath = fileURLToPath(new URL('./fixtures/deepseek-de
 const headlessOverlayPath = fileURLToPath(new URL('./fixtures/headless-profile.cordis.yml', import.meta.url))
 const headlessSessionExpected = join(snapshotsDir, 'headless-profile', 'session.expected.jsonl')
 const headlessFailureExpected = join(snapshotsDir, 'headless-profile', 'stderr.expected.txt')
+const repairSessionExpected = join(snapshotsDir, 'repair-profile', 'session.expected.jsonl')
 const cliMockLlmPluginPath = fileURLToPath(new URL('./fixtures/cli-mock-llm.ts', import.meta.url))
 const refreshing = process.env.DSH_SNAPSHOT === 'refresh'
 
@@ -209,13 +210,24 @@ async function persistedLogs(cwd: string, root: string = join(cwd, '.sessions'))
 }
 
 /** Install the keyless product-CLI adapter into the temporary headless profile. */
-async function prepareCliMockFixture(cwd: string): Promise<void> {
-  const fixtureDir = join(cwd, '.dsh', 'profiles', 'headless', 'snapshot-fixtures')
+async function prepareCliMockFixture(cwd: string, profile = 'headless'): Promise<void> {
+  const fixtureDir = join(cwd, '.dsh', 'profiles', profile, 'snapshot-fixtures')
   await mkdir(fixtureDir, { recursive: true })
   await Promise.all([
     copyFile(cliMockLlmPluginPath, join(fixtureDir, 'cli-mock-llm.ts')),
     writeFile(join(fixtureDir, 'package.json'), '{"type":"module"}\n'),
   ])
+}
+
+/** Compose Anton's repair bundle list with the keyless CLI adapter. */
+async function prepareRepairCliFixture(cwd: string): Promise<void> {
+  await prepareCliMockFixture(cwd, 'repair')
+  await writeFile(join(cwd, '.dsh', 'profiles', 'repair', 'package.json'), `${JSON.stringify({
+    name: 'snapshot-profile-repair',
+    private: true,
+    dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'] } },
+  }, null, 2)}\n`)
+  await writeFile(join(cwd, '.dsh', 'profiles', 'repair', 'cordis.patch.yml'), '- id: tools\n  config:\n    mode: paged\n')
 }
 
 describe('headless stream-json snapshots', () => {
@@ -245,6 +257,41 @@ describe('headless stream-json snapshots', () => {
         expect(session).toBe(await readFile(headlessSessionExpected, 'utf8'))
         expect(session).toContain(task)
         expect(session).toContain('CLI tool round trip complete: CLI_TOOL_ROUND_TRIP')
+      },
+    })
+
+    expect(result.stdout).toBe('CLI tool round trip complete: CLI_TOOL_ROUND_TRIP\n')
+    expect(result.stderr).toBe('')
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('runs the repair profile as a one-shot task with a tool round trip', async () => {
+    const task = 'Complete one repair profile tool round trip.'
+    const result = await runLoaderSmoke({
+      label: 'repair profile snapshot',
+      tempDirPrefix: 'headless-snapshot-repair-',
+      binScript: dshBinScript,
+      configPath: headlessOverlayPath,
+      binArgs: ['--profile', 'repair', '--patch', headlessOverlayPath, task],
+      tsconfigPath,
+      env: {
+        DSH_CLI_MOCK_PAGED: '1',
+        DSH_PERMISSION_MODE: 'danger-full-access',
+        DSH_TELEMETRY_DISABLED: '1',
+        NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
+      },
+      prepare: prepareRepairCliFixture,
+      inspect: async (cwd) => {
+        const logs = await persistedLogs(cwd, join(cwd, '.dsh', 'sessions'))
+        expect(logs).toHaveLength(1)
+        const actual = logs[0]
+        if (actual === undefined) throw new Error('the repair profile did not persist its session')
+        const session = scrubRequestHeaders(normalizeSessionLog(actual.content, contextFromLogs([actual.content])))
+        if (refreshing) {
+          await mkdir(dirname(repairSessionExpected), { recursive: true })
+          await writeFile(repairSessionExpected, session)
+        }
+        expect(session).toBe(await readFile(repairSessionExpected, 'utf8'))
+        expect(session).toContain(task)
       },
     })
 

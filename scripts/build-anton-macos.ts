@@ -162,7 +162,7 @@ run(['swiftc', '-parse-as-library',
 // ship their runtime JS there). Stale bun-build bridge artifacts are dead
 // weight. Keep node_modules: workspace symlinks remain valid because the
 // whole tree is copied together.
-syncDirectory(harnessRoot, join(resources, 'deepseek-harness'), ['/.git', '/dist', '/.turbo', 'packages/*/*/src', 'apps/*/src', '*.ts', '*.tsx', '*.map', '*.bun-build', 'apps/anton-bridge/dist', 'apps/anton-bridge/macos/vendor/build',
+syncDirectory(harnessRoot, join(resources, 'deepseek-harness'), ['/.git', '/dist', '/dist *', '/.turbo', 'packages/*/*/src', 'apps/*/src', '*.ts', '*.tsx', '*.map', '*.bun-build', 'apps/anton-bridge/dist', 'apps/*/dist *', 'apps/anton-bridge/macos/vendor/build', 'apps/anton-bridge/macos/vendor/build *',
   // Repository-only surfaces never needed at runtime: internal notes and
   // planning docs, generated docs and the website projection, build scripts,
   // and the runnable-examples leaves. Shipping them leaks internal material
@@ -214,6 +214,17 @@ function smokeBootStaging(): void {
       throw new Error(`boot smoke failed — the staged harness never reached ready. Last output:\n${output.split('\n').slice(-40).join('\n')}`)
     }
     console.log('Boot smoke passed: staged harness reached ready under the full profile composition')
+    const repair = spawnSync(join(resources, 'node', 'bin', 'node'), [
+      join(resources, 'deepseek-harness', 'apps', 'cli', 'lib', 'bin.js'),
+      '--profile', 'repair', '--dump-config',
+    ], {
+      env: { ...process.env, DSH_HOME: bridgeEnv.ANTON_DSH_HOME },
+      encoding: 'utf8', timeout: 30_000,
+    })
+    if (repair.status !== 0 || !repair.stdout.includes('headless-runner')) {
+      throw new Error(`boot smoke failed — the staged repair profile cannot compose. Output:\n${repair.stdout}\n${repair.stderr}`)
+    }
+    console.log('Boot smoke passed: staged repair profile includes the one-shot runner')
   } finally {
     rmSync(tempHome, { recursive: true, force: true })
   }

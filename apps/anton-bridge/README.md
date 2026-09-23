@@ -106,6 +106,8 @@ launch it creates an app-owned Harness profile at
 Harness sessions in this app are therefore isolated from an existing
 developer `~/.dsh` installation.
 
+When the main Harness stays down, Anton starts the recovery profile and launches one automatic repair task through its app-owned `repair` profile. That profile uses the bundled headless runner and the saved default model. The bridge refreshes the repair profile manifest at startup and reports `running`, `done`, or `failed` through `/bridge/api/recovery/state`; Anton returns to the main profile only after `done`.
+
 The app is ad-hoc signed for local development only; it is **not** notarized or
 ready for public distribution. It reaches the memory service at the configured
 endpoint (`ANTON_CONTEXT_ENDPOINT` or the control-page field) and ships no

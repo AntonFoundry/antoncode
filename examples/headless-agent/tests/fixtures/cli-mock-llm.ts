@@ -33,8 +33,33 @@ class CliMockAdapter extends LlmAdapter {
       yield { type: 'finish', reason: { kind: 'error', failure: { code: 'SERVER', message: 'CLI mock provider failed' } } }
       return
     }
-    const toolResult = options.messages.at(-1)?.content.find(block => block.type === 'tool-result')
-    if (toolResult === undefined) {
+    const toolResult = options.messages.at(-1)?.content.filter(block => block.type === 'tool-result').at(-1)
+    const paged = process.env.DSH_CLI_MOCK_PAGED === '1'
+    if (paged && toolResult === undefined) {
+      const args = JSON.stringify({ intent: 'Find todo_write to record a short task plan.' })
+      yield { type: 'block-start', index: 0, blockType: 'tool-call' }
+      yield { type: 'tool-call-delta', index: 0, id: CallId('cli-plan-search-call'), name: 'tool_search', argumentsDelta: args }
+      yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: CallId('cli-plan-search-call'), name: 'tool_search', arguments: args } }
+      yield { type: 'finish', reason: { kind: 'tool-calls' } }
+      return
+    }
+    if (paged && toolResult?.toolCallId === CallId('cli-plan-search-call')) {
+      const args = JSON.stringify({ todos: [{ content: 'Run the repair profile smoke', status: 'in_progress' }] })
+      yield { type: 'block-start', index: 0, blockType: 'tool-call' }
+      yield { type: 'tool-call-delta', index: 0, id: CallId('cli-plan-call'), name: 'todo_write', argumentsDelta: args }
+      yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: CallId('cli-plan-call'), name: 'todo_write', arguments: args } }
+      yield { type: 'finish', reason: { kind: 'tool-calls' } }
+      return
+    }
+    if (paged && toolResult?.toolCallId === CallId('cli-plan-call')) {
+      const args = JSON.stringify({ intent: 'Find the bash tool to run a shell command.' })
+      yield { type: 'block-start', index: 0, blockType: 'tool-call' }
+      yield { type: 'tool-call-delta', index: 0, id: CallId('cli-search-call'), name: 'tool_search', argumentsDelta: args }
+      yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: CallId('cli-search-call'), name: 'tool_search', arguments: args } }
+      yield { type: 'finish', reason: { kind: 'tool-calls' } }
+      return
+    }
+    if (toolResult === undefined || (paged && toolResult.toolCallId === CallId('cli-search-call'))) {
       const args = JSON.stringify({ command: 'printf CLI_TOOL_ROUND_TRIP', description: 'Prove the CLI tool round trip.' })
       yield { type: 'block-start', index: 0, blockType: 'tool-call' }
       yield { type: 'tool-call-delta', index: 0, id: CallId('cli-smoke-call'), name: 'bash', argumentsDelta: args }

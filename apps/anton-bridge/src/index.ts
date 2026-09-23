@@ -217,22 +217,22 @@ function ensureRecoveryProfile(): void {
 }
 
 /**
- * The repair profile: the base bundle plus the one-shot agent spine. This is
- * the composition the bridge drives automatically in recovery mode — one
- * bounded turn that diagnoses the boot failure, fixes the source, rebuilds,
- * and swaps the app bundle in place.
+ * The repair profile uses the one-shot headless runner over the base bundle.
+ * The bridge owns its manifest and corrects stale generated bundle lists on
+ * startup so an existing installation can run the automatic repair turn.
  */
 function ensureRepairProfile(): void {
   const profileDir = join(dshHome, 'profiles', 'repair')
   const manifestPath = join(profileDir, 'package.json')
   const patchPath = join(profileDir, 'cordis.patch.yml')
   mkdirSync(profileDir, { recursive: true })
-  if (!existsSync(manifestPath)) {
-    writeFileSync(manifestPath, `${JSON.stringify({
-      name: 'anton-profile-repair',
-      private: true,
-      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-agent-spine-demo'] } },
-    }, null, 2)}\n`)
+  const manifest = `${JSON.stringify({
+    name: 'anton-profile-repair',
+    private: true,
+    dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'] } },
+  }, null, 2)}\n`
+  if (!existsSync(manifestPath) || readFileSync(manifestPath, 'utf8') !== manifest) {
+    writeFileSync(manifestPath, manifest)
   }
   if (!existsSync(patchPath)) {
     const toolsMode = process.env.ANTON_TOOLS_MODE ?? 'paged'
