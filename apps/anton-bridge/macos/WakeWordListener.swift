@@ -1,15 +1,17 @@
 import AVFoundation
 import Foundation
+import os
 
 /// Ambient wake-word listener for Blueant (Phase 7b): an always-on input tap
 /// feeds an energy voice-activity detector over a rolling 16 kHz mono ring
-/// buffer; on speech onset the trailing window is decoded by the shared
-/// whisper engine and matched against the wake keyword. Whisper runs only on
-/// speech activity — never continuously — and the listener suspends while the
-/// popup panel is visible, so it never taps the input alongside
+/// buffer; on speech onset the trailing window is decoded by the selected
+/// local transcription engine and matched against the wake keyword. Decoding
+/// runs only on speech activity — never continuously — and the listener
+/// suspends while the popup panel is visible, so it never taps the input alongside
 /// SpeechController and never competes with the shared engine's dictation
 /// jobs.
 final class WakeWordListener {
+  private let logger = Logger(subsystem: "dev.antoncode.anton", category: "blueant.wake-word")
   /// Tunables with safe defaults; the keyword is the only user-facing knob
   /// (settings), the rest stay fixed to keep the surface honest.
   struct Config {
@@ -25,8 +27,10 @@ final class WakeWordListener {
     /// Consecutive speech taps (~1024 frames ≈ 21 ms each) required before
     /// onset fires, so keyboard clicks and door slams do not decode.
     var onsetTaps = 12
-    /// Seconds of trailing audio decodes on onset.
+    /// Seconds of trailing audio decoded after speech onset.
     var decodeWindowSeconds = 3.0
+    /// Lets the complete wake phrase enter the rolling buffer before decoding.
+    var decodeDelaySeconds: TimeInterval = 0.9
     /// Rolling buffer length (caps memory at ~64 k floats).
     var ringSeconds = 6.0
     /// Ignore further triggers for this long after a fired wake (also covers
@@ -34,7 +38,8 @@ final class WakeWordListener {
     var cooldownSeconds: TimeInterval = 6
   }
 
-  private let whisper: WhisperEngine
+  private let transcriber: TranscriptionEngine
+  private let fallbackTranscriber: TranscriptionEngine?
   private let onWake: () -> Void
   private var config = Config()
 
@@ -42,8 +47,10 @@ final class WakeWordListener {
   private var converter: AVAudioConverter?
   private var ring: [Float] = []
   private var ringCapacity: Int
-  /// Slow-moving estimate of ambient level; speech never raises it.
+  private let ringLock = NSLock()
+  /// Slow-moving estimate of ambient level.
   private var noiseFloorDB: Float = -50
+  private var noiseFloorInitialized = false
   private var speechStreak = 0
   private var decoding = false
   private var lastWake = Date.distantPast
@@ -51,23 +58,45 @@ final class WakeWordListener {
   /// not suppressed (panel visible) and the microphone is authorized.
   private var desiredOn = false
   private var suppressed = false
+  private var permissionRequestInFlight = false
   private(set) var active = false
+  private var audioObservers: [NSObjectProtocol] = []
 
   /// Variants a decoder plausibly emits for the keyword: the joined form,
   /// the two-word split, and the vowel-swaps both shipped engines produce.
   static func variants(of keyword: String) -> [String] {
     let lowered = keyword.lowercased()
-    var result = Set([lowered, lowered.replacingOccurrences(of: " ", with: "")])
-    if lowered.contains(" ") { result.insert(lowered.replacingOccurrences(of: " ", with: "")) }
+    let compact = lowered.filter { $0.isLetter || $0.isNumber }
+    var result = Set([compact])
+    if compact == "blueant" {
+      result.insert("bluent")
+      result.insert("bluint")
+      result.insert("blueaunt")
+      result.insert("blueand")
+      result.insert("blueend")
+      result.insert("bluand")
+    }
     result.insert(lowered.replacingOccurrences(of: "ea", with: "i"))
     result.insert(lowered.replacingOccurrences(of: "ea", with: "e"))
     return Array(result.filter { $0.count >= 4 })
   }
 
-  init(whisper: WhisperEngine, onWake: @escaping () -> Void) {
-    self.whisper = whisper
+  init(transcriber: TranscriptionEngine, fallbackTranscriber: TranscriptionEngine? = nil,
+       onWake: @escaping () -> Void) {
+    self.transcriber = transcriber
+    self.fallbackTranscriber = fallbackTranscriber
     self.onWake = onWake
     ringCapacity = Int(config.ringSeconds * 16_000)
+    let center = NotificationCenter.default
+    audioObservers = [
+      center.addObserver(forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main) { [weak self] _ in
+        self?.restartAfterAudioChange()
+      },
+    ]
+  }
+
+  deinit {
+    for observer in audioObservers { NotificationCenter.default.removeObserver(observer) }
   }
 
   /// The keyword is matched case-insensitively against the decoded window.
@@ -90,9 +119,39 @@ final class WakeWordListener {
   }
 
   private func refresh() {
-    let shouldRun = desiredOn && !suppressed
-      && AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
-    if shouldRun { startEngine() } else { stopEngine() }
+    guard desiredOn && !suppressed else {
+      stopEngine()
+      return
+    }
+    let authorization = AVCaptureDevice.authorizationStatus(for: .audio)
+    switch authorization {
+    case .authorized:
+      startEngine()
+    case .notDetermined where !permissionRequestInFlight:
+      permissionRequestInFlight = true
+      AVCaptureDevice.requestAccess(for: .audio) { [weak self] _ in
+        DispatchQueue.main.async {
+          guard let self else { return }
+          self.permissionRequestInFlight = false
+          self.refresh()
+        }
+      }
+    default:
+      NSLog("Blueant wake word: microphone authorization is %@", String(describing: authorization))
+      stopEngine()
+    }
+  }
+
+  /// Recreate the tap after another audio client changes the shared device or
+  /// CoreAudio resets its media services. Without this, `active` can remain
+  /// true while the old engine has stopped delivering microphone buffers.
+  private func restartAfterAudioChange() {
+    guard desiredOn, !suppressed else { return }
+    stopEngine()
+    DispatchQueue.main.async { [weak self] in
+      guard let self, self.desiredOn, !self.suppressed else { return }
+      self.startEngine()
+    }
   }
 
   // MARK: Engine lifecycle
@@ -120,6 +179,7 @@ final class WakeWordListener {
     audioEngine = engine
     active = true
     NSLog("Blueant wake word: listening for \"%@\"", config.keyword)
+    logger.info("listener active; engine=\(self.transcriber.engineName, privacy: .public); keyword=\(self.config.keyword, privacy: .public)")
   }
 
   private func stopEngine() {
@@ -130,25 +190,36 @@ final class WakeWordListener {
     }
     audioEngine = nil
     converter = nil
+    ringLock.lock()
     ring.removeAll(keepingCapacity: true)
+    ringLock.unlock()
     speechStreak = 0
     decoding = false
+    noiseFloorInitialized = false
     active = false
+    transcriber.cancelAll()
   }
 
   // MARK: Audio path
 
   private func ingest(_ buffer: AVAudioPCMBuffer) {
     let level = Self.averagePowerDB(of: buffer)
-    // Quiet input slowly lowers the floor; speech (louder) never raises it,
-    // so the detector adapts to rooms without learning the user's voice as
-    // noise.
-    if level < noiseFloorDB {
+    if !noiseFloorInitialized {
+      noiseFloorDB = min(max(level, -60), -35)
+      noiseFloorInitialized = true
+    } else if level < noiseFloorDB {
       noiseFloorDB = noiseFloorDB * 0.95 + level * 0.05
+    } else {
+      // Slowly adapt upward to ambient room noise; rate is slow enough that
+      // speech utterances (1-3 seconds) do not significantly raise the floor.
+      noiseFloorDB = noiseFloorDB * 0.998 + min(level, -20) * 0.002
     }
     appendToRing(buffer)
     if level >= max(noiseFloorDB + config.onsetMarginDB, config.absoluteFloorDB) {
       speechStreak += 1
+      if speechStreak == config.onsetTaps {
+        logger.info("speech detected; level=\(level, privacy: .public) dB; noiseFloor=\(self.noiseFloorDB, privacy: .public) dB; decoding next audio window")
+      }
     } else {
       speechStreak = 0
     }
@@ -163,10 +234,12 @@ final class WakeWordListener {
           let converted = try? Self.convert(buffer, with: converter, to: Self.whisperFormat),
           converted.frameLength > 0 else { return }
     if let channel = converted.floatChannelData?[0] {
+      ringLock.lock()
       ring.append(contentsOf: UnsafeBufferPointer(start: channel, count: Int(converted.frameLength)))
-    }
-    if ring.count > ringCapacity {
-      ring.removeFirst(ring.count - ringCapacity)
+      if ring.count > ringCapacity {
+        ring.removeFirst(ring.count - ringCapacity)
+      }
+      ringLock.unlock()
     }
   }
 
@@ -175,18 +248,66 @@ final class WakeWordListener {
   /// engine's queue; `decoding` keeps one window in flight.
   private func decodeTrailingWindow() {
     let windowSamples = Int(config.decodeWindowSeconds * 16_000)
-    guard ring.count >= windowSamples / 2 else { return }
-    let window = Array(ring.suffix(windowSamples))
+    guard !decoding else { return }
     decoding = true
-    whisper.transcribe(window) { [weak self] text in
-      guard let self else { return }
-      self.decoding = false
-      let normalized = text.lowercased()
-      guard self.config.keywordVariants.contains(where: { normalized.contains($0) }) else { return }
-      self.lastWake = Date()
-      NSLog("Blueant wake word: triggered")
-      self.onWake()
+    // The listener may have just started, so the ring can contain less than a
+    // useful phrase window at speech onset. Wait for the shorter minimum
+    // window rather than dropping this wake attempt before transcription.
+    let minimumSamples = windowSamples / 2
+    ringLock.lock()
+    let currentRingCount = ring.count
+    ringLock.unlock()
+    let missingSamples = max(0, minimumSamples - currentRingCount)
+    let bufferDelay = Double(missingSamples) / 16_000
+    let delay = max(config.decodeDelaySeconds, bufferDelay)
+    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+      self?.decodeCompletedWindow(windowSamples: windowSamples)
     }
+  }
+
+  private func decodeCompletedWindow(windowSamples: Int) {
+    guard !suppressed else {
+      decoding = false
+      return
+    }
+    ringLock.lock()
+    let window = Array(ring.suffix(windowSamples))
+    ringLock.unlock()
+    guard window.count >= windowSamples / 2 else {
+      logger.info("wake decode skipped; only \(window.count, privacy: .public) samples buffered")
+      decoding = false
+      return
+    }
+    logger.info("sending \(window.count, privacy: .public) samples to \(self.transcriber.engineName, privacy: .public)")
+    transcriber.transcribe(window) { [weak self] text in
+      guard let self else { return }
+      if self.acceptWake(text, engine: self.transcriber.engineName) { return }
+      guard let fallback = self.fallbackTranscriber,
+            fallback.engineName != self.transcriber.engineName else {
+        self.decoding = false
+        return
+      }
+      self.logger.info("primary wake decode missed; retrying with \(fallback.engineName, privacy: .public)")
+      fallback.transcribe(window) { [weak self] fallbackText in
+        guard let self else { return }
+        _ = self.acceptWake(fallbackText, engine: fallback.engineName)
+        self.decoding = false
+      }
+    }
+  }
+
+  private func acceptWake(_ text: String, engine: String) -> Bool {
+    let normalized = text.lowercased()
+    let compact = normalized.filter { $0.isLetter || $0.isNumber }
+    let matched = config.keywordVariants.contains(where: { compact.contains($0) })
+    NSLog("Blueant wake word: %@ decoded window \"%@\" wakeMatch=%@", engine, text, matched.description)
+    logger.info("decoded engine=\(engine, privacy: .public); text=\(text, privacy: .public); wakeMatch=\(matched, privacy: .public)")
+    guard matched else { return false }
+    decoding = false
+    lastWake = Date()
+    NSLog("Blueant wake word: triggered")
+    onWake()
+    return true
   }
 
   // MARK: Helpers
