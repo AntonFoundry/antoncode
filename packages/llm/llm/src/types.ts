@@ -341,7 +341,7 @@ export type StreamChunk =
 export interface ToolSchema {
   name: string
   description: string
-  /** JSON Schema object for the arguments. */
+  /** JSON Schema object for the arguments; the registry requires the `type: 'object'` root and validates every dispatch against it. */
   parameters: Record<string, unknown>
 }
 

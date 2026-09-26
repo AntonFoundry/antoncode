@@ -20,7 +20,7 @@ import type { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type { ToolCallView, ToolResultView } from './presentation.ts'
 import { assertSupportedJsonSchema, validateJsonSchemaValue } from './json-schema.ts'
-import { toolsMatchingArgumentKeys } from './schema.ts'
+import { toolsMatchingArgumentKeys, ToolArgsError } from './schema.ts'
 import type { JsonSchemaNode } from './json-schema.ts'
 import { createRunCodeTool, RUN_CODE_NAME, SDK_SECTION_ORDER } from './code-mode.ts'
 import type { CodeSdkLanguage } from './code-mode.ts'
@@ -1268,6 +1268,11 @@ export class ToolRuntime extends Service {
       || (output.presentationMeta !== undefined && typeof output.presentationMeta !== 'function')) {
       throw new TypeError(`tool "${name}" must declare output { schema, render, presentationMeta? }`)
     }
+    const parameters = definition.parameters as Record<string, unknown>
+    if (parameters === null || typeof parameters !== 'object' || Array.isArray(parameters)
+      || parameters.type !== 'object') {
+      throw new TypeError(`tool "${name}" parameters must be a JSON Schema object with the "type: 'object'" root — the registry validates every dispatch against it, and a per-property spec leaks a schemaless declaration to the model`)
+    }
     assertSupportedJsonSchema(output.schema)
     const timeoutMs = definition.timeoutMs
     if (timeoutMs !== undefined
@@ -1821,6 +1826,10 @@ export class ToolRuntime extends Service {
     if (this.callerCancelled(exec)) {
       return next({ kind: 'final-result', exec, result: toolAbortedBeforeDispatchResult() })
     }
+    const invalidArgs = this.invalidArgumentsResult(exec)
+    if (invalidArgs !== undefined) {
+      return next({ kind: 'final-result', exec, result: invalidArgs })
+    }
     try {
       const carrier = scopeTarget(this, exec.agent)
       const gate = await this.ctx.waterfall(
@@ -1855,6 +1864,30 @@ export class ToolRuntime extends Service {
     } catch (error: unknown) {
       return next({ kind: 'final-result', exec, result: toolErrorResult(error) })
     }
+  }
+
+  /**
+   * Validate the snapshotted arguments against the registered parameter
+   * schema before any policy stage runs. A call that can only fail must never
+   * reach pre-execute listeners or an approval `ask` — a degenerate model
+   * emission (typically `{}` against a tool with required properties) executed
+   * opaquely and retried identically instead of correcting — and the
+   * schema-walk violations give the model an actionable next call. Undefined
+   * when the definition is not visible from this scope (a nested paged call
+   * resolves or denies at dispatch) or the arguments validate.
+   * @param exec - the prepared execution (tool name, scope, snapshotted arguments).
+   * @returns the normalized invalid-args result, or undefined to continue preparation.
+   */
+  private invalidArgumentsResult(exec: ToolRunContext): ToolExecutionResult | undefined {
+    const definition = this.get(exec.name, exec.agent)
+    if (definition === undefined) return undefined
+    const violations = validateJsonSchemaValue(
+      definition.parameters as Parameters<typeof validateJsonSchemaValue>[0],
+      exec.arguments,
+      '',
+    )
+    if (violations.length === 0) return undefined
+    return this.withSiblingHint(exec, toolErrorResult(new ToolArgsError(violations)))
   }
 
   /**
