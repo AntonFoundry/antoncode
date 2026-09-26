@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readFileSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { journalEnabled } from './blueant-settings.ts'
@@ -40,11 +40,37 @@ export function journalDirectory(): string {
   return process.env.ANTON_JOURNAL_DIR ?? join(homedir(), 'Library', 'Application Support', 'Anton', 'blueant', 'journal')
 }
 
+/** Persist a completed voice exchange in the same journal triaged into c0ntext. */
+export function appendVoiceTurn(user: string, assistant: string): void {
+  if (!journalEnabled()) return
+  const clean = (value: string): string => value.replace(/\s+/g, ' ').trim().slice(0, 2_000)
+  const lines = [`## ${timestamp()}`]
+  if (clean(user)) lines.push(`- voice_user: ${clean(user)}`)
+  if (clean(assistant)) lines.push(`- voice_assistant: ${clean(assistant)}`)
+  if (lines.length > 1) appendEntry(journalDirectory(), `${lines.join('\n')}\n\n`)
+}
+
+/** Recent voice text gives a new Gemini connection continuity across launches. */
+export function recentVoiceContext(): string {
+  if (!journalEnabled()) return ''
+  const dir = journalDirectory()
+  try {
+    const days = readdirSync(dir).filter(name => /^\d{4}-\d{2}-\d{2}\.md$/.test(name)).sort().slice(-2)
+    const lines = days.flatMap(day => readFileSync(join(dir, day), 'utf8').split('\n'))
+      .filter(line => line.startsWith('- voice_user: ') || line.startsWith('- voice_assistant: '))
+    return lines.slice(-16).join('\n').slice(-3_000)
+  } catch {
+    return ''
+  }
+}
+
 export function startJournalCollector(options: JournalCollectorOptions = {}): void {
   const intervalMs = options.intervalMs ?? 60_000
   const dir = options.journalDir ?? journalDirectory()
   const screenshotsDir = join(dir, 'screenshots')
-  mkdirSync(screenshotsDir, { recursive: true })
+  if (!ensureDir(screenshotsDir)) {
+    console.warn('[journal] screenshots dir unavailable; capture stays off while it is unreachable:', screenshotsDir)
+  }
 
   let lastKey = ''
   let lastClipboard = ''
@@ -134,11 +160,24 @@ async function sampleDesktop(): Promise<DesktopSample | undefined> {
 
 /** Full-screen silent capture as JPEG; returns the file name, or undefined on denial. */
 function captureScreenshot(screenshotsDir: string): string | undefined {
+  if (!ensureDir(screenshotsDir)) return undefined
   const name = `shot-${new Date().toISOString().replace(/[:.]/g, '-')}.jpg`
   const target = join(screenshotsDir, name)
   const proc = Bun.spawnSync(['screencapture', '-x', '-t', 'jpg', target], { stdout: 'ignore', stderr: 'ignore' })
   if (proc.exitCode !== 0) return undefined
   return name
+}
+
+/** Create dir when missing; false when it cannot exist — a journal dir may
+ * be a symlink to an unmounted volume, and capture must degrade to `undefined`
+ * (and retry on later ticks) instead of throwing the collector away. */
+function ensureDir(dir: string): boolean {
+  try {
+    mkdirSync(dir, { recursive: true })
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** Append to today's journal, creating the file with a dated header on first write. Shared with the mobile-ingest collector. */
