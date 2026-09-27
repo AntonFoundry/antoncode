@@ -60,27 +60,28 @@ describe('dsh-tool-todo', () => {
     const todos = props.todos as {
       type: string
       items?: {
-        properties?: Record<string, { type: string; enum?: string[] }>
+        oneOf?: { type?: string; properties?: Record<string, { type: string; enum?: string[] }> }[]
       }
     }
     expect(todos.type).toBe('array')
-    const itemProps = todos.items?.properties ?? {}
+    const objectBranch = todos.items?.oneOf?.find(branch => branch.type === 'object')
+    const itemProps = objectBranch?.properties ?? {}
     // A top-level node: content, the four-state status, optional priority, optional children.
     expect(Object.keys(itemProps).sort()).toEqual(['children', 'content', 'priority', 'status'])
     expect(itemProps.status?.enum).toEqual(['pending', 'in_progress', 'completed', 'cancelled'])
 
     // Level two carries the same fields plus its own children (level three).
     const childItems = itemProps.children as {
-      items?: { properties?: Record<string, unknown> }
+      items?: { oneOf?: { type?: string; properties?: Record<string, unknown> }[] }
     }
-    const childProps = childItems.items?.properties ?? {}
+    const childProps = childItems.items?.oneOf?.find(branch => branch.type === 'object')?.properties ?? {}
     expect(Object.keys(childProps).sort()).toEqual(['children', 'content', 'priority', 'status'])
 
     // Level three is leaf-shaped: no further nesting can be expressed.
     const grandItems = childProps.children as {
-      items?: { properties?: Record<string, unknown> }
+      items?: { oneOf?: { type?: string; properties?: Record<string, unknown> }[] }
     }
-    const grandProps = grandItems.items?.properties ?? {}
+    const grandProps = grandItems.items?.oneOf?.find(branch => branch.type === 'object')?.properties ?? {}
     expect(Object.keys(grandProps).sort()).toEqual(['content', 'priority', 'status'])
   })
 
@@ -263,15 +264,68 @@ describe('dsh-tool-todo', () => {
   })
 
   it.each([
-    { label: 'empty content', todos: [{ content: '   ', status: 'pending' }], fragment: 'non-empty' },
     { label: 'duplicate content', todos: [{ content: 'dup', status: 'pending' }, { content: 'dup', status: 'completed' }], fragment: 'duplicate' },
-    { label: 'a fourth level of nesting', todos: [{ content: 'a', status: 'pending', children: [{ content: 'b', status: 'pending', children: [{ content: 'c', status: 'pending', children: [{ content: 'd', status: 'pending' }] }] }] }], fragment: 'not a declared property' },
-    { label: 'an unknown priority', todos: [{ content: 'a', status: 'pending', priority: 'urgent' }], fragment: 'must be one of' },
+    { label: 'an unknown priority', todos: [{ content: 'a', status: 'pending', priority: 'urgent' }], fragment: 'oneOf branch' },
   ])('rejects $label as an isError result', async ({ todos, fragment }) => {
     const ctx = await setup(true)
     const result = await callTodo(ctx, { todos })
     expect(result.isError).toBe(true)
     expect(text(result)).toContain(fragment)
+  })
+
+  it('rejects an all-junk payload without wiping the standing plan', async () => {
+    const ctx = await setup(true)
+    const result = await callTodo(ctx, { todos: [{ [': 0, ']: 0 }, { '': null }, '   ', { junk: true }] })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('no salvageable entries')
+  })
+
+  it('salvages corrupted entries: trailing-space keys, junk props, string children, missing status', async () => {
+    const ctx = await setup(true)
+    const agent = agentWithSession('salvage')
+    // The exact corruption shapes from the failure report, mixed with valid nodes.
+    const result = await callTodo(ctx, { todos: [
+      { content: 'phase one', status: 'in_progress', children: [
+        { content: 'step a', status: 'completed' },
+        { 'content ': ', ' }, // trailing-space key repaired: content ', ' survives as a pending node
+        { [': 0, ']: 0 }, // no usable content: dropped
+        { '': null }, // empty key, null value: dropped
+        'plain string child', // coerced to a pending node
+        { content: 'step without status' }, // status defaults to pending
+        { content: 'step b', status: 'pending', bogus: 'ignored' }, // unknown key ignored
+      ] },
+      { '': null }, // top-level junk: dropped, valid siblings survive
+      { content: 'phase two' },
+    ] }, { agent })
+    expect(result.isError).toBe(false)
+    if (result.isError) throw new Error('expected todo_write success')
+
+    const stored = agent.session.events.findLast(e => e.type === 'todo/write')!.data.todos
+    expect(stored).toEqual([
+      { content: 'phase one', status: 'in_progress', children: [
+        { content: 'step a', status: 'completed' },
+        { content: ',', status: 'pending' },
+        { content: 'plain string child', status: 'pending' },
+        { content: 'step without status', status: 'pending' },
+        { content: 'step b', status: 'pending' },
+      ] },
+      { content: 'phase two', status: 'pending' },
+    ])
+  })
+
+  it('drops a fourth nesting level instead of failing the whole call', async () => {
+    const ctx = await setup(true)
+    const agent = agentWithSession('depth-cap')
+    const result = await callTodo(ctx, { todos: [{ content: 'a', status: 'pending', children: [
+      { content: 'b', status: 'pending', children: [{ content: 'c', status: 'pending', children: [
+        { content: 'd', status: 'pending' },
+      ] }] },
+    ] }] }, { agent })
+    expect(result.isError).toBe(false)
+    const stored = agent.session.events.findLast(e => e.type === 'todo/write')!.data.todos
+    expect(stored).toEqual([{ content: 'a', status: 'pending', children: [
+      { content: 'b', status: 'pending', children: [{ content: 'c', status: 'pending' }] },
+    ] }])
   })
 
   it('rejects a non-agent caller (the list has no owning session)', async () => {

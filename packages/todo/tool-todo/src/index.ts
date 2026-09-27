@@ -164,9 +164,8 @@ function toTodoNode(raw: RawTodoNode, depth: number, seen: Set<string>, allowPar
  * Validate the value constraints the ParameterSchemaSpec can't express and build the canonical
  * {@link TodoItem} tree: trimmed non-empty unique content across all levels, known statuses and
  * priorities, and at most one `in_progress` node in the whole tree unless the deployment allows
- * parallel work. The registry has already enforced the structural rules (node object shape, enum
- * membership, depth via the leaf shapes' missing `children`, `additionalProperties: false`), so a
- * malformed tree fails loud at the schema boundary; this walk owns only the cross-node values.
+ * parallel work. The handler repairs corrupted entries first (`repairTodoTree`); this walk owns
+ * the cross-node values on the repaired tree.
  * @param raw - the model-supplied tree, already schema-checked.
  * @param allowParallel - whether several nodes may be `in_progress` at once.
  * @returns the canonical tree.
@@ -243,12 +242,11 @@ const todosProjectionSchema = zod.union([
 function leafSchemaShape(): ObjectValueSchemaSpec {
   return {
     type: 'object',
-    additionalProperties: false,
+    additionalProperties: true,
     properties: {
-      content: { type: 'string', required: true, description: 'What the task is — a short imperative line.' },
+      content: { type: 'string', description: 'What the task is — a short imperative line.' },
       status: {
         type: 'string',
-        required: true,
         enum: [...STATUSES],
         description: 'pending (not started) | in_progress (now) | completed (done) | cancelled (dropped).',
       },
@@ -259,6 +257,63 @@ function leafSchemaShape(): ObjectValueSchemaSpec {
       },
     },
   }
+}
+
+/**
+ * Salvage one model-supplied node before strict normalization: model output occasionally arrives
+ * corrupted (junk entries like `{"content ": ", "}` or `{"": null}`, string children, missing
+ * statuses). This pass trims object keys, coerces a string entry to a pending node, drops entries
+ * with no usable `content`, defaults missing/unknown statuses to `pending`, omits invalid
+ * priorities, and caps nesting at three levels by ignoring deeper `children`. Unknown keys are
+ * ignored. Entry is `null` when nothing survives.
+ * @param raw - one unvalidated array entry.
+ * @param depth - 1-based level this entry would occupy.
+ * @returns the repaired node, or null to drop the entry.
+ */
+function repairTodoNode(raw: unknown, depth: number): RawTodoNode | null {
+  if (typeof raw === 'string') {
+    const content = raw.trim()
+    return content.length > 0 ? { content, status: 'pending' } : null
+  }
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const record: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(raw)) record[key.trim()] = value
+  const content = typeof record.content === 'string' ? record.content.trim() : ''
+  if (content.length === 0) return null
+  const node: RawTodoNode = {
+    content,
+    status: (STATUSES as readonly string[]).includes(record.status as string)
+      ? record.status as string
+      : 'pending',
+  }
+  if ((PRIORITIES as readonly string[]).includes(record.priority as string)) {
+    node.priority = record.priority as string
+  }
+  if (Array.isArray(record.children) && depth < 3) {
+    const children = record.children
+      .map(child => repairTodoNode(child, depth + 1))
+      .filter((child): child is RawTodoNode => child !== null)
+    if (children.length > 0) node.children = children
+  }
+  return node
+}
+
+/**
+ * Salvage the whole `todos` payload: repair each entry and drop the unsalvageable, so a few
+ * corrupted entries never lose the whole tree. An empty input array stays an (allowed) empty
+ * tree; a non-empty input whose entries all fail salvage rejects loudly instead of silently
+ * wiping the standing plan.
+ * @param raw - the model-supplied `todos` value.
+ * @returns repaired nodes for {@link toTodoTree}.
+ */
+function repairTodoTree(raw: unknown): RawTodoNode[] {
+  if (!Array.isArray(raw)) throw new Error('invalid todos: `todos` must be an array')
+  if (raw.length === 0) return []
+  const nodes = raw.map(node => repairTodoNode(node, 1)).filter((node): node is RawTodoNode => node !== null)
+  if (nodes.length === 0) {
+    throw new Error('invalid todos: no salvageable entries — every node was malformed')
+  }
+  return nodes
 }
 
 /**
@@ -318,50 +373,66 @@ export function apply(ctx: Context, config: Config): void {
         type: 'array',
         required: true,
         description: 'The COMPLETE task tree, replacing any previous tree. Up to three levels: a top-level task nests children, which may themselves nest grandchildren.',
+        // Tolerant: corrupted entries (junk keys, missing fields, string
+        // children) pass the schema boundary so the handler's repair pass can
+        // salvage them instead of losing the whole call to `invalid arguments`.
         items: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            content: { type: 'string', required: true, description: 'What the task is — a short imperative line.' },
-            status: {
-              type: 'string',
-              required: true,
-              enum: [...STATUSES],
-              description: 'pending (not started) | in_progress (now) | completed (done) | cancelled (dropped).',
-            },
-            priority: {
-              type: 'string',
-              enum: [...PRIORITIES],
-              description: 'Optional scheduling weight: high | medium | low.',
-            },
-            children: {
-              type: 'array',
-              description: 'Subtasks of this node (level two). Each child may itself carry grandchildren (level three); nothing nests below that.',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                properties: {
-                  content: { type: 'string', required: true, description: 'What the task is — a short imperative line.' },
-                  status: {
-                    type: 'string',
-                    required: true,
-                    enum: [...STATUSES],
-                    description: 'pending (not started) | in_progress (now) | completed (done) | cancelled (dropped).',
-                  },
-                  priority: {
-                    type: 'string',
-                    enum: [...PRIORITIES],
-                    description: 'Optional scheduling weight: high | medium | low.',
-                  },
-                  children: {
-                    type: 'array',
-                    description: 'Grandchildren of this node (level three — the deepest). Leaf shapes: no further nesting.',
-                    items: leafSchemaShape(),
+          oneOf: [
+            {
+              type: 'object',
+              additionalProperties: true,
+              properties: {
+                content: { type: 'string', description: 'What the task is — a short imperative line.' },
+                status: {
+                  type: 'string',
+                  enum: [...STATUSES],
+                  description: 'pending (not started) | in_progress (now) | completed (done) | cancelled (dropped).',
+                },
+                priority: {
+                  type: 'string',
+                  enum: [...PRIORITIES],
+                  description: 'Optional scheduling weight: high | medium | low.',
+                },
+                children: {
+                  type: 'array',
+                  description: 'Subtasks of this node (level two). Each child may itself nest grandchildren (level three); nothing nests below that.',
+                  items: {
+                    oneOf: [
+                      {
+                        type: 'object',
+                        additionalProperties: true,
+                        properties: {
+                          content: { type: 'string', description: 'What the task is — a short imperative line.' },
+                          status: {
+                            type: 'string',
+                            enum: [...STATUSES],
+                            description: 'pending (not started) | in_progress (now) | completed (done) | cancelled (dropped).',
+                          },
+                          priority: {
+                            type: 'string',
+                            enum: [...PRIORITIES],
+                            description: 'Optional scheduling weight: high | medium | low.',
+                          },
+                          children: {
+                            type: 'array',
+                            description: 'Grandchildren of this node (level three — the deepest). Leaf shapes: no further nesting.',
+                            items: {
+                              oneOf: [
+                                leafSchemaShape(),
+                                { type: 'string', description: 'A bare task line; repaired into a pending node.' },
+                              ],
+                            },
+                          },
+                        },
+                      },
+                      { type: 'string', description: 'A bare task line; repaired into a pending node.' },
+                    ],
                   },
                 },
               },
             },
-          },
+            { type: 'string', description: 'A bare task line; repaired into a pending node.' },
+          ],
         },
       },
     },
@@ -427,7 +498,7 @@ export function apply(ctx: Context, config: Config): void {
       }],
     },
     execute(args, exec) {
-      const todos = toTodoTree(args.todos as unknown as RawTodoNode[], allowParallel)
+      const todos = toTodoTree(repairTodoTree(args.todos), allowParallel)
       if (!exec.agent) {
         // The tree is per-agent-session state; a non-agent caller (no owning
         // session) has nowhere to write it. Reject rather than silently no-op.
