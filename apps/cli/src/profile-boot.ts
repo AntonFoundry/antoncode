@@ -247,7 +247,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   // complete; SIGINT is a user interrupt and reports 130.
   process.on('SIGTERM', () => { interrupt(0) })
   process.on('SIGINT', () => { interrupt(130) })
-  installFailLoud(NAME, process, async () => {
+  const failLoud = installFailLoud(NAME, process, async () => {
     await app.current?.fiber.dispose()
   })
 
@@ -301,6 +301,16 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   // The loop only exits through break (context settled) or throw.
   if (ctx === undefined) throw new Error(`${NAME}: boot loop exited without a context`)
   app.current = ctx
+  // The load window is over: fail-loud's whole-process exit(1) on any
+  // unhandled rejection must not outlive boot. A background task that rejects
+  // late (an unresolved model route, a dropped poller) degrades the surface —
+  // it must not kill the harness and trip the app watchdog into recovery. A
+  // handler stays installed because with none, Node's default turns the next
+  // rejection into an uncaught exception anyway.
+  failLoud()
+  process.on('unhandledRejection', (err: unknown) => {
+    console.error(`${NAME}: unhandled rejection (serving; not fatal): ${err instanceof Error ? err.stack ?? err.message : String(err)}`)
+  })
   // A surface can dispose the whole tree while boot or this post-boot watcher
   // setup is still in flight — a signal, or a fast one-shot's appExit. Loader
   // presence and fiber state own liveness; the initial check skips a tree
