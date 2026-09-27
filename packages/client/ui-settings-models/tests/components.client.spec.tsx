@@ -6,7 +6,7 @@ import Schema from '@deepseek-ai/schemastery'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
 import type { RpcResponse, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  ModelsSection, needsSetup, providerCopy, providerTargetLabel, removeProviderProfile,
+  ModelsSection, needsSetup, providerCopy, providerDisplayName, providerTargetLabel, removeProviderProfile,
 } from '../src/client/ModelsSection.tsx'
 import type { ModelsSectionInjected, ModelsSectionProps } from '../src/client/ModelsSection.tsx'
 import { pathOps } from '../src/client/ProviderEditor.tsx'
@@ -330,6 +330,31 @@ describe('ModelsSection', () => {
     expect(providerTargetLabel(target)).toBe('DeepSeek (deepseek-official)')
     expect(providerCopy(en.deleteTitle, target)).toBe('Delete DeepSeek (deepseek-official)?')
     expect(providerTargetLabel(OPENAI_TARGET)).toBe('openai')
+  })
+
+  it('uses branded names for catalog providers whose route ids are lowercase', async () => {
+    expect(providerDisplayName('kimi-coding', 'kimi-coding')).toBe('Kimi Coding')
+    expect(providerDisplayName('nvidia', 'nvidia')).toBe('NVIDIA')
+    expect(providerDisplayName('qwen-token-plan', 'qwen-token-plan')).toBe('Qwen Token Plan')
+    expect(providerDisplayName('qwen-token-plan-individual', 'qwen-token-plan-individual'))
+      .toBe('Qwen Token Plan Individual')
+    expect(providerDisplayName('zai', 'zai')).toBe('Z.ai')
+    expect(providerDisplayName('acme', 'My Acme')).toBe('My Acme')
+
+    const scripted = scriptedFace()
+    scripted.face.llm.providers.mockImplementation(() => Promise.resolve(ok({ providers: [
+      { provider: 'nvidia', displayName: 'nvidia', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'nvidia'], active: true },
+      { provider: 'zai', displayName: 'zai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'zai'], active: true },
+    ] })))
+    scripted.face.settings.describe.mockImplementation(() => Promise.resolve(ok({
+      writable: true,
+      namespaces: wireNamespaces().map(namespace => namespace.ns === 'llm-pi-ai'
+        ? { ...namespace, value: { providers: { nvidia: {}, zai: {} } } }
+        : namespace),
+    })))
+    await mountFace(scripted)
+    expect(screen.getByText('NVIDIA')).toBeTruthy()
+    expect(screen.getByText('Z.ai')).toBeTruthy()
   })
 
   it('names only changed fields instead of rebuilding the section', () => {

@@ -52,6 +52,19 @@ export interface ProviderIdentity {
   displayName: string
 }
 
+const PROVIDER_DISPLAY_NAMES: Readonly<Record<string, string>> = {
+  'kimi-coding': 'Kimi Coding',
+  nvidia: 'NVIDIA',
+  'qwen-token-plan': 'Qwen Token Plan',
+  'qwen-token-plan-individual': 'Qwen Token Plan Individual',
+  zai: 'Z.ai',
+}
+
+/** Apply established branding when a provider uses its route id as its display name. */
+export function providerDisplayName(provider: string, displayName: string): string {
+  return provider === displayName ? PROVIDER_DISPLAY_NAMES[provider] ?? displayName : displayName
+}
+
 /** One existing row or dormant directory entry addressed by an editor action. */
 interface EditorTarget extends ProviderIdentity {
   settingsNs: string
@@ -179,7 +192,7 @@ function targetOf(row: ProviderRow): EditorTarget {
     : undefined
   return {
     provider: row.entry.provider,
-    displayName: row.entry.displayName,
+    displayName: providerDisplayName(row.entry.provider, row.entry.displayName),
     settingsNs: row.entry.settingsNs,
     settingsPath: row.entry.settingsPath,
     ...credentialRef === undefined ? {} : { credentialRef },
@@ -317,7 +330,10 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
     : state.rows.find(row => row.entry.provider === savedTarget.provider)
   const savedIdentity = savedRow === undefined
     ? savedTarget
-    : { provider: savedRow.entry.provider, displayName: savedRow.entry.displayName }
+    : {
+      provider: savedRow.entry.provider,
+      displayName: providerDisplayName(savedRow.entry.provider, savedRow.entry.displayName),
+    }
 
   // One fact decides both first-run postures on this page and the onboarding
   // step: whether the user already has a provider to talk to.
@@ -388,7 +404,7 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
                 <span className={styles['rowIdentity']}>
                   <span
                     className={`${styles['rowName']} ${row.enabled ? '' : styles['rowNameDisabled']}`}
-                  >{row.entry.displayName}</span>
+                  >{target.displayName}</span>
                   {/* Only the adapter can tell a hand-declared route from a
                       shipped one it also has a stored profile for, so the tag
                       follows its answer and stays off when it gives none. */}
@@ -498,7 +514,9 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
                   }}
                 >
                   {addable.map(row => (
-                    <option key={row.entry.provider} value={row.entry.provider}>{row.entry.displayName}</option>
+                    <option key={row.entry.provider} value={row.entry.provider}>
+                      {providerDisplayName(row.entry.provider, row.entry.displayName)}
+                    </option>
                   ))}
                 </select>
               </div>
