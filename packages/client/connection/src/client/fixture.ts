@@ -2629,6 +2629,15 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       resize: () => { throw new Error('fixture: no interactive terminals') },
       dispose: () => { throw new Error('fixture: no interactive terminals') },
     },
+    orchestrator: {
+      board: request => ok(request, {
+        items: [...workspaces],
+        archivedSessionIds: [...archivedSessionIds],
+        sessions: [...sessions].sort((a, b) => b.updatedAt - a.updatedAt),
+      }),
+      act: request => api.sessions.cancel(request),
+    },
+
     workspace: {
       list: request => ok(request, {
         items: workspaces.map(w => ({ ...w })),
@@ -3170,6 +3179,8 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'host.listDirectory': return this.api.host.listDirectory(request, new AbortController().signal)
       case 'host.createDirectory': return this.api.host.createDirectory(request)
       case 'host.openPath': return this.api.host.openPath(request, new AbortController().signal)
+      case 'orchestrator.board': return this.api.orchestrator.board(request)
+      case 'orchestrator.act': return this.api.orchestrator.act(request)
       case 'workspace.list': return this.api.workspace.list(request)
       case 'workspace.create': return this.api.workspace.create(request)
       case 'workspace.rename': return this.api.workspace.rename(request)
