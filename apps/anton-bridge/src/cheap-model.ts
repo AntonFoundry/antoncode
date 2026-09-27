@@ -49,15 +49,18 @@ export async function cheapChat(request: CheapChatRequest): Promise<string> {
       // Quota exhaustion on the coding subscription is expected weekly; the
       // Z.ai key is the standing fallback tier, not a second provider to
       // configure.
-      if (!/usage limit|quota|rate.?limit|429|403/i.test(message)) throw error
-      console.warn('[cheap-model] Kimi Coding quota exhausted — falling back to Z.ai glm-5.3-flash')
+      if (!/usage limit|quota|rate.?limit|subscription|access to|401|429|403/i.test(message)) throw error
+      console.warn('[cheap-model] Kimi Coding route unavailable — falling back to Z.ai glm-5.3-flash')
     }
   }
   const zaiKey = readCredential('ZAI_API_KEY')
   if (zaiKey === '') {
     throw new Error('no usable cheap-model credential (Kimi exhausted, no ZAI_API_KEY)')
   }
-  return await callOpenAiCompatible('https://api.z.ai/api/paas/v4/chat/completions', zaiKey, request.model ?? 'glm-5.3-flash', request)
+  // The ZAI_API_KEY is a coding-plan entitlement: the plain v4 endpoint
+  // answers 429 "insufficient balance" for it. The harness zai route uses the
+  // coding-plan base URL, and so does this fallback.
+  return await callOpenAiCompatible('https://api.z.ai/api/coding/paas/v4/chat/completions', zaiKey, request.model ?? 'glm-5.3-flash', request)
 }
 
 async function callAnthropicMessages(url: string, apiKey: string, model: string, request: CheapChatRequest): Promise<string> {
