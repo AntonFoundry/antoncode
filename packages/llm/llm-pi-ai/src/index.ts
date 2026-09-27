@@ -67,6 +67,7 @@ import { assertServiceable, Config, resolveProfiles } from './config.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { discoverModels } from './discovery.ts'
 import { fetchModelsDevDocument, parseModelsDevLiveModels, ZAI_REASONING_EFFORTS } from './models-dev.ts'
+import { fetchNvidiaLlmModels, mergeNvidiaLlmModels } from './nvidia-models.ts'
 
 /**
  * The routes whose live model list refreshes from models.dev at startup,
@@ -285,6 +286,30 @@ export function apply(ctx: Context, config: Config): void {
         // fetch fails for any reason; the models.dev error is subsumed by the
         // fallback attempt and, if that also fails, the diagnostic below.
         if (raw.liveModelDiscovery === true) {
+          if (provider === 'nvidia') {
+            // NVIDIA's `/models` endpoint is a partial catalog: its official
+            // LLM reference documents additional models served by the same
+            // `/v1/chat/completions` endpoint, including partner publishers.
+            // Read the reference at startup and union the account's live ids
+            // so new documented endpoints appear without dropping provider-
+            // specific models the key advertises.
+            const [documented, listed] = await Promise.allSettled([
+              fetchNvidiaLlmModels(),
+              gatewayListing(),
+            ])
+            if (documented.status === 'fulfilled') {
+              adopt(mergeNvidiaLlmModels(
+                documented.value,
+                listed.status === 'fulfilled' ? listed.value : [],
+              ))
+              return
+            }
+            if (listed.status === 'fulfilled') {
+              adopt(listed.value)
+              return
+            }
+            throw documented.reason
+          }
           adopt(await gatewayListing())
           return
         }

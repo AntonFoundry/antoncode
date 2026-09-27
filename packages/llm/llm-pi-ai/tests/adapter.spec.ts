@@ -380,8 +380,8 @@ describe('provider profile lifecycle', () => {
       },
     })
     expect(ctx.llm.listProviders()).toEqual([
-      { id: 'openai', name: 'openai' },
-      { id: 'anthropic', name: 'anthropic' },
+      { id: 'openai', name: 'OpenAI' },
+      { id: 'anthropic', name: 'Anthropic' },
     ])
     expect(ctx.llm.providerRetryPolicy('openai')).toEqual({
       mode: 'always',
@@ -403,12 +403,25 @@ describe('provider profile lifecycle', () => {
     await ctx.plugin(LlmPiAi, { providers: { openai: {} } })
     const models = await ctx.llm.listModels('openai')
     expect(models.find(model => model.id === 'gpt-4.1')).toEqual({
-      provider: 'openai', id: 'gpt-4.1', name: 'GPT-4.1',
+      provider: 'openai', id: 'gpt-4.1', name: 'GPT 4.1',
       inputModalities: ['text', 'image'],
     })
     expect(models.every(model => model.provider === 'openai')).toBe(true)
     const info = await ctx.llm.resolveModelInfo('openai', 'gpt-4.1')
     expect(typeof info.context?.contextWindow).toBe('number')
+  })
+
+  it('humanizes NVIDIA provider/model labels without changing request ids', async () => {
+    const adapter = adapterOf({ nvidia: {
+      models: [{ id: 'z-ai/glm-5.3-flash', name: 'GLM-5.3-Flash', input: ['text', 'image'] }],
+    } })
+    expect(adapter.providerInfo('nvidia')).toEqual({ id: 'nvidia', name: 'NVIDIA' })
+    await expect(adapter.listModels('nvidia')).resolves.toContainEqual({
+      provider: 'nvidia',
+      id: 'z-ai/glm-5.3-flash',
+      name: 'GLM 5.3 Flash',
+      inputModalities: ['text', 'image'],
+    })
   })
 
   it('exposes pi-ai model thinking levels verbatim without inventing a provider default', async () => {

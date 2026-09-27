@@ -52,6 +52,7 @@ import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { toPiContext } from './context.ts'
+import { displayModelName, displayProviderName } from './presentation.ts'
 import { toStreamChunks } from './stream.ts'
 
 /** One resolution's frozen view: the profiles and the collection built from them. */
@@ -236,7 +237,9 @@ export class PiAiAdapter extends LlmAdapter {
     // The configured name, not the route key: `displayName` exists so a
     // deployment can label a route, and a label only the configuration surface
     // reads would leave every selector showing the raw key.
-    return { id: provider, name: this.current().profiles.get(provider)?.displayName ?? provider }
+    const profile = this.current().profiles.get(provider)
+    if (profile === undefined) return { id: provider, name: provider }
+    return { id: provider, name: displayProviderName(provider, profile.displayName) }
   }
 
   override providerRetryPolicy(provider: string): ResolvedRetryPolicy | undefined {
@@ -251,7 +254,7 @@ export class PiAiAdapter extends LlmAdapter {
       return snapshot.models.getModels(provider).map(model => ({
         provider,
         id: model.id,
-        name: model.name,
+        name: displayModelName(model.name, model.id),
         inputModalities: [...model.input],
       }))
     })

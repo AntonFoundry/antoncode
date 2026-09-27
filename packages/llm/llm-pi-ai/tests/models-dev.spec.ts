@@ -9,6 +9,7 @@ import LlmRuntime from '@deepseek-ai/dsh-llm'
 import FileSettingsProvider from '@deepseek-ai/dsh-settings-file'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import { fetchModelsDevDocument, MODELS_DEV_API_URL, parseModelsDevLiveModels, ZAI_REASONING_EFFORTS } from '../src/models-dev.ts'
+import { NVIDIA_LLM_API_REFERENCE_URL } from '../src/nvidia-models.ts'
 import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
 
 const homes: string[] = []
@@ -181,5 +182,57 @@ describe('startup ZAI catalog refresh', () => {
       ids.push(...(await ctx.llm.listModels('zai')).map(model => model.id))
     })
     expect(ids).toEqual(['glm-4.7', 'glm-5-turbo', 'glm-5.2', 'glm-5.2-highspeed', 'glm-5.3'])
+  })
+})
+
+describe('startup NVIDIA catalog refresh', () => {
+  it('unions the documented chat catalog with the account listing and configured model', async () => {
+    const server = createServer((_request, response) => {
+      const body = JSON.stringify({ data: [{ id: 'endpoint-only-model' }] })
+      response.writeHead(200, { 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(body)) })
+      response.end(body)
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    servers.push(server)
+    const baseURL = `http://127.0.0.1:${(server.address() as { port: number }).port}/v1`
+    const reference = [
+      '# LLM APIs',
+      '| Model | Endpoint |',
+      '| --- | --- |',
+      '| [deepseek-ai / deepseek-v4-flash](https://docs.api.nvidia.com/nim/reference/deepseek-ai-deepseek-v4-flash) | [Chat](https://docs.api.nvidia.com/nim/reference/deepseek-ai-deepseek-v4-flash-infer) |',
+    ].join('\n')
+    vi.stubEnv('PI_NVIDIA_TEST_KEY', 'test-key')
+    vi.stubGlobal('fetch', vi.fn(async (url: string | URL) => {
+      const target = url.toString()
+      if (target === NVIDIA_LLM_API_REFERENCE_URL) return new Response(reference, { status: 200 })
+      if (target === `${baseURL}/models`) {
+        const body = JSON.stringify({ data: [{ id: 'endpoint-only-model' }] })
+        return new Response(body, {
+          status: 200,
+          headers: { 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(body)) },
+        })
+      }
+      throw new Error(`unexpected fetch of ${target}`)
+    }))
+    const ctx = await harness({ providers: {
+      nvidia: {
+        apiKeyEnv: 'PI_NVIDIA_TEST_KEY',
+        baseURL,
+        liveModelDiscovery: true,
+        liveModelUnion: true,
+        models: [{
+          id: 'z-ai/glm-5.3-flash',
+          name: 'GLM 5.3 Flash',
+          contextWindow: 1_000_000,
+          maxTokens: 131_072,
+          input: ['text', 'image'],
+        }],
+      },
+    } })
+
+    const ids = (await ctx.llm.listModels('nvidia')).map(model => model.id)
+    expect(ids).toContain('z-ai/glm-5.3-flash')
+    expect(ids).toContain('deepseek-ai/deepseek-v4-flash')
+    expect(ids).toContain('endpoint-only-model')
   })
 })
