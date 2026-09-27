@@ -504,32 +504,44 @@ export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
   // An override becomes the catalog entry's configuration, so everything a
   // models entry may declare — capacities, efforts, compat — resolves through
   // the same path with the same diagnostics and request-default semantics.
+  // Live entries ride the same profile shape; with an explicit models list
+  // present they join behind it (a route's opt-in decides whether they are
+  // passed here at all), otherwise they stand in for the absent list.
+  const liveEntries: readonly PiAiModelProfile[] = (request.liveModels ?? []).map(model => ({
+    id: model.id,
+    ...model.name === undefined ? {} : { name: model.name },
+    ...model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow },
+    ...model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens },
+    ...model.reasoningEfforts === undefined ? {} : { reasoningEfforts: model.reasoningEfforts },
+    ...model.input === undefined ? {} : { input: [...model.input] },
+  }))
   const configuredEntries: readonly PiAiModelProfile[] = configured.length > 0
     ? configured
-    : request.liveModels !== undefined
-      ? request.liveModels.map(model => ({
-        id: model.id,
-        ...model.name === undefined ? {} : { name: model.name },
-        ...model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow },
-        ...model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens },
-        ...model.reasoningEfforts === undefined ? {} : { reasoningEfforts: model.reasoningEfforts },
-        ...model.input === undefined ? {} : { input: [...model.input] },
-      }))
+    : liveEntries.length > 0
+      ? liveEntries
       : [...defaults.values()].map(model => ({ id: model.id, ...overrides[model.id] }))
   const declared = new Set<string>()
   for (const entry of configuredEntries) {
     if (declared.has(entry.id)) invalid(provider, `lists model "${entry.id}" more than once`)
     declared.add(entry.id)
   }
-  // The union tail: installed-catalog models the explicit list or live
-  // listing did not name, keeping their installed fields. A catalog entry an
-  // override names still lands here, so `modelOverrides` never lands nowhere.
-  const entries: readonly PiAiModelProfile[] = [
-    ...configuredEntries,
-    ...[...defaults.values()]
-      .filter(model => !declared.has(model.id))
-      .map(model => ({ id: model.id, ...overrides[model.id] })),
-  ]
+  // The union tail: live-discovered models the explicit list did not name,
+  // then installed-catalog models neither source named, keeping their own
+  // fields. One running declared set deduplicates across all three sources —
+  // a discovered id the installed catalog also ships keeps the discovered
+  // entry. A catalog entry an override names still lands here, so
+  // `modelOverrides` never lands nowhere.
+  const entries: PiAiModelProfile[] = [...configuredEntries]
+  for (const model of liveEntries) {
+    if (declared.has(model.id)) continue
+    declared.add(model.id)
+    entries.push(model)
+  }
+  for (const model of defaults.values()) {
+    if (declared.has(model.id)) continue
+    declared.add(model.id)
+    entries.push({ id: model.id, ...overrides[model.id] })
+  }
   if (entries.length === 0) {
     invalid(provider, 'resolves no models; the installed catalog does not describe this route, so its models'
       + ' must be listed in configuration')

@@ -72,6 +72,14 @@ export interface PiAiProviderProfile {
    * pi-ai catalog when their source fails.
    */
   liveModelDiscovery?: boolean
+  /**
+   * Union the startup live listing into an explicitly configured `models`
+   * list: configured entries win by id, discovered ids join, and the
+   * installed catalog keeps serving anything neither named. Without it, a
+   * `models` list is strict curation — the route serves exactly that list
+   * plus the installed catalog, and no live fetch runs for it.
+   */
+  liveModelUnion?: boolean
   /** Name shown by configuration surfaces; defaults to the route key. */
   displayName?: string
   /**
@@ -245,6 +253,7 @@ const modelOverride: z<PiAiModelOverride> = z.object(modelFields)
 const profile = z.object({
   apiKeyEnv: z.string().role('credential-ref'),
   liveModelDiscovery: z.boolean(),
+  liveModelUnion: z.boolean(),
   displayName: z.string(),
   api: z.union(supportedProtocols()),
   baseURL: z.string(),
@@ -360,14 +369,18 @@ export function resolveProfiles(
       ...source.modelOverrides === undefined ? {} : { modelOverrides: source.modelOverrides },
       ...(() => {
         const live = liveModels.get(provider)
-        return live === undefined ? {} : { liveModels: live }
+        // A live listing joins an explicit models list only on a route that
+        // opted in; strict curation passes no live ids to the resolver.
+        if (live === undefined
+          || ((source.models?.length ?? 0) > 0 && source.liveModelUnion !== true)) return {}
+        return { liveModels: live }
       })(),
       ...source.compat === undefined ? {} : { compat: source.compat },
       defaultInput,
       defaultContextWindow: source.defaultContextWindow ?? DEFAULT_CONTEXT_WINDOW,
       defaultMaxTokens: source.defaultMaxTokens ?? DEFAULT_MAX_TOKENS,
     })
-    const { apiKeyEnv, retryPolicy, models: _models, displayName: _displayName, ...rest } = source
+    const { apiKeyEnv, retryPolicy, models: _models, displayName: _displayName, liveModelUnion: _liveModelUnion, ...rest } = source
     resolved.set(provider, {
       ...rest,
       provider,

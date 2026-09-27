@@ -508,8 +508,25 @@ describe('catalog routes with per-model configuration', () => {
     const explicit = resolveProfiles({
       zai: { models: [{ id: 'chosen', contextWindow: 4096, maxTokens: 512 }] },
     }, new Map([['zai', [{ id: 'ignored-live-model' }]]]))
+    // Strict curation: without liveModelUnion the explicit list replaces the
+    // catalog and the live listing stays out entirely.
     expect(explicit.get('zai')?.piProvider.getModels().map(model => model.id))
       .toEqual(['chosen', ...zaiCatalog])
+
+    const unioned = resolveProfiles({
+      zai: { models: [{ id: 'chosen', contextWindow: 4096, maxTokens: 512 }], liveModelUnion: true },
+    }, new Map([['zai', [{ id: 'glm-5.3', name: 'GLM-5.3', contextWindow: 200_000, maxTokens: 131_072 }]]]))
+    // With the opt-in the configured entry wins by id, the discovered ids
+    // join, and catalog-only models keep serving behind them.
+    const unionModels = unioned.get('zai')?.piProvider.getModels() ?? []
+    expect(unionModels.map(model => model.id))
+      .toEqual(['chosen', 'glm-5.3', ...zaiCatalog.filter(id => id !== 'chosen' && id !== 'glm-5.3')])
+    const unionNamed = unionModels.find(model => model.id === 'glm-5.3')
+    expect(unionNamed?.name).toBe('GLM-5.3')
+    expect(unionNamed?.contextWindow).toBe(200_000)
+    // The configured pin keeps its own explicit fields.
+    const pinned = unionModels.find(model => model.id === 'chosen')
+    expect(pinned?.contextWindow).toBe(4096)
   })
 
   it('preserves catalog-only model metadata the profile cannot express', () => {

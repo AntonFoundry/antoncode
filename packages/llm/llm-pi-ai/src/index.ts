@@ -254,8 +254,11 @@ export function apply(ctx: Context, config: Config): void {
       // no request, so both mean "the catalog decides" — the same reading
       // `resolveRouteModels` applies. A route that names no credential never
       // fetches: without the key the discovery fallback cannot authenticate
-      // anyway, and a keyless profile is a deliberate catalog-only shape.
-      if (raw === undefined || (raw.models !== undefined && raw.models.length > 0)) return
+      // anyway, and a keyless profile is a deliberate catalog-only shape. A
+      // non-empty models list is strict curation unless the route opted into
+      // `liveModelUnion`, in which case the discovered ids join the list.
+      if (raw === undefined) return
+      if ((raw.models !== undefined && raw.models.length > 0) && raw.liveModelUnion !== true) return
       if (raw.apiKeyEnv === undefined && catalogProviderTakesApiKey(provider)) return
       const profile = profiles().get(provider)
       const baseURL = profile?.baseURL ?? catalogProvider(provider)?.baseUrl
