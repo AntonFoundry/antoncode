@@ -35,6 +35,10 @@ import {
   hostListDirectoryRequestSchema, hostOpenPathRequestSchema,
   hostPickDirectoryRequestSchema, hostReadTextFileRequestSchema } from '../api/host.schema.ts'
 import {
+  orchestratorActRequestSchema,
+  orchestratorBoardRequestSchema,
+} from '../api/orchestrator.schema.ts'
+import {
   workspaceArchiveSessionRequestSchema,
   workspaceCreateRequestSchema,
   workspaceDeleteRequestSchema,
@@ -116,6 +120,8 @@ const UNARY_ROUTES: UnaryRoutes = {
   'host.createDirectory': { schema: hostCreateDirectoryRequestSchema, invoke: (api, r) => api.host.createDirectory(r) },
   'host.openPath': { schema: hostOpenPathRequestSchema, invoke: (api, r, signal) => api.host.openPath(r, signal) },
   'host.readTextFile': { schema: hostReadTextFileRequestSchema, invoke: (api, r, signal) => api.host.readTextFile(r, signal) },
+  'orchestrator.board': { schema: orchestratorBoardRequestSchema, invoke: (api, r) => api.orchestrator.board(r) },
+  'orchestrator.act': { schema: orchestratorActRequestSchema, invoke: (api, r) => api.orchestrator.act(r) },
   'workspace.list': { schema: workspaceListRequestSchema, invoke: (api, r) => api.workspace.list(r) },
   'workspace.create': { schema: workspaceCreateRequestSchema, invoke: (api, r) => api.workspace.create(r) },
   'workspace.rename': { schema: workspaceRenameRequestSchema, invoke: (api, r) => api.workspace.rename(r) },

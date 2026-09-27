@@ -6,6 +6,7 @@
 
 import type { SessionsApi } from './sessions.ts'
 import type { HostApi } from './host.ts'
+import type { OrchestratorApi } from './orchestrator.ts'
 import type { WorkspaceApi } from './workspace.ts'
 import type { AgentPresetsApi } from './agent-presets.ts'
 import type { SkillsApi } from './skills.ts'
@@ -25,6 +26,8 @@ export interface ApiProxy {
   sessions: SessionsApi
   subagents: SubagentsApi
   host: HostApi
+  /** Orchestrator board snapshot + run actions (one read composing workspace.list + session.list projections). */
+  orchestrator: OrchestratorApi
   workspace: WorkspaceApi
   skills: SkillsApi
   agentPresets: AgentPresetsApi
@@ -53,6 +56,7 @@ export type {
   ModelReasoningEffort, ModelSelection, PromptContentPart, QueueAction, SessionModels,
   SessionListMetadata, SessionProjectionsBlock, SessionSearchItem, SessionsApi, SessionSummary,
 } from './sessions.ts'
+export type { OrchestratorApi } from './orchestrator.ts'
 export type { DirectoryEntry, DirectoryListing, HostApi } from './host.ts'
 export type { TermApi } from './term.ts'
 export type {

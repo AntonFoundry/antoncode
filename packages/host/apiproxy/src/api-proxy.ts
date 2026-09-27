@@ -1801,6 +1801,28 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   }
 
   /**
+   * The shared business action behind `session.cancel` and
+   * `orchestrator.act('kill')`: cancel the attached agent for the session,
+   * refusing unattached sessions and subagent-owned agents.
+   */
+  function cancelSessionRequest(request: RpcRequest<{ sessionId: SessionId }>): Promise<RpcResponse<{ accepted: true }>> {
+    const { sessionId } = request.payload
+    const agent = ctx.agents.get(sessionId)
+    if (agent === undefined) {
+      return Promise.resolve(err(request, {
+        code: 'session-not-found',
+        message: `session "${sessionId}" not found (not attached)`,
+        details: { sessionId },
+      }))
+    }
+    if (hasSubagentOwner(agent.session, agent)) {
+      return Promise.resolve(err(request, subagentOwnershipError(sessionId)))
+    }
+    agent.cancel({ kind: 'user' }, { keepInbox: true })
+    return Promise.resolve(ok(request, { accepted: true as const }))
+  }
+
+  /**
    * Resolve the goal service THIS agent runs.
    *
    * The service is per session: an agent preset mounts it behind an `isolate`
@@ -2741,20 +2763,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       },
 
       cancel(request) {
-        const { sessionId } = request.payload
-        const agent = ctx.agents.get(sessionId)
-        if (agent === undefined) {
-          return Promise.resolve(err(request, {
-            code: 'session-not-found',
-            message: `session "${sessionId}" not found (not attached)`,
-            details: { sessionId },
-          }))
-        }
-        if (hasSubagentOwner(agent.session, agent)) {
-          return Promise.resolve(err(request, subagentOwnershipError(sessionId)))
-        }
-        agent.cancel({ kind: 'user' }, { keepInbox: true })
-        return Promise.resolve(ok(request, { accepted: true as const }))
+        return cancelSessionRequest(request)
       },
     },
 
@@ -2921,6 +2930,24 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           }))
         }
         return Promise.resolve(ok(request, { accepted: true as const }))
+      },
+    },
+
+    orchestrator: {
+      // One snapshot composing the two board inputs; the summaries are the
+      // exact `session.list` projection, so the board reads no other shape.
+      async board(request) {
+        return ok(request, {
+          items: ctx.workspaceRegistry.list().map(workspaceView),
+          archivedSessionIds: [...ctx.workspaceRegistry.archivedSessionIds],
+          sessions: await listVisibleSessionSummaries(),
+        })
+      },
+
+      // The kill action IS session.cancel's business action; both routes call
+      // one helper so subagent-ownership and attach checks stay in one place.
+      act(request) {
+        return cancelSessionRequest(request)
       },
     },
 

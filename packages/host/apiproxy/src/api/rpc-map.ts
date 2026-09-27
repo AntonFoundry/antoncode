@@ -6,6 +6,7 @@
 
 import type { SessionsApi } from './sessions.ts'
 import type { HostApi } from './host.ts'
+import type { OrchestratorApi } from './orchestrator.ts'
 import type { WorkspaceApi } from './workspace.ts'
 import type { AgentPresetsApi } from './agent-presets.ts'
 import type { SkillsApi } from './skills.ts'
@@ -47,6 +48,8 @@ export interface RpcMethodMap {
   'host.createDirectory': HostApi['createDirectory']
   'host.openPath': HostApi['openPath']
   'host.readTextFile': HostApi['readTextFile']
+  'orchestrator.board': OrchestratorApi['board']
+  'orchestrator.act': OrchestratorApi['act']
   'workspace.list': WorkspaceApi['list']
   'workspace.create': WorkspaceApi['create']
   'workspace.rename': WorkspaceApi['rename']

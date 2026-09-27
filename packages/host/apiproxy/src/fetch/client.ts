@@ -33,6 +33,10 @@ import {
   sessionUpdateQueueValueSchema,
 } from '../api/sessions.schema.ts'
 import {
+  orchestratorActValueSchema,
+  orchestratorBoardValueSchema,
+} from '../api/orchestrator.schema.ts'
+import {
   workspaceArchiveSessionValueSchema,
   workspaceCreateValueSchema,
   workspaceDeleteValueSchema,
@@ -130,6 +134,10 @@ export interface IApiClient {
     openPath(payload: RequestPayload<'host.openPath'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'host.openPath'>>>
     readTextFile(payload: RequestPayload<'host.readTextFile'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'host.readTextFile'>>>
   }
+  orchestrator: {
+    board(payload: RequestPayload<'orchestrator.board'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'orchestrator.board'>>>
+    act(payload: RequestPayload<'orchestrator.act'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'orchestrator.act'>>>
+  }
   workspace: {
     list(payload: RequestPayload<'workspace.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.list'>>>
     create(payload: RequestPayload<'workspace.create'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.create'>>>
@@ -214,6 +222,8 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'host.createDirectory': hostCreateDirectoryValueSchema,
   'host.openPath': hostOpenPathValueSchema,
   'host.readTextFile': hostReadTextFileValueSchema,
+  'orchestrator.board': orchestratorBoardValueSchema,
+  'orchestrator.act': orchestratorActValueSchema,
   'workspace.list': workspaceListValueSchema,
   'workspace.create': workspaceCreateValueSchema,
   'workspace.rename': workspaceRenameValueSchema,
@@ -472,6 +482,11 @@ export abstract class AbstractApiClient implements IApiClient {
     createDirectory: (payload, signal) => this.callUnary('host.createDirectory', payload, signal),
     openPath: (payload, signal) => this.callUnary('host.openPath', payload, signal),
     readTextFile: (payload, signal) => this.callUnary('host.readTextFile', payload, signal),
+  }
+
+  readonly orchestrator: IApiClient['orchestrator'] = {
+    board: (payload, signal) => this.callUnary('orchestrator.board', payload, signal),
+    act: (payload, signal) => this.callUnary('orchestrator.act', payload, signal),
   }
 
   readonly workspace: IApiClient['workspace'] = {
