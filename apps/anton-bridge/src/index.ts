@@ -787,95 +787,7 @@ const server = Bun.serve<BridgeSocketData>({
       }
     }
 
-    if (pathname === '/bridge/api/propose' && request.method === 'POST') {
-      // Act tier: propose-then-approve. The blueant_propose tool enqueues a
-      // shell command; the Mac app surfaces an Approve/Run panel; the
-      // decision (and, when approved, the command output) lands in
-      // proposalDecisions for the tool to poll.
-      if (!loopbackControlAllowed(request)) return json({ error: 'cross_origin_request_rejected' }, { status: 403 })
-      try {
-        const payload: unknown = await request.json()
-        const body = typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {}
-        const command = typeof body.command === 'string' ? body.command.trim().slice(0, 4000) : ''
-        if (command === '') return json({ error: 'command_required' }, { status: 400 })
-        const id = `propose-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-        proposalDecisions.set(id, { state: 'pending', command })
-        pendingNotifications.push({ id, kind: 'proposal', title: 'Blueant wants to run a command', body: command })
-        if (pendingNotifications.length > 20) pendingNotifications.splice(0, pendingNotifications.length - 20)
-        return json({ id, queued: true })
-      } catch {
-        return json({ error: 'invalid_json' }, { status: 400 })
-      }
-    }
-
-    if (pathname === '/bridge/api/propose/decide' && request.method === 'POST') {
-      if (!loopbackControlAllowed(request)) return json({ error: 'cross_origin_request_rejected' }, { status: 403 })
-      try {
-        const payload: unknown = await request.json()
-        const body = typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {}
-        const id = typeof body.id === 'string' ? body.id : ''
-        const proposal = id === '' ? undefined : proposalDecisions.get(id)
-        const chromeAct = proposal === undefined && id !== '' ? chromeActs.get(id) : undefined
-        if (proposal === undefined && chromeAct === undefined) return json({ error: 'unknown_proposal' }, { status: 404 })
-        if (proposal === undefined && chromeAct !== undefined) {
-          // Page mutation: identical human gate, CDP execution instead of bash.
-          if (chromeAct.state !== 'pending') return json({ id, state: chromeAct.state, output: chromeAct.output })
-          if (body.approved !== true) {
-            chromeAct.state = 'denied'
-            return json({ id, state: 'denied' })
-          }
-          chromeAct.state = 'approved'
-          try {
-            const { action, selector, value, pageTitle } = chromeAct
-            chromeAct.output = await getChromeManager().performAct({ action, selector, value, pageTitle })
-          } catch (error) {
-            chromeAct.output = `FAILED: ${error instanceof Error ? error.message : 'cdp_action_failed'}`
-          }
-          return json({ id, state: 'approved', output: chromeAct.output })
-        }
-        if (proposal === undefined) return json({ error: 'unknown_proposal' }, { status: 404 })
-        if (proposal.state !== 'pending') return json({ id, ...proposal })
-        const approved = body.approved === true
-        if (!approved) {
-          proposal.state = 'denied'
-          return json({ id, state: 'denied' })
-        }
-        // Approved: run in the Blueant workspace, bounded — 30s wall clock,
-        // 10 KB of combined output. The human gate is the click that got us
-        // here; this execution is the action that click approved.
-        proposal.state = 'approved'
-        const proc = Bun.spawn(['bash', '-c', proposal.command], {
-          cwd: blueantWorkspacePath(),
-          stdout: 'pipe',
-          stderr: 'pipe',
-        })
-        const timer = setTimeout(() => proc.kill(), 30_000)
-        const [stdout, exitCode] = await Promise.all([
-          new Response(proc.stdout).text(),
-          proc.exited,
-        ])
-        const stderr = await new Response(proc.stderr).text()
-        clearTimeout(timer)
-        proposal.exitCode = exitCode
-        proposal.output = `${stdout}\n${stderr}`.trim().slice(0, 10_000)
-        return json({ id, state: 'approved', exitCode, output: proposal.output })
-      } catch (error) {
-        return json({ error: error instanceof Error ? error.message : 'decision_failed' }, { status: 500 })
-      }
-    }
-
-    if (pathname === '/bridge/api/propose/decision' && request.method === 'GET') {
-      const id = new URL(request.url).searchParams.get('id') ?? ''
-      const proposal = id === '' ? undefined : proposalDecisions.get(id)
-      if (proposal !== undefined) return json({ id, ...proposal })
-      const act = id === '' ? undefined : chromeActs.get(id)
-      if (act !== undefined) return json({ id, state: act.state, command: act.card, exitCode: act.state === 'approved' ? 0 : undefined, output: act.output })
-      return json({ error: 'unknown_proposal' }, { status: 404 })
-    }
-
     if (pathname === '/bridge/api/chrome/open' && request.method === 'POST') {
-      // Ask tier: navigation inside the isolated agent profile touches no
-      // user state, so it bypasses approval — same posture as chrome_read.
       if (!loopbackControlAllowed(request)) return json({ error: 'cross_origin_request_rejected' }, { status: 403 })
       try {
         const payload: unknown = await request.json()
@@ -902,9 +814,6 @@ const server = Bun.serve<BridgeSocketData>({
     }
 
     if (pathname === '/bridge/api/chrome/act' && request.method === 'POST') {
-      // Act tier: enqueue a page mutation as a proposal card. Nothing runs
-      // until the human approves through the same decide flow as shell
-      // commands; the CDP action executes inside the decide handler.
       if (!loopbackControlAllowed(request)) return json({ error: 'cross_origin_request_rejected' }, { status: 403 })
       try {
         const payload: unknown = await request.json()
@@ -916,21 +825,10 @@ const server = Bun.serve<BridgeSocketData>({
         const value = typeof body.value === 'string' ? body.value.slice(0, 2000) : undefined
         if (action === 'fill' && value === undefined) return json({ error: 'value_required_for_fill' }, { status: 400 })
         const pageTitle = typeof body.pageTitle === 'string' ? body.pageTitle.slice(0, 200) : ''
-        const valuePreview = value === undefined ? '' : `'${value.slice(0, 12)}${value.length > 12 ? '…' : ''}'`
-        const card = action === 'fill' ? `Fill '${selector}' with ${valuePreview} on '${pageTitle}'` : `Click '${selector}' on '${pageTitle}'`
-        const id = `chrome-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-        chromeActs.set(id, { state: 'pending', card, action, selector, value, pageTitle })
-        if (chromeActs.size > 20) {
-          for (const [key, entry] of chromeActs) {
-            if (entry.state !== 'pending') chromeActs.delete(key)
-            if (chromeActs.size <= 20) break
-          }
-        }
-        pendingNotifications.push({ id, kind: 'proposal', title: action === 'fill' ? 'Blueant wants to fill a form field' : 'Blueant wants to click', body: card })
-        if (pendingNotifications.length > 20) pendingNotifications.splice(0, pendingNotifications.length - 20)
-        return json({ id, queued: true })
-      } catch {
-        return json({ error: 'invalid_json' }, { status: 400 })
+        const output = await getChromeManager().performAct({ action, selector, value, pageTitle })
+        return json({ output })
+      } catch (error) {
+        return json({ error: error instanceof Error ? error.message : 'chrome_act_failed' }, { status: 500 })
       }
     }
 
@@ -984,46 +882,8 @@ startJournalConsolidation({
  * polls /bridge/api/notify/pending, delivers through UNUserNotificationCenter,
  * and acks by id. Bounded — see the route handlers above.
  */
-interface PendingNotification { id: string; kind?: 'proposal'; title: string; body: string }
+interface PendingNotification { id: string; title: string; body: string }
 const pendingNotifications: PendingNotification[] = []
-
-/**
- * Propose-then-approve ledger: blueant_propose enqueues a command, the Mac
- * app's Approve/Run panel posts the decision, approved commands execute here
- * (bounded), and the tool polls the verdict. Entries live for the process
- * lifetime — proposals are single-ask, not a durable queue.
- */
-interface ProposalDecision {
-  state: 'pending' | 'approved' | 'denied'
-  command: string
-  exitCode?: number
-  output?: string
-}
-const proposalDecisions = new Map<string, ProposalDecision>()
-
-/**
- * Chrome act ledger: blueant_chrome fill/click enqueues a proposal card, the
- * Mac app's same Approve panel posts the decision, and approval executes the
- * CDP action here. Nothing in this map runs without a human decision — the
- * ChromeManager.performAct call lives only in the decide handler above.
- */
-interface ChromeAct {
-  state: 'pending' | 'approved' | 'denied'
-  card: string
-  action: 'fill' | 'click'
-  selector: string
-  value?: string
-  pageTitle: string
-  output?: string
-}
-const chromeActs = new Map<string, ChromeAct>()
-
-/// The Blueant agent workspace: approved commands run here, not in the
-/// harness checkout.
-function blueantWorkspacePath(): string {
-  const support = process.env.HOME ?? ''
-  return `${support}/Library/Application Support/Anton/blueant`
-}
 
 /**
  * The automatic repair turn, driven only while the recovery profile carries

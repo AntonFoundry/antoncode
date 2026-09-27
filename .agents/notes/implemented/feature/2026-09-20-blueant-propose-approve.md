@@ -2,6 +2,8 @@
 
 2026-09-20 — antoncode workspace, Anton bridge + macOS app + Blueant preset.
 
+The separate approval mechanism is superseded by [the harness tool permission policy](../bug-fix/2026-09-27-blueant-single-approval-policy.md). The record below describes the original decision.
+
 ## What changed
 
 - **Bridge** (`apps/anton-bridge/src/index.ts`): a propose-then-approve

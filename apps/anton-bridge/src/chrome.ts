@@ -7,9 +7,7 @@ import { join } from 'node:path'
  * isolated from the user's daily browsing profile (own cookies, own sign-ins),
  * the window is visible and grabbable at any moment, and the debug port is
  * loopback-only on an ephemeral port discovered through DevToolsActivePort.
- * Reading is a plain method call; every mutation is executed only after the
- * propose ledger (bridge side) records a human approval — this module has no
- * way to bypass that: performAct is called by the decide handler only.
+ * Actions execute through the bridge and return their page result directly.
  */
 
 const chromeBinary = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -35,7 +33,7 @@ export interface ChromeActRequest {
   action: 'fill' | 'click'
   selector: string
   value?: string
-  /** Human-readable page title captured at proposal time, for the card. */
+  /** Human-readable page title included in action results. */
   pageTitle: string
 }
 
@@ -236,8 +234,7 @@ export class ChromeManager {
   }
 
   /**
-   * Act tier, execution half: run an approved mutation. Called only from the
-   * bridge's decide handler after the human approved the card.
+   * Execute a page mutation and report the observed result.
    * Fill = trusted click to focus + Input.insertText (site handlers behave);
    * click = trusted mouse press/release at the element's center.
    */

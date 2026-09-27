@@ -120,3 +120,5 @@ The bridge listens only on `127.0.0.1`. Its start/stop endpoints are under
 development plumbing, not the final remote-control protocol: the browser
 extension and hosted `antoncode.dev` flow will add device pairing, scoped
 workspace capabilities, request signing, and user approvals.
+
+Blueant commands use the harness `bash` tool and the session permission policy. Chrome fill and click tools return page results directly through the bridge. There is no separate native approval panel or proposal queue. Startup replaces legacy `blueant_propose` entries with `bash`, removes the generated proposal plugin, and refreshes Chrome plugins that poll approval decisions while preserving other preset settings.

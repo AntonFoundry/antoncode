@@ -11,143 +11,50 @@ export interface EnsureBlueantPresetOptions {
  * Blueant's user-trust agent preset: a complete Arivu-style persona (no other
  * prompt sections, no runtime snapshot), a trimmed tool roster, and a scoped
  * c0ntext row tuned for a popup ask-loop (fast retrieval, small budget, scout
- * off). All writes are existsSync-guarded so reruns are no-ops and an existing
- * preset is never clobbered.
+ * off). Existing persona and tool settings are preserved when retiring the
+ * bridge command tool; Chrome plugins using approval polling are replaced.
  */
 export function ensureBlueantPreset({ dshHome }: EnsureBlueantPresetOptions): void {
   const presetDir = join(dshHome, '.agent-presets', 'blueant')
   const ymlPath = join(presetDir, 'agent.cordis.yml')
   const metaPath = join(presetDir, 'preset.yml')
   const restrictPath = join(presetDir, 'plugins', 'restrict-tools.js')
-  const notifyPath = join(presetDir, 'plugins', 'notify.js')
-  const proposePath = join(presetDir, 'plugins', 'propose.js')
   const chromePath = join(presetDir, 'plugins', 'chrome.js')
   mkdirSync(presetDir, { recursive: true })
   mkdirSync(dirname(restrictPath), { recursive: true })
 
-  if (!existsSync(proposePath)) {
-    writeFileSync(proposePath, [
-      '// Act tier: blueant_propose asks before running. Enqueues the command',
-      '// for the Mac app approval panel, polls the decision, and returns the',
-      '// verdict plus (when approved) the bounded command output. Nothing',
-      '// runs unless the user clicks Approve & Run.',
-      "export const name = 'blueant-propose'",
-      "export const inject = ['tools']",
-      '',
-      'export function apply(ctx) {',
-      '  ctx.effect(() => ctx.tools.register({',
-      "    name: 'blueant_propose',",
-      "    description: 'Propose a shell command for the user to approve. The user sees the exact command and clicks Approve & Run or Deny. Use for any action beyond reading: opening apps, moving files, sending things, changing settings. Waits for the decision and returns the output.',",
-      '    parameters: {',
-      "      command: { type: 'string', required: true, description: 'The exact shell command to propose (max 4000 chars)' },",
-      "      rationale: { type: 'string', description: 'Optional one-line reason shown to the user' },",
-      "      waitMs: { type: 'number', description: 'How long to wait for the decision (default 90000, max 300000)' },",
-      '    },',
-      "    output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: String(value) }] },",
-      '    async execute(args, exec) {',
-      "      const res = await fetch('http://127.0.0.1:3742/bridge/api/propose', {",
-      "        method: 'POST',",
-      "        headers: { 'content-type': 'application/json' },",
-      '        body: JSON.stringify({ command: args.command, rationale: args.rationale }),',
-      '        signal: exec.signal,',
-      '      })',
-      '      if (!res.ok) throw new Error(`blueant_propose failed: HTTP ${res.status}`)',
-      '      const { id } = await res.json()',
-      '      const deadline = Date.now() + Math.min(Number(args.waitMs) || 90000, 300000)',
-      '      while (Date.now() < deadline) {',
-      '        if (exec.signal.aborted) throw new Error(`blueant_propose cancelled while awaiting decision (proposal ${id})`)',
-      '        await new Promise(resolve => setTimeout(resolve, 2000))',
-      '        const check = await fetch(`http://127.0.0.1:3742/bridge/api/propose/decision?id=${encodeURIComponent(id)}`, { signal: exec.signal })',
-      '        if (!check.ok) continue',
-      '        const verdict = await check.json()',
-      "        if (verdict.state === 'pending') continue",
-      "        if (verdict.state === 'denied') return 'DENIED: the user declined this command. Do not retry it without asking why.'",
-      '        return `APPROVED (exit ${verdict.exitCode})\\n${verdict.output || "(no output)"}`',
-      '      }',
-      '      return `TIMEOUT: no decision within the wait window (proposal ${id}). The proposal stays on screen; ask the user to decide.`',
-      '    },',
-      "  }), 'blueant.propose')",
-      '}',
-      '',
-    ].join('\n'))
-  }
-
-  if (!existsSync(notifyPath)) {
-    writeFileSync(notifyPath, `${[
-      '// Act tier v0: blueant_notify posts a macOS notification through the',
-      '// bridge inbox (POST /bridge/api/notify); the Mac app polls, delivers it',
-      '// via UNUserNotificationCenter, and acks. Loopback only and no Origin',
-      '// header, so the browser-CSRF fence does not apply.',
-      "export const name = 'blueant-notify'",
-      "export const inject = ['tools']",
-      '',
-      'export function apply(ctx) {',
-      '  ctx.effect(() => ctx.tools.register({',
-      "    name: 'blueant_notify',",
-      "    description: 'Post a macOS notification to the user. Use when a long task finishes or the user asked to be alerted. Keep the body under two sentences.',",
-      '    parameters: {',
-      "      body: { type: 'string', required: true, description: 'Notification text (max ~2000 chars)' },",
-      "      title: { type: 'string', description: 'Short title; defaults to Blueant' },",
-      '    },',
-      "    output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: String(value) }] },",
-      '    async execute(args, exec) {',
-      "      const res = await fetch('http://127.0.0.1:3742/bridge/api/notify', {",
-      "        method: 'POST',",
-      "        headers: { 'content-type': 'application/json' },",
-      '        body: JSON.stringify({ title: args.title, body: args.body }),',
-      '        signal: exec.signal,',
-      '      })',
-      '      if (!res.ok) throw new Error(`blueant_notify failed: HTTP ${res.status}`)',
-      "      return 'notification queued'",
-      '    },',
-      '  }), \'blueant.notify\')',
-      '}',
-      '',
-    ].join('\n')}`)
-  }
-
-  if (!existsSync(chromePath)) {
+  if (!existsSync(chromePath) || !readFileSync(chromePath, 'utf8').includes("required: ['url']")
+    || readFileSync(chromePath, 'utf8').includes('/bridge/api/propose')) {
     writeFileSync(chromePath, [
-      '// Chrome acting-as-user: read-tier tools are ungated Ask tier (the',
-      '// agent profile is isolated from the user\'s daily browser); fill and',
-      '// click enqueue proposal cards and wait for the human decision, then',
-      '// report what actually happened on the page.',
+      '// Chrome actions use the harness tool policy and return page results.',
       "export const name = 'blueant-chrome'",
       "export const inject = ['tools']",
       '',
       'export function apply(ctx) {',
       '  const bridge = \'http://127.0.0.1:3742\'',
-      "  const decide = (verdict) => verdict.state === 'pending' ? null",
-      "    : verdict.state === 'denied' ? `DENIED: the user declined this page action (${verdict.command}). Do not retry it without asking why.`",
-      "    : String(verdict.output || 'APPROVED but the page gave no result')",
-      '  async function proposeAct(path, body, waitMs, exec) {',
+      '  async function performAct(body, exec) {',
       '    const titleRes = await fetch(`${bridge}/bridge/api/chrome/read`, { signal: exec.signal }).catch(() => null)',
       "    const pageTitle = titleRes && titleRes.ok ? (await titleRes.json()).title || 'current page' : 'current page'",
-      '    const res = await fetch(`${bridge}${path}`, {',
+      '    const res = await fetch(`${bridge}/bridge/api/chrome/act`, {',
       "      method: 'POST',",
       "      headers: { 'content-type': 'application/json' },",
       '      body: JSON.stringify({ ...body, pageTitle }),',
       '      signal: exec.signal,',
       '    })',
       '    if (!res.ok) throw new Error(`chrome ${body.action} failed: HTTP ${res.status} ${(await res.text()).slice(0, 120)}`)',
-      '    const { id } = await res.json()',
-      '    const deadline = Date.now() + Math.min(Number(waitMs) || 90000, 300000)',
-      '    while (Date.now() < deadline) {',
-      '      if (exec.signal.aborted) throw new Error(`cancelled while awaiting decision (${id})`)',
-      '      await new Promise(resolve => setTimeout(resolve, 2000))',
-      '      const check = await fetch(`${bridge}/bridge/api/propose/decision?id=${encodeURIComponent(id)}`, { signal: exec.signal })',
-      '      if (!check.ok) continue',
-      '      const verdict = await decide(await check.json())',
-      '      if (verdict !== null) return verdict',
-      '    }',
-      '    return `TIMEOUT: no decision within the wait window (${id}). The card stays on screen; ask the user to decide.`',
+      '    const { output } = await res.json()',
+      '    return output',
       '  }',
       '  ctx.effect(() => ctx.tools.register({',
       "    name: 'chrome_open',",
       "    description: 'Open a URL in the Blueant agent Chrome window (an isolated profile the user can see and grab). Read-only; the window appears on screen. Use before chrome_read to reach a page.',",
       '    parameters: {',
-      "      url: { type: 'string', required: true, description: 'http(s) URL to open' },",
-      "      reuse: { type: 'boolean', description: 'Reuse the current tab instead of opening a new one' },",
+      "      type: 'object',",
+      '      properties: {',
+      "        url: { type: 'string', description: 'http(s) URL to open' },",
+      "        reuse: { type: 'boolean', description: 'Reuse the current tab instead of opening a new one' },",
+      '      },',
+      "      required: ['url'],",
       '    },',
       "    output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: String(value) }] },",
       '    async execute(args, exec) {',
@@ -164,9 +71,8 @@ export function ensureBlueantPreset({ dshHome }: EnsureBlueantPresetOptions): vo
       "  }), 'blueant.chrome.open')",
       '  ctx.effect(() => ctx.tools.register({',
       "    name: 'chrome_read',",
-      "    description: 'Read the active tab of the Blueant agent Chrome: page text, URL, and a form outline (fields, labels, buttons). Use it to see what a page offers before proposing any fill or click.',",
-      '    parameters: {}',
-      ',',
+      "    description: 'Read the active tab of the Blueant agent Chrome: page text, URL, and a form outline (fields, labels, buttons). Use it to see what a page offers before filling or clicking.',",
+      "    parameters: { type: 'object', properties: {} },",
       "    output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: String(value) }] },",
       '    async execute(_args, exec) {',
       '      const res = await fetch(`${bridge}/bridge/api/chrome/read`, { signal: exec.signal })',
@@ -184,24 +90,30 @@ export function ensureBlueantPreset({ dshHome }: EnsureBlueantPresetOptions): vo
       "  }), 'blueant.chrome.read')",
       '  ctx.effect(() => ctx.tools.register({',
       "    name: 'chrome_fill',",
-      "    description: 'Fill one form field in the Blueant agent Chrome. The user sees a card (field, value, page) and must approve. Selectors come from the chrome_read form outline. One field per call — batch approval does not exist.',",
+      "    description: 'Fill one form field in the Blueant agent Chrome. Selectors come from the chrome_read form outline. One field per call.',",
       '    parameters: {',
-      "      selector: { type: 'string', required: true, description: 'CSS selector of the field, from chrome_read (e.g. #email or input[name=q])' },",
-      "      value: { type: 'string', required: true, description: 'Text to type into the field (max 2000 chars)' },",
-      "      waitMs: { type: 'number', description: 'How long to wait for approval (default 90000, max 300000)' },",
+      "      type: 'object',",
+      '      properties: {',
+      "        selector: { type: 'string', description: 'CSS selector of the field, from chrome_read (e.g. #email or input[name=q])' },",
+      "        value: { type: 'string', description: 'Text to type into the field (max 2000 chars)' },",
+      '      },',
+      "      required: ['selector', 'value'],",
       '    },',
       "    output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: String(value) }] },",
-      "    async execute(args, exec) { return proposeAct('/bridge/api/chrome/act', { action: 'fill', selector: args.selector, value: args.value }, args.waitMs, exec) },",
+      "    async execute(args, exec) { return performAct({ action: 'fill', selector: args.selector, value: args.value }, exec) },",
       "  }), 'blueant.chrome.fill')",
       '  ctx.effect(() => ctx.tools.register({',
       "    name: 'chrome_click',",
-      "    description: 'Click one element in the Blueant agent Chrome (buttons, links, submit). The user sees a card and must approve. Prefer chrome_fill + one final click of the submit button.',",
+      "    description: 'Click one element in the Blueant agent Chrome (buttons, links, submit). Prefer chrome_fill + one final click of the submit button.',",
       '    parameters: {',
-      "      selector: { type: 'string', required: true, description: 'CSS selector of the element to click' },",
-      "      waitMs: { type: 'number', description: 'How long to wait for approval (default 90000, max 300000)' },",
+      "      type: 'object',",
+      '      properties: {',
+      "        selector: { type: 'string', description: 'CSS selector of the element to click' },",
+      '      },',
+      "      required: ['selector'],",
       '    },',
       "    output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: String(value) }] },",
-      "    async execute(args, exec) { return proposeAct('/bridge/api/chrome/act', { action: 'click', selector: args.selector }, args.waitMs, exec) },",
+      "    async execute(args, exec) { return performAct({ action: 'click', selector: args.selector }, exec) },",
       "  }), 'blueant.chrome.click')",
       '}',
       '',
@@ -210,9 +122,7 @@ export function ensureBlueantPreset({ dshHome }: EnsureBlueantPresetOptions): vo
 
   if (!existsSync(restrictPath)) {
     writeFileSync(restrictPath, `${[
-      '// Blueant tool roster: memory/search tools only. No bash, no file edits,',
-      '// no Anton lifecycle. Names outside the roster become invisible to the',
-      '// agent for this preset scope; restrictions intersect with deployment.',
+      '// Preset tool visibility intersects with deployment restrictions.',
       "export const name = 'blueant-restrict-tools'",
       "export const inject = ['tools']",
       '',
@@ -241,7 +151,7 @@ export function ensureBlueantPreset({ dshHome }: EnsureBlueantPresetOptions): vo
     '- id: restrict-tools',
     '  name: ./plugins/restrict-tools.js',
     '  config:',
-    '    allow: [c0ntext_search, c0ntext_remember, recipe_search, web_search, read_image, blueant_notify, blueant_propose, chrome_open, chrome_read, chrome_fill, chrome_click, skill]',
+    '    allow: [bash, c0ntext_search, c0ntext_remember, recipe_search, web_search, read_image, chrome_open, chrome_read, chrome_fill, chrome_click, skill]',
     // Skills as files: the deployment disables host-level skill rows, so the
     // preset owns local discovery (skill-filesystem registers into this
     // preset's layer) and mounts the catalog/loader tool. A Blueant skill is
@@ -251,12 +161,6 @@ export function ensureBlueantPreset({ dshHome }: EnsureBlueantPresetOptions): vo
     "  name: '@deepseek-ai/dsh-skill-filesystem'",
     '- id: tool-skill',
     "  name: '@deepseek-ai/dsh-tool-skill'",
-    '- id: notify',
-    '  name: ./plugins/notify.js',
-    '- id: propose',
-    '  name: ./plugins/propose.js',
-    // Chrome acting-as-user: read tier ungated (isolated agent profile),
-    // fill/click are approve-gated page mutations.
     '- id: chrome',
     '  name: ./plugins/chrome.js',
     // NOTE: no c0ntext row here. The plugin registers its toolMatcher service
@@ -269,6 +173,13 @@ export function ensureBlueantPreset({ dshHome }: EnsureBlueantPresetOptions): vo
   if (!existsSync(ymlPath) || !readFileSync(ymlPath, 'utf8').includes('./plugins/chrome.js')) {
     writeFileSync(ymlPath, ymlContent)
   }
+  const existingPreset = readFileSync(ymlPath, 'utf8')
+  const migratedPreset = existingPreset
+    .replace(/^- id: propose\r?\n  name: \.\/plugins\/propose\.js\r?\n/gm, '')
+    .replace(/^(\s*allow:.*)\bblueant_propose\b/gm, '$1bash')
+  if (migratedPreset !== existingPreset) writeFileSync(ymlPath, migratedPreset)
+  const proposePath = join(presetDir, 'plugins', 'propose.js')
+  if (existsSync(proposePath)) unlinkSync(proposePath)
   if (!existsSync(metaPath)) {
     writeFileSync(metaPath, `${[
       'name: Blueant',
