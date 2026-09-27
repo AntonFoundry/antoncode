@@ -60,6 +60,7 @@ export function ModelSelect(
   const [toast, setToast] = useState<{ seq: number; text: string } | null>(null)
   const toastSeq = useRef(0)
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const groupsRef = useRef<HTMLDivElement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
   const id = useId()
@@ -123,6 +124,12 @@ export function ModelSelect(
     document.addEventListener('mousedown', closeOutside)
     return () => { document.removeEventListener('mousedown', closeOutside) }
   }, [open])
+
+  useEffect(() => {
+    if (!open || pane !== 'model') return
+    groupsRef.current?.querySelector<HTMLElement>('[aria-checked="true"]')
+      ?.scrollIntoView({ block: 'nearest' })
+  }, [open, pane, state.current?.provider, state.current?.model, state.groups])
 
   if (!available) return null
 
@@ -283,7 +290,7 @@ export function ModelSelect(
                   <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
                 </div>
               ))}
-              <div className={clsx(css.groups, 'scrollable')}>
+              <div ref={groupsRef} className={clsx(css.groups, 'scrollable')}>
                 {state.groups.map((group) => {
                   const headingId = `${id}-${group.id}`
                   return (

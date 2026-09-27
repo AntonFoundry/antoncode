@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ComponentProps } from 'react'
@@ -45,7 +45,22 @@ function state(overrides: Partial<ModelDirectoryState> = {}): ModelDirectoryStat
   }
 }
 
-afterEach(cleanup)
+const nativeScrollIntoView = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView')
+const scrollIntoView = vi.fn()
+
+beforeEach(() => {
+  scrollIntoView.mockReset()
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+    configurable: true,
+    value: scrollIntoView,
+  })
+})
+
+afterEach(() => {
+  cleanup()
+  if (nativeScrollIntoView === undefined) delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView
+  else Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', nativeScrollIntoView)
+})
 
 describe('ModelSelect reasoning effort', () => {
   it('renders adapter metadata and submits the effort as part of the session selection', async () => {
@@ -133,6 +148,31 @@ describe('ModelSelect reasoning effort', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
     expect(screen.queryByText('removed-model')).toBeNull()
     expect(screen.getByRole('menuitemradio', { name: 'DeepSeek-V4-Flash' })).toBeTruthy()
+  })
+
+  it('scrolls the selected model into view when the model list opens', async () => {
+    const models = Array.from({ length: 18 }, (_, index) => ({
+      id: `model-${index}`,
+      name: `Model ${index}`,
+    }))
+    const current = { provider: 'provider', model: 'model-15' }
+    const directory = createSnapshotStore<ModelDirectoryState>(state({
+      current,
+      groups: [{ id: 'provider', name: 'Provider', models }],
+    }))
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={directory}
+      load={vi.fn()}
+      select={vi.fn().mockResolvedValue(true)}
+      t={t}
+    />)
+    fireEvent.click(screen.getByRole('button', { name: '选择模型，当前 Model 15' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' }))
+    expect(screen.getByRole('menuitemradio', { name: 'Model 15' }).getAttribute('aria-checked')).toBe('true')
   })
 
   it('announces a rejected selection as a transient toast and keeps the in-menu strip for loads', async () => {

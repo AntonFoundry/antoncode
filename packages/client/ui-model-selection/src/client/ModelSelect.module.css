@@ -141,13 +141,15 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  padding: 5px 8px 3px;
-  background: var(--dsw-specific-menu);
-  /* Provider headings establish the grouping hierarchy above each model. */
-  color: var(--dsw-alias-label-secondary);
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 500;
+  margin: 4px 4px 2px;
+  padding: 5px 8px 4px;
+  border-left: 3px solid var(--dsw-alias-state-business-primary);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-state-business-primary);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 600;
 }
 
 .option {
@@ -174,7 +176,13 @@
 /* Selection marker is the trailing check, not a fill — matches the Menu
  * primitive's selected treatment. */
 .selected {
-  background: transparent;
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+.groups .option {
+  width: calc(100% - 8px);
+  margin: 1px 4px;
+  padding-left: 12px;
 }
 
 .option:disabled {
@@ -191,9 +199,9 @@
 
 .modelName {
   overflow: hidden;
-  /* Keep model names visually subordinate to their provider heading. */
+  /* Model rows stay primary while provider headings carry the accent marker. */
   color: var(--dsw-alias-label-primary);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 18px;
   font-weight: 500;
   text-overflow: ellipsis;
