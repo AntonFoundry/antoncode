@@ -134,6 +134,8 @@ export interface WmFrameInjected {
   themeList: () => { id: string; colorScheme: string }[]
   /** Load one palette theme by id and persist the choice. */
   loadTheme: (id: string) => void
+  /** Live-preview a palette id; null restores the pre-prompt theme. */
+  previewTheme: (id: string | null) => void
   /** List one directory level (absent path = host home). */
   listDirectory: (path?: string, opts?: { includeFiles?: boolean }, signal?: AbortSignal) => Promise<DirectoryListing>
   /** Open a path with the host OS default application. */
@@ -776,6 +778,7 @@ export function WmFrame({
   setSidebarWidth,
   themeList,
   loadTheme,
+  previewTheme,
   setBuffers,
   setMode,
   reconcileBuffers,
@@ -879,6 +882,18 @@ export function WmFrame({
   const focusRef = useRef(focusedId)
   focusRef.current = focusedId
 
+  // Sidebar clicks intentionally do not focus the sidebar window. Remember
+  // the last chat window separately so selecting a session still changes the
+  // conversation view after the sidebar has become the effective focus.
+  const lastChatLeafRef = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (focusedId === undefined) return
+    const leaf = findLeaf(tree, focusedId)
+    if (leaf === undefined) return
+    const buffer = findBuffer(buffers, leaf.buffer)
+    if (buffer?.kind === 'session' || buffer?.kind === 'conversation') lastChatLeafRef.current = focusedId
+  }, [buffers, focusedId, tree])
+
   // Mirror for callback closures (setTree callbacks read the live tree
   // without re-binding on every render).
   const treeRef = useRef(tree)
@@ -895,6 +910,13 @@ export function WmFrame({
   // Feed snapshots for the workspace candidates (both are standard seats).
   const workspaceSnapshot = useWorkspaces(s => s)
   const sessionsListSnapshot = useSessions(s => s)
+  const workspaceTitleBySession = useMemo(() => {
+    const titles = new Map<string, string>()
+    for (const workspace of workspaceSnapshot.items) {
+      for (const sessionId of workspace.sessionIds) titles.set(sessionId, workspace.title)
+    }
+    return titles
+  }, [workspaceSnapshot.items])
 
   // The echo area's resting face: the focused window's buffer (the registry
   // gap fallback mirrors LeafPane's body resolution so the name always
@@ -1191,7 +1213,12 @@ export function WmFrame({
     const prev = prevCurrentRef.current
     prevCurrentRef.current = current
     if (current === undefined || prev === current) return
-    const focusId = focusRef.current ?? firstLeafId(treeRef.current)
+    const focused = focusRef.current ?? firstLeafId(treeRef.current)
+    const focusedLeaf = focused === undefined ? undefined : findLeaf(treeRef.current, focused)
+    const focusedBuffer = focusedLeaf === undefined ? undefined : findBuffer(buffersRef.current, focusedLeaf.buffer)
+    const focusId = focusedBuffer?.kind === 'session' || focusedBuffer?.kind === 'conversation'
+      ? focused
+      : lastChatLeafRef.current
     if (focusId === undefined) return
     const leaf = findLeaf(treeRef.current, focusId)
     if (leaf === undefined) return
@@ -1226,12 +1253,18 @@ export function WmFrame({
       for (const sessionId of w.sessionIds) {
         const id = `buffer:session:${sessionId}`
         const visible = leafIds(tree).some(leafId => shownOf(findLeaf(tree, leafId)?.buffer, sessionId))
-        const label = sessionsListSnapshot.byId[sessionId]?.displayTitle ?? sessionId
-        candidates.set(id, { id, label, hint: visible ? 'open' : 'new window' })
+        const sessionTitle = sessionsListSnapshot.byId[sessionId]?.displayTitle ?? sessionId
+        const workspaceTitle = workspaceTitleBySession.get(sessionId)
+        candidates.set(id, {
+          id,
+          label: sessionTitle,
+          ...(workspaceTitle === undefined ? {} : { section: workspaceTitle }),
+          hint: visible ? 'open' : 'new window',
+        })
       }
     }
     return [...candidates.values()]
-  }, [tree, buffers, workspaceSnapshot.items, sessionsListSnapshot])
+  }, [tree, buffers, workspaceSnapshot.items, workspaceTitleBySession, sessionsListSnapshot])
 
   // Kill-buffer candidates (compos C-x k): the focused leaf's buffer leads
   // the list — Enter with an empty query kills it — then every other buffer
@@ -1834,6 +1867,17 @@ export function WmFrame({
           ? shareTarget
           : Math.min(clampWidth(panels.sidebar, SIDEBAR_MIN, SIDEBAR_MAX), shareTarget),
     brandInFrame: true,
+    scopeSessionId: (() => {
+      const active = focusedId === undefined ? undefined : findLeaf(tree, focusedId)
+      const activeBuffer = active === undefined ? undefined : findBuffer(buffers, active.buffer)
+      if (activeBuffer?.kind === 'session' && activeBuffer.sessionId !== undefined) return activeBuffer.sessionId
+      if (activeBuffer?.kind === 'session' || activeBuffer?.kind === 'conversation') return sessionsListSnapshot.current
+      const lastChat = lastChatLeafRef.current === undefined ? undefined : findLeaf(tree, lastChatLeafRef.current)
+      const lastBuffer = lastChat === undefined ? undefined : findBuffer(buffers, lastChat.buffer)
+      return lastBuffer?.kind === 'session' && lastBuffer.sessionId !== undefined
+        ? lastBuffer.sessionId
+        : sessionsListSnapshot.current
+    })(),
   }
 
   // The c0ntext sidebar column's px width: starts at CONTEXT_DEFAULT (natural content width 552px)
@@ -1926,7 +1970,10 @@ export function WmFrame({
               data-active={panels.mode === m || undefined}
               onClick={() => { actions.setMode(m) }}
             >
-              {m === 'agent' ? 'Orchestrator' : 'Chat'}
+              {/* "Agents", not "Orchestrator": the mode is the tiled
+                  multi-session launcher; the conversation-view ring owns the
+                  Orchestrator tab (ui-orchestrator) and the name with it. */}
+              {m === 'agent' ? 'Agents' : 'Chat'}
             </button>
           ))}
         </div>
@@ -2005,6 +2052,7 @@ export function WmFrame({
                     : prompt === 'restore-layout' ? layoutRestoreCandidates
                       : killCandidates}
           onExecute={onMinibufferExecute}
+          onPreview={prompt === 'themes' ? previewTheme : undefined}
           freeEntry={prompt === 'save-layout'}
           initialQuery={prompt === 'save-layout' ? wsLabelRef.current : ''}
           onCancel={() => { setPrompt(null) }}
