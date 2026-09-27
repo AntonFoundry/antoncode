@@ -108,7 +108,8 @@ export function ModelSelect(
     load()
   }
 
-  // Mount-time load resolves the trigger label; every open refreshes.
+  // Load the directory when the composer mounts so opening the picker only
+  // displays the cached host result; Retry remains the explicit refresh path.
   useEffect(() => {
     if (available) {
       lastActionRef.current = 'load'
@@ -136,7 +137,6 @@ export function ModelSelect(
   const show = (): void => {
     setPane('root')
     setOpen(true)
-    reload()
   }
 
   const close = (restoreFocus = false): void => {

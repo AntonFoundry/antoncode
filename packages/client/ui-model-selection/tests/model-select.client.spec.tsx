@@ -63,6 +63,23 @@ afterEach(() => {
 })
 
 describe('ModelSelect reasoning effort', () => {
+  it('loads the model directory on mount and reuses it when the picker opens', async () => {
+    const load = vi.fn()
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={createSnapshotStore(state())}
+      load={load}
+      select={vi.fn().mockResolvedValue(true)}
+      t={t}
+    />)
+
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('button', { name: /选择模型/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+    expect(load).toHaveBeenCalledTimes(1)
+  })
+
   it('renders adapter metadata and submits the effort as part of the session selection', async () => {
     const directory = createSnapshotStore<ModelDirectoryState>(state())
     const select = vi.fn(async (selection: ModelSelection) => {
