@@ -232,6 +232,7 @@
     { "path": "./packages/compaction/compaction-tool-result-pruner" },
     { "path": "./packages/web/web" },
     { "path": "./packages/web/web-search-exa" },
+    { "path": "./packages/web/web-search-zai" },
     { "path": "./packages/web/web-search-browser" },
     { "path": "./packages/web/web-search-perplexity" },
     { "path": "./packages/web/web-search-deepseek" },
