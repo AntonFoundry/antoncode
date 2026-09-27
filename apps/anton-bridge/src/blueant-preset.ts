@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
 export interface EnsureBlueantPresetOptions {
@@ -8,20 +8,25 @@ export interface EnsureBlueantPresetOptions {
 }
 
 /**
- * Blueant's user-trust agent preset: a complete Arivu-style persona (no other
- * prompt sections, no runtime snapshot), a trimmed tool roster, and a scoped
- * c0ntext row tuned for a popup ask-loop (fast retrieval, small budget, scout
- * off). Existing persona and tool settings are preserved when retiring the
- * bridge command tool; Chrome plugins using approval polling are replaced.
+ * Generate Blueant from Creator, PTC presentation, and desktop tools.
+ * The bridge owns this file; its first replacement preserves the old preset.
+ * @param options - Harness installation and user preset locations.
  */
-export function ensureBlueantPreset({ dshHome }: EnsureBlueantPresetOptions): void {
+export function ensureBlueantPreset({ dshHome, harnessRoot }: EnsureBlueantPresetOptions): void {
   const presetDir = join(dshHome, '.agent-presets', 'blueant')
   const ymlPath = join(presetDir, 'agent.cordis.yml')
   const metaPath = join(presetDir, 'preset.yml')
-  const restrictPath = join(presetDir, 'plugins', 'restrict-tools.js')
   const chromePath = join(presetDir, 'plugins', 'chrome.js')
-  mkdirSync(presetDir, { recursive: true })
-  mkdirSync(dirname(restrictPath), { recursive: true })
+  const creatorDir = join(harnessRoot, 'apps', 'cli', 'config', 'agent-presets', 'cordis')
+  const creator = readFileSync(join(creatorDir, 'agent.cordis.yml'), 'utf8')
+  const code = readFileSync(join(creatorDir, '..', 'code', 'agent.cordis.yml'), 'utf8')
+  const presentationStart = code.indexOf('- id: tool-presentation\n')
+  if (presentationStart === -1) throw new Error('PTC preset is missing tool-presentation')
+  const presentationEnd = code.indexOf('\n- id: ', presentationStart + 1)
+  const presentation = code.slice(presentationStart, presentationEnd === -1 ? undefined : presentationEnd).trimEnd().replace('mode: code', 'mode: both')
+
+  mkdirSync(dirname(chromePath), { recursive: true })
+  cpSync(join(creatorDir, 'skills'), join(presetDir, 'creator-skills'), { recursive: true })
 
   if (!existsSync(chromePath) || !readFileSync(chromePath, 'utf8').includes("required: ['url']")
     || readFileSync(chromePath, 'utf8').includes('/bridge/api/propose')) {
@@ -120,73 +125,49 @@ export function ensureBlueantPreset({ dshHome }: EnsureBlueantPresetOptions): vo
     ].join('\n'))
   }
 
-  if (!existsSync(restrictPath)) {
-    writeFileSync(restrictPath, `${[
-      '// Preset tool visibility intersects with deployment restrictions.',
-      "export const name = 'blueant-restrict-tools'",
-      "export const inject = ['tools']",
-      '',
-      'export function apply(ctx, config) {',
-      '  const known = config.allow.filter(name => ctx.tools.get(name) !== undefined)',
-      '  if (known.length === 0) return',
-      "  ctx.effect(() => ctx.tools.restrict({ allow: known }), 'blueant.restrict')",
-      '}',
-      '',
-    ].join('\n')}`)
-  }
-  const ymlContent = `${[
-    '- id: persona',
-    "  name: '@deepseek-ai/dsh-persona'",
-    '  config:',
-    '    text: >-',
-    "      You are Blueant, the user's personal desktop agent. You are direct,",
-    '      context-aware, and terse. You answer from what you actually read and',
-    '      say so — cite the memory entry, recipe, or search result you used.',
-    '      You are not a coding assistant: you answer questions and handle small',
-    "      tasks about the user's day and machine. Default to one short",
-    '      paragraph; ask at most one clarifying question only when the ask is',
-    '      genuinely ambiguous.',
-    '    complete: true',
-    '    includeRuntimeContext: false',
-    '- id: restrict-tools',
-    '  name: ./plugins/restrict-tools.js',
-    '  config:',
-    '    allow: [bash, c0ntext_search, c0ntext_remember, recipe_search, web_search, read_image, chrome_open, chrome_read, chrome_fill, chrome_click, skill]',
-    // Skills as files: the deployment disables host-level skill rows, so the
-    // preset owns local discovery (skill-filesystem registers into this
-    // preset's layer) and mounts the catalog/loader tool. A Blueant skill is
-    // a file under <dshHome>/skills/<name>/SKILL.md — instructions plus tool
-    // usage, no code.
-    '- id: skill-filesystem',
-    "  name: '@deepseek-ai/dsh-skill-filesystem'",
-    '- id: tool-skill',
-    "  name: '@deepseek-ai/dsh-tool-skill'",
-    '- id: chrome',
-    '  name: ./plugins/chrome.js',
-    // NOTE: no c0ntext row here. The plugin registers its toolMatcher service
-    // at mount, so a preset-scope second mount fails loud ("service
-    // toolMatcher has been registered"); retrieval tuning (retrieveMode,
-    // tokenBudget) therefore stays a deployment-layer choice. Scout is
-    // already disabled by the plugin's default config.
+  const notifyPath = join(presetDir, 'plugins', 'notify.js')
+  writeFileSync(notifyPath, [
+    "export const name = 'blueant-notify'",
+    "export const inject = ['tools']",
+    'export function apply(ctx) {',
+    '  ctx.effect(() => ctx.tools.register({',
+    "    name: 'blueant_notify',",
+    "    description: 'Post a desktop notification with a title and body.',",
+    "    parameters: { type: 'object', properties: { title: { type: 'string' }, body: { type: 'string' } }, required: ['body'] },",
+    "    output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },",
+    '    async execute(args, exec) {',
+    "      const response = await fetch('http://127.0.0.1:3742/bridge/api/notify', {",
+    "        method: 'POST', headers: { 'content-type': 'application/json' },",
+    '        body: JSON.stringify(args), signal: exec.signal,',
+    '      })',
+    '      if (!response.ok) throw new Error(`Notification failed: HTTP ${response.status}`)',
+    "      return 'Notification queued.'",
+    '    },',
+    "  }), 'blueant.notify')",
+    '}',
     '',
-  ].join('\n')}`
-  if (!existsSync(ymlPath) || !readFileSync(ymlPath, 'utf8').includes('./plugins/chrome.js')) {
-    writeFileSync(ymlPath, ymlContent)
+  ].join('\n'))
+
+  const marker = '# Managed Blueant preset: Creator capabilities, PTC mode, and desktop tools.'
+  const ymlContent = `${marker}\n${creator
+    .replace('You are a coding agent powered by', "You are Blueant, the user's personal desktop and coding agent, powered by")
+    .replace("new URL('skills/', baseUrl)", "new URL('creator-skills/', baseUrl)")
+    .trimEnd()}\n\n${presentation}\n\n- id: blueant-notify\n  name: ./plugins/notify.js\n\n- id: blueant-chrome\n  name: ./plugins/chrome.js\n`
+  const existing = existsSync(ymlPath) ? readFileSync(ymlPath, 'utf8') : undefined
+  if (existing !== undefined && !existing.startsWith(marker)) {
+    const backup = join(presetDir, 'agent.before-creator.cordis.yml')
+    if (!existsSync(backup)) writeFileSync(backup, existing)
   }
-  const existingPreset = readFileSync(ymlPath, 'utf8')
-  const migratedPreset = existingPreset
-    .replace(/^- id: propose\r?\n  name: \.\/plugins\/propose\.js\r?\n/gm, '')
-    .replace(/^(\s*allow:.*)\bblueant_propose\b/gm, '$1bash')
-  if (migratedPreset !== existingPreset) writeFileSync(ymlPath, migratedPreset)
-  const proposePath = join(presetDir, 'plugins', 'propose.js')
-  if (existsSync(proposePath)) unlinkSync(proposePath)
-  if (!existsSync(metaPath)) {
-    writeFileSync(metaPath, `${[
-      'name: Blueant',
-      'description: Personal desktop ask-loop agent for the Anton popup — direct, context-aware, terse.',
-      '',
-    ].join('\n')}`)
+  if (existing !== ymlContent) writeFileSync(ymlPath, ymlContent)
+  for (const obsolete of ['restrict-tools.js', 'propose.js']) {
+    const path = join(presetDir, 'plugins', obsolete)
+    if (existsSync(path)) unlinkSync(path)
   }
+  writeFileSync(metaPath, [
+    'name: Blueant',
+    'description: Creator capabilities with PTC code execution, desktop Chrome actions, and notifications.',
+    '',
+  ].join('\n'))
 }
 
 /**
