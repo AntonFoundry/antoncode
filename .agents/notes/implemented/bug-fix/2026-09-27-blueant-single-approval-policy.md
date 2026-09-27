@@ -1,4 +1,4 @@
-# Blueant uses the harness tool permission policy
+# Agent Note: Blueant uses the harness tool permission policy
 
 Status: implemented
 
