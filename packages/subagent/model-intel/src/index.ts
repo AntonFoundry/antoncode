@@ -136,7 +136,10 @@ export class ModelIntelService extends Service {
     }, 'model-intel.schedule')
   }
 
-  /** The current datasheet (cached; re-read when the file changes under us). */
+  /**
+   * The current datasheet (cached; re-read when the file changes under us).
+   * @returns the current in-memory datasheet snapshot.
+   */
   getDatasheet(): ModelIntelDatasheet {
     return this.current
   }
@@ -145,6 +148,7 @@ export class ModelIntelService extends Service {
    * Replace the in-memory datasheet wholesale. Test and invariant seam: the
    * scheduler owns the file, so tests seed the snapshot through this instead
    * of fighting the persisted document.
+   * @param datasheet - the snapshot to install as the current datasheet.
    */
   injectDatasheet(datasheet: ModelIntelDatasheet): void {
     this.current = datasheet
@@ -155,6 +159,8 @@ export class ModelIntelService extends Service {
    * datasheet entry among providers whose credential resolves, scored against
    * the task text. `undefined` = no eligible researched route (caller falls
    * back to parent inheritance).
+   * @param taskText - the delegation task text scored against datasheet entries.
+   * @returns the child provider/model options, or `undefined` when no researched route is eligible.
    */
   async resolveAutoRoute(taskText: string): Promise<AgentOptions | undefined> {
     if (!this.config.enabled) return undefined
@@ -183,6 +189,7 @@ export class ModelIntelService extends Service {
   /**
    * Run one research pass now (no-op while one is in flight). Exposed for the
    * scheduled check and for manual triggers.
+   * @param trigger - short label for the pass's cause, carried in the log line.
    */
   async researchNow(trigger: string): Promise<void> {
     if (!this.config.enabled || this.researchInFlight) return
