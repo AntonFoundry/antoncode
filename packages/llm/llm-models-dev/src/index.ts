@@ -284,14 +284,18 @@ export function apply(ctx: Context, config: Config): void {
   assertServiceable(config)
 
   const resolveApiKey = async (provider: string, connection: OpenAIConnectionOptions): Promise<string> => {
+    const ref = connection.apiKeyEnv
+    if (ref === undefined) {
+      throw new LlmError(`llm-models-dev: provider route "${provider}" resolved without a credential reference`, 'MISSING_CREDENTIAL')
+    }
     const credentials = ctx.get('credentials')
     if (credentials !== undefined) {
-      const hit = await credentials.resolve(connection.apiKeyEnv)
-      if (hit !== undefined) return assertUsableApiKey(hit.value, 'llm-models-dev', connection.apiKeyEnv)
+      const hit = await credentials.resolve(ref)
+      if (hit !== undefined) return assertUsableApiKey(hit.value, 'llm-models-dev', ref)
     } else {
-      const ambient = process.env[connection.apiKeyEnv]
+      const ambient = process.env[ref]
       if (ambient !== undefined && ambient.length > 0) {
-        return assertUsableApiKey(ambient, 'llm-models-dev', connection.apiKeyEnv)
+        return assertUsableApiKey(ambient, 'llm-models-dev', ref)
       }
     }
     if (resolveAnonymous(current(), provider)) return ZEN_ANONYMOUS_KEY

@@ -428,8 +428,12 @@ describe('catalog routes with per-model configuration', () => {
     expect(info.context).toEqual({ contextWindow: 4096 })
     expect(info.name).toBe(catalogModel.name)
     expect(info.defaultMaxTokens).toBeUndefined()
-    // An explicit list replaces the catalog rather than adding to it.
-    expect((await ctx.llm.listModels('deepseek')).map(model => model.id)).toEqual([catalogModel.id])
+    // An explicit list extends the catalog rather than replacing it: the
+    // configured id serves, and the catalog-only models remain.
+    expect((await ctx.llm.listModels('deepseek')).map(model => model.id)).toEqual([
+      catalogModel.id,
+      ...getBuiltinModels('deepseek').map(model => model.id).filter(id => id !== catalogModel.id),
+    ])
   })
 
   it('materializes a request default only from a configured output cap', async () => {
@@ -491,15 +495,21 @@ describe('catalog routes with per-model configuration', () => {
         { id: 'glm-5.3', name: 'GLM-5.3', contextWindow: 200_000, maxTokens: 131_072 },
       ]],
     ]))
+    // A live listing extends the installed catalog instead of replacing it:
+    // the discovered id serves first, and the catalog-only models remain.
     const liveModels = live.get('zai')?.piProvider.getModels() ?? []
-    expect(liveModels.map(model => model.id)).toEqual(['glm-5.3'])
-    expect(liveModels[0]?.name).toBe('GLM-5.3')
-    expect(liveModels[0]?.contextWindow).toBe(200_000)
+    const zaiCatalog = getBuiltinModels('zai').map(model => model.id)
+    expect(liveModels.map(model => model.id))
+      .toEqual(['glm-5.3', ...zaiCatalog.filter(id => id !== 'glm-5.3')])
+    const liveNamed = liveModels.find(model => model.id === 'glm-5.3')
+    expect(liveNamed?.name).toBe('GLM-5.3')
+    expect(liveNamed?.contextWindow).toBe(200_000)
 
     const explicit = resolveProfiles({
       zai: { models: [{ id: 'chosen', contextWindow: 4096, maxTokens: 512 }] },
     }, new Map([['zai', [{ id: 'ignored-live-model' }]]]))
-    expect(explicit.get('zai')?.piProvider.getModels().map(model => model.id)).toEqual(['chosen'])
+    expect(explicit.get('zai')?.piProvider.getModels().map(model => model.id))
+      .toEqual(['chosen', ...zaiCatalog])
   })
 
   it('preserves catalog-only model metadata the profile cannot express', () => {
@@ -759,7 +769,7 @@ describe('modelOverrides', () => {
         models: [{ id: declaredOnly.id }],
         modelOverrides: { [declaredOnly.id]: { name: 'renamed' } },
       },
-    })).toThrow(/models already replaces the served catalog/)
+    })).toThrow(/which the models list also declares/)
     expect(() => resolveProfiles({
       deepseek: { modelOverrides: { '': { name: 'nameless' } } },
     })).toThrow(/empty model id/)

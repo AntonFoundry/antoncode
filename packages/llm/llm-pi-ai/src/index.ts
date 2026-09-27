@@ -62,11 +62,28 @@ import type { AdapterRegistrationHandle, DirectoryRegistrationHandle, LlmConfigu
 import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { PiAiAdapter } from './adapter.ts'
 import { catalogProvider, catalogProviderIds, catalogProviderTakesApiKey } from './catalog.ts'
-import type { PiAiLiveModel } from './catalog.ts'
+import type { PiAiLiveModel, PiAiReasoningEfforts } from './catalog.ts'
 import { assertServiceable, Config, resolveProfiles } from './config.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { discoverModels } from './discovery.ts'
-import { fetchModelsDevLiveModels } from './models-dev.ts'
+import { fetchModelsDevDocument, parseModelsDevLiveModels, ZAI_REASONING_EFFORTS } from './models-dev.ts'
+
+/**
+ * The routes whose live model list refreshes from models.dev at startup,
+ * mapped to their models.dev provider ids. Routes absent from this map never
+ * fetch: the installed catalog is their whole model surface.
+ */
+const MODELS_DEV_ROUTE_PROVIDERS: Readonly<Record<string, {
+  /** The models.dev provider entry the route reads. */
+  id: string
+  /** The effort map a reasoning-capable discovered model adopts; omitted = stay neutral. */
+  efforts?: PiAiReasoningEfforts
+}>> = {
+  zai: { id: 'zai-coding-plan', efforts: ZAI_REASONING_EFFORTS },
+  moonshotai: { id: 'moonshotai' },
+  deepseek: { id: 'deepseek' },
+  nvidia: { id: 'nvidia' },
+}
 
 export { PiAiAdapter } from './adapter.ts'
 export type { PiAiAdapterOptions } from './adapter.ts'
@@ -161,8 +178,9 @@ export function apply(ctx: Context, config: Config): void {
   let lastRaw: Config | undefined
   let memoized: ReadonlyMap<string, ResolvedPiAiProviderProfile> | undefined
   const liveModels = new Map<string, readonly PiAiLiveModel[]>()
-  let refreshedZai = false
-  let refreshPromise: Promise<void> | undefined
+  const refreshedRoutes = new Set<string>()
+  const refreshInFlight = new Map<string, Promise<void>>()
+  let modelsDevDocument: Promise<unknown> | undefined
   /**
    * The resolved profiles for the current configuration, memoized by the raw
    * snapshot's identity — which is also what makes the adapter's own snapshot
@@ -220,15 +238,25 @@ export function apply(ctx: Context, config: Config): void {
     )
   }
 
+  const modelsDevDoc = (): Promise<unknown> => {
+    modelsDevDocument ??= fetchModelsDevDocument()
+    return modelsDevDocument
+  }
+
   const refreshModels = async (provider: string): Promise<void> => {
-    if (provider !== 'zai' || refreshedZai) return
-    if (refreshPromise !== undefined) return refreshPromise
-    refreshPromise = (async () => {
+    const modelsDevRoute = MODELS_DEV_ROUTE_PROVIDERS[provider]
+    if (modelsDevRoute === undefined || refreshedRoutes.has(provider)) return
+    const inFlight = refreshInFlight.get(provider)
+    if (inFlight !== undefined) return inFlight
+    const task = (async () => {
       const raw = current().providers?.[provider]
       // Schemastery materializes an absent `models` as `[]`, and `[]` serves
       // no request, so both mean "the catalog decides" — the same reading
-      // `resolveRouteModels` applies.
+      // `resolveRouteModels` applies. A route that names no credential never
+      // fetches: without the key the discovery fallback cannot authenticate
+      // anyway, and a keyless profile is a deliberate catalog-only shape.
       if (raw === undefined || (raw.models !== undefined && raw.models.length > 0)) return
+      if (raw.apiKeyEnv === undefined && catalogProviderTakesApiKey(provider)) return
       const profile = profiles().get(provider)
       const baseURL = profile?.baseURL ?? catalogProvider(provider)?.baseUrl
       if (profile === undefined || baseURL === undefined) return
@@ -236,7 +264,7 @@ export function apply(ctx: Context, config: Config): void {
         liveModels.set(provider, discovered)
         lastRaw = undefined
         memoized = undefined
-        refreshedZai = true
+        refreshedRoutes.add(provider)
       }
       const gatewayListing = (): Promise<readonly PiAiLiveModel[]> =>
         discoverModels({
@@ -258,18 +286,25 @@ export function apply(ctx: Context, config: Config): void {
           return
         }
         try {
-          adopt(await fetchModelsDevLiveModels())
-        } catch {
+          const parsed = parseModelsDevLiveModels(await modelsDevDoc(), modelsDevRoute.id, modelsDevRoute.efforts)
+          if (parsed === undefined) throw new Error(`models.dev does not publish "${modelsDevRoute.id}"`)
+          adopt(parsed)
+        } catch (documentError) {
+          // Only a route that speaks the OpenAI listing has an endpoint
+          // fallback; the shared document fetch stays the single network read
+          // the other mapped routes rely on.
+          if ((profile.api ?? 'openai-completions') !== 'openai-completions') throw documentError
           adopt(await gatewayListing())
         }
       } catch (error) {
-        ctx.logger.warn(`llm-pi-ai: live ZAI model discovery failed; using bundled catalog (${error instanceof Error ? error.message : String(error)})`)
+        ctx.logger.warn(`llm-pi-ai: live model discovery for "${provider}" failed; using bundled catalog (${error instanceof Error ? error.message : String(error)})`)
       }
     })()
+    refreshInFlight.set(provider, task)
     try {
-      await refreshPromise
+      await task
     } finally {
-      refreshPromise = undefined
+      refreshInFlight.delete(provider)
     }
   }
 
@@ -363,7 +398,7 @@ export function apply(ctx: Context, config: Config): void {
   // catalog remains available while this fetch is in flight; a successful
   // response invalidates the immutable profile snapshot and the next
   // picker/model read sees the provider's current IDs.
-  void refreshModels('zai')
+  for (const provider of Object.keys(MODELS_DEV_ROUTE_PROVIDERS)) void refreshModels(provider)
 
   installSettingsSection(ctx, NS, Config, config, {
     // Refuse an unserviceable section where it is written: without this a
@@ -372,13 +407,14 @@ export function apply(ctx: Context, config: Config): void {
     validate: assertServiceable,
     setSource: (source) => {
       current = source
-      refreshedZai = false
-      liveModels.delete('zai')
+      refreshedRoutes.clear()
+      liveModels.clear()
+      modelsDevDocument = undefined
       lastRaw = undefined
       memoized = undefined
     },
     onChange: () => {
-      void refreshModels('zai')
+      for (const provider of Object.keys(MODELS_DEV_ROUTE_PROVIDERS)) void refreshModels(provider)
       // Named here rather than left to the settings watcher: `assertServiceable`
       // cannot see the llm registry, so a profile claiming a route another
       // adapter family owns is stored successfully and only fails at this swap.

@@ -176,6 +176,11 @@ function defaultApiKeyEnv(provider: string): string {
   return `${provider.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_API_KEY`
 }
 
+/** LM Studio can run with authentication disabled; do not invent a credential requirement. */
+function isNoAuthProvider(provider: string): boolean {
+  return provider === 'lm-studio'
+}
+
 /** One resolution's complete request facts (same shape as the adapter's connection options). */
 export type ResolvedOpenAIOptions = OpenAIConnectionOptions
 
@@ -255,7 +260,7 @@ export function resolveAdapterOptions(config: Config, provider: string, environm
     throw new Error(`llm-openai: provider "${provider}" has an empty displayName`)
   }
   return {
-    apiKeyEnv: credentialRef(route?.apiKeyEnv ?? config.apiKeyEnv ?? defaultApiKeyEnv(provider)),
+    ...isNoAuthProvider(provider) ? {} : { apiKeyEnv: credentialRef(route?.apiKeyEnv ?? config.apiKeyEnv ?? defaultApiKeyEnv(provider)) },
     baseURL: route?.baseURL
       ?? config.baseURL
       ?? environment?.get(BASE_URL_ENV)?.value
@@ -328,10 +333,17 @@ export function apply(ctx: Context, config: Config): void {
   // Fail loud at load on anything the schema could not express, dormant or not.
   assertServiceable(config)
 
-  const resolveApiKey = async (provider: string, connection: ResolvedOpenAIOptions): Promise<string> => {
+  const resolveApiKey = async (provider: string, connection: ResolvedOpenAIOptions): Promise<string | undefined> => {
+    if (isNoAuthProvider(provider)) return undefined
     // Every credential fact comes from the caller's snapshot, so a rejected
     // settings generation cannot leak its key onto the previous endpoint.
     const ref = connection.apiKeyEnv
+    if (ref === undefined) {
+      throw new LlmError(
+        `llm-openai: provider route "${provider}" resolved without a credential reference`,
+        'MISSING_CREDENTIAL',
+      )
+    }
     const credentials = ctx.get('credentials')
     if (credentials !== undefined) {
       const hit = await credentials.resolve(ref)

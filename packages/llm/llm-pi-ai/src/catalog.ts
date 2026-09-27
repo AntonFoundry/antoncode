@@ -461,8 +461,11 @@ export interface RouteCatalog {
 
 /**
  * Materialize one route's catalog by merging the installed catalog defaults
- * under the configured entries. A route with no configured `models` serves the
- * installed catalog unchanged, which is what keeps an existing
+ * under the configured entries. An explicit `models` list or a discovered live
+ * listing extends the served catalog instead of replacing it — its entries win
+ * by id, and catalog-only models keep serving — so a partial list cannot hide
+ * the route's other models. A route with neither serves the installed catalog
+ * unchanged, which is what keeps an existing
  * `providers: { deepseek: { apiKeyEnv: … } }` profile working untouched.
  * @param request - the route-level catalog facts.
  * @returns the materialized models and the explicitly configured request caps.
@@ -484,9 +487,9 @@ export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
       invalid(provider, `sets modelOverrides for "${id}", but the installed catalog does not describe this route;`
         + ' a declared route spells every model out in its models list')
     }
-    if (configured.length > 0) {
-      invalid(provider, `sets modelOverrides for "${id}" beside a models list; models already replaces the served`
-        + ' catalog, so declare the fields on its entries')
+    if (configured.some(entry => entry.id === id)) {
+      invalid(provider, `sets modelOverrides for "${id}", which the models list also declares; declare the`
+        + ' fields on its entry instead')
     }
     if (!defaults.has(id)) {
       invalid(provider, `modelOverrides names "${id}", which the installed catalog does not describe`)
@@ -513,7 +516,20 @@ export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
         ...model.input === undefined ? {} : { input: [...model.input] },
       }))
       : [...defaults.values()].map(model => ({ id: model.id, ...overrides[model.id] }))
-  const entries: readonly PiAiModelProfile[] = configuredEntries
+  const declared = new Set<string>()
+  for (const entry of configuredEntries) {
+    if (declared.has(entry.id)) invalid(provider, `lists model "${entry.id}" more than once`)
+    declared.add(entry.id)
+  }
+  // The union tail: installed-catalog models the explicit list or live
+  // listing did not name, keeping their installed fields. A catalog entry an
+  // override names still lands here, so `modelOverrides` never lands nowhere.
+  const entries: readonly PiAiModelProfile[] = [
+    ...configuredEntries,
+    ...[...defaults.values()]
+      .filter(model => !declared.has(model.id))
+      .map(model => ({ id: model.id, ...overrides[model.id] })),
+  ]
   if (entries.length === 0) {
     invalid(provider, 'resolves no models; the installed catalog does not describe this route, so its models'
       + ' must be listed in configuration')
@@ -525,7 +541,7 @@ export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
   const configuredMaxTokens = new Map<string, number>()
   const models = entries.map((entry) => {
     if (entry.id.length === 0) invalid(provider, 'has a model with an empty id')
-    if (seen.has(entry.id)) invalid(provider, `lists model "${entry.id}" more than once`)
+    if (seen.has(entry.id)) invalid(provider, `serves model "${entry.id}" more than once`)
     seen.add(entry.id)
     const base = defaults.get(entry.id)
     const api = request.api ?? base?.api ?? routeApi

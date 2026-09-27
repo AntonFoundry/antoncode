@@ -59,7 +59,7 @@ export interface OpenAIConnectionOptions {
    * generation's URL with another generation's secret. Configuration carries
    * only this name — a literal key is not a configuration value.
    */
-  apiKeyEnv: CredentialRef
+  apiKeyEnv?: CredentialRef
   /** Resolved selector label for this route; a display fact, never a transport one. */
   displayName: string
   /** Request defaults applied to every call (reasoning effort). */
@@ -90,7 +90,7 @@ export interface OpenAIAdapterOptions {
    * from the same resolution as the endpoint it is sent to. Throws `LlmError`
    * `MISSING_CREDENTIAL` when no key is available anywhere.
    */
-  resolveApiKey: (provider: string, connection: OpenAIConnectionOptions) => Promise<string>
+  resolveApiKey: (provider: string, connection: OpenAIConnectionOptions) => Promise<string | undefined>
   /**
    * The wire protocol one model speaks on this route, or `undefined` for the
    * chat-completions default. Some gateways serve specific models only
@@ -309,7 +309,7 @@ export class OpenAIAdapter extends LlmAdapter {
     options: GenerateOptions,
     signal: AbortSignal,
     connection: OpenAIConnectionOptions,
-    apiKey: string,
+    apiKey: string | undefined,
     userId: AnonymousUserId,
     onComment: () => void,
   ): AsyncIterable<StreamChunk> {
@@ -321,7 +321,7 @@ export class OpenAIAdapter extends LlmAdapter {
       // Route-scoped headers resolve first so the fixed transport headers
       // below always win a name collision (authorization, content-type).
       ...this.config.extraHeaders?.(options.provider, connection, options.sessionId === undefined ? undefined : String(options.sessionId)),
-      'authorization': `Bearer ${apiKey}`,
+      ...(apiKey === undefined ? {} : { 'authorization': `Bearer ${apiKey}` }),
       'content-type': 'application/json',
       'accept': 'text/event-stream',
       ...attributionHeaders(),
@@ -393,7 +393,7 @@ export class OpenAIAdapter extends LlmAdapter {
     options: GenerateOptions,
     signal: AbortSignal,
     connection: OpenAIConnectionOptions,
-    apiKey: string,
+    apiKey: string | undefined,
     userId: AnonymousUserId,
     onComment: () => void,
   ): AsyncIterable<StreamChunk> {
@@ -405,7 +405,7 @@ export class OpenAIAdapter extends LlmAdapter {
       // Route-scoped headers resolve first so the fixed transport headers
       // below always win a name collision (authorization, content-type).
       ...this.config.extraHeaders?.(options.provider, connection, options.sessionId === undefined ? undefined : String(options.sessionId)),
-      'authorization': `Bearer ${apiKey}`,
+      ...(apiKey === undefined ? {} : { 'authorization': `Bearer ${apiKey}` }),
       'content-type': 'application/json',
       'accept': 'text/event-stream',
       ...attributionHeaders(),

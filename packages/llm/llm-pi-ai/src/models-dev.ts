@@ -1,11 +1,12 @@
 /**
- * Startup ZAI model-list refresh from models.dev — the same catalog source
+ * Startup model-list refresh from models.dev — the same catalog source
  * OpenCode reads (`GET /api.json`), fetched when the harness mounts so a
  * provider's newest model ids reach the pickers without waiting for a pi-ai
- * release. The payload's `zai-coding-plan` entry describes the gateway the
- * harness `zai` route already serves (`api.z.ai/api/coding/paas/v4`), so its
- * models ride the installed catalog's route facts and, for ids the installed
- * catalog also ships, its full per-model configuration.
+ * release. One shared document fetch serves every mapped route (see
+ * `MODELS_DEV_ROUTE_PROVIDERS` in the plugin): the payload's provider entry
+ * describes the gateway the harness route already serves, so its models ride
+ * the installed catalog's route facts and, for ids the installed catalog also
+ * ships, its full per-model configuration.
  *
  * @module dsh-llm-pi-ai/models-dev
  */
@@ -29,9 +30,11 @@ const FETCH_TIMEOUT_MS = 10_000
  * The reasoning-effort map a reasoning-capable ZAI model offers. Z.AI dispatch
  * spells thinking as enabled ("high") or its extended tier ("max"); the
  * installed glm-5.2 catalog entry declares the same spellings. `off` sends
- * nothing, which is how not thinking is expressed on this gateway.
+ * nothing, which is how not thinking is expressed on this gateway. Routes of
+ * other providers pass no map: an unknown id stays neutral instead of
+ * adopting Z.AI's effort spellings.
  */
-const ZAI_REASONING_EFFORTS: PiAiReasoningEfforts = {
+export const ZAI_REASONING_EFFORTS: PiAiReasoningEfforts = {
   off: null,
   low: 'high',
   medium: 'high',
@@ -82,7 +85,9 @@ function declaredInput(value: unknown): readonly ('text' | 'image')[] | undefine
  * @returns the live models in document order, or `undefined` when the payload
  *   has no such provider.
  */
-export function parseModelsDevLiveModels(payload: unknown, provider: string): readonly PiAiLiveModel[] | undefined {
+export function parseModelsDevLiveModels(payload: unknown, provider: string,
+  reasoningEfforts?: PiAiReasoningEfforts | undefined,
+): readonly PiAiLiveModel[] | undefined {
   if (!isRecord(payload)) throw new Error('llm-pi-ai: models.dev payload is not an object')
   const entry = payload[provider]
   if (entry === undefined) return undefined
@@ -103,7 +108,7 @@ export function parseModelsDevLiveModels(payload: unknown, provider: string): re
       ...(typeof model.name === 'string' && model.name.length > 0 ? { name: model.name } : {}),
       ...contextWindow === undefined ? {} : { contextWindow },
       ...maxTokens === undefined ? {} : { maxTokens },
-      ...reasoning ? { reasoningEfforts: { ...ZAI_REASONING_EFFORTS } } : {},
+      ...reasoning && reasoningEfforts !== undefined ? { reasoningEfforts: { ...reasoningEfforts } } : {},
       ...input === undefined ? {} : { input },
     })
   }
@@ -117,14 +122,10 @@ export function parseModelsDevLiveModels(payload: unknown, provider: string): re
  *   the document no longer publishes {@link ZAI_CATALOG_PROVIDER}; the caller
  *   falls back to the endpoint's own listing.
  */
-export async function fetchModelsDevLiveModels(): Promise<readonly PiAiLiveModel[]> {
+export async function fetchModelsDevDocument(): Promise<unknown> {
   const response = await fetch(MODELS_DEV_API_URL, { method: 'GET', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
   if (!response.ok) {
     throw new Error(`models.dev fetch failed with ${response.status}`)
   }
-  const models = parseModelsDevLiveModels(await response.json(), ZAI_CATALOG_PROVIDER)
-  if (models === undefined) {
-    throw new Error(`models.dev no longer publishes "${ZAI_CATALOG_PROVIDER}"`)
-  }
-  return models
+  return response.json()
 }

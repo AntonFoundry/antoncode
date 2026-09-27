@@ -8,7 +8,8 @@ import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import FileSettingsProvider from '@deepseek-ai/dsh-settings-file'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
-import { fetchModelsDevLiveModels, MODELS_DEV_API_URL, parseModelsDevLiveModels } from '../src/models-dev.ts'
+import { fetchModelsDevDocument, MODELS_DEV_API_URL, parseModelsDevLiveModels, ZAI_REASONING_EFFORTS } from '../src/models-dev.ts'
+import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
 
 const homes: string[] = []
 const servers: Server[] = []
@@ -51,7 +52,7 @@ describe('models.dev live model mapping', () => {
       },
       'glm-9-lite': { limit: {} },
       'glm-deaf': { modalities: { input: ['video'] } },
-    }), 'zai-coding-plan')
+    }), 'zai-coding-plan', ZAI_REASONING_EFFORTS)
     expect(models).toEqual([
       {
         id: 'glm-5.3-flash',
@@ -69,7 +70,7 @@ describe('models.dev live model mapping', () => {
   it('skips deprecated entries and answers undefined for an unpublished provider', () => {
     const models = parseModelsDevLiveModels(catalogDocument({
       retired: { status: 'deprecated', limit: { context: 8 } },
-    }), 'zai-coding-plan')
+    }), 'zai-coding-plan', ZAI_REASONING_EFFORTS)
     expect(models).toEqual([])
     expect(parseModelsDevLiveModels({ unrelated: {} }, 'zai-coding-plan')).toBeUndefined()
   })
@@ -85,17 +86,27 @@ describe('models.dev live model mapping', () => {
       if (url.toString() === MODELS_DEV_API_URL) return new Response(JSON.stringify(ok), { status: 200 })
       return new Response('nope', { status: 404 })
     }))
-    expect(await fetchModelsDevLiveModels()).toEqual([{
+    const document = await fetchModelsDevDocument()
+    expect(parseModelsDevLiveModels(document, 'zai-coding-plan', ZAI_REASONING_EFFORTS)).toEqual([{
       id: 'beta',
       name: 'Beta',
       contextWindow: 4096,
       maxTokens: 256,
       reasoningEfforts: { off: null, low: 'high', medium: 'high', high: 'high', max: 'max' },
     }])
+    // A route of another provider adopts no Z.AI effort spellings: an unknown
+    // id stays neutral and the installed catalog (or the route profile) owns
+    // the dispatch facts.
+    const nvidiaDocument = { nvidia: { models: { beta: {
+      name: 'Beta', reasoning: true, limit: { context: 4096, output: 256 },
+    } } } }
+    expect(parseModelsDevLiveModels(nvidiaDocument, 'nvidia', undefined)).toEqual([
+      { id: 'beta', name: 'Beta', contextWindow: 4096, maxTokens: 256 },
+    ])
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 503 })))
-    await expect(fetchModelsDevLiveModels()).rejects.toThrow(/failed with 503/)
+    await expect(fetchModelsDevDocument()).rejects.toThrow(/failed with 503/)
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })))
-    await expect(fetchModelsDevLiveModels()).rejects.toThrow(/no longer publishes/)
+    expect(parseModelsDevLiveModels(await fetchModelsDevDocument(), 'zai-coding-plan')).toBeUndefined()
   })
 })
 
@@ -154,7 +165,10 @@ describe('startup ZAI catalog refresh', () => {
     vi.stubEnv('PI_MODELS_DEV_TEST_KEY', 'test-key')
     await vi.waitFor(async () => {
       const ids = (await ctx.llm.listModels('zai')).map(model => model.id)
-      expect(ids).toEqual(['endpoint-native'])
+      // The endpoint listing extends the installed catalog rather than
+      // replacing it, so its id serves first and the bundled ids remain.
+      expect(ids).toEqual(['endpoint-native',
+        ...getBuiltinModels('zai').map(model => model.id)])
     })
   })
 
