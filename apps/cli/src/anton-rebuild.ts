@@ -68,7 +68,7 @@ interface CommandResult {
 
 function launchctl(...args: string[]): CommandResult {
   const result = spawnSync(process.env.ANTON_LAUNCHCTL_PATH ?? '/bin/launchctl', args, { encoding: 'utf8' })
-  return { status: result.status, stdout: String(result.stdout ?? ''), stderr: String(result.stderr ?? '') }
+  return { status: result.status, stdout: result.stdout, stderr: result.stderr }
 }
 
 function launchJobAlive(state: RebuildState): boolean {
@@ -84,7 +84,7 @@ async function notify(state: RebuildState): Promise<boolean> {
     ? `Installed and verified Anton. Log: ${state.logPath}`
     : `${state.detail ?? `Exit code: ${String(state.exitCode)}`} Log: ${state.logPath}`
   try {
-    const response = await fetch('http://127.0.0.1:3742/bridge/api/notify', {
+    const response = await fetch(process.env.ANTON_REBUILD_NOTIFY_URL ?? 'http://127.0.0.1:3742/bridge/api/notify', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ title, body }),
@@ -132,6 +132,7 @@ function supervisorArguments(jobId: string): string[] {
   return [process.execPath, ...process.execArgv, resolve(entry), 'anton-rebuild-supervise', '--job', jobId]
 }
 
+// oxlint-disable-next-line typescript/require-await -- keeps the CLI dispatch's uniform Promise<number> contract
 export async function startRebuild(options: StartOptions): Promise<number> {
   const timeoutMinutes = Math.trunc(options.timeoutMinutes || DEFAULT_TIMEOUT_MINUTES)
   if (timeoutMinutes < MIN_TIMEOUT_MINUTES || timeoutMinutes > MAX_TIMEOUT_MINUTES) {
@@ -211,6 +212,7 @@ export async function rebuildStatus(): Promise<number> {
   return state.phase === 'failed' || state.phase === 'timed_out' ? 1 : 0
 }
 
+// oxlint-disable-next-line typescript/require-await -- keeps the CLI dispatch's uniform Promise<number> contract
 export async function cancelRebuild(): Promise<number> {
   const state = readRebuildState()
   if (state === undefined || TERMINAL.has(state.phase)) {
@@ -277,15 +279,15 @@ export async function superviseRebuild(jobId: string): Promise<number> {
     if (requested !== undefined) return
     requested = reason
     signalProcessGroup(childPid, 'SIGTERM')
-    killTimer = setTimeout(() => signalProcessGroup(childPid, 'SIGKILL'), 8_000)
+    killTimer = setTimeout(() => { signalProcessGroup(childPid, 'SIGKILL') }, 8_000)
   }
-  process.on('SIGTERM', () => terminate('cancelled'))
-  process.on('SIGINT', () => terminate('cancelled'))
+  process.on('SIGTERM', () => { terminate('cancelled') })
+  process.on('SIGINT', () => { terminate('cancelled') })
   const timeoutMs = Math.max(0, new Date(state.deadlineAt).getTime() - Date.now())
-  const deadlineTimer = setTimeout(() => terminate('timed_out'), timeoutMs)
+  const deadlineTimer = setTimeout(() => { terminate('timed_out') }, timeoutMs)
   const exit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolveExit, reject) => {
     child.once('error', reject)
-    child.once('exit', (code: number | null, signal: NodeJS.Signals | null) => resolveExit({ code, signal }))
+    child.once('exit', (code: number | null, signal: NodeJS.Signals | null) => { resolveExit({ code, signal }) })
   }).catch((error: unknown) => ({ code: 1, signal: null, error }))
   clearTimeout(deadlineTimer)
   if (killTimer !== undefined) clearTimeout(killTimer)
@@ -303,13 +305,17 @@ export async function superviseRebuild(jobId: string): Promise<number> {
   }
   state.notificationPending = true
   atomicWrite(state)
-  for (let attempt = 0; attempt < 45 && state.notificationPending; attempt += 1) {
+  // The bridge is down for exactly the window a rebuild quits the app, so
+  // delivery retries outlive the relaunch. ANTON_REBUILD_NOTIFY_ATTEMPTS
+  // bounds the loop for tests; production keeps the full window.
+  const attemptCap = Math.max(1, Math.trunc(Number(process.env.ANTON_REBUILD_NOTIFY_ATTEMPTS ?? 45)) || 45)
+  for (let attempt = 0; attempt < attemptCap; attempt += 1) {
     if (await notify(state)) {
       state.notificationPending = false
       atomicWrite(state)
       break
     }
-    await new Promise(resolveWait => setTimeout(resolveWait, 2_000))
+    if (attempt + 1 < attemptCap) await new Promise((resolveWait) => { setTimeout(resolveWait, 2_000) })
   }
   return state.phase === 'succeeded' ? 0 : 1
 }

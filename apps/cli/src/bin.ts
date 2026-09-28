@@ -57,6 +57,21 @@ switch (invocation.mode) {
     process.exit(await runAnton(invocation.action))
     break
   }
+  case 'anton-rebuild': {
+    const { cancelRebuild, rebuildStatus, startRebuild } = await import('./anton-rebuild.ts')
+    const result = invocation.action === 'start'
+      ? await startRebuild({ timeoutMinutes: invocation.timeoutMinutes, checkout: invocation.checkout })
+      : invocation.action === 'status'
+        ? await rebuildStatus()
+        : await cancelRebuild()
+    process.exit(result)
+    break
+  }
+  case 'anton-rebuild-supervise': {
+    const { superviseRebuild } = await import('./anton-rebuild.ts')
+    process.exit(await superviseRebuild(invocation.jobId))
+    break
+  }
   default:
     invocation satisfies never
     throw new Error(`dsh: unhandled invocation mode ${JSON.stringify(invocation)}`)

@@ -98,6 +98,19 @@ describe('parseDshArgs', () => {
     expect(exitCode(['--profile', 'x', 'plugin', 'add', 'y'])).toBe(1)
   })
 
+  it('routes managed Anton rebuild actions', () => {
+    expect(parse(['anton', 'rebuild', 'start']))
+      .toEqual({ mode: 'anton-rebuild', action: 'start', timeoutMinutes: 20, checkout: process.cwd() })
+    expect(parse(['anton', 'rebuild', 'start', '--timeout', '35', '--checkout', '/tmp/harness']))
+      .toEqual({ mode: 'anton-rebuild', action: 'start', timeoutMinutes: 35, checkout: '/tmp/harness' })
+    expect(parse(['anton', 'rebuild', 'status']))
+      .toEqual({ mode: 'anton-rebuild', action: 'status', timeoutMinutes: 20, checkout: process.cwd() })
+    expect(parse(['anton', 'rebuild', 'cancel']))
+      .toEqual({ mode: 'anton-rebuild', action: 'cancel', timeoutMinutes: 20, checkout: process.cwd() })
+    expect(exitCode(['anton', 'rebuild'])).toBe(1)
+    expect(exitCode(['anton', 'rebuild', 'start', '--timeout', 'later'])).toBe(1)
+  })
+
   it('keeps its own help for an invocation with no app to hand it to', () => {
     expect(exitCode(['--help'])).toBe(0)
     expect(exitCode(['-h'])).toBe(0)

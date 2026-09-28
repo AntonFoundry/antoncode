@@ -56,8 +56,29 @@ interface AntonInvocation {
   action: 'status' | 'start' | 'stop' | 'restart'
 }
 
+/** Start, inspect, or cancel the launchd-supervised macOS rebuild. */
+interface AntonRebuildInvocation {
+  mode: 'anton-rebuild'
+  action: 'start' | 'status' | 'cancel'
+  timeoutMinutes: number
+  checkout: string
+}
+
+/** Internal launchd entry: supervise one exact persisted rebuild job. */
+interface AntonRebuildSuperviseInvocation {
+  mode: 'anton-rebuild-supervise'
+  jobId: string
+}
+
 /** The resolved `dsh` invocation. Help, version, and errors exit inside {@link parseDshArgs}. */
-export type DshInvocation = ProfileInvocation | DumpConfigInvocation | PluginInvocation | ModelsInvocation | AntonInvocation
+export type DshInvocation =
+  | ProfileInvocation
+  | DumpConfigInvocation
+  | PluginInvocation
+  | ModelsInvocation
+  | AntonInvocation
+  | AntonRebuildInvocation
+  | AntonRebuildSuperviseInvocation
 
 /** Launcher flags shared by the default command and the `web` alias. */
 interface BootOptions {
@@ -201,16 +222,41 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
       resolved = { mode: 'models', profile }
     })
 
-  const anton = program.command('anton').description('control the local Anton app\'s harness through its bridge (no app restart, no quit)')
+  const anton = program.command('anton').description('control the local Anton app and its managed rebuilds')
   anton
     .helpOption(false)
-    .argument('<action>', 'status | start | stop | restart')
-    .action((action: string) => {
+    .argument('<action>', 'status | start | stop | restart | rebuild')
+    .argument('[rebuild-action]', 'start | status | cancel')
+    .option('--timeout <minutes>', 'managed rebuild timeout in minutes', '20')
+    .option('--checkout <path>', 'DeepSeek Harness checkout to rebuild', process.cwd())
+    .action((action: string, rebuildAction: string | undefined, options: { timeout: string; checkout: string }) => {
       rejectParentOptions('anton')
+      if (action === 'rebuild') {
+        if (rebuildAction !== 'start' && rebuildAction !== 'status' && rebuildAction !== 'cancel') {
+          anton.error('error: rebuild action must be start, status, or cancel')
+        }
+        const timeoutMinutes = Number(options.timeout)
+        if (!Number.isFinite(timeoutMinutes)) anton.error('error: --timeout must be a number of minutes')
+        resolved = {
+          mode: 'anton-rebuild',
+          action: rebuildAction as AntonRebuildInvocation['action'],
+          timeoutMinutes,
+          checkout: options.checkout,
+        }
+        return
+      }
+      if (rebuildAction !== undefined) anton.error(`error: ${action} takes no second action`)
       if (action !== 'status' && action !== 'start' && action !== 'stop' && action !== 'restart') {
-        anton.error('error: action must be status, start, stop, or restart')
+        anton.error('error: action must be status, start, stop, restart, or rebuild')
       }
       resolved = { mode: 'anton', action: action as AntonInvocation['action'] }
+    })
+
+  const supervise = program.command('anton-rebuild-supervise', { hidden: true }).description('internal managed rebuild supervisor')
+  supervise
+    .requiredOption('--job <id>')
+    .action((options: { job: string }) => {
+      resolved = { mode: 'anton-rebuild-supervise', jobId: options.job }
     })
 
   try {

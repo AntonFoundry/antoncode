@@ -23,9 +23,13 @@ export async function runAnton(action: 'status' | 'start' | 'stop' | 'restart'):
     : `${bridgeBaseUrl()}/bridge/api/harness/${action}`
   let response: Response
   try {
+    // Restart includes stop, child exit, socket release, and a fresh boot.
+    // The bridge's readiness window is 30 seconds, so the CLI must outlive
+    // that window or it can report a timeout while the restart is still running.
+    const timeoutMs = action === 'restart' || action === 'start' ? 60_000 : 20_000
     response = await fetch(url, {
       method: action === 'status' ? 'GET' : 'POST',
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(timeoutMs),
     })
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
