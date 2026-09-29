@@ -4,13 +4,13 @@
  * filtering, the archive set, and orphan subagents.
  */
 import { describe, expect, it } from 'vitest'
-import type { SessionId, SessionSummary, WorkspaceView } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId, WorkspaceView } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionSummary as WireSummary } from '@deepseek-ai/dsh-host-apiproxy/api/sessions.ts'
 import { deriveRuns, type BoardSnapshot } from '../src/client/bridge.ts'
 
 const NOW = 1_000_000
 
-const summary = (id: string, over: Partial<SessionSummary> = {}): SessionSummary => ({
+const summary = (id: string, over: Partial<WireSummary> = {}): WireSummary => ({
   sessionId: id as SessionId,
   updatedAt: NOW,
   running: false,

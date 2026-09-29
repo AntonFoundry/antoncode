@@ -64,8 +64,8 @@ const board = (over: Partial<BoardSnapshot> = {}): BoardSnapshot => ({
 })
 
 /** A todos projection block carrying the given nested tree. */
-const todosOf = (todos: unknown): WireSummary['projections'] =>
-  ({ asOfSeq: 1, values: { todos } }) as WireSummary['projections']
+const todosOf = (todos: unknown): NonNullable<WireSummary['projections']> =>
+  ({ asOfSeq: 1, values: { todos } })
 
 const NESTED_TODOS = [
   { content: 'ship the canvas', status: 'completed' },
