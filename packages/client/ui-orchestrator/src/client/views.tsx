@@ -8,13 +8,18 @@ import { createElement } from 'react'
 import type { FC } from 'react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { Run, RunAction } from './contract.ts'
-import { dagFlow } from './dagflow.ts'
+import type { FlowGraph } from './flow.ts'
+import { DagFlow, type DagFlowLabels } from './dagflow.tsx'
 import { triageBoard } from './render.ts'
 
 /** Inject face the plugin supplies to both views: derived runs plus the action callback. */
 export interface OrchestratorInjected {
   /** Root runs derived from the latest board snapshot. */
   runs: Run[]
+  /** Dag Flow graph built from the same snapshot. */
+  graph: FlowGraph
+  /** Dag Flow chrome copy, rebuilt per inject so it follows the active locale. */
+  labels: DagFlowLabels
   /** Action callback invoked with (sessionId, action) from card buttons. */
   onAct: (sessionId: string, action: RunAction) => void
 }
@@ -46,14 +51,16 @@ export const OrchestratorView: FC<OrchestratorViewProps> = ({ runs, onAct }) => 
 }
 
 /**
- * Dag Flow tab: SVG DAG of the first root run; node clicks raise `focus`.
- * @param props - Slot share plus the inject face (`runs`, `onAct`).
- * @returns The mounted DAG.
+ * Dag Flow tab: the Langflow-style node canvas over the board's missions,
+ * spawned agents, and plan tasks. Selecting a node inspects it; the inspector's
+ * focus action raises `focus` for that node's session.
+ * @param props - Slot share plus the inject face (`graph`, `labels`, `onAct`).
+ * @returns The mounted canvas.
  */
-export const DagFlowView: FC<OrchestratorViewProps> = ({ runs, onAct }) => {
-  const memoRuns = useMemo(() => runs, [runs])
-  return useVanilla(
-    () => dagFlow(memoRuns[0] ?? null, (id) =>{  onAct(id, 'focus') }),
-    [memoRuns, onAct],
-  )
-}
+export const DagFlowView: FC<OrchestratorViewProps> = ({ graph, labels, onAct }) => (
+  <DagFlow
+    graph={graph}
+    labels={labels}
+    onFocus={(sessionId) =>{  onAct(sessionId, 'focus') }}
+  />
+)

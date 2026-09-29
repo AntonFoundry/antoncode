@@ -1,0 +1,522 @@
+/* Dag Flow: the Langflow-style node canvas for the orchestrator DAG. All color
+   comes from --dsw-* tokens; each node's `--dag-accent` is set by its status
+   class and drives the rail, badge, handle ring, and selection outline. */
+
+.root {
+  display: flex;
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-base);
+}
+
+/* ---- Viewport ---- */
+
+.canvas {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+
+.panning {
+  cursor: grabbing;
+}
+
+.grid {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(var(--dsw-alias-border-l3) 1px, transparent 1px);
+  background-repeat: repeat;
+  pointer-events: none;
+}
+
+.plane {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+  /* Drags on empty plane space must reach the canvas, which owns panning. */
+  pointer-events: none;
+}
+
+/* Zero-sized so the SVG never clips its paths: children keep plane coordinates
+   even when they fall outside the plane box. */
+.edges {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.edge {
+  fill: none;
+  stroke: var(--dsw-alias-border-l4);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+/* Edges leaving live work: coloured by the source card's accent, dashed, and
+   flowing, so the run reads as moving through the graph. */
+.edgeLive {
+  stroke: var(--dag-accent, var(--dsw-alias-state-business-primary));
+  stroke-width: 2;
+  stroke-dasharray: 6 6;
+  animation: dag-dash 0.9s linear infinite;
+}
+
+@keyframes dag-dash {
+  to {
+    stroke-dashoffset: -12;
+  }
+}
+
+/* ---- Node card ---- */
+
+.node {
+  --dag-accent: var(--dsw-static-neutral-bluish-500);
+
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px 8px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 1px 2px var(--dsw-alias-bg-mask-2);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+/* Left rail in the status color — the Langflow accent stripe. */
+.node::before {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 5px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--dag-accent);
+  content: '';
+}
+
+.node:hover {
+  border-color: var(--dsw-alias-border-l4);
+}
+
+.nodeSelected {
+  border-color: var(--dag-accent);
+  box-shadow: 0 0 0 2px var(--dsw-alias-interactive-bg-hover-accent), 0 2px 8px var(--dsw-alias-bg-mask-2);
+}
+
+.nodeLive {
+  animation: dag-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes dag-pulse {
+  50% {
+    border-color: var(--dag-accent);
+  }
+}
+
+.nodeHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.iconChip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dag-accent);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subtitle {
+  overflow: hidden;
+  padding-left: 24px;
+  color: var(--dsw-alias-label-caption);
+  font-size: 10px;
+  line-height: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dag-accent);
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.badgeDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--dag-accent);
+}
+
+/* ---- Handles ---- */
+
+.handle {
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--dag-accent);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-1);
+  transform: translateY(-50%);
+}
+
+.handleInput {
+  left: -5px;
+}
+
+.handleOutput {
+  right: -5px;
+}
+
+.handleLabel {
+  position: absolute;
+  top: 50%;
+  color: var(--dsw-alias-label-caption);
+  font-size: 9px;
+  line-height: 1;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.handleLabelInput {
+  left: 12px;
+}
+
+.handleLabelOutput {
+  right: 12px;
+}
+
+/* ---- Status accents (one place where status meets color) ---- */
+
+.statusQueued {
+  --dag-accent: var(--dsw-static-neutral-bluish-500);
+}
+
+.statusRunning {
+  --dag-accent: var(--dsw-static-blue-500);
+}
+
+.statusBlocked {
+  --dag-accent: var(--dsw-static-amber-500);
+}
+
+.statusVerifying {
+  --dag-accent: var(--dsw-static-amber-400);
+}
+
+.statusDone {
+  --dag-accent: var(--dsw-static-green-500);
+}
+
+.statusFailed {
+  --dag-accent: var(--dsw-static-red-500);
+}
+
+.statusStalemate {
+  --dag-accent: var(--dsw-static-deepseek-500);
+}
+
+.statusPending {
+  --dag-accent: var(--dsw-static-neutral-bluish-400);
+}
+
+.statusInProgress {
+  --dag-accent: var(--dsw-static-blue-400);
+}
+
+.statusCompleted {
+  --dag-accent: var(--dsw-static-green-400);
+}
+
+.statusCancelled {
+  --dag-accent: var(--dsw-static-neutral-bluish-600);
+}
+
+/* ---- Kind ---- */
+
+.kindMission {
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.kindAgent {
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.kindTask {
+  background: var(--dsw-alias-bg-base);
+}
+
+/* ---- Floating chrome ---- */
+
+.controls {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 2px 8px var(--dsw-alias-bg-mask-2);
+}
+
+.controlButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.controlButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.controlButtonActive {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.zoomLabel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  color: var(--dsw-alias-label-caption);
+  font-size: 11px;
+}
+
+.legend {
+  position: absolute;
+  top: 12px;
+  left: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 60%;
+  pointer-events: none;
+}
+
+.legendChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.legendDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--dag-accent, var(--dsw-static-neutral-bluish-500));
+}
+
+/* ---- Minimap ---- */
+
+.minimap {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  width: 176px;
+  height: 116px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 2px 8px var(--dsw-alias-bg-mask-2);
+  cursor: pointer;
+}
+
+.minimapNode {
+  position: absolute;
+  border-radius: 2px;
+  background: var(--dag-accent, var(--dsw-static-neutral-bluish-500));
+}
+
+.minimapViewport {
+  position: absolute;
+  border: 1px solid var(--dsw-alias-state-business-primary);
+  border-radius: 2px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  pointer-events: none;
+}
+
+/* ---- Inspector ---- */
+
+.inspector {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 10px;
+  width: 272px;
+  padding: 14px;
+  overflow-y: auto;
+  border-left: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+  /* The sheet's mission cards sit on the layer-2 rung, so the scroll container
+     rebinds its scrollbar pair to that elevation (ui-theme's sheet gate). */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.inspectorHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.inspectorTitle {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  word-break: break-word;
+}
+
+.inspectorClose {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.inspectorClose:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.inspectorRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.inspectorKey {
+  flex: none;
+  width: 56px;
+  color: var(--dsw-alias-label-caption);
+}
+
+.inspectorValue {
+  min-width: 0;
+  color: var(--dsw-alias-label-secondary);
+  word-break: break-all;
+}
+
+.inspectorSection {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.inspectorSectionTitle {
+  color: var(--dsw-alias-label-caption);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.inspectorItem {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.inspectorItemLive {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+}
+
+.inspectorItemDone {
+  color: var(--dsw-alias-label-caption);
+  text-decoration: line-through;
+}
+
+.inspectorError {
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+/* ---- Empty state ---- */
+
+.empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  color: var(--dsw-alias-label-caption);
+  font-size: 12px;
+}

@@ -15,6 +15,8 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { deriveRuns, type BoardSnapshot } from './bridge.ts'
 import type { RunAction } from './contract.ts'
+import { buildFlow } from './flow.ts'
+import { dagFlowLabels } from './dagflow.tsx'
 import { NS, en, zh } from './locales.ts'
 import { DagFlowView, OrchestratorView } from './views.tsx'
 
@@ -79,13 +81,17 @@ export function apply(ctx: Context): void {
 
   const injected = () => deriveRuns(board, { titles: titles() })
 
+  // The Dag Flow graph is a projection of the same snapshot: missions in
+  // workspace order, their spawned agents, and each mission's nested plan.
+  const injectedGraph = () => buildFlow(board, { titles: titles() })
+
   ctx.slots.inject('conversation.view', () => ctx.slots.register({
     name: 'conversation.view',
     id: 'orchestrator',
     order: 5,
     locale: NS,
     label: () => t('view.orchestrator'),
-    inject: (_sessionId: SessionId) => ({ runs: injected(), onAct }),
+    inject: (_sessionId: SessionId) => ({ runs: injected(), graph: injectedGraph(), labels: dagFlowLabels(t), onAct }),
   }, OrchestratorView))
 
   ctx.slots.inject('conversation.view', () => ctx.slots.register({
@@ -94,7 +100,7 @@ export function apply(ctx: Context): void {
     order: 6,
     locale: NS,
     label: () => t('view.dagflow'),
-    inject: (_sessionId: SessionId) => ({ runs: injected(), onAct }),
+    inject: (_sessionId: SessionId) => ({ runs: injected(), graph: injectedGraph(), labels: dagFlowLabels(t), onAct }),
   }, DagFlowView))
 
   // Refresh-on-inject pull plus a poll: a newly mounted view tab reads a

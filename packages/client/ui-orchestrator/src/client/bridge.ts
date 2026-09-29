@@ -7,7 +7,7 @@
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionSummary } from '@deepseek-ai/dsh-host-apiproxy/api/sessions.ts'
 import type { WorkspaceView } from '@deepseek-ai/dsh-host-apiproxy/api/workspace.ts'
-import { type PlanRow, type Run, type RunState, dedupeErrors, flattenPlan } from './contract.ts'
+import { type PlanNode, type PlanRow, type Run, type RunState, dedupeErrors, flattenPlan } from './contract.ts'
 
 /** Everything the board renders, exactly the `orchestrator.board` response value. */
 export interface BoardSnapshot {
@@ -29,7 +29,7 @@ const QUEUED_MS = 24 * 60 * 60 * 1000
  * @param now - Comparison instant for the recency fallback.
  * @returns The board state machine value for the session.
  */
-function stateOf(summary: SessionSummary, now: number): RunState {
+export function stateOf(summary: SessionSummary, now: number): RunState {
   if (summary.running) return 'running'
   // Recency fallback for the queued/done split of non-running sessions; the
   // wire's `running` flag is authoritative for actual activity.
@@ -37,16 +37,29 @@ function stateOf(summary: SessionSummary, now: number): RunState {
 }
 
 /**
- * Extracts the mission plan from one board summary's projections block. The
- * `todos` projection key is merged into `SessionProjectionMap` by the todo
- * tool; a summary without projections (or before any write) plans nothing.
+ * Extracts the mission plan tree from one board summary's projections block,
+ * keeping its nesting. The `todos` projection key is merged into
+ * `SessionProjectionMap` by the todo tool; a summary without projections (or
+ * before any write) plans nothing.
+ * @param summary - Board summary carrying the session's projection block.
+ * @returns The nested tree, or undefined when the session has no tree.
+ */
+export function readTodos(summary: SessionSummary): readonly PlanNode[] | undefined {
+  const todos = (summary.projections?.values as Partial<{ todos: unknown }> | undefined)?.todos
+  if (!Array.isArray(todos)) return undefined
+  return todos as readonly PlanNode[]
+}
+
+/**
+ * Flattens one board summary's plan tree into ordered plan rows for the board
+ * cards. The Dag Flow graph reads {@link readTodos} instead, because task cards
+ * need the nesting a flatten discards.
  * @param summary - Board summary carrying the session's projection block.
  * @returns Flattened plan rows, or undefined when the session has no tree.
  */
 function flattenTodos(summary: SessionSummary): readonly PlanRow[] | undefined {
-  const todos = (summary.projections?.values as Partial<{ todos: unknown }> | undefined)?.todos
-  if (!Array.isArray(todos)) return undefined
-  return flattenPlan(todos as ReadonlyArray<Parameters<typeof flattenPlan>[0][number]>)
+  const todos = readTodos(summary)
+  return todos === undefined ? undefined : flattenPlan(todos)
 }
 
 /**
