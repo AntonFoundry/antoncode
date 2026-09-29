@@ -10,8 +10,9 @@
  * echo area (StatusLine.tsx) — the frame's persistent last row carrying the
  * armed-chord echo, transient command feedback, and the focused buffer.
  * C-x C-f opens the ido find-file prompt (IdoFind.tsx): a live, narrowing
- * listing of the workspace directory; confirming it lands the full dired
- * window. Winner mode (C-c ←/→) undoes/redoes
+ * listing of the workspace directory; Enter on a file opens the file (the
+ * opener face routes it to the right viewer), Enter on a directory descends,
+ * and C-j lands the full dired window. Winner mode (C-c ←/→) undoes/redoes
  * structural layout changes — the layout history lives in frame refs (the
  * engine persists whole store snapshots, so runtime-only history cannot ride
  * the store without resurrecting stale layouts across reloads); sash weight
@@ -2026,6 +2027,7 @@ export function WmFrame({
           <IdoFind
             initialDir={cwd}
             listDirectory={listDirectory}
+            onOpenFile={(path) => { setPrompt(null); void openPath(path) }}
             onOpen={(dir) => { setPrompt(null); openFilesBuffer(dir) }}
             onCancel={() => { setPrompt(null) }}
           />

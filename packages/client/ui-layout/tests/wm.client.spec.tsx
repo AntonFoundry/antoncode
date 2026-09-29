@@ -1341,7 +1341,7 @@ describe('winner mode + new chords (window listener)', () => {
     expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
   })
 
-  it('C-x C-f opens the ido prompt; typing narrows, Enter descends, C-j lands dired', async () => {
+  it('C-x C-f opens the ido prompt; Enter on a file opens it, Enter on a directory descends, C-j lands dired', async () => {
     const { container } = mountFrame(undefined, [])
     press('x', { ctrlKey: true })
     press('f', { ctrlKey: true })
@@ -1356,8 +1356,16 @@ describe('winner mode + new chords (window listener)', () => {
     // Typing narrows ido-style (flex, case-insensitive)…
     await act(async () => { fireEvent.change(input(), { target: { value: 'B.TXT' } }) })
     expect(container.querySelectorAll('[data-ido] li').length).toBe(1)
-    await act(async () => { fireEvent.change(input(), { target: { value: '' } }) })
-    // …Enter on the selected directory descends into it.
+    // …Enter on the plain file opens the FILE through the opener face —
+    // never the dired window at its directory.
+    await act(async () => { fireEvent.keyDown(input(), { key: 'Enter' }) })
+    expect(openPathLog.at(-1)).toBe('/proj/wm/b.txt')
+    expect(container.querySelector('[data-buffer="files"]')).toBeNull()
+    expect(container.querySelector('[data-ido] input')).toBeNull()
+    // A fresh prompt: Enter on the selected directory still descends into it.
+    press('x', { ctrlKey: true })
+    press('f', { ctrlKey: true })
+    await act(async () => { await Promise.resolve() })
     await act(async () => { fireEvent.keyDown(input(), { key: 'Enter' }) })
     expect(listDirectoryLog.at(-1)).toBe('/proj/wm/a')
     // C-j lands the full dired window at the active directory.

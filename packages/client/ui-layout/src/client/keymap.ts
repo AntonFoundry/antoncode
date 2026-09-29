@@ -15,7 +15,7 @@
 export type WmCommand =
   /** Open the switch-buffer minibuffer (C-x b). */
   | 'switch-buffer'
-  /** Find-file minibuffer: type a path, Enter opens a dired buffer (C-x C-f). */
+  /** Find-file minibuffer: type a path; Enter opens the file (directories land dired) (C-x C-f). */
   | 'find-file'
   /** Open the dired buffer at the home directory (C-x d). */
   | 'dired'

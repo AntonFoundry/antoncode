@@ -7,8 +7,9 @@
  * before a slash descends into its directory match (one refetch per
  * segment) while the tail flex-narrows the resolved level. Keys: ↑/↓ or
  * C-p/C-n move the selection;
- * Enter or Tab on a directory descends into it (Enter on a plain file lands
- * the full dired window at its directory); C-j opens dired here from any
+ * Enter or Tab on a directory descends into it (Enter on a plain file opens
+ * the file through the injected opener — the same face dired's open action
+ * routes through); C-j opens dired here from any
  * state; Backspace deletes a character and, with an empty segment, walks up
  * one level; C-g/Escape cancels. All listing reads ride the injected
  * `listDirectory` face (the browse capability, files included).
@@ -20,13 +21,15 @@ import { DiredIcon } from './DiredIcon.tsx'
 import { diredIconKind, flexDiredMatch, formatDiredMode, formatDiredSize, type DiredEntry } from './dired.ts'
 import css from './Minibuffer.module.css'
 
-/** Ido-find props: the injected listing face and the two outcomes. */
+/** Ido-find props: the injected listing face and the three outcomes. */
 export interface IdoFindProps {
   /** The directory the prompt starts at (absent = the host home). */
   initialDir: string | undefined
   /** List one directory level (files included); an absent path lists home. */
   listDirectory: (path?: string, opts?: { includeFiles?: boolean }, signal?: AbortSignal) => Promise<DirectoryListing>
-  /** Land the full dired window at this directory (Enter on a file, C-j). */
+  /** Open one plain file through the frame's opener face (Enter on a file). */
+  onOpenFile: (path: string) => void
+  /** Land the full dired window at this directory (no-match Enter, C-j). */
   onOpen: (dir: string) => void
   /** Cancel the prompt (C-g / Escape). */
   onCancel: () => void
@@ -37,7 +40,7 @@ export interface IdoFindProps {
  * @param props - initial directory, listing face, open/cancel callbacks.
  * @returns the prompt element.
  */
-export function IdoFind({ initialDir, listDirectory, onOpen, onCancel }: IdoFindProps) {
+export function IdoFind({ initialDir, listDirectory, onOpenFile, onOpen, onCancel }: IdoFindProps) {
   const [dir, setDir] = useState<string | undefined>(initialDir)
   const [query, setQuery] = useState('')
   const [listing, setListing] = useState<DirectoryListing | undefined>(undefined)
@@ -109,15 +112,15 @@ export function IdoFind({ initialDir, listDirectory, onOpen, onCancel }: IdoFind
   }, [listing, query])
   const clamped = Math.min(index, Math.max(0, matches.length - 1))
 
-  /** Descend into a directory row (a plain file lands dired at its directory). */
+  /** Descend into a directory row; a plain file opens through the opener face. */
   const descend = useCallback((entry: DiredEntry) => {
     if (entry.isDirectory === false) {
-      onOpen(dir ?? listing?.home ?? '.')
+      onOpenFile(entry.path)
       return
     }
     setDir(entry.path)
     setQuery('')
-  }, [dir, listing, onOpen])
+  }, [onOpenFile])
 
   const onKeyDown = useCallback((e: ReactKeyboardEvent<HTMLInputElement>): void => {
     // C-g works inside the input (the frame's window guard skips input
