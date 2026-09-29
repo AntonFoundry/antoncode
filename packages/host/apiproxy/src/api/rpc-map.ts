@@ -7,6 +7,7 @@
 import type { SessionsApi } from './sessions.ts'
 import type { HostApi } from './host.ts'
 import type { OrchestratorApi } from './orchestrator.ts'
+import type { FlowApi } from './flow.ts'
 import type { WorkspaceApi } from './workspace.ts'
 import type { AgentPresetsApi } from './agent-presets.ts'
 import type { SkillsApi } from './skills.ts'
@@ -50,6 +51,16 @@ export interface RpcMethodMap {
   'host.readTextFile': HostApi['readTextFile']
   'orchestrator.board': OrchestratorApi['board']
   'orchestrator.act': OrchestratorApi['act']
+  'flow.list': FlowApi['list']
+  'flow.get': FlowApi['get']
+  'flow.save': FlowApi['save']
+  'flow.delete': FlowApi['delete']
+  'flow.run': FlowApi['run']
+  'flow.runs': FlowApi['runs']
+  'flow.runGet': FlowApi['runGet']
+  'flow.libraryList': FlowApi['libraryList']
+  'flow.librarySave': FlowApi['librarySave']
+  'flow.libraryDelete': FlowApi['libraryDelete']
   'workspace.list': WorkspaceApi['list']
   'workspace.create': WorkspaceApi['create']
   'workspace.rename': WorkspaceApi['rename']

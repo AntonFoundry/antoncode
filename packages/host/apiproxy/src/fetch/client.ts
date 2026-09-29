@@ -37,6 +37,18 @@ import {
   orchestratorBoardValueSchema,
 } from '../api/orchestrator.schema.ts'
 import {
+  flowDeleteValueSchema,
+  flowGetValueSchema,
+  flowLibraryDeleteValueSchema,
+  flowLibraryListValueSchema,
+  flowLibrarySaveValueSchema,
+  flowListValueSchema,
+  flowRunGetValueSchema,
+  flowRunsValueSchema,
+  flowRunValueSchema,
+  flowSaveValueSchema,
+} from '../api/flow.schema.ts'
+import {
   workspaceArchiveSessionValueSchema,
   workspaceCreateValueSchema,
   workspaceDeleteValueSchema,
@@ -138,6 +150,18 @@ export interface IApiClient {
     board(payload: RequestPayload<'orchestrator.board'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'orchestrator.board'>>>
     act(payload: RequestPayload<'orchestrator.act'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'orchestrator.act'>>>
   }
+  flow: {
+    list(payload: RequestPayload<'flow.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'flow.list'>>>
+    get(payload: RequestPayload<'flow.get'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'flow.get'>>>
+    save(payload: RequestPayload<'flow.save'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'flow.save'>>>
+    delete(payload: RequestPayload<'flow.delete'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'flow.delete'>>>
+    run(payload: RequestPayload<'flow.run'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'flow.run'>>>
+    runs(payload: RequestPayload<'flow.runs'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'flow.runs'>>>
+    runGet(payload: RequestPayload<'flow.runGet'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'flow.runGet'>>>
+    libraryList(payload: RequestPayload<'flow.libraryList'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'flow.libraryList'>>>
+    librarySave(payload: RequestPayload<'flow.librarySave'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'flow.librarySave'>>>
+    libraryDelete(payload: RequestPayload<'flow.libraryDelete'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'flow.libraryDelete'>>>
+  }
   workspace: {
     list(payload: RequestPayload<'workspace.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.list'>>>
     create(payload: RequestPayload<'workspace.create'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.create'>>>
@@ -224,6 +248,16 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'host.readTextFile': hostReadTextFileValueSchema,
   'orchestrator.board': orchestratorBoardValueSchema,
   'orchestrator.act': orchestratorActValueSchema,
+  'flow.list': flowListValueSchema,
+  'flow.get': flowGetValueSchema,
+  'flow.save': flowSaveValueSchema,
+  'flow.delete': flowDeleteValueSchema,
+  'flow.run': flowRunValueSchema,
+  'flow.runs': flowRunsValueSchema,
+  'flow.runGet': flowRunGetValueSchema,
+  'flow.libraryList': flowLibraryListValueSchema,
+  'flow.librarySave': flowLibrarySaveValueSchema,
+  'flow.libraryDelete': flowLibraryDeleteValueSchema,
   'workspace.list': workspaceListValueSchema,
   'workspace.create': workspaceCreateValueSchema,
   'workspace.rename': workspaceRenameValueSchema,
@@ -487,6 +521,19 @@ export abstract class AbstractApiClient implements IApiClient {
   readonly orchestrator: IApiClient['orchestrator'] = {
     board: (payload, signal) => this.callUnary('orchestrator.board', payload, signal),
     act: (payload, signal) => this.callUnary('orchestrator.act', payload, signal),
+  }
+
+  readonly flow: IApiClient['flow'] = {
+    list: (payload, signal) => this.callUnary('flow.list', payload, signal),
+    get: (payload, signal) => this.callUnary('flow.get', payload, signal),
+    save: (payload, signal) => this.callUnary('flow.save', payload, signal),
+    delete: (payload, signal) => this.callUnary('flow.delete', payload, signal),
+    run: (payload, signal) => this.callUnary('flow.run', payload, signal),
+    runs: (payload, signal) => this.callUnary('flow.runs', payload, signal),
+    runGet: (payload, signal) => this.callUnary('flow.runGet', payload, signal),
+    libraryList: (payload, signal) => this.callUnary('flow.libraryList', payload, signal),
+    librarySave: (payload, signal) => this.callUnary('flow.librarySave', payload, signal),
+    libraryDelete: (payload, signal) => this.callUnary('flow.libraryDelete', payload, signal),
   }
 
   readonly workspace: IApiClient['workspace'] = {

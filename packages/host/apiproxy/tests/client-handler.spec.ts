@@ -146,6 +146,18 @@ function scriptedApi(overrides: {
       sessionLog: async () => new Response('stub', { status: 404 }),
       media: async () => new Response('stub', { status: 404 }),
     },
+    flow: {
+      list: r => ok(r, { flows: [] }),
+      get: r => ok(r, { flow: { id: 'f', name: 'stub', description: '', nodes: [], edges: [], createdAt: '', updatedAt: '' } }),
+      save: r => ok(r, { flow: { id: 'f', name: 'stub', description: '', nodes: [], edges: [], createdAt: '', updatedAt: '' } }),
+      delete: r => ok(r, { deleted: true as const }),
+      run: r => ok(r, { runId: 'run' }),
+      runs: r => ok(r, { runs: [] }),
+      runGet: r => ok(r, { run: { id: 'run', flowId: 'f', status: 'completed' as const, startedAt: '', nodes: {} } }),
+      libraryList: r => ok(r, { blocks: [] }),
+      librarySave: r => ok(r, { block: { id: 'b', name: 'stub', kind: 'code', description: '', inputs: [], outputs: [], params: [], provenance: { createdAt: '' } } }),
+      libraryDelete: r => ok(r, { deleted: true as const }),
+    },
     orchestrator: {
       board: r => ok(r, { items: [], archivedSessionIds: [], sessions: [] }),
       act: r => ok(r, { accepted: true as const }),

@@ -34,6 +34,10 @@ import {
 } from '@deepseek-ai/dsh-agent-presets'
 import type { PresetBearingSession } from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-tools'
+// Declaration merge only: brings ctx.flowBuilder into this program.
+import type {} from '@deepseek-ai/dsh-flowbuilder-service'
+import type { BlockLibraryEntryRecord, FlowDefinitionRecord, FlowRunRecordRecord } from '@deepseek-ai/dsh-flowbuilder-domain'
+import type { BlockWire, FlowRunWire, FlowWire } from './api/index.ts'
 import type {
   ApiProxy, ConfigurableProviderView, CredentialView, GoalRef, HistoryEntry, HostFrame,
   ModelCatalogFailure, ModelProviderGroup,
@@ -1087,6 +1091,92 @@ function workspaceNotFound<T>(request: RpcRequest<unknown>, workspaceId: string)
     message: `workspace "${workspaceId}" not found`,
     details: { workspaceId },
   })
+}
+
+/**
+ * Map a flowbuilder store rejection to its wire error. The service's
+ * HarnessError codes are the single rejection vocabulary, so the mapping is
+ * exhaustive over the four flowbuilder codes; anything else is a crash the
+ * carrier reports as 500.
+ */
+function flowError(
+  request: RpcRequest<unknown>,
+  error: unknown,
+): RpcResponse<never> {
+  const message = error instanceof Error ? error.message : String(error)
+  const name = error instanceof Error ? error.name : ''
+  if (name === 'FlowUnknownError') {
+    return err(request, { code: 'flow-not-found', message, details: { flowId: message } })
+  }
+  if (name === 'BlockUnknownError') {
+    return err(request, { code: 'block-not-found', message, details: { blockId: message } })
+  }
+  if (name === 'FlowRunUnknownError') {
+    return err(request, { code: 'run-not-found', message, details: { runId: message } })
+  }
+  return err(request, { code: 'flow-graph-invalid', message, details: {} })
+}
+
+/** Wire projection of one workflow definition (ids as plain strings). */
+function flowWire(flow: FlowDefinitionRecord): FlowWire {
+  return {
+    id: flow.id,
+    name: flow.name,
+    description: flow.description,
+    nodes: flow.nodes.map(node => ({
+      ...node.blockId !== undefined ? { blockId: node.blockId } : {},
+      ...node.code !== undefined ? { code: node.code } : {},
+      id: node.id,
+      kind: node.kind,
+      title: node.title,
+      params: node.params,
+      x: node.x,
+      y: node.y,
+    })),
+    edges: flow.edges.map(edge => ({ id: edge.id, from: edge.from, to: edge.to })),
+    createdAt: flow.createdAt,
+    updatedAt: flow.updatedAt,
+  }
+}
+
+/** Wire projection of one library block (ids as plain strings). */
+function blockWire(block: BlockLibraryEntryRecord): BlockWire {
+  return {
+    ...block.code !== undefined ? { code: block.code } : {},
+    provenance: block.provenance.sourceFlowId !== undefined
+      ? block.provenance
+      : { createdAt: block.provenance.createdAt },
+    id: block.id,
+    name: block.name,
+    kind: block.kind,
+    description: block.description,
+    inputs: block.inputs,
+    outputs: block.outputs,
+    params: block.params,
+  }
+}
+
+/** Wire projection of one run record (ids as plain strings). */
+function runWire(run: FlowRunRecordRecord): FlowRunWire {
+  return {
+    ...run.finishedAt !== undefined ? { finishedAt: run.finishedAt } : {},
+    ...run.result !== undefined ? { result: run.result } : {},
+    ...run.error !== undefined ? { error: run.error } : {},
+    id: run.id,
+    flowId: run.flowId,
+    status: run.status,
+    startedAt: run.startedAt,
+    nodes: Object.fromEntries(
+      Object.entries(run.nodes).map(([id, state]) => [
+        id,
+        {
+          ...state.output !== undefined ? { output: state.output } : {},
+          ...state.error !== undefined ? { error: state.error } : {},
+          status: state.status,
+        },
+      ]),
+    ),
+  }
 }
 
 /** Wire projection of one workspace entity (the workspace.* value row). */
@@ -2931,6 +3021,93 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           }))
         }
         return Promise.resolve(ok(request, { accepted: true as const }))
+      },
+    },
+
+    flow: {
+      // Thin projections over ctx.flowBuilder: one method per store operation,
+      // with the service's HarnessError codes mapped to the wire's
+      // flow-not-found / block-not-found / run-not-found / flow-graph-invalid.
+      async list(request) {
+        return ok(request, { flows: ctx.flowBuilder.listFlows().map(flowWire) })
+      },
+
+      async get(request) {
+        const flow = ctx.flowBuilder.getFlow(request.payload.id)
+        if (flow === undefined) {
+          return err(request, {
+            code: 'flow-not-found', message: `flow "${request.payload.id}" is not stored`,
+            details: { flowId: request.payload.id },
+          })
+        }
+        return ok(request, { flow: flowWire(flow) })
+      },
+
+      async save(request) {
+        try {
+          // The service's zod schema owns the closed unions; the wire type is the wide projection.
+          const flow = await ctx.flowBuilder.saveFlow(request.payload as unknown as Parameters<typeof ctx.flowBuilder.saveFlow>[0])
+          return ok(request, { flow: flowWire(flow) })
+        } catch (error: unknown) {
+          return flowError(request, error)
+        }
+      },
+
+      async delete(request) {
+        try {
+          await ctx.flowBuilder.deleteFlow(request.payload.id)
+          return ok(request, { deleted: true as const })
+        } catch (error: unknown) {
+          return flowError(request, error)
+        }
+      },
+
+      async run(request) {
+        try {
+          const runId = await ctx.flowBuilder.runFlow(request.payload.flowId)
+          return ok(request, { runId })
+        } catch (error: unknown) {
+          return flowError(request, error)
+        }
+      },
+
+      async runs(request) {
+        return ok(request, {
+          runs: ctx.flowBuilder.listRuns(request.payload.flowId).map(runWire),
+        })
+      },
+
+      async runGet(request) {
+        const run = ctx.flowBuilder.getRun(request.payload.runId)
+        if (run === undefined) {
+          return err(request, {
+            code: 'run-not-found', message: `run "${request.payload.runId}" is not stored`,
+            details: { runId: request.payload.runId },
+          })
+        }
+        return ok(request, { run: runWire(run) })
+      },
+
+      async libraryList(request) {
+        return ok(request, { blocks: ctx.flowBuilder.listBlocks(request.payload.query).map(blockWire) })
+      },
+
+      async librarySave(request) {
+        try {
+          const block = await ctx.flowBuilder.saveBlock(request.payload as unknown as Parameters<typeof ctx.flowBuilder.saveBlock>[0])
+          return ok(request, { block: blockWire(block) })
+        } catch (error: unknown) {
+          return flowError(request, error)
+        }
+      },
+
+      async libraryDelete(request) {
+        try {
+          await ctx.flowBuilder.deleteBlock(request.payload.id)
+          return ok(request, { deleted: true as const })
+        } catch (error: unknown) {
+          return flowError(request, error)
+        }
       },
     },
 

@@ -316,6 +316,18 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
         return new Response('stub', { status: 404 })
       },
     },
+    flow: {
+      async list() { return { rpcId: 'list' as never, result: { ok: true as const, value: { flows: [] } } } },
+      async get() { return { rpcId: 'get' as never, result: { ok: true as const, value: { flow: { id: 'f', name: 'stub', description: '', nodes: [], edges: [], createdAt: '', updatedAt: '' } } } } },
+      async save() { return { rpcId: 'save' as never, result: { ok: true as const, value: { flow: { id: 'f', name: 'stub', description: '', nodes: [], edges: [], createdAt: '', updatedAt: '' } } } } },
+      async delete() { return { rpcId: 'delete' as never, result: { ok: true as const, value: { deleted: true as const } } } },
+      async run() { return { rpcId: 'run' as never, result: { ok: true as const, value: { runId: 'run' } } } },
+      async runs() { return { rpcId: 'runs' as never, result: { ok: true as const, value: { runs: [] } } } },
+      async runGet() { return { rpcId: 'runGet' as never, result: { ok: true as const, value: { run: { id: 'run', flowId: 'f', status: 'completed' as const, startedAt: '', nodes: {} } } } } },
+      async libraryList() { return { rpcId: 'libraryList' as never, result: { ok: true as const, value: { blocks: [] } } } },
+      async librarySave() { return { rpcId: 'librarySave' as never, result: { ok: true as const, value: { block: { id: 'b', name: 'stub', kind: 'code', description: '', inputs: [], outputs: [], params: [], provenance: { createdAt: '' } } } } } },
+      async libraryDelete() { return { rpcId: 'libraryDelete' as never, result: { ok: true as const, value: { deleted: true as const } } } },
+    },
     orchestrator: {
       async board() { return { rpcId: 'board' as never, result: { ok: true as const, value: { items: [], archivedSessionIds: [], sessions: [] } } } },
       async act() { return { rpcId: 'act' as never, result: { ok: true as const, value: { accepted: true as const } } } },

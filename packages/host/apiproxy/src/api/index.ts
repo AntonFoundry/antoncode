@@ -7,6 +7,7 @@
 import type { SessionsApi } from './sessions.ts'
 import type { HostApi } from './host.ts'
 import type { OrchestratorApi } from './orchestrator.ts'
+import type { FlowApi } from './flow.ts'
 import type { WorkspaceApi } from './workspace.ts'
 import type { AgentPresetsApi } from './agent-presets.ts'
 import type { SkillsApi } from './skills.ts'
@@ -28,6 +29,7 @@ export interface ApiProxy {
   host: HostApi
   /** Orchestrator board snapshot + run actions (one read composing workspace.list + session.list projections). */
   orchestrator: OrchestratorApi
+  flow: FlowApi
   workspace: WorkspaceApi
   skills: SkillsApi
   agentPresets: AgentPresetsApi
@@ -57,6 +59,7 @@ export type {
   SessionListMetadata, SessionProjectionsBlock, SessionSearchItem, SessionsApi, SessionSummary,
 } from './sessions.ts'
 export type { OrchestratorApi } from './orchestrator.ts'
+export type { FlowApi, FlowNodeWire, FlowEdgeWire, FlowWire, BlockWire, FlowRunWire } from './flow.ts'
 export type { DirectoryEntry, DirectoryListing, HostApi } from './host.ts'
 export type { TermApi } from './term.ts'
 export type {

@@ -7,7 +7,7 @@ import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageJson from '@deepseek-ai/dsh-storage-json'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import { FlowBuilderService } from '../src/index.ts'
-import type { FlowNode } from '@deepseek-ai/dsh-flowbuilder-domain'
+import type { FlowNode, FlowSaveRequest } from '@deepseek-ai/dsh-flowbuilder-domain'
 import { Service } from '@deepseek-ai/cordis'
 import type { CodeJsonValue, CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
 
@@ -121,7 +121,7 @@ class FakeCodeRuntime extends Service {
 }
 
 describe('FlowBuilderService runs', () => {
-  const runFlowRequest = {
+  const runFlowRequest: FlowSaveRequest = {
     name: 'pipeline',
     description: 'code pipeline',
     nodes: [
@@ -152,9 +152,11 @@ describe('FlowBuilderService runs', () => {
       await new Promise(resolve => setTimeout(resolve, 10))
       run = service.getRun(runId)
     }
-    expect(run?.status).toBe('completed')
-    expect(run?.result).toBe('SEED')
-    expect(run?.finishedAt).toBeDefined()
+    expect(run).toBeDefined()
+    if (run === undefined) throw new Error('unreachable')
+    expect(run.status).toBe('completed')
+    expect(run.result).toBe('SEED')
+    expect(run.finishedAt).toBeDefined()
     expect(statesOf(run)).toEqual({ a: 'completed', b: 'completed', out: 'completed' })
     // start, then running+completed per node, then end — a complete pairing.
     expect(events[0]).toBe('start')

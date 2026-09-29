@@ -24,6 +24,12 @@
       "path": "../../../vendor/schemastery"
     },
     {
+      "path": "../../flowbuilder/flowbuilder-domain"
+    },
+    {
+      "path": "../../flowbuilder/flowbuilder-service"
+    },
+    {
       "path": "../../api/remotes/tsconfig.host.json"
     },
     {

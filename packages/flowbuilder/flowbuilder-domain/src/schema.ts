@@ -151,9 +151,9 @@ export const blockSaveRequestSchema = z.object({
  * Save-request for one workflow definition, inferred from
  * {@link flowSaveRequestSchema}.
  */
-export type FlowSaveRequest = z.infer<typeof flowSaveRequestSchema>
+export type FlowSaveRequest = z.input<typeof flowSaveRequestSchema>
 /** Save-request for one library block, inferred from {@link blockSaveRequestSchema}. */
-export type BlockSaveRequest = z.infer<typeof blockSaveRequestSchema>
+export type BlockSaveRequest = z.input<typeof blockSaveRequestSchema>
 
 /** One stored workflow definition, inferred from {@link flowDefinitionSchema}. */
 export type FlowDefinitionRecord = z.infer<typeof flowDefinitionSchema>

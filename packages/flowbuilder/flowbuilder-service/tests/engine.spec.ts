@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FlowRunId } from '@deepseek-ai/dsh-flowbuilder-domain'
+import { BlockId, FlowId, FlowRunId } from '@deepseek-ai/dsh-flowbuilder-domain'
 import type {
   BlockLibraryEntryRecord,
   FlowDefinitionRecord,
@@ -37,14 +37,14 @@ function fakeHost(blocks: BlockLibraryEntryRecord[] = []): { host: RunHost; puts
 
 const record = (nodeIds: string[]): FlowRunRecordRecord => ({
   id: FlowRunId('run-1'),
-  flowId: FlowRunId('flow-1') as FlowRunRecordRecord['flowId'],
+  flowId: FlowId('flow-1'),
   status: 'running',
   startedAt: '2026-01-01T00:00:00.000Z',
   nodes: Object.fromEntries(nodeIds.map(id => [id, { status: 'pending' as const }])),
 })
 
 const flow = (nodes: FlowDefinitionRecord['nodes'], edges: FlowDefinitionRecord['edges']): FlowDefinitionRecord => ({
-  id: 'flow-1',
+  id: FlowId('flow-1'),
   name: 'engine-test',
   description: '',
   nodes,
@@ -139,7 +139,7 @@ describe('executeRun', () => {
   it('executes library nodes through their resolved block', async () => {
     const { host } = fakeHost([
       {
-        id: 'block-1',
+        id: BlockId('block-1'),
         name: 'upper',
         kind: 'code',
         description: '',
