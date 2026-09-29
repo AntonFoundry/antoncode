@@ -289,6 +289,9 @@
     - id: ui-file-markdown
       name: '@deepseek-ai/dsh-client-ui-file-markdown'
 
+    - id: ui-file-image
+      name: '@deepseek-ai/dsh-client-ui-file-image'
+
 # ── the agent plane moves behind agent presets ─────────────────────────────
 #
 # Every row below composes what ONE agent contributes to the host registries:
