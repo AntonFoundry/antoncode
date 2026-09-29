@@ -7,7 +7,7 @@
  * plain data resolved by WmFrame: buffer kinds for C-x b, workspaces for
  * C-x w.
  */
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import css from './Minibuffer.module.css'
 
@@ -36,6 +36,13 @@ export interface MinibufferProps {
   freeEntry?: boolean
   /** Prefill the query (save-layout seeds the auto name so Enter just works). */
   initialQuery?: string
+  /**
+   * Live-preview the highlighted candidate id while the prompt is open
+   * (load-theme), or null to restore whatever preceded the prompt. Fired on
+   * selection changes and on prompt close; a fire after an execute is a
+   * caller-side no-op (the executed theme released the captured original).
+   */
+  onPreview?: ((id: string | null) => void) | undefined
   /** Cancel the prompt (Esc / C-g). */
   onCancel: () => void
 }
@@ -45,7 +52,7 @@ export interface MinibufferProps {
  * @param props - prompt, candidates, execute/cancel callbacks.
  * @returns the strip element, or null when there is nothing to prompt for.
  */
-export function Minibuffer({ prompt, candidates, onExecute, onCancel, freeEntry = false, initialQuery = '' }: MinibufferProps) {
+export function Minibuffer({ prompt, candidates, onExecute, onCancel, freeEntry = false, initialQuery = '', onPreview }: MinibufferProps) {
   const [query, setQuery] = useState(initialQuery)
   const [index, setIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -58,6 +65,17 @@ export function Minibuffer({ prompt, candidates, onExecute, onCancel, freeEntry 
     return hits
   }, [candidates, query])
   const clamped = Math.min(index, Math.max(0, filtered.length - 1))
+
+  // Theme live-preview: the highlighted candidate previews while the prompt
+  // is open; prompt close restores (a no-op after an execute — loadTheme
+  // already released the caller's captured original). The face rides a ref
+  // so both effects always call the caller's current callback.
+  const onPreviewRef = useRef(onPreview)
+  onPreviewRef.current = onPreview
+  useEffect(() => {
+    onPreviewRef.current?.(filtered[clamped]?.id ?? null)
+  }, [filtered, clamped])
+  useEffect(() => () => { onPreviewRef.current?.(null) }, [])
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>): void => {
     // C-g works inside the input too (the frame's window guard skips input

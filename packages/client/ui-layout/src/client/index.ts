@@ -153,6 +153,8 @@ export interface SidebarOwnerProps {
    * logo row (brand + toggle live in the frame's strip instead).
    */
   brandInFrame?: boolean
+  /** Session whose chat buffer is active; sidebar memory panels use it as their scope. */
+  scopeSessionId?: string | undefined
 }
 
 /**
@@ -259,6 +261,7 @@ export function apply(ctx: ClientContext): void {
           wm.actions.setTree(splitLeaf(snapshot.tree, anchor, 'row', bufferId, leafId))
           wm.actions.setFocus(leafId)
         }
+        let previewOriginal: string | undefined
         return {
           hooks: { wm, scratch },
           setTree: (tree: Parameters<typeof wm.actions.setTree>[0]) => { wm.actions.setTree(tree) },
@@ -268,8 +271,22 @@ export function apply(ctx: ClientContext): void {
           setSidebarWidth: (px: number) => { actions.setSidebar(px) },
           themeList: () => LAYOUT_THEMES.map(t => ({ id: t.id, colorScheme: t.colorScheme })),
           loadTheme: (id: string) => {
+            previewOriginal = undefined
             ctx.theme.setTheme(id)
             try { window.localStorage.setItem(THEME_STORAGE_KEY, id) } catch { /* private mode */ }
+          },
+          // Load-theme live preview: apply the highlighted palette without
+          // persisting; null restores the pre-prompt theme (C-g). The original
+          // is captured at the first preview so an untouched prompt is a no-op,
+          // and an executed selection cancels the preview session.
+          previewTheme: (id: string | null) => {
+            if (id === null) {
+              if (previewOriginal !== undefined) ctx.theme.setTheme(previewOriginal)
+              previewOriginal = undefined
+              return
+            }
+            if (previewOriginal === undefined) previewOriginal = ctx.theme.getTheme().preference
+            ctx.theme.setTheme(id)
           },
           reconcileBuffers: () => { wm.actions.reconcile() },
           // Pane-aware re-pin (per-window session buffers): pin one leaf's
