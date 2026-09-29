@@ -294,6 +294,24 @@ export function toFetchHandler(api: ApiProxy): { fetch: typeof fetch } {
         await response.body?.cancel()
         return new Response(null, { status: response.status, headers: response.headers })
       }
+      if (path === '/api/host/media' && (req.method === 'GET' || req.method === 'HEAD')) {
+        // The inline viewers' binary channel: path + remux flag ride the
+        // query string; the Range header passes verbatim (media-response.ts
+        // owns the single-range semantics).
+        const filePath = url.searchParams.get('path')
+        if (filePath === null || filePath === '') {
+          return new Response('missing path query parameter', { status: 400 })
+        }
+        const range = req.headers.get('range')
+        const response = await api.downloads.media({
+          path: filePath,
+          ...(range !== null ? { range } : {}),
+          ...(url.searchParams.get('remux') === '1' ? { remux: true } : {}),
+        }, req.signal)
+        if (req.method === 'GET') return response
+        await response.body?.cancel()
+        return new Response(null, { status: response.status, headers: response.headers })
+      }
 
       if (req.method !== 'POST' || !path.startsWith('/api/')) {
         return new Response('not found', { status: 404 })

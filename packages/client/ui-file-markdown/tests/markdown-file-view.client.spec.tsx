@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** MarkdownFileView: engine rendering, loading/failure notes, and the truncation flag. */
-import { describe, expect, it } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it } from 'vitest'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { MarkdownFileView } from '../src/client/MarkdownFileView.tsx'
 import type { MarkdownFileViewProps } from '../src/client/MarkdownFileView.tsx'
 
@@ -10,11 +10,13 @@ function props(over: Partial<MarkdownFileViewProps> = {}): MarkdownFileViewProps
   return {
     path: '/w/README.md',
     readText: () => Promise.resolve({ content: '# Title\n\nBody text.', truncated: false }),
-    mediaUrl: (p) => `/api/host/media?path=${encodeURIComponent(p)}`,
+    mediaUrl: p => `/api/host/media?path=${encodeURIComponent(p)}`,
     openWithOs: () => {},
     ...over,
   } as MarkdownFileViewProps
 }
+
+afterEach(() => { cleanup() })
 
 describe('MarkdownFileView', () => {
   it('renders the fetched file through the shared markdown engine', async () => {

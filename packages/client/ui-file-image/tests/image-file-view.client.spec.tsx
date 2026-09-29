@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** ImageFileView: media URL wiring, load/error states, retry, and the OS-open escape hatch. */
-import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { ImageFileView } from '../src/client/ImageFileView.tsx'
 import type { ImageFileViewProps } from '../src/client/ImageFileView.tsx'
 
@@ -15,6 +15,8 @@ function props(over: Partial<ImageFileViewProps> = {}): ImageFileViewProps {
     ...over,
   } as ImageFileViewProps
 }
+
+afterEach(() => { cleanup() })
 
 describe('ImageFileView', () => {
   it('renders the img from the media endpoint URL and reports ready on load', () => {

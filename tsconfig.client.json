@@ -76,6 +76,7 @@
     { "path": "./packages/client/ui-user-questions" },
     { "path": "./packages/client/ui-file-markdown" },
     { "path": "./packages/client/ui-file-image" },
+    { "path": "./packages/client/ui-file-video" },
     { "path": "./packages/client/ui-trajectory" },
     { "path": "./packages/client/ui-orchestrator" },
     { "path": "./packages/session-query/session-log-export" },

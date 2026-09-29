@@ -91,6 +91,7 @@ import type { ApprovalOutcome, ApprovalRequestId } from '@deepseek-ai/dsh-user-a
 // `ctx.get('approval')` without a value dependency on the seam (optional composition).
 import type {} from '@deepseek-ai/dsh-user-approval'
 import { approvalResponsePayloadSchema } from './api/approvals.schema.ts'
+import { mediaFileResponse } from './api/media-response.ts'
 import { imageLimitsProjectionSchema, sessionListMetadataProjectionSchema } from './api/sessions.schema.ts'
 import { questionResponsePayloadSchema } from './api/questions.schema.ts'
 import type { ClientResponse, RpcError, RpcErrorDetailsMap, RpcErrorCode, RpcReceipt, RpcRequest, RpcResponse } from './api/rpc.ts'
@@ -3948,6 +3949,19 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     },
 
     downloads: {
+      async media(request, signal) {
+        // The same fence as the other inline reads: the browse capability
+        // gates every byte that leaves the host for a browser file surface.
+        const capability = ctx.directoryPicker.capability()
+        if (capability.kind !== 'browse') {
+          return new Response(
+            `host.media needs the browse capability; the composed picker serves "${capability.kind}"`,
+            { status: 500 },
+          )
+        }
+        return mediaFileResponse(request.path, request, signal)
+      },
+
       async sessionLog(request, signal) {
         // Clean error path first: missing services answer 500 and a missing
         // root artifact 404 before any zip byte is produced. The root content
