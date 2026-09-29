@@ -9,7 +9,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
-import { HarnessError } from '@deepseek-ai/dsh-llm'
+import { HarnessError, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { DomainGlobal, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import {
   BlockId,
@@ -336,7 +336,59 @@ export class FlowBuilderService extends Service {
       onNodeState: (runId, nodeId, state) => { this.ctx.emit('flowbuilder/run-node', runId, nodeId, state) },
       getBlock: blockId => this.getBlock(blockId),
       runCode: (program, params, inputs, signal) => this.runProgram(program, params, inputs, signal),
+      runLlm: options => this.runLlm(options),
+      fetchUrl: (url, signal) => this.fetchUrl(url, signal),
+      runShellCommand: (command, signal) => this.runShellCommand(command, signal),
     }
+  }
+
+  /** One completion through the composed llm routes, assembled from text deltas. */
+  private async runLlm(
+    options: { provider: string; model: string; prompt: string; system?: string; signal: AbortSignal | undefined },
+  ): Promise<string> {
+    const llm = this.ctx.get('llm')
+    if (llm === undefined) throw new Error('llm service is not mounted in this composition')
+    const chunks = llm.stream({
+      provider: options.provider,
+      model: options.model,
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: options.prompt }],
+        source: { kind: 'plugin', plugin: 'flowbuilder' },
+      })],
+      ...options.system !== undefined ? { system: options.system } : {},
+      ...options.signal !== undefined ? { signal: options.signal } : {},
+    })
+    let text = ''
+    for await (const chunk of chunks) {
+      if (chunk.type === 'text-delta') text += chunk.text
+      if (chunk.type === 'finish' && chunk.reason.kind !== 'stop') {
+        throw new Error(`llm node ended abnormally (${chunk.reason.kind})`)
+      }
+    }
+    return text
+  }
+
+  /** Retrieve one URL through the web capability; non-text bodies serialize as JSON. */
+  private async fetchUrl(url: string, signal: AbortSignal | undefined): Promise<{ statusCode: number; body: string }> {
+    const web = this.ctx.get('web')
+    if (web === undefined) throw new Error('web service is not mounted in this composition')
+    const fetched = await web.fetch({ url }, signal)
+    return {
+      statusCode: fetched.statusCode,
+      body: fetched.body.kind === 'text' ? fetched.body.content : JSON.stringify(fetched.body),
+    }
+  }
+
+  /** Run one shell command through the shared executor (same approval path as the bash tool). */
+  private async runShellCommand(
+    command: string,
+    signal: AbortSignal | undefined,
+  ): Promise<{ exitCode: number | null; stdout: string }> {
+    const shell = this.ctx.get('shell')
+    if (shell === undefined) throw new Error('shell service is not mounted in this composition')
+    const spec = shell.resolve({ command, ...signal !== undefined ? { signal } : {} })
+    const ran = await shell.run(spec)
+    return { exitCode: ran.exitCode, stdout: ran.stdout.text }
   }
 
   /** Run one node program on the workspace code runtime, rejecting on failure. */

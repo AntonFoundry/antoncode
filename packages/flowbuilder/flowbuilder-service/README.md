@@ -24,6 +24,6 @@ Independent: writes land in the storage domain, never in a session log, so nothi
 
 ## Known Limitations and Deferred Work
 
-- **Executor coverage is partial** — `input`, `output`, `transform`, `code`, `condition` (both on the workspace code runtime, programs reading plain `inputs`/`params` objects), and `library` nodes execute; `llm`, `http`, `shell`, and `agent` nodes fail the run loudly (`no executor in this build`) until their executors land.
-- **Code nodes need the code runtime** — a composition without `ctx.codeRuntime` fails code and condition nodes loudly; the run record carries the message.
+- **`agent` nodes need the spawn face** — an `agent` node fails the run loudly until an executor bridges the subagent spawn provider (a run outside an agent turn has no parent to attribute children to); every other kind executes.
+- **Executor service availability is loud** — code/condition nodes need `ctx.codeRuntime`, llm nodes `ctx.llm`, http nodes `ctx.web`, shell nodes `ctx.shell`; a composition missing one fails those nodes with a message naming the service.
 - **Library identity is name-or-id** — a save without `id` replaces the same-name entry (the model's iterate path); renaming mints a new entry. Versioned blocks and folders are deferred with the domain's library limitations.

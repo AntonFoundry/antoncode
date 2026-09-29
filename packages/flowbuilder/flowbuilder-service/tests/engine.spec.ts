@@ -6,12 +6,15 @@ import type {
   FlowNodeRunState,
   FlowRunRecordRecord,
 } from '@deepseek-ai/dsh-flowbuilder-domain'
-import { executeRun } from '../src/engine.ts'
+import { executeRun, renderTemplate } from '../src/engine.ts'
 import type { RunHost } from '../src/engine.ts'
 
-/** A host that records every put and runs code programs through real `Function` eval. */
-function fakeHost(blocks: BlockLibraryEntryRecord[] = []): { host: RunHost; puts: number[] } {
+/** A host that records every put, fakes the external faces, and evals code programs. */
+function fakeHost(
+  blocks: BlockLibraryEntryRecord[] = [],
+): { host: RunHost; puts: number[]; globals: Map<string, (input: unknown) => unknown> } {
   const puts: number[] = []
+  const globals = new Map<string, (input: unknown) => unknown>()
   const host: RunHost = {
     putRecord: (record) => {
       puts.push(Object.values(record.nodes).length)
@@ -19,6 +22,21 @@ function fakeHost(blocks: BlockLibraryEntryRecord[] = []): { host: RunHost; puts
     },
     onNodeState: () => {},
     getBlock: blockId => blocks.find(block => block.id === blockId),
+    runLlm: (options) => {
+      const body = globals.get('llm')
+      if (body === undefined) return Promise.reject(new Error('llm service is not mounted in this composition'))
+      return Promise.resolve(body(options))
+    },
+    fetchUrl: (url) => {
+      const body = globals.get('http')
+      if (body === undefined) return Promise.reject(new Error('web service is not mounted in this composition'))
+      return Promise.resolve({ statusCode: 200, body: body(url) })
+    },
+    runShellCommand: (command) => {
+      const body = globals.get('shell')
+      if (body === undefined) return Promise.reject(new Error('shell service is not mounted in this composition'))
+      return Promise.resolve(body(command))
+    },
     runCode: (program, params, inputs) => {
       const globals = {
         flow: {
@@ -32,7 +50,7 @@ function fakeHost(blocks: BlockLibraryEntryRecord[] = []): { host: RunHost; puts
       return Promise.resolve(body(globals.flow))
     },
   }
-  return { host, puts }
+  return { host, puts, globals }
 }
 
 const record = (nodeIds: string[]): FlowRunRecordRecord => ({
@@ -161,14 +179,67 @@ describe('executeRun', () => {
     expect(terminal.nodes.lib?.output).toBe('HI')
   })
 
-  it('reports an unknown node kind as a node error', async () => {
+  it('reports the agent node as unimplemented in this build', async () => {
     const { host } = fakeHost()
     const terminal = await executeRun(host, flow(
-      [{ id: 'a', kind: 'llm', title: 'LLM', params: {}, x: 0, y: 0 }],
+      [{ id: 'a', kind: 'agent', title: 'Agent', params: {}, x: 0, y: 0 }],
       [],
     ), record(['a']))
     expect(terminal.status).toBe('error')
-    expect(terminal.error).toContain("node kind 'llm' has no executor in this build")
+    expect(terminal.error).toContain("node kind 'agent' has no executor in this build")
+  })
+
+  it('runs an llm node through the host face with templated prompt', async () => {
+    const { host, globals } = fakeHost()
+    globals.set('llm', options => `${options.system ?? ''}|${String(options.prompt)}`)
+    const terminal = await executeRun(host, flow(
+      [
+        { id: 'a', kind: 'input', title: 'A', params: { value: 'world' }, x: 0, y: 0 },
+        {
+          id: 'node', kind: 'llm', title: 'LLM',
+          params: { provider: 'test', model: 'm', prompt: 'hi {{greeting}}', system: 'be brief' },
+          x: 1, y: 0,
+        },
+      ],
+      [{ id: 'e1', from: { nodeId: 'a', port: 'greeting' }, to: { nodeId: 'node', port: 'greeting' } }],
+    ), record(['a', 'node']))
+    expect(terminal.status).toBe('completed')
+    expect(terminal.nodes.node?.output).toBe('be brief|hi world')
+  })
+
+  it('runs an http node and surfaces status plus body', async () => {
+    const { host, globals } = fakeHost()
+    globals.set('http', () => 'page-body')
+    const terminal = await executeRun(host, flow(
+      [{ id: 'node', kind: 'http', title: 'HTTP', params: { url: 'https://example.test' }, x: 0, y: 0 }],
+      [],
+    ), record(['node']))
+    expect(terminal.status).toBe('completed')
+    expect(terminal.nodes.node?.output).toEqual({ statusCode: 200, body: 'page-body' })
+  })
+
+  it('fails a shell node on nonzero exit and passes stdout through on success', async () => {
+    const { host, globals } = fakeHost()
+    globals.set('shell', () => ({ exitCode: 1, stdout: 'boom' }))
+    const failed = await executeRun(host, flow(
+      [{ id: 'node', kind: 'shell', title: 'Shell', params: { command: 'exit 1' }, x: 0, y: 0 }],
+      [],
+    ), record(['node']))
+    expect(failed.status).toBe('error')
+    expect(failed.error).toContain('command exited 1')
+
+    globals.set('shell', () => ({ exitCode: 0, stdout: 'ok' }))
+    const done = await executeRun(host, flow(
+      [{ id: 'node', kind: 'shell', title: 'Shell', params: { command: 'true' }, x: 0, y: 0 }],
+      [],
+    ), record(['node']))
+    expect(done.status).toBe('completed')
+    expect(done.nodes.node?.output).toEqual({ exitCode: 0, stdout: 'ok' })
+  })
+
+  it('renders templates from string and structured inputs', async () => {
+    expect(renderTemplate('hello {{name}} / {{count}} / {{missing}}', { name: 'flow', count: [1, 2] }))
+      .toBe('hello flow / [1,2] / {{missing}}')
   })
 
   it('persists a transition record before every node state', async () => {

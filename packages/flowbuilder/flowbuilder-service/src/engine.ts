@@ -36,6 +36,29 @@ export interface RunHost {
     inputs: Record<string, unknown>,
     signal: AbortSignal | undefined,
   ): Promise<unknown>
+  /** One completion through the composed LLM routes; resolves the assistant text. */
+  runLlm(
+    options: { provider: string; model: string; prompt: string; system?: string; signal: AbortSignal | undefined },
+  ): Promise<string>
+  /** Retrieve one URL through the web capability. */
+  fetchUrl(url: string, signal: AbortSignal | undefined): Promise<{ statusCode: number; body: string }>
+  /** Run one shell command; resolves the captured stdout. */
+  runShellCommand(command: string, signal: AbortSignal | undefined): Promise<{ exitCode: number | null; stdout: string }>
+}
+
+/**
+ * Render `{{port}}` templates against the node's live inputs: string values
+ * interpolate verbatim, everything else as lossless JSON.
+ * @param template - the raw template text.
+ * @param inputs - live input values keyed by target port name.
+ * @returns the rendered text.
+ */
+export function renderTemplate(template: string, inputs: Record<string, unknown>): string {
+  return template.replace(/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g, (_match, name: string) => {
+    const value = inputs[name]
+    if (value === undefined) return `{{${name}}}`
+    return typeof value === 'string' ? value : JSON.stringify(value)
+  })
 }
 
 /** Why one node failed, rendered for the run record and the tool result. */
@@ -254,10 +277,43 @@ async function executeNode(
         depth + 1,
       )
     }
-    case 'llm':
-    case 'http':
-    case 'shell':
+    case 'llm': {
+      const provider = nodeParams.provider
+      const model = nodeParams.model
+      if (typeof provider !== 'string' || provider.length === 0 || typeof model !== 'string' || model.length === 0) {
+        throw new Error('an llm node carries no provider/model params')
+      }
+      const promptTemplate = nodeParams.prompt
+      if (typeof promptTemplate !== 'string' || promptTemplate.length === 0) {
+        throw new Error('an llm node carries no prompt param')
+      }
+      const systemParam = nodeParams.system
+      return host.runLlm({
+        provider,
+        model,
+        prompt: renderTemplate(promptTemplate, inputs),
+        ...typeof systemParam === 'string' && systemParam.length > 0
+          ? { system: renderTemplate(systemParam, inputs) }
+          : {},
+        signal,
+      })
+    }
+    case 'http': {
+      const url = nodeParams.url
+      if (typeof url !== 'string' || url.length === 0) throw new Error('an http node carries no url param')
+      const fetched = await host.fetchUrl(renderTemplate(url, inputs), signal)
+      return { statusCode: fetched.statusCode, body: fetched.body }
+    }
+    case 'shell': {
+      const command = nodeParams.command
+      if (typeof command !== 'string' || command.length === 0) throw new Error('a shell node carries no command param')
+      const ran = await host.runShellCommand(renderTemplate(command, inputs), signal)
+      if (ran.exitCode !== 0) {
+        throw new Error(`command exited ${String(ran.exitCode)}: ${ran.stdout.slice(0, 400)}`)
+      }
+      return { exitCode: ran.exitCode, stdout: ran.stdout }
+    }
     case 'agent':
-      throw new Error(`node kind '${node.kind}' has no executor in this build`)
+      throw new Error("node kind 'agent' has no executor in this build (a run outside an agent turn cannot spawn children)")
   }
 }
