@@ -1,9 +1,9 @@
 /**
- * Browser orchestrator plugin: registers the `orchestrator` and `dagflow`
- * entries of the conversation view slot (header becomes
- * [ Orchestrator | Dag Flow | Chat ]; Chat stays the default fallback), fed by
- * the `orchestrator.board` RPC with a refresh-on-inject pull plus an interval
- * poll.
+ * Browser orchestrator plugin: registers the `orchestrator` entry of the
+ * conversation view slot (header becomes [ Orchestrator | Workflows | Chat ];
+ * Chat stays the default fallback), fed by the `orchestrator.board` RPC with a
+ * refresh-on-inject pull plus an interval poll. The Workflows tab lives in
+ * `@deepseek-ai/dsh-client-ui-flowbuilder`.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client'
@@ -15,10 +15,8 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { deriveRuns, type BoardSnapshot } from './bridge.ts'
 import type { RunAction } from './contract.ts'
-import { buildFlow } from './flow.ts'
-import { dagFlowLabels } from './dagflow.tsx'
 import { NS, en, zh } from './locales.ts'
-import { DagFlowView, OrchestratorView } from './views.tsx'
+import { OrchestratorView } from './views.tsx'
 
 /** Required services: the conversation slot, the locale service, the connection
  *  carrying the API client, and the runtime sessions service (display titles). */
@@ -81,27 +79,14 @@ export function apply(ctx: Context): void {
 
   const injected = () => deriveRuns(board, { titles: titles() })
 
-  // The Dag Flow graph is a projection of the same snapshot: missions in
-  // workspace order, their spawned agents, and each mission's nested plan.
-  const injectedGraph = () => buildFlow(board, { titles: titles() })
-
   ctx.slots.inject('conversation.view', () => ctx.slots.register({
     name: 'conversation.view',
     id: 'orchestrator',
     order: 5,
     locale: NS,
     label: () => t('view.orchestrator'),
-    inject: (_sessionId: SessionId) => ({ runs: injected(), graph: injectedGraph(), labels: dagFlowLabels(t), onAct }),
+    inject: (_sessionId: SessionId) => ({ runs: injected(), onAct }),
   }, OrchestratorView))
-
-  ctx.slots.inject('conversation.view', () => ctx.slots.register({
-    name: 'conversation.view',
-    id: 'dagflow',
-    order: 6,
-    locale: NS,
-    label: () => t('view.dagflow'),
-    inject: (_sessionId: SessionId) => ({ runs: injected(), graph: injectedGraph(), labels: dagFlowLabels(t), onAct }),
-  }, DagFlowView))
 
   // Refresh-on-inject pull plus a poll: a newly mounted view tab reads a
   // snapshot at most POLL_MS old. Within an already-open view, refresh waits

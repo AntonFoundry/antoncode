@@ -22,20 +22,20 @@ function fakeHost(
     },
     onNodeState: () => {},
     getBlock: blockId => blocks.find(block => block.id === blockId),
-    runLlm: (options) => {
+    runLlm: (options): Promise<string> => {
       const body = globals.get('llm')
       if (body === undefined) return Promise.reject(new Error('llm service is not mounted in this composition'))
-      return Promise.resolve(body(options))
+      return Promise.resolve(String(body(options)))
     },
-    fetchUrl: (url) => {
+    fetchUrl: (url): Promise<{ statusCode: number; body: string }> => {
       const body = globals.get('http')
       if (body === undefined) return Promise.reject(new Error('web service is not mounted in this composition'))
-      return Promise.resolve({ statusCode: 200, body: body(url) })
+      return Promise.resolve({ statusCode: 200, body: String(body(url)) })
     },
-    runShellCommand: (command) => {
+    runShellCommand: (command): Promise<{ exitCode: number | null; stdout: string }> => {
       const body = globals.get('shell')
       if (body === undefined) return Promise.reject(new Error('shell service is not mounted in this composition'))
-      return Promise.resolve(body(command))
+      return Promise.resolve(body(command) as { exitCode: number | null; stdout: string })
     },
     runCode: (program, params, inputs) => {
       const globals = {
@@ -191,7 +191,10 @@ describe('executeRun', () => {
 
   it('runs an llm node through the host face with templated prompt', async () => {
     const { host, globals } = fakeHost()
-    globals.set('llm', options => `${options.system ?? ''}|${String(options.prompt)}`)
+    globals.set('llm', (input) => {
+      const llm = input as { system?: string; prompt: string }
+      return `${llm.system ?? ''}|${llm.prompt}`
+    })
     const terminal = await executeRun(host, flow(
       [
         { id: 'a', kind: 'input', title: 'A', params: { value: 'world' }, x: 0, y: 0 },

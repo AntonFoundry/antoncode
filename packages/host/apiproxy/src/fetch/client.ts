@@ -109,6 +109,11 @@ import { jobKillValueSchema } from '../api/jobs.schema.ts'
  * IApiClient is the payload-direct view clients consume; AbstractApiClient bridges the two.
  * Derived per method key from RpcMethodMap so a map row addition updates this mechanically.
  */
+// Client-safe wire projections for consumers that hold records outside RPC
+// responses (the Workflows canvas keeps a FlowRunWire across polls).
+export type {
+  BlockWire, FlowEdgeWire, FlowNodeWire, FlowRunWire, FlowWire,
+} from '../api/index.ts'
 export interface IApiClient {
   sessions: {
     list(payload: RequestPayload<'session.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.list'>>>

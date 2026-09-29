@@ -1,6 +1,6 @@
 # @deepseek-ai/dsh-client-ui-orchestrator
 
-Orchestrator surface tabs over the per-session view ring: [ Orchestrator | Dag Flow | Chat ] —
+Orchestrator surface tabs over the per-session view ring: [ Orchestrator | Workflows | Chat ] —
 Chat remains the default view. Spec: docs/specs/orchestrator-v2-spec.md
 
 ## Wiring
@@ -20,31 +20,13 @@ Chat remains the default view. Spec: docs/specs/orchestrator-v2-spec.md
 - Adds no tools, prompt sections, tokens, or session events: the plugin is browser-only and
   pure-consumer, so the model's context and KV cache are untouched.
 - For the human, the session header gains two tabs. Orchestrator triages every visible session
-  into NEEDS YOU / RUNNING / DONE columns with per-run cards; Dag Flow draws the board as a
+  into NEEDS YOU / RUNNING / DONE columns with per-run cards; the Workflows tab (ui-flowbuilder) draws the board as a
   Langflow-style node canvas. Non-running sessions classify by recency (updated within 24h reads
   queued, else done); the attached agent's live `running` flag always wins.
 
-## Dag Flow
+## Workflows
 
-`src/client/flow.ts` builds a Langflow-shaped `FlowGraph { nodes, edges }` from one board snapshot;
-`src/client/dagflow.tsx` renders it read-only. The canvas adopts Langflow's vocabulary — node cards
-with typed input/output handles, `output → input` bezier edges, `isValidConnection`, wheel zoom
-about the cursor, background-drag panning, `fitView`, a minimap, and a selection inspector.
-
-- Nodes: `mission:<sessionId>` (a workspace's non-subagent session), `agent:<sessionId>` (a
-  `origin: 'subagent'` child, edge from its parent), and `task:<sessionId>#<path>` (the session's
-  nested todo tree; `<path>` is the depth-first child-index chain, so ids are stable across polls
-  and unique across sessions).
-- Edges animate while their source is running or in-progress; a status legend lists only the
-  statuses present.
-- Layout is a dependency-free layered pass: one column per depth, parent centred over its children.
-- Interaction: drag pans, wheel zooms, `+`/`-`/`0` zoom and fit, `Escape` clears the selection,
-  the lock freezes panning, the minimap recentres, and the inspector's focus action raises
-  `onFocus(sessionId)`.
-- Styling is CSS Modules over `--dsw-*` tokens only; status colour lives in
-  `dagflow.module.css` as per-status `--dag-accent` custom properties, never in TypeScript.
-- Read-only by design: structural editing (drag-to-connect, node creation) needs an
-  `orchestrator.act` action that does not exist yet.
+The workflow canvas moved to [`ui-flowbuilder`](../ui-flowbuilder/README.md), which owns the `dagflow` view id (Workflows / 工作流). This package registers only the Orchestrator board tab.
 
 ## Known Limitations and Deferred Work
 

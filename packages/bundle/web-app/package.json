@@ -62,6 +62,7 @@
     "@deepseek-ai/dsh-client-ui-file-image": "workspace:^",
     "@deepseek-ai/dsh-client-ui-file-markdown": "workspace:^",
     "@deepseek-ai/dsh-client-ui-file-video": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-flowbuilder": "workspace:^",
     "@deepseek-ai/dsh-client-ui-goal": "workspace:^",
     "@deepseek-ai/dsh-client-ui-input-trigger": "workspace:^",
     "@deepseek-ai/dsh-client-ui-jobs": "workspace:^",

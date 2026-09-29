@@ -108,18 +108,16 @@ describe('apply', () => {
     expect(inject).toEqual(['slots', 'locale', 'connection', 'sessions'])
   })
 
-  it('registers both view entries with locale dictionaries and pulls the board once', async () => {
+  it('registers the orchestrator view entry with locale dictionaries and pulls the board once', async () => {
     vi.useFakeTimers()
     try {
       const { capture, calls } = await bench(boardOk(SNAPSHOT))
       const entries = capture.slots.entries('conversation.view')
       expect(entries.map(e => e.options)).toMatchObject([
         { id: 'orchestrator', order: 5 },
-        { id: 'dagflow', order: 6 },
       ])
-      expect(entries.map(e => e.locale)).toEqual([NS, NS])
+      expect(entries.map(e => e.locale)).toEqual([NS])
       expect((entries[0]?.options.label as () => string)()).toBe('Orchestrator')
-      expect((entries[1]?.options.label as () => string)()).toBe('Dag Flow')
       expect(capture.dictionaries).toEqual([{ namespace: NS, dictionaries: { zh, en } }])
       // Refresh-on-inject pull plus the interval poll (one tick under fake timers).
       expect(calls.boards).toBe(1)
@@ -169,7 +167,7 @@ describe('apply', () => {
     expect(calls.kills).toHaveLength(1)
   })
 
-  it('fiber disposal removes both entries and the locale dictionary (HMR safety)', async () => {
+  it('fiber disposal removes the entry and the locale dictionary (HMR safety)', async () => {
     const { fiber, capture } = await bench(boardOk(SNAPSHOT))
     await fiber.dispose()
     expect(capture.slots.entries('conversation.view')).toHaveLength(0)

@@ -2638,6 +2638,27 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       act: request => api.sessions.cancel(request),
     },
 
+    flow: {
+      list: request => ok(request, { flows: [] }),
+      get: request => err(request, { code: 'flow-not-found', message: 'fixture has no flows', details: { flowId: request.payload.id } }),
+      save: request => ok(request, { flow: {
+        id: 'fixture-flow', name: request.payload.name, description: request.payload.description,
+        nodes: request.payload.nodes, edges: request.payload.edges, createdAt: '', updatedAt: '',
+      } }),
+      delete: request => ok(request, { deleted: true as const }),
+      run: request => ok(request, { runId: 'fixture-run' }),
+      runs: request => ok(request, { runs: [] }),
+      runGet: request => err(request, { code: 'run-not-found', message: 'fixture has no runs', details: { runId: request.payload.runId } }),
+      libraryList: request => ok(request, { blocks: [] }),
+      librarySave: request => ok(request, { block: {
+        id: 'fixture-block', name: request.payload.name, kind: request.payload.kind, description: request.payload.description,
+        ...(request.payload.code !== undefined ? { code: request.payload.code } : {}),
+        inputs: request.payload.inputs, outputs: request.payload.outputs, params: request.payload.params,
+        provenance: { createdAt: '' },
+      } }),
+      libraryDelete: request => ok(request, { deleted: true as const }),
+    },
+
     workspace: {
       list: request => ok(request, {
         items: workspaces.map(w => ({ ...w })),
@@ -3183,6 +3204,16 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'host.openPath': return this.api.host.openPath(request, new AbortController().signal)
       case 'orchestrator.board': return this.api.orchestrator.board(request)
       case 'orchestrator.act': return this.api.orchestrator.act(request)
+      case 'flow.list': return this.api.flow.list(request)
+      case 'flow.get': return this.api.flow.get(request)
+      case 'flow.save': return this.api.flow.save(request)
+      case 'flow.delete': return this.api.flow.delete(request)
+      case 'flow.run': return this.api.flow.run(request)
+      case 'flow.runs': return this.api.flow.runs(request)
+      case 'flow.runGet': return this.api.flow.runGet(request)
+      case 'flow.libraryList': return this.api.flow.libraryList(request)
+      case 'flow.librarySave': return this.api.flow.librarySave(request)
+      case 'flow.libraryDelete': return this.api.flow.libraryDelete(request)
       case 'workspace.list': return this.api.workspace.list(request)
       case 'workspace.create': return this.api.workspace.create(request)
       case 'workspace.rename': return this.api.workspace.rename(request)

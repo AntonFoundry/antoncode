@@ -6,7 +6,6 @@ export const NS = 'orchestrator'
 /** The orchestrator dictionary key set (the source of truth for both locales). */
 export type OrchestratorKey =
   | 'view.orchestrator'
-  | 'view.dagflow'
   | 'flow.canvas'
   | 'flow.empty'
   | 'flow.zoomIn'
@@ -48,7 +47,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh: Record<OrchestratorKey, string> = {
   'view.orchestrator': '编排器',
-  'view.dagflow': 'DAG 流',
   'flow.canvas': 'DAG 画布',
   'flow.empty': '板上暂无运行',
   'flow.zoomIn': '放大',
@@ -84,7 +82,6 @@ export const zh: Record<OrchestratorKey, string> = {
 /** English dictionary. */
 export const en: Record<OrchestratorKey, string> = {
   'view.orchestrator': 'Orchestrator',
-  'view.dagflow': 'Dag Flow',
   'flow.canvas': 'Dag Flow canvas',
   'flow.empty': 'No runs on the board yet',
   'flow.zoomIn': 'Zoom in',
