@@ -312,6 +312,9 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
       async sessionLog() {
         return new Response('stub', { status: 404 })
       },
+      async media() {
+        return new Response('stub', { status: 404 })
+      },
     },
     orchestrator: {
       async board() { return { rpcId: 'board' as never, result: { ok: true as const, value: { items: [], archivedSessionIds: [], sessions: [] } } } },

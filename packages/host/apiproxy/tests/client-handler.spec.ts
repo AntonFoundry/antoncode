@@ -142,7 +142,10 @@ function scriptedApi(overrides: {
     jobs: {
       kill: () => { throw new Error('no jobs in this fixture') },
     },
-    downloads: { sessionLog: async () => new Response('stub', { status: 404 }) },
+    downloads: {
+      sessionLog: async () => new Response('stub', { status: 404 }),
+      media: async () => new Response('stub', { status: 404 }),
+    },
     orchestrator: {
       board: r => ok(r, { items: [], archivedSessionIds: [], sessions: [] }),
       act: r => ok(r, { accepted: true as const }),

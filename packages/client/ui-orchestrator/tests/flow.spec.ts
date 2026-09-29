@@ -4,7 +4,7 @@
  * viewport maths (clamp, zoom about a point, fit, pan, minimap scale).
  */
 import { describe, expect, it } from 'vitest'
-import type { SessionId, SessionSummary, WorkspaceView } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId, WorkspaceView } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionSummary as WireSummary } from '@deepseek-ai/dsh-host-apiproxy/api/sessions.ts'
 import type { BoardSnapshot } from '../src/client/bridge.ts'
 import {
@@ -37,7 +37,7 @@ import {
 const NOW = 1_000_000
 
 /** One wire session summary; `updatedAt` defaults to the comparison instant. */
-const summary = (id: string, over: Partial<SessionSummary> = {}): SessionSummary => ({
+const summary = (id: string, over: Partial<WireSummary> = {}): WireSummary => ({
   sessionId: id as SessionId,
   updatedAt: NOW,
   running: false,
