@@ -183,6 +183,12 @@ importers:
       '@deepseek-ai/dsh-cordis-client-runner':
         specifier: workspace:^
         version: link:../../packages/extensions/cordis-client-runner
+      '@deepseek-ai/dsh-flowbuilder-domain':
+        specifier: workspace:^
+        version: link:../../packages/flowbuilder/flowbuilder-domain
+      '@deepseek-ai/dsh-flowbuilder-service':
+        specifier: workspace:^
+        version: link:../../packages/flowbuilder/flowbuilder-service
       '@deepseek-ai/dsh-fs-local':
         specifier: workspace:^
         version: link:../../packages/fs/fs-local
@@ -261,6 +267,9 @@ importers:
       '@deepseek-ai/dsh-tool-cordis':
         specifier: workspace:^
         version: link:../../packages/extensions/tool-cordis
+      '@deepseek-ai/dsh-tool-flowbuilder':
+        specifier: workspace:^
+        version: link:../../packages/flowbuilder/tool-flowbuilder
       '@deepseek-ai/dsh-tool-fs':
         specifier: workspace:^
         version: link:../../packages/fs/tool-fs
@@ -1040,6 +1049,12 @@ importers:
       '@deepseek-ai/dsh-credentials-local':
         specifier: workspace:^
         version: link:../../credentials/credentials-local
+      '@deepseek-ai/dsh-flowbuilder-domain':
+        specifier: workspace:^
+        version: link:../../flowbuilder/flowbuilder-domain
+      '@deepseek-ai/dsh-flowbuilder-service':
+        specifier: workspace:^
+        version: link:../../flowbuilder/flowbuilder-service
       '@deepseek-ai/dsh-fs-local':
         specifier: workspace:^
         version: link:../../fs/fs-local
@@ -1175,6 +1190,9 @@ importers:
       '@deepseek-ai/dsh-tool-call-timeout-policy':
         specifier: workspace:^
         version: link:../../guard/timeout-policy
+      '@deepseek-ai/dsh-tool-flowbuilder':
+        specifier: workspace:^
+        version: link:../../flowbuilder/tool-flowbuilder
       '@deepseek-ai/dsh-tool-fs':
         specifier: workspace:^
         version: link:../../fs/tool-fs
@@ -1429,6 +1447,9 @@ importers:
       '@deepseek-ai/dsh-cordis-host-runner':
         specifier: workspace:^
         version: link:../../extensions/cordis-host-runner
+      '@deepseek-ai/dsh-flowbuilder-service':
+        specifier: workspace:^
+        version: link:../../flowbuilder/flowbuilder-service
       '@deepseek-ai/dsh-host-apiproxy':
         specifier: workspace:^
         version: link:../../host/apiproxy

@@ -227,6 +227,9 @@
     - id: tool-workflow
       name: '@deepseek-ai/dsh-tool-workflow'
 
+    - id: tool-flowbuilder
+      name: '@deepseek-ai/dsh-tool-flowbuilder'
+
     - id: tool-ralph
       name: '@deepseek-ai/dsh-tool-ralph'
       config:

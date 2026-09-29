@@ -73,6 +73,12 @@
     - id: workspace
       name: '@deepseek-ai/dsh-workspace'
 
+    # Durable workflow definitions and the block library the flowbuilder
+    # tools, wire domain, and canvas share. Host-plane: state outlives every
+    # session; only the model-facing tool is per-preset.
+    - id: flowbuilder-service
+      name: '@deepseek-ai/dsh-flowbuilder-service'
+
     - id: session-projection-cache
       name: '@deepseek-ai/dsh-session-projection-cache'
       config:
@@ -423,6 +429,9 @@
   disabled: true
 
 - id: tool-workflow
+  disabled: true
+
+- id: tool-flowbuilder
   disabled: true
 
 - id: tool-ralph
