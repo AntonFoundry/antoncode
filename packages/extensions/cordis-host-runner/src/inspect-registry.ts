@@ -29,6 +29,14 @@ export interface HostCordisInspectProviderRegistration {
   query(method: string, input: JsonValue | undefined, context: HostCordisInspectQueryContext): Promise<JsonValue>
 }
 
+/** One live provider id holding a handler per registration that still claims it. */
+interface StoredHostProvider {
+  /** Registration stack, newest last; the newest handler serves queries. */
+  handlers: HostCordisInspectProviderRegistration[]
+  /** Live claim count; the entry is removed when this reaches zero. */
+  claims: number
+}
+
 interface PendingClientQuery {
   request: CordisInspectQueryRequest
   method: CordisInspectMethodManifest
@@ -44,7 +52,7 @@ declare module '@deepseek-ai/cordis' {
 
 /** Registry and cross-page router behind the two model-facing inspect tools. */
 export class CordisInspectRegistryService extends Service {
-  private readonly providers = new Map<string, HostCordisInspectProviderRegistration>()
+  private readonly providers = new Map<string, StoredHostProvider>()
   private readonly pending = new Map<CordisInspectRequestId, PendingClientQuery>()
   private clientManifest: readonly CordisInspectProviderManifest[] | undefined
   private nextRequest = 1
@@ -55,18 +63,37 @@ export class CordisInspectRegistryService extends Service {
   }
 
   /**
-   * Register one Host provider.
+   * Register one Host provider. Preset rows re-register the same static
+   * providers once per mounted session, and overlapping generations re-register
+   * while the previous handler is still live, so a validated manifest equal to
+   * the newest live one stacks: the newest handler serves queries and its
+   * disposer restores the prior one. A different manifest under a live id is a
+   * loud conflict.
    * @param registration - manifest and local query handler.
-   * @returns idempotent disposer.
+   * @returns idempotent disposer releasing this registration's claim.
    */
   register(registration: HostCordisInspectProviderRegistration): () => void {
     const manifest = validateManifest(registration.manifest)
-    if (this.providers.has(manifest.id)) throw new Error(`Host Cordis inspect provider "${manifest.id}" is already registered`)
-    const stored = { ...registration, manifest }
-    this.providers.set(manifest.id, stored)
-    return () => {
-      if (this.providers.get(manifest.id) === stored) this.providers.delete(manifest.id)
+    const existing = this.providers.get(manifest.id)
+    const stored: HostCordisInspectProviderRegistration = { ...registration, manifest }
+    if (existing === undefined) {
+      this.providers.set(manifest.id, { handlers: [stored], claims: 1 })
+    } else {
+      if (!manifestEquals(this.newestHandler(existing).manifest, manifest)) {
+        throw new Error(
+          `Host Cordis inspect provider "${manifest.id}" is already registered with a conflicting manifest`
+          + ' — a live session or package holds a different version of this provider',
+        )
+      }
+      existing.claims += 1
+      existing.handlers.push(stored)
     }
+    return releaseClaim(this.providers, manifest.id, stored)
+  }
+
+  /** The newest live handler of one stored entry. */
+  private newestHandler(stored: StoredHostProvider): HostCordisInspectProviderRegistration {
+    return stored.handlers[stored.handlers.length - 1] as HostCordisInspectProviderRegistration
   }
 
   /**
@@ -90,7 +117,7 @@ export class CordisInspectRegistryService extends Service {
    */
   list(): CordisInspectProviderView[] {
     return [
-      ...[...this.providers.values()].map(provider => view('host', provider.manifest)),
+      ...[...this.providers.values()].map(provider => view('host', this.newestHandler(provider).manifest)),
       ...(this.clientManifest ?? []).map(provider => view('client', provider)),
     ]
   }
@@ -98,11 +125,11 @@ export class CordisInspectRegistryService extends Service {
   /** Resolve one requested Host provider id, tolerating case misses before failing with the directory. */
   private resolveHostProvider(providerId: string): HostCordisInspectProviderRegistration {
     const exact = this.providers.get(providerId)
-    if (exact !== undefined) return exact
-    const ids = [...this.providers.keys()]
-    const caseHit = ids.find(id => id.toLowerCase() === providerId.toLowerCase())
-    if (caseHit !== undefined) return this.providers.get(caseHit) as HostCordisInspectProviderRegistration
-    throw unresolvedProviderError('Host', providerId, ids, 'Client', [...(this.clientManifest ?? []).map(manifest => manifest.id)])
+    if (exact !== undefined) return this.newestHandler(exact)
+    for (const [id, stored] of this.providers) {
+      if (id.toLowerCase() === providerId.toLowerCase()) return this.newestHandler(stored)
+    }
+    throw unresolvedProviderError('Host', providerId, [...this.providers.keys()], 'Client', [...(this.clientManifest ?? []).map(manifest => manifest.id)])
   }
 
   /** Resolve one requested Client provider manifest, tolerating case misses before failing with the directory. */
@@ -221,6 +248,67 @@ export class CordisInspectRegistryService extends Service {
 
 function view(platform: CordisInspectPlatform, manifest: CordisInspectProviderManifest): CordisInspectProviderView {
   return { platform, ...manifest, methods: [...manifest.methods] }
+}
+
+/**
+ * Build the idempotent disposer for one registration claim.
+ * @param providers - the live provider map.
+ * @param id - provider id the claim was taken under.
+ * @param stored - the claim's own handler entry in the stack.
+ * @returns a disposer that removes the handler and decrements the claim,
+ * restoring the prior handler while claims remain and removing the entry at
+ * zero; it is a no-op once the entry was replaced.
+ */
+function releaseClaim(
+  providers: Map<string, StoredHostProvider>,
+  id: string,
+  stored: HostCordisInspectProviderRegistration,
+): () => void {
+  let released = false
+  return () => {
+    if (released) return
+    const entry = providers.get(id)
+    if (entry === undefined || !entry.handlers.includes(stored)) return
+    released = true
+    entry.handlers = entry.handlers.filter(handler => handler !== stored)
+    entry.claims -= 1
+    if (entry.claims === 0) providers.delete(id)
+  }
+}
+
+/** Whether two validated manifests declare the identical directory. */
+function manifestEquals(a: CordisInspectProviderManifest, b: CordisInspectProviderManifest): boolean {
+  return a.id === b.id && a.description === b.description
+    && a.methods.length === b.methods.length
+    && a.methods.every((method, index) => {
+      const other = b.methods[index] as CordisInspectMethodManifest
+      return method.name === other.name && method.description === other.description
+        && jsonEquals(method.inputSchema, other.inputSchema)
+        && jsonEquals(method.outputSchema, other.outputSchema)
+    })
+}
+
+/** Deep equality over lossless JSON values, key order insensitive. */
+function jsonEquals(a: JsonValue, b: JsonValue): boolean {
+  if (a === b) return true
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b)
+      && a.length === b.length
+      && a.every((item, index) => jsonEquals(item, b[index] as JsonValue))
+  }
+  if (typeof a === 'object' && a !== null && typeof b === 'object' && b !== null) {
+    const aRecord = a as Record<string, JsonValue>
+    const bRecord = b as Record<string, JsonValue>
+    const aKeys = Object.keys(aRecord).sort()
+    const bKeys = Object.keys(bRecord).sort()
+    return aKeys.length === bKeys.length && aKeys.every((key, index) => {
+      const otherKey = bKeys[index] as string
+      const aValue = aRecord[key]
+      const bValue = bRecord[otherKey]
+      return key === otherKey && aValue !== undefined && bValue !== undefined && jsonEquals(aValue, bValue)
+    })
+  }
+  return false
 }
 
 function validateManifest(manifest: CordisInspectProviderManifest): CordisInspectProviderManifest {

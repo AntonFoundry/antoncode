@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { CordisInspectRegistryService } from '../src/inspect-registry.ts'
 import type { CordisInspectProviderManifest } from '../src/types.ts'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { HostCordisInspectProviderRegistration } from '../src/inspect-registry.ts'
 
 const AGENT = { id: 'S-a', steer() {}, inject() {} } as unknown as Agent
 
@@ -17,6 +18,10 @@ function manifest(id: string, methods: string[]): CordisInspectProviderManifest 
       outputSchema: { type: 'object' },
     })),
   }
+}
+
+function registration(id: string, methods: string[]): HostCordisInspectProviderRegistration {
+  return { manifest: manifest(id, methods), query: async method => ({ method }) }
 }
 
 async function setup(): Promise<CordisInspectRegistryService> {
@@ -55,5 +60,59 @@ describe('intent-tolerant inspect query resolution', () => {
     const registry = await setup()
     await expect(registry.query('host', 'Service', 'list', undefined, AGENT, new AbortController().signal))
       .rejects.toThrow('declared methods: listService')
+  })
+})
+
+describe('refcounted duplicate registration', () => {
+  it('shares one entry for identical manifests and removes it only at the last dispose', async () => {
+    const ctx = new Context()
+    const registry = new CordisInspectRegistryService(ctx)
+    const disposeFirst = registry.register(registration('Service', ['listService']))
+    const disposeSecond = registry.register(registration('Service', ['listService']))
+    expect(registry.list().filter(provider => provider.id === 'Service')).toHaveLength(1)
+    disposeFirst()
+    disposeFirst()
+    expect(registry.list().some(provider => provider.id === 'Service')).toBe(true)
+    const data = await registry.query('host', 'Service', 'Service.listService', undefined, AGENT, new AbortController().signal)
+    expect(data).toEqual({ method: 'listService' })
+    disposeSecond()
+    expect(registry.list().some(provider => provider.id === 'Service')).toBe(false)
+  })
+
+  it('serves queries through the newest equal-manifest handler and restores the prior on dispose', async () => {
+    const ctx = new Context()
+    const registry = new CordisInspectRegistryService(ctx)
+    const disposeFirst = registry.register({ manifest: manifest('Service', ['listService']), query: async () => ({ generation: 1 }) })
+    const disposeSecond = registry.register({ manifest: manifest('Service', ['listService']), query: async () => ({ generation: 2 }) })
+    await expect(registry.query('host', 'Service', 'listService', undefined, AGENT, new AbortController().signal))
+      .resolves.toEqual({ generation: 2 })
+    disposeSecond()
+    await expect(registry.query('host', 'Service', 'listService', undefined, AGENT, new AbortController().signal))
+      .resolves.toEqual({ generation: 1 })
+    disposeFirst()
+    expect(registry.list().some(provider => provider.id === 'Service')).toBe(false)
+  })
+
+  it('rejects a conflicting manifest under a live id while keeping the first registration', async () => {
+    const registry = await setup()
+    expect(() => registry.register(registration('Service', ['listService', 'other']))).toThrow('conflicting manifest')
+    expect(() => registry.register({
+      manifest: { ...manifest('Service', ['listService']), description: 'different description' },
+      query: async method => ({ method }),
+    })).toThrow('conflicting manifest')
+    const data = await registry.query('host', 'Service', 'listService', undefined, AGENT, new AbortController().signal)
+    expect(data).toEqual({ method: 'listService' })
+  })
+
+  it('allows re-registration after the last claim is released', async () => {
+    const ctx = new Context()
+    const registry = new CordisInspectRegistryService(ctx)
+    const dispose = registry.register(registration('Service', ['listService']))
+    dispose()
+    const replacement = registry.register(registration('Service', ['listService']))
+    const data = await registry.query('host', 'service', 'listService', undefined, AGENT, new AbortController().signal)
+    expect(data).toEqual({ method: 'listService' })
+    replacement()
+    expect(registry.list().some(provider => provider.id === 'Service')).toBe(false)
   })
 })
