@@ -24,10 +24,11 @@ whisper.cpp ≥ 1.9.0 native Parakeet path; this is its implementation.
   `<App Support>/Anton/blueant/models/parakeet/*.gguf|.bin` (668 MB
   Q8_0 TDT 0.6B v3 downloaded there).
 - **Selection**: `SpeechController.makeEngine()` prefers Parakeet when its
-  model file exists, else `WhisperEngine.shared`; both conform to a private
-  `TranscriptionEngine` protocol, so buffer/partial plumbing is untouched.
-  Removing the model file reverts to whisper — the fallback ships in the
-  same binary. The wake-word listener stays on `WhisperEngine.shared`
+  model file exists, else `WhisperEngine.shared`; both conform to the
+  module-internal `TranscriptionEngine` protocol, whose `engineName`
+  identifies the selected implementation in wake diagnostics. Removing the
+  model file reverts to whisper — the fallback ships in the same binary.
+  The wake-word listener stays on `WhisperEngine.shared`
   regardless: its lifetime is independent of dictation sessions (cost: both
   models resident when wake is enabled; acceptable on M-series).
 - **Wake-word variant matching**: the A/B exposed that ASR renders the

@@ -27,7 +27,9 @@ engine, so nothing new ships to the binary:
   never continuously.
 - **Trigger**: fires `onWake` (5 s cooldown) → AntonApp opens the popup and
   starts hands-free dictation; the command the user speaks after the keyword
-  lands in the existing push-to-talk path.
+  lands in the existing push-to-talk path. Audio-level and transcript-state
+  notifications animate the wake indicator, and `blueantWakeDictationDidEnd`
+  closes the indicator and re-arms ambient listening on every exit path.
 - **Coordination**: the listener posts/suspends on panel visibility
   (`blueantPanelVisibilityDidChange`) — it never taps the input while the
   popup is up, and suspends while dictation runs, so the shared engine's

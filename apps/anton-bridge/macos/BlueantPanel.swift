@@ -34,6 +34,8 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
   private let settingsButton = NSButton()
   private var settingsPopover: NSPopover?
   private let speech = SpeechController()
+  private var wakeTranscriber: TranscriptionEngine?
+  private var wakeDictation = false
   private var voiceKeyMonitor: Any?
   private var micDownAt: Date?
   private var entrySnapshot = ""
@@ -208,15 +210,38 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
   /// wake-word listener suspend while the popup is up.
   static let visibilityDidChange = Notification.Name("blueantPanelVisibilityDidChange")
   static let isVisibleKey = "isVisible"
+  static let wakeDictationDidEnd = Notification.Name("blueantWakeDictationDidEnd")
+  static let wakeAudioLevelDidChange = Notification.Name("blueantWakeAudioLevelDidChange")
+  static let wakeVoiceStateDidChange = Notification.Name("blueantWakeVoiceStateDidChange")
 
 
   /// Wake-word entry: the keyword fired elsewhere; open the popup first
   /// (caller), then start dictation hands-free without touching the mic tile.
   func beginWakeDictation() {
-    guard !speechDisabledForSession, !speech.isListening else { return }
+    guard !speechDisabledForSession, !speech.isListening else {
+      NotificationCenter.default.post(name: Self.wakeDictationDidEnd, object: self)
+      return
+    }
+    wakeDictation = true
     micDownAt = nil
     entrySnapshot = entryField.stringValue
     startListening()
+  }
+
+  func setWakeTranscriber(_ transcriber: TranscriptionEngine) {
+    wakeTranscriber = transcriber
+  }
+
+  func endWakeConversation() {
+    let wasWake = wakeDictation
+    wakeDictation = false
+    micDownAt = nil
+    micButton.setListening(false)
+    speech.abort()
+    if wasWake {
+      NotificationCenter.default.post(name: Self.wakeDictationDidEnd, object: self)
+    }
+    if isVisible { closePanel() }
   }
 
   /// Default placement: horizontally centered, roughly a third down from the
@@ -316,8 +341,22 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
         return
       }
       self.speech.start(callbacks: SpeechController.Callbacks(
-        onPartial: { [weak self] partial in self?.renderPartial(partial) },
-        onLevel: { [weak self] level in self?.micButton.setLevel(level) },
+        onPartial: { [weak self] partial in
+          guard let self else { return }
+          self.renderPartial(partial)
+          if self.wakeDictation {
+            NotificationCenter.default.post(name: Self.wakeVoiceStateDidChange, object: self,
+                                            userInfo: ["status": "Listening…", "text": partial])
+          }
+        },
+        onLevel: { [weak self] level in
+          guard let self else { return }
+          self.micButton.setLevel(level)
+          if self.wakeDictation {
+            NotificationCenter.default.post(name: Self.wakeAudioLevelDidChange, object: self,
+                                            userInfo: ["level": level])
+          }
+        },
         onFinish: { [weak self] final in self?.landFinalTranscript(final) },
         onFailure: { [weak self] message in
           guard let self else { return }
@@ -325,8 +364,9 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
           self.micButton.isEnabled = false
           self.micButton.setListening(false)
           self.renderAnswer(status: message)
+          self.finishWakeDictationIfNeeded()
         }
-      ))
+      ), transcriber: self.wakeDictation ? self.wakeTranscriber : nil)
       self.micButton.setListening(true)
       self.renderPartial("")
     }
@@ -366,6 +406,13 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
     if let editor = entryField.currentEditor() {
       editor.moveToEndOfDocument(nil)
     }
+    finishWakeDictationIfNeeded()
+  }
+
+  private func finishWakeDictationIfNeeded() {
+    guard wakeDictation else { return }
+    wakeDictation = false
+    NotificationCenter.default.post(name: Self.wakeDictationDidEnd, object: self)
   }
 
   private func installVoiceKeyMonitor() {
@@ -399,11 +446,12 @@ final class BlueantPanel: NSPanel, NSWindowDelegate {
   /// Panel hid or resigned key: abort recognition with no final transcript
   /// and restore the pre-dictation entry text (partials are discarded).
   private func stopVoice(forHide: Bool) {
-    guard speech.isListening || micDownAt != nil else { return }
+    guard speech.isListening || micDownAt != nil || wakeDictation else { return }
     micDownAt = nil
     micButton.setListening(false)
     speech.abort()
     entryField.stringValue = entrySnapshot
+    finishWakeDictationIfNeeded()
   }
 
   // MARK: Asking
@@ -674,6 +722,8 @@ private let statusLine = NSTextField(labelWithString: "")
 /// without polling; `userInfo[wakeEnabledKey: Bool]` carries the new state.
 static let wakeWordDidChange = Notification.Name("blueantWakeWordDidChange")
 static let wakeEnabledKey = "wakeEnabled"
+static let wakeEngineDidChange = Notification.Name("blueantWakeEngineDidChange")
+static let wakeEngineKey = "wakeEngine"
 
 init(client: HarnessClient, resolve: @escaping (@escaping (String?) -> Void) -> Void) {
   self.client = client

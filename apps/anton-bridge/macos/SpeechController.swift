@@ -73,7 +73,7 @@ final class SpeechController: NSObject {
   // MARK: Start / stop
 
   /// Starts listening. All callbacks fire on the main queue.
-  func start(callbacks: Callbacks) {
+  func start(callbacks: Callbacks, transcriber: TranscriptionEngine? = nil) {
     guard !isListening else { return }
     self.callbacks = callbacks
     guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
@@ -81,7 +81,7 @@ final class SpeechController: NSObject {
       return
     }
 
-    if engine == nil { engine = Self.makeEngine() }
+    engine = transcriber ?? engine ?? Self.makeEngine()
     if let engine, engine.available {
       startWhisper(engine)
     } else {
@@ -343,7 +343,8 @@ final class SpeechController: NSObject {
 /// Shared contract of the vendored transcription engines. The wake-word
 /// listener stays on `WhisperEngine.shared` regardless of dictation engine:
 /// its lifetime is independent of dictation sessions.
-private protocol TranscriptionEngine: AnyObject {
+protocol TranscriptionEngine: AnyObject {
+  var engineName: String { get }
   var available: Bool { get }
   func cancelAll()
   func transcribe(_ samples: [Float], completion: @escaping (String) -> Void)

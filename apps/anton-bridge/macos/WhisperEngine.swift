@@ -9,11 +9,13 @@ import Foundation
 /// queued completion whose generation no longer matches is dropped, so
 /// `cancelAll()` immediately silences pending and future emissions.
 final class WhisperEngine {
+  let engineName: String
   /// Process-wide shared context: push-to-talk and the wake-word listener
   /// share one model (whisper small is ~466 MB resident). The serial
   /// transcription queue serializes jobs; the wake listener suspends during
   /// dictation, so the shared generation counter never cancels live work.
   static let shared = WhisperEngine()
+  static var wake: WhisperEngine { shared }
 
   private var context: OpaquePointer?
   private let transcriptionQueue = DispatchQueue(label: "dev.antoncode.blueant.whisper", qos: .userInitiated)
@@ -50,9 +52,11 @@ final class WhisperEngine {
   /// the vendored static libs, so no runtime .metallib lookup is needed).
   init() {
     guard let path = Self.resolveModelPath() else {
+      engineName = "whisper-unavailable"
       NSLog("Blueant whisper: no model file found in search dirs")
       return
     }
+    engineName = "whisper-\((path as NSString).lastPathComponent.replacingOccurrences(of: ".bin", with: ""))"
     var params = whisper_context_default_params()
     params.use_gpu = true
     guard let context = whisper_init_from_file_with_params(path, params) else {

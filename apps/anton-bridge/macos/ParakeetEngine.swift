@@ -8,6 +8,7 @@ import Foundation
 /// mirrors WhisperEngine's contract exactly, so SpeechController picks it
 /// purely on model-file presence and falls back to whisper otherwise.
 final class ParakeetEngine {
+  let engineName: String
   private var context: OpaquePointer?
   private let transcriptionQueue = DispatchQueue(label: "dev.antoncode.blueant.parakeet", qos: .userInitiated)
   private let stateLock = NSLock()
@@ -34,9 +35,11 @@ final class ParakeetEngine {
 
   init() {
     guard let path = Self.resolveModelPath() else {
+      engineName = "parakeet-unavailable"
       NSLog("Blueant parakeet: no model file found in search dirs")
       return
     }
+    engineName = "parakeet-\((path as NSString).lastPathComponent.replacingOccurrences(of: ".bin", with: ""))"
     var params = parakeet_context_default_params()
     params.use_gpu = true
     guard let context = parakeet_init_from_file_with_params(path, params) else {
