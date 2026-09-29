@@ -99,9 +99,13 @@ async function ffmpegAvailable(): Promise<boolean> {
 }
 
 /**
- * Build the remux response: ffmpeg stream-copies the file to fragmented MP4
- * on stdout, which streams straight to the client (instant start, no seek
- * support — the viewer only lands here after native playback failed). A
+ * Build the remux response: ffmpeg stream-copies the video track into
+ * fragmented MP4 on stdout while transcoding the audio to AAC — Chromium
+ * drops AC-3/DTS/PCM tracks silently (video keeps playing, no error event),
+ * so the fallback must produce audio every browser decodes. Audio-only
+ * transcode is near-free CPU; the video bytes are never re-encoded. The
+ * stream goes straight to the client (instant start, no seek support — the
+ * viewer only lands here after native playback failed or stayed silent). A
  * client disconnect kills the child.
  * @param filePath - the source video file.
  * @param signal - caller lifetime.
@@ -109,7 +113,8 @@ async function ffmpegAvailable(): Promise<boolean> {
  */
 function remuxResponse(filePath: string, signal: AbortSignal): Response {
   const child = spawn('ffmpeg', [
-    '-nostdin', '-i', filePath, '-c', 'copy', '-movflags', 'frag_keyframe+empty_moov', '-f', 'mp4', 'pipe:1',
+    '-nostdin', '-i', filePath, '-c:v', 'copy', '-c:a', 'aac',
+    '-movflags', 'frag_keyframe+empty_moov', '-f', 'mp4', 'pipe:1',
   ], { stdio: ['ignore', 'pipe', 'ignore'] })
   const abort = (): void => { child.kill('SIGKILL') }
   signal.addEventListener('abort', abort, { once: true })

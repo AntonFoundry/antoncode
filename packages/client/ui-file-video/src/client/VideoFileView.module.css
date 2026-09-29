@@ -43,6 +43,22 @@
   background: var(--dsw-alias-surface-hover);
 }
 
+.hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.hintAction {
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 11px;
+  color: var(--dsw-alias-brand-text);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .video {
   width: 100%;
   max-height: 100%;

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** VideoFileView: native src, the one-shot remux fallback, and the failure note with retry + OS-open. */
+/** VideoFileView: native src, the one-shot remux fallback, the silent-audio manual rescue, and the failure note with retry + OS-open. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { VideoFileView } from '../src/client/VideoFileView.tsx'
@@ -47,5 +47,16 @@ describe('VideoFileView', () => {
     fireEvent.click(screen.getByText('Retry'))
     expect(container.querySelector('[data-stage="native"]')).toBeTruthy()
     expect(container.querySelector('video')?.getAttribute('src')).toBe('/api/host/media?path=%2Fw%2Fclip.mkv')
+  })
+
+  it('silent playback (no error event) is rescuable through the manual remux hint', () => {
+    const { container } = render(<VideoFileView {...props()} />)
+    // Native stage shows the hint; a silently-playing stream fires no error,
+    // so the user flips to the remux (audio→AAC) stream themselves.
+    expect(screen.getByText('Play via remux')).toBeTruthy()
+    fireEvent.click(screen.getByText('Play via remux'))
+    expect(container.querySelector('[data-stage="remux"]')).toBeTruthy()
+    expect(container.querySelector('video')?.getAttribute('src')).toBe('/api/host/media?path=%2Fw%2Fclip.mkv&remux=1')
+    expect(screen.queryByText('Play via remux')).toBeNull()
   })
 })

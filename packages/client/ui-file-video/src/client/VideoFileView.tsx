@@ -61,6 +61,20 @@ export const VideoFileView = memo(function VideoFileView({ path, mediaUrl, openW
         preload="metadata"
         onError={() => { setStage(s => (s === 'native' ? 'remux' : 'failed')) }}
       />
+      {stage === 'native' && (
+        // A stream whose video decodes but whose audio track does not (AC-3,
+        // DTS in mkv) plays silently and fires no error event, so the
+        // automatic remux fallback cannot trigger — this affordance is the
+        // manual rescue: remux converts the audio to AAC, video stays
+        // stream-copied.
+        <p className={css.hint}>
+          No sound?{' '}
+          <button type="button" className={css.hintAction} onClick={() => { setStage('remux') }}>
+            Play via remux
+          </button>
+          {' '}(converts the audio track to AAC)
+        </p>
+      )}
     </div>
   )
 })
