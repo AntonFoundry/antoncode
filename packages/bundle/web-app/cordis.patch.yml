@@ -48,19 +48,6 @@
     - id: code-runtime
       name: '@deepseek-ai/dsh-code-runtime-worker-thread'
 
-    - id: storage
-      name: '@deepseek-ai/dsh-storage'
-
-    - id: storage-json
-      name: '@deepseek-ai/dsh-storage-json'
-      config:
-        root: !!js dshHomePath('storages')
-
-    - id: storage-domain
-      name: '@deepseek-ai/dsh-storage-domain'
-      config:
-        backend: json
-
     - id: message-feedback
       name: '@deepseek-ai/dsh-message-feedback'
       config:
@@ -72,12 +59,6 @@
 
     - id: workspace
       name: '@deepseek-ai/dsh-workspace'
-
-    # Durable workflow definitions and the block library the flowbuilder
-    # tools, wire domain, and canvas share. Host-plane: state outlives every
-    # session; only the model-facing tool is per-preset.
-    - id: flowbuilder-service
-      name: '@deepseek-ai/dsh-flowbuilder-service'
 
     - id: session-projection-cache
       name: '@deepseek-ai/dsh-session-projection-cache'
