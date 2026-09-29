@@ -313,6 +313,10 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
         return new Response('stub', { status: 404 })
       },
     },
+    orchestrator: {
+      async board() { return { rpcId: 'board' as never, result: { ok: true as const, value: { items: [], archivedSessionIds: [], sessions: [] } } } },
+      async act() { return { rpcId: 'act' as never, result: { ok: true as const, value: { accepted: true as const } } } },
+    },
   }
 }
 
