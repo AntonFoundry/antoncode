@@ -15,6 +15,7 @@ import type { PanelActions } from './service.ts'
 import { TopbarChrome, WmFrame } from './WmFrame.tsx'
 import { createLayoutStore, createScratchStore, createWmStore } from './stores.ts'
 import { ensureBuffer, firstLeafId, sessionBuffer, splitLeaf, swapBuffer } from './wm.ts'
+import { opensInline } from './file-view.ts'
 import { watchHarnessBoot } from './bridge.ts'
 import { LayoutController } from './service.ts'
 import { ThemePresenter } from './theme-presenter.ts'
@@ -113,6 +114,17 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       }
     }
     /**
+     * Keyed inline file view for the `file` buffers, dispatched by
+     * `viewerKeyFor(path)` (`markdown` | `image` | `video`). Register with
+     * `key: '<viewer id>'` to own how one viewer family renders; an
+     * unclaimed key falls back to the built-in plain-text FileViewer, so
+     * registering a viewer is additive and the text fallback always stands.
+     * Each shipped viewer is its own package (ui-file-markdown /
+     * ui-file-image / ui-file-video); the key→package coupling lives in the
+     * web-app composition rows beside this declaration.
+     */
+    'file.view': { kind: 'keyed'; scope: 'root'; owner: FileViewOwnerProps }
+    /**
      * The settings window body (the `settings` buffer, opened through
      * ctx.layout's openSettings/toggleSettings — the sidebar-foot trigger is
      * the shipped driver). OCCUPIED by ui-settings-general's window shell,
@@ -173,6 +185,24 @@ export interface ConvOwnerProps {
 /** Details owner share: empty — sessionId arrives as a framework-standard prop. */
 export interface DetailsOwnerProps {}
 
+/**
+ * File-view owner share: the plain data and callbacks every inline file
+ * viewer receives from the frame. Viewers stay pure consumers — content
+ * fetches ride `readText`, binary media rides the trust-fenced streaming
+ * endpoint URL `mediaUrl` builds, and `openWithOs` is the escape hatch to
+ * the host's OS default application.
+ */
+export interface FileViewOwnerProps {
+  /** Absolute path of the file this buffer shows. */
+  path: string
+  /** Read one file's head as text (the markdown viewer's fetch face). */
+  readText: (path: string) => Promise<{ content: string; truncated: boolean } | undefined>
+  /** Streaming media URL for one path (the `/api/host/media` endpoint). */
+  mediaUrl: (path: string) => string
+  /** Open the path with the host OS default application (viewer escape hatch). */
+  openWithOs: (path: string) => void
+}
+
 /** Required services (cordis fiber inject — the loader passes all module exports as an object plugin). */
 export const inject = ['slots', 'theme', 'workspaces', 'sessions', 'connection']
 
@@ -199,6 +229,7 @@ export function apply(ctx: ClientContext): void {
         'shell.topbar.right': { kind: 'list', scope: 'root' },
         'terminal.view': { kind: 'single', scope: 'root' },
         'settings.view': { kind: 'single', scope: 'root' },
+        'file.view': { kind: 'keyed', scope: 'root' },
       },
       // Exclusive store: the factory itself — the framework instantiates per
       // entry and delivers useStore/actions to WmFrame as standard props.
@@ -213,9 +244,11 @@ export function apply(ctx: ClientContext): void {
         const wm = wmStore.create()
         layout.attachWm(wm)
         const scratch = scratchStore.create()
-        // Inline text-file open: the same buffer-beside-the-focused-leaf flow
-        // the term command runs, driven from the inject closure over the wm
-        // store. Image extensions never land here (openPath routes first).
+        // Inline file open: the same buffer-beside-the-focused-leaf flow the
+        // term command runs, driven from the inject closure over the wm
+        // store. Every opener-routed family lands here (text, markdown,
+        // image, video — file-view.ts keys); openPath diverts only the
+        // OS-open binary families first.
         const openInline = (path: string): void => {
           const snapshot = wm.store.getSnapshot()
           const anchor = snapshot.focusedLeafId ?? firstLeafId(snapshot.tree)
@@ -297,22 +330,21 @@ export function apply(ctx: ClientContext): void {
           // capability's client seam — ctx has no direct 'host' service).
           listDirectory: (path?: string, opts?: { includeFiles?: boolean }, signal?: AbortSignal) =>
             ctx.workspaces.listDirectory(path, opts, signal),
+          // The opener face: one routing decision for ido Enter and dired's
+          // open action alike. The OS-open binary families (file-view.ts)
+          // leave the app; everything else — text, markdown, image, video —
+          // opens inline as a `buffer:file:<path>` buffer beside the focused
+          // window, rendered by the `file.view` viewer its key dispatches to.
           openPath: (path: string): Promise<void> => {
-            // Routing contract: images open with the OS default application;
-            // text-family files open inline as a file buffer beside the
-            // focused window. Unknown extensions fall back to the OS.
-            const externalExtensions = [
-              'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif', 'tiff',
-              'pdf', 'zip', 'gz', 'mp4', 'mov', 'mp3', 'wav', 'woff2', 'woff', 'ttf', 'otf',
-              'bin', 'wasm', 'sqlite3', 'db',
-            ]
-            const external = new RegExp(`\\.(${externalExtensions.join('|')})$`, 'i')
-            if (external.test(path)) {
+            if (!opensInline(path)) {
               return ctx.workspaces.openPath(path)
             }
             openInline(path)
             return Promise.resolve()
           },
+          // The inline viewers' binary-media face: the trust-fenced streaming
+          // endpoint URL for one path (images and video render from it).
+          mediaUrl: (path: string) => `/api/host/media?path=${encodeURIComponent(path)}`,
           disposeTerminalSession: async (sessionId: string): Promise<void> => {
             const conn = ctx.get('connection') as unknown as { api?: { term?: { dispose(req: { sessionId: string }): Promise<unknown> } } } | undefined
             if (conn?.api?.term?.dispose) {

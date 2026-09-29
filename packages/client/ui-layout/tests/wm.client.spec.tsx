@@ -482,6 +482,8 @@ function mountFrame(initialTree?: WmNode, workspaces?: { id: string; title: stri
       syncStagedSessions={(ids) => { stagedLog.push([...ids]) }}
       listDirectory={listDirectoryStub}
       openPath={openPathStub}
+      mediaUrl={path => `/api/host/media?path=${encodeURIComponent(path)}`}
+      readTextFile={path => Promise.resolve({ content: `text of ${path}`, truncated: false })}
       openWorkspace={openWorkspaceStub}
       renderSlot={renderSlot}
       useSessions={useSessions}
@@ -1378,6 +1380,24 @@ describe('winner mode + new chords (window listener)', () => {
     expect(container.querySelector('[data-ido] input')).toBeTruthy()
     press('Escape')
     expect(container.querySelector('[data-ido] input')).toBeNull()
+  })
+
+  it('a file buffer dispatches the file.view slot with the file-view owner share', () => {
+    const { container, slotCalls, wm } = mountFrame(undefined, [])
+    const bufferId = 'buffer:file:/proj/wm/notes.md'
+    const snapshot = wm.getSnapshot()
+    act(() => {
+      wm.actions.setBuffers([...snapshot.buffers, { id: bufferId, kind: 'file' as const, path: '/proj/wm/notes.md' }])
+      wm.actions.setTree(splitLeaf(snapshot.tree, WM_LEAF_SIDEBAR, 'row', bufferId, 'leaf:md'))
+    })
+    expect(container.querySelector('[data-buffer="file"]')).toBeTruthy()
+    const view = slotCalls.find(c => c.key === 'file.view')
+    expect(view).toBeDefined()
+    // The owner share is the plain path plus the read/OS-open faces.
+    expect(view?.props).toMatchObject({ path: '/proj/wm/notes.md' })
+    expect(typeof (view?.props as { readText?: unknown }).readText).toBe('function')
+    expect(typeof (view?.props as { mediaUrl?: unknown }).mediaUrl).toBe('function')
+    expect(typeof (view?.props as { openWithOs?: unknown }).openWithOs).toBe('function')
   })
 
 

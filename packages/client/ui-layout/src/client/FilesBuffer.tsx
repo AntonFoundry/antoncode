@@ -11,7 +11,8 @@
  * The listing is the FULL level (directories and files, stat'd): rows carry
  * a kind icon, the classic perms string, size, and date columns (dired.ts
  * formats). Enter descends into a directory; on a plain file it hands the
- * path to the host (openPath — the OS default application).
+ * path to the opener (openPath — the inline file viewers, or the OS default
+ * application for the binary families file-view.ts lists).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
@@ -30,7 +31,7 @@ export interface FilesBufferProps {
   path: string | undefined
   /** List one directory level (always the full listing — files included); an absent path lists the home directory. */
   listDirectory: (path?: string, opts?: { includeFiles?: boolean }, signal?: AbortSignal) => Promise<DirectoryListing>
-  /** Open a path with the host OS default application (non-navigable rows). */
+  /** Open a path through the opener face (inline viewers or the OS default application; non-navigable rows). */
   openPath: (path: string) => Promise<void>
   /** Navigate in place: replace this buffer's directory and refetch. */
   onNavigate: (path: string | undefined) => void
@@ -135,7 +136,8 @@ export function FilesBuffer({ path, listDirectory, onNavigate, onKill, active, o
 
   const visit = useCallback((entry: DiredEntry) => {
     // A directory descends (a vanished directory surfaces in the listing
-    // error state); a plain file opens with the host's default application.
+    // error state); a plain file opens through the opener face (inline
+    // viewer or OS default application — openPath's routing contract).
     if (entry.isDirectory === false) void openWithHost(entry.path)
     else go(entry.path)
   }, [go, openWithHost])

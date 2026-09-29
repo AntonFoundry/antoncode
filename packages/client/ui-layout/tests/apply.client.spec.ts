@@ -57,10 +57,11 @@ describe('ui-layout client apply', () => {
     expect(ctx.get('layout')).toBeInstanceOf(LayoutController)
     // The one register() call occupied 'root'…
     expect(slots.entries('root')).toHaveLength(1)
-    // …and declared the three children in the ledger.
+    // …and declared the children in the ledger.
     expect(slots.spec('sidebar')).toEqual({ kind: 'single', scope: 'root' })
     expect(slots.spec('conversation')).toEqual({ kind: 'single', scope: 'session-maybe' })
     expect(slots.spec('details')).toEqual({ kind: 'single', scope: 'session' })
+    expect(slots.spec('file.view')).toEqual({ kind: 'keyed', scope: 'root' })
   })
 
   it('injects the wm hooks source and attaches the panel + wm faces', async () => {
@@ -74,7 +75,7 @@ describe('ui-layout client apply', () => {
     // The injected face: the wm + scratch hooks sources, the write callbacks,
     // and the workspace/host resolvers.
     expect(Object.keys(injected).sort()).toEqual([
-      'disposeTerminalSession', 'fetchSessionModel', 'fetchSessionTail', 'hooks', 'interruptSession', 'listDirectory', 'loadTheme', 'openPath', 'openSession', 'openWorkspace', 'previewTheme', 'promptSession', 'readTextFile',
+      'disposeTerminalSession', 'fetchSessionModel', 'fetchSessionTail', 'hooks', 'interruptSession', 'listDirectory', 'loadTheme', 'mediaUrl', 'openPath', 'openSession', 'openWorkspace', 'previewTheme', 'promptSession', 'readTextFile',
       'rebindPane', 'reconcileBuffers', 'setBuffers', 'setFocus', 'setMode', 'setSidebarWidth', 'setTree', 'syncStagedSessions', 'themeList', 'writeScratch',
     ])
     expect((injected as { hooks: { wm: unknown; scratch: unknown } }).hooks.wm).toHaveProperty('getSnapshot')

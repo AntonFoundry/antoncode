@@ -30,7 +30,8 @@ import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { PropsRenderSlots, PropsRuntime, PropsStore, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DirectoryListing } from '@deepseek-ai/dsh-api-remotes/client'
 import { BrandWordmark, IconCloseOutline16, IconPanelLeftOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { SidebarOwnerProps, ConvOwnerProps } from './index.ts'
+import type { SidebarOwnerProps, ConvOwnerProps, FileViewOwnerProps } from './index.ts'
+import { viewerKeyFor } from './file-view.ts'
 import {
   clampWidth, CONTEXT_DEFAULT, CONTEXT_MAX, CONTEXT_MIN,
   DETAILS_DEFAULT, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN,
@@ -131,6 +132,8 @@ export interface WmFrameInjected {
   fetchSessionModel: (sessionId: string) => Promise<string | undefined>
   /** Read one text file inline (the file-viewer buffer's body). */
   readTextFile: (path: string) => Promise<{ content: string; truncated: boolean } | undefined>
+  /** Streaming media URL for one path (the inline image/video viewers' src). */
+  mediaUrl: (path: string) => string
   /** The frame's theme palette (compos load-theme's candidates). */
   themeList: () => { id: string; colorScheme: string }[]
   /** Load one palette theme by id and persist the choice. */
@@ -148,7 +151,7 @@ export interface WmFrameInjected {
 /** Full composed props: runtime share + child-slot render share + store share + injected wm face. */
 export type WmFrameProps =
   & PropsRuntime<'root'>
-  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'settings.view' | 'shell.overlay' | 'terminal.view' | 'shell.topbar.left' | 'shell.topbar.right'>
+  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'settings.view' | 'shell.overlay' | 'terminal.view' | 'shell.topbar.left' | 'shell.topbar.right' | 'file.view'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
   & WmFrameInjected
 
@@ -397,6 +400,7 @@ interface NodeRenderProps {
   scratch: ScratchBufferShared
   files: FilesBufferShared
   readTextFile: WmFrameProps['readTextFile']
+  mediaUrl: WmFrameProps['mediaUrl']
   onFocus: (leafId: string) => void
   onSplit: (leafId: string, dir: WmDirection) => void
   onClose: (leafId: string) => void
@@ -439,7 +443,7 @@ interface SashDragBase {
  */
 function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf' }> }) {
   const {
-    node, tree, focusedId, buffers, renderSlot, sidebarOwner, scratch, files, readTextFile,
+    node, tree, focusedId, buffers, renderSlot, sidebarOwner, scratch, files, readTextFile, mediaUrl,
     onFocus, onSplit, onClose, onMove, onToggleExpand, expanded, onTidy, workspacePath, onTerminalSessionCreated,
     sessionsById, layoutSpan, rebindPane,
   } = props
@@ -461,6 +465,16 @@ function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf
       : { layoutSpan } satisfies ConvOwnerProps
   const closeable = canClose(tree, node.id)
   const focused = focusedId === node.id
+  // The file buffer's dispatch: the owner share is plain data plus the two
+  // faces (read + OS-open escape hatch), and the key comes from the pure
+  // extension map; an unclaimed key renders the built-in text FileViewer.
+  const filePath = buffer?.path ?? node.buffer
+  const fileViewOwner: FileViewOwnerProps = {
+    path: filePath,
+    readText: readTextFile,
+    mediaUrl,
+    openWithOs: (path) => { void files.openPath(path) },
+  }
   const body = bufferKind === 'scratch'
     ? <ScratchBuffer text={scratch.text} onWrite={scratch.onWrite} flushTick={scratch.flushTick} />
     : bufferKind === 'files'
@@ -475,7 +489,10 @@ function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf
         />
       )
       : bufferKind === 'file'
-        ? <FileViewer path={buffer?.path ?? node.buffer} readText={readTextFile} />
+        ? renderSlot('file.view', fileViewOwner, {
+          entryKey: viewerKeyFor(filePath),
+          fallback: <FileViewer path={filePath} readText={readTextFile} />,
+        })
         : bufferKind === 'terminal'
           ? renderSlot('terminal.view', {
             sessionId: buffer?.sessionId,
@@ -791,6 +808,7 @@ export function WmFrame({
   fetchSessionTail,
   fetchSessionModel,
   readTextFile,
+  mediaUrl,
   listDirectory,
   openPath,
   rebindPane,
@@ -1929,6 +1947,7 @@ export function WmFrame({
     scratch: scratchShared,
     files: filesShared,
     readTextFile,
+    mediaUrl,
     onFocus: setFocus,
     onSplit,
     onClose,

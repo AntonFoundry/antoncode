@@ -1,7 +1,8 @@
-// FileViewer: the inline text-file buffer the dired/ido open action routes
-// to (image extensions keep the OS default application via openPath). The
-// content is fetched once per path through the injected read face; a fetch
-// failure renders the message instead of the body.
+// FileViewer: the built-in plain-text file buffer — the `file.view` keyed
+// dispatch's fallback for paths whose viewer key has no registrant (the
+// text case and any not-yet-shipped viewer). The content is fetched once
+// per path through the injected read face; a fetch failure renders the
+// message instead of the body.
 
 import { memo, useEffect, useState } from 'react'
 import css from './FileViewer.module.css'
