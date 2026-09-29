@@ -281,6 +281,14 @@
     - id: ui-orchestrator
       name: '@deepseek-ai/dsh-client-ui-orchestrator'
 
+    # Inline file viewers, one keyed row of ui-layout's file.view slot each:
+    # markdown (this row) renders .md buffers through the shared MarkdownText
+    # engine; image/video (the rows below) render from the /api/host/media
+    # streaming endpoint. An absent row degrades its extensions to the
+    # built-in plain-text fallback, never to a broken surface.
+    - id: ui-file-markdown
+      name: '@deepseek-ai/dsh-client-ui-file-markdown'
+
 # ── the agent plane moves behind agent presets ─────────────────────────────
 #
 # Every row below composes what ONE agent contributes to the host registries:
