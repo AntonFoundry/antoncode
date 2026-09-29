@@ -280,6 +280,7 @@
     { "path": "./packages/workflow/tool-ralph" },
     { "path": "./packages/flowbuilder/flowbuilder-domain" },
     { "path": "./packages/flowbuilder/flowbuilder-service" },
+    { "path": "./packages/flowbuilder/tool-flowbuilder" },
     { "path": "./packages/todo/tool-todo" },
     { "path": "./packages/lifecycle/tool-anton-lifecycle" },
     { "path": "./packages/plan/plan-mode" },

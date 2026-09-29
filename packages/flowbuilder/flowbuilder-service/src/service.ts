@@ -205,20 +205,24 @@ export class FlowBuilderService extends Service {
       ? [...table.entries()].find(([, entry]) => entry.name === parsed.name)?.[1]
       : undefined
     const existing = existingById ?? existingByName
+    // Optional fields spread conditionally: a record with explicit
+    // `undefined`-valued keys is not lossless JSON at the tool/wire boundary.
+    const provenance: BlockLibraryEntryRecord['provenance'] = {
+      createdAt: existing?.provenance.createdAt ?? now,
+    }
+    const sourceFlowId = parsed.sourceFlowId ?? existing?.provenance.sourceFlowId
+    if (sourceFlowId !== undefined) provenance.sourceFlowId = sourceFlowId
     const record: BlockLibraryEntryRecord = {
       id: BlockId(existing?.id ?? parsed.id ?? randomUUID()),
       name: parsed.name,
       kind: parsed.kind,
       description: parsed.description,
-      code: parsed.code,
       inputs: parsed.inputs,
       outputs: parsed.outputs,
       params: parsed.params,
-      provenance: {
-        sourceFlowId: parsed.sourceFlowId ?? existing?.provenance.sourceFlowId,
-        createdAt: existing?.provenance.createdAt ?? now,
-      },
+      provenance,
     }
+    if (parsed.code !== undefined) record.code = parsed.code
     await table.put(record.id, record)
     this.ctx.emit('flowbuilder/library-changed', 'saved', record)
     return record

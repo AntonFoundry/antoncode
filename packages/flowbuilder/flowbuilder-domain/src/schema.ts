@@ -55,10 +55,10 @@ export const flowNodeSchema = z.object({
   kind: flowNodeKind,
   blockId: z.string().optional(),
   title: z.string().min(1),
-  params: z.record(z.string(), flowParamValue),
+  params: z.record(z.string(), flowParamValue).default({}),
   code: z.string().optional(),
-  x: z.number(),
-  y: z.number(),
+  x: z.number().default(0),
+  y: z.number().default(0),
 })
 
 /** One directed data edge between two node ports. */
