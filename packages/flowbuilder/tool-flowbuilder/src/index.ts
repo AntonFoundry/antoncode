@@ -4,8 +4,9 @@
  * (`@deepseek-ai/dsh-flowbuilder-service`). Store validation (zod + DAG
  * acyclicity) lives in the service, so every rejection the model sees is the
  * service's own message. Explicit-ask usage guidance is registered as the
- * tools' own prompt section rather than deployment persona prose. Run tools
- * (`flow_run` / `flow_run_status`) land with the execution engine.
+ * tools' own prompt section rather than deployment persona prose. Code and
+ * condition node programs run on the workspace code runtime and read plain
+ * `inputs` (port-name keyed values) and `params` globals.
  * @module @deepseek-ai/dsh-tool-flowbuilder
  */
 
@@ -37,7 +38,7 @@ type ResolvedConfig = Required<Config>
 /** The authoring loop guidance, shipped with the tools (never persona prose). */
 const SECTION_TEXT = 'When the user describes a repeatable multi-step workflow they want automated — or asks to save, inspect, or organize workflows — author it with the flow_* tools instead of narrating a plan: flow_save writes or updates a workflow definition (it immediately appears on the Dag Flow canvas), flow_block_save authors a reusable block into the shared library, and flow_library_search finds existing blocks to instantiate before writing new code. Keep blocks small and single-purpose; give every node a unique id and connect node ports with edges (each input port accepts one edge). When you save a workflow, tell the user it is on the Dag Flow canvas.'
 
-const NODE_SHAPE = 'Node fields: id (unique), kind (input|output|code|llm|agent|shell|http|condition|transform|library), title, blockId (required for kind=library), params (object, default {}), code (for kind=code), x, y (canvas position numbers, default 0).'
+const NODE_SHAPE = 'Node fields: id (unique), kind (input|output|code|llm|agent|shell|http|condition|transform|library), title, blockId (required for kind=library), params (object, default {}; input nodes carry their literal under value), code (for code/condition: a return-body program reading the plain `inputs` and `params` objects), x, y (canvas position numbers, default 0).'
 const EDGE_SHAPE = 'Edge fields: id (unique), from {nodeId, port}, to {nodeId, port} — each target port accepts at most one edge, and the graph must stay acyclic.'
 
 /** Cap a JSON rendering with an explicit truncation notice. */
@@ -140,6 +141,57 @@ export function apply(ctx: Context, config: Config): void {
         edges: args.edges as unknown as FlowSaveRequest['edges'],
       })
       return { flow: flow as unknown as JsonValue }
+    },
+  }))
+
+
+  ctx.tools.register(defineTool({
+    name: 'flow_run',
+    description: 'Start one run of a stored workflow definition. Returns the run id immediately; execution continues asynchronously — poll flow_run_status.',
+    parameters: {
+      flowId: { type: 'string', required: true, description: 'The workflow definition id to run.' },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { runId: { type: 'json', required: true } } },
+      render: (_args, value) => [{
+        type: 'text',
+        text: `Run ${String(value.runId)} started. Check progress with flow_run_status.`,
+      }],
+    },
+    async execute(args) {
+      const runId = await service.runFlow(args.flowId)
+      return { runId: runId as unknown as JsonValue }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'flow_run_status',
+    description: 'Read one run: its status, the per-node states (with error messages), and the collected result once terminal.',
+    parameters: {
+      runId: { type: 'string', required: true, description: 'The run id returned by flow_run.' },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { run: { type: 'json', required: true } } },
+      render: (_args, value) => {
+        const run = value.run as {
+          id: string
+          status: string
+          nodes: Record<string, { status: string; error?: string }>
+          result?: unknown
+          error?: string
+        }
+        const nodeLines = Object.entries(run.nodes)
+          .map(([id, state]) => `- ${id}: ${state.status}${state.error !== undefined ? ` — ${state.error}` : ''}`)
+          .join('\n')
+        const tail = run.error !== undefined ? `\nRun error: ${run.error}` : ''
+        const resultTail = run.result !== undefined ? `\nResult: ${JSON.stringify(run.result)}` : ''
+        return [{ type: 'text', text: `Run ${run.id} is ${run.status}.\n${nodeLines}${tail}${resultTail}` }]
+      },
+    },
+    async execute(args) {
+      const run = service.getRun(args.runId)
+      if (run === undefined) throw new Error(`run '${args.runId}' is not stored`)
+      return { run: run as unknown as JsonValue }
     },
   }))
 

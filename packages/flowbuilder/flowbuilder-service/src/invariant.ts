@@ -1,7 +1,8 @@
 /**
- * Package-owned invariants for `@deepseek-ai/dsh-flowbuilder-service`: every
- * `flowbuilder/*` change event carries a payload that re-validates against
- * the durable record schemas and an action from the closed vocabulary.
+ * Package-owned invariants for `@deepseek-ai/dsh-flowbuilder-service`: change
+ * events revalidate their payload against the durable record schemas, and the
+ * run lifecycle pairs — a `run-node` or `run-end` references a live, known
+ * run, node states name nodes of that run, and every run ends exactly once.
  * @module @deepseek-ai/dsh-flowbuilder-service/invariant
  */
 
@@ -10,7 +11,10 @@ import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-inva
 import {
   blockLibraryEntrySchema,
   flowDefinitionSchema,
+  flowNodeRunStateSchema,
+  flowRunRecordSchema,
 } from '@deepseek-ai/dsh-flowbuilder-domain'
+import type { FlowRunId, FlowRunRecordRecord } from '@deepseek-ai/dsh-flowbuilder-domain'
 
 const PACKAGE_NAME = '@deepseek-ai/dsh-flowbuilder-service'
 
@@ -51,13 +55,65 @@ function validateChange(
   }
 }
 
-/** Install the flowbuilder change-event payload checks. */
+/** Per-run pairing state the run-event checks accumulate. */
+interface RunPairing {
+  /** Node ids the started record declared. */
+  nodeIds: Set<string>
+  /** Whether the run has already ended. */
+  ended: boolean
+}
+
+/** Install the flowbuilder change-event payload and run-pairing checks. */
 const install: InvariantInstaller = (ctx, fail) => {
+  const runs = new Map<FlowRunId, RunPairing>()
+
+  const checkNodeState = (runId: FlowRunId, nodeId: string, state: unknown): void => {
+    const pairing = runs.get(runId)
+    if (pairing === undefined) {
+      fail(`flowbuilder/run-node for unknown run '${runId}'`)
+      return
+    }
+    if (pairing.ended) fail(`flowbuilder/run-node after run-end for run '${runId}'`)
+    if (!pairing.nodeIds.has(nodeId)) fail(`flowbuilder/run-node names unknown node '${nodeId}' of run '${runId}'`)
+    const parsed = flowNodeRunStateSchema.safeParse(state)
+    if (!parsed.success) {
+      fail(`flowbuilder/run-node state fails the durable schema: ${parsed.error?.message ?? 'schema rejection'}`)
+    }
+  }
+
   ctx.on('flowbuilder/flow-changed', (action, flow) => {
     validateChange('flowbuilder/flow-changed', action, flow, flowDefinitionSchema, fail)
   }, { global: true })
   ctx.on('flowbuilder/library-changed', (action, block) => {
     validateChange('flowbuilder/library-changed', action, block, blockLibraryEntrySchema, fail)
+  }, { global: true })
+  ctx.on('flowbuilder/run-start', (record) => {
+    const parsed = flowRunRecordSchema.safeParse(record)
+    if (!parsed.success) {
+      fail(`flowbuilder/run-start payload fails the durable schema: ${parsed.error?.message ?? 'schema rejection'}`)
+      return
+    }
+    const started = record as FlowRunRecordRecord
+    if (runs.has(started.id)) fail(`flowbuilder/run-start repeats run '${started.id}'`)
+    runs.set(started.id, { nodeIds: new Set(Object.keys(started.nodes)), ended: false })
+  }, { global: true })
+  ctx.on('flowbuilder/run-node', (runId, nodeId, state) => {
+    checkNodeState(runId, nodeId, state)
+  }, { global: true })
+  ctx.on('flowbuilder/run-end', (record) => {
+    const parsed = flowRunRecordSchema.safeParse(record)
+    if (!parsed.success) {
+      fail(`flowbuilder/run-end payload fails the durable schema: ${parsed.error?.message ?? 'schema rejection'}`)
+      return
+    }
+    const ended = record as FlowRunRecordRecord
+    const pairing = runs.get(ended.id)
+    if (pairing === undefined) {
+      fail(`flowbuilder/run-end for unknown run '${ended.id}'`)
+      return
+    }
+    if (pairing.ended) fail(`flowbuilder/run-end repeats run '${ended.id}'`)
+    pairing.ended = true
   }, { global: true })
 }
 

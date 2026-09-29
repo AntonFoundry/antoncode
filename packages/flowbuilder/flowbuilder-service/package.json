@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-flowbuilder-service",
-  "description": "Flowbuilder capability seam: ctx.flowBuilder service over the flowbuilder storage domain — flow definitions, the block library, and flowbuilder/* change events",
+  "description": "Flowbuilder capability seam: ctx.flowBuilder service over the flowbuilder storage domain \u2014 flow definitions, the block library, and flowbuilder/* change events",
   "version": "0.1.0-rc.7",
   "publishConfig": {
     "access": "public"
@@ -33,17 +33,19 @@
   ],
   "license": "MIT",
   "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-code-runtime": "workspace:^",
     "@deepseek-ai/dsh-flowbuilder-domain": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-storage-domain": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/dsh-storage-domain": "workspace:^"
   },
   "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-code-runtime": "workspace:^",
     "@deepseek-ai/dsh-flowbuilder-domain": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-llm": "workspace:^",
-    "@deepseek-ai/dsh-storage-domain": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/dsh-storage-domain": "workspace:^"
   }
 }

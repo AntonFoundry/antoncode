@@ -182,7 +182,7 @@ export interface FlowNodeRunState {
   /** Where the node settled (or stands, while the run is live). */
   status: FlowNodeRunStatus
   /** The node's JSON output value, once completed. */
-  output: unknown
+  output?: unknown | undefined
   /** The failure message, once errored. */
   error?: string | undefined
 }

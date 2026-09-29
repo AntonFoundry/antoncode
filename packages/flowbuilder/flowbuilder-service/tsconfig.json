@@ -24,6 +24,9 @@
       "path": "../../storage/storage-domain"
     },
     {
+      "path": "../../code-runtime/code-runtime"
+    },
+    {
       "path": "../../llm/llm"
     },
     {

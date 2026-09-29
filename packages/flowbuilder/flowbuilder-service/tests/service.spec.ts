@@ -8,6 +8,8 @@ import * as StorageJson from '@deepseek-ai/dsh-storage-json'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import { FlowBuilderService } from '../src/index.ts'
 import type { FlowNode } from '@deepseek-ai/dsh-flowbuilder-domain'
+import { Service } from '@deepseek-ai/cordis'
+import type { CodeJsonValue, CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
 
 const roots: string[] = []
 
@@ -96,6 +98,82 @@ describe('FlowBuilderService flows', () => {
     expect(events).toEqual(['saved', 'deleted'])
   })
 })
+
+/** A CodeRuntime stand-in that runs the test programs with real `Function` eval. */
+class FakeCodeRuntime extends Service {
+  constructor(ctx: ConstructorParameters<typeof Service>[0]) {
+    super(ctx, 'codeRuntime')
+  }
+
+  run(request: CodeRunRequest): Promise<CodeRunResult> {
+    const globals: Record<string, unknown> = {}
+    for (const binding of request.bindings) {
+      globals[binding.global] = Object.fromEntries(
+        Object.entries(binding.functions).map(([name, fn]) => [name, fn]),
+      )
+    }
+    const body = new Function(...Object.keys(globals), `return (async () => { ${request.program} })()`)
+    return body(...Object.values(globals)).then(
+      (value: unknown) => ({ value: value as CodeJsonValue }),
+      (error: unknown) => ({ error: { kind: 'exception', message: String((error as Error).message) } }),
+    )
+  }
+}
+
+describe('FlowBuilderService runs', () => {
+  const runFlowRequest = {
+    name: 'pipeline',
+    description: 'code pipeline',
+    nodes: [
+      { id: 'a', kind: 'input', title: 'A', params: { value: 'seed' } },
+      { id: 'b', kind: 'code', title: 'B', params: {}, code: 'return String(inputs.in).toUpperCase()' },
+      { id: 'out', kind: 'output', title: 'Out', params: {} },
+    ],
+    edges: [
+      { id: 'e1', from: { nodeId: 'a', port: 'out' }, to: { nodeId: 'b', port: 'in' } },
+      { id: 'e2', from: { nodeId: 'b', port: 'out' }, to: { nodeId: 'out', port: 'in' } },
+    ],
+  }
+
+  it('runs a saved workflow to completion over the real store', async () => {
+    const { ctx, service } = await harness()
+    await ctx.plugin(FakeCodeRuntime)
+    const events: string[] = []
+    ctx.on('flowbuilder/run-start', () => { events.push('start') })
+    ctx.on('flowbuilder/run-node', () => { events.push('node') })
+    ctx.on('flowbuilder/run-end', () => { events.push('end') })
+
+    const saved = await service.saveFlow(runFlowRequest)
+    const runId = await service.runFlow(saved.id)
+    expect(typeof runId).toBe('string')
+
+    let run = service.getRun(runId)
+    for (let tries = 0; tries < 500 && run?.status === 'running'; tries++) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+      run = service.getRun(runId)
+    }
+    expect(run?.status).toBe('completed')
+    expect(run?.result).toBe('SEED')
+    expect(run?.finishedAt).toBeDefined()
+    expect(statesOf(run)).toEqual({ a: 'completed', b: 'completed', out: 'completed' })
+    // start, then running+completed per node, then end — a complete pairing.
+    expect(events[0]).toBe('start')
+    expect(events[events.length - 1]).toBe('end')
+    expect(events.filter(entry => entry === 'node').length).toBe(6)
+    expect(service.listRuns().map(entry => entry.id)).toContain(runId)
+    expect(service.listRuns(saved.id)).toHaveLength(1)
+    expect(service.getRun('nope')).toBeUndefined()
+  })
+
+  it('rejects runFlow for unknown flows', async () => {
+    const { service } = await harness()
+    await expect(service.runFlow('missing')).rejects.toThrow(/unknown flow/)
+  })
+})
+
+function statesOf(run: { nodes: Record<string, { status: string }> }): Record<string, string> {
+  return Object.fromEntries(Object.entries(run.nodes).map(([id, state]) => [id, state.status]))
+}
 
 describe('FlowBuilderService library', () => {
   const blockRequest = (overrides: Record<string, unknown> = {}) => ({
