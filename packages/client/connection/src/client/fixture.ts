@@ -2173,6 +2173,9 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     replays.set(id, { timer: setTimeout(tick, 80), finish })
   }
 
+  /** Fixture sidecar status: stopped until a start call flips the served state. */
+  const fixtureLangflow = { state: 'stopped' } as const
+
   const api: ApiProxy = {
     sessions: {
       list: request => ok(request, { items: [...sessions].sort((a, b) => b.updatedAt - a.updatedAt) }),
@@ -2657,6 +2660,14 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         provenance: { createdAt: '' },
       } }),
       libraryDelete: request => ok(request, { deleted: true as const }),
+    },
+
+    langflow: {
+      // The fixture browser boots with the sidecar stopped; start resolves
+      // into a running status pointing at the default loopback port.
+      status: request => ok(request, { status: fixtureLangflow }),
+      start: request => ok(request, { status: { state: 'running', url: 'http://127.0.0.1:7860/' } }),
+      stop: request => ok(request, { status: fixtureLangflow }),
     },
 
     workspace: {
@@ -3214,6 +3225,9 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'flow.libraryList': return this.api.flow.libraryList(request)
       case 'flow.librarySave': return this.api.flow.librarySave(request)
       case 'flow.libraryDelete': return this.api.flow.libraryDelete(request)
+      case 'langflow.status': return this.api.langflow.status(request)
+      case 'langflow.start': return this.api.langflow.start(request)
+      case 'langflow.stop': return this.api.langflow.stop(request)
       case 'workspace.list': return this.api.workspace.list(request)
       case 'workspace.create': return this.api.workspace.create(request)
       case 'workspace.rename': return this.api.workspace.rename(request)

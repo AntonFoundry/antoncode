@@ -49,6 +49,11 @@ import {
   flowSaveValueSchema,
 } from '../api/flow.schema.ts'
 import {
+  langflowStartValueSchema,
+  langflowStatusValueSchema,
+  langflowStopValueSchema,
+} from '../api/langflow.schema.ts'
+import {
   workspaceArchiveSessionValueSchema,
   workspaceCreateValueSchema,
   workspaceDeleteValueSchema,
@@ -114,6 +119,9 @@ import { jobKillValueSchema } from '../api/jobs.schema.ts'
 export type {
   BlockWire, FlowEdgeWire, FlowNodeWire, FlowRunWire, FlowWire,
 } from '../api/index.ts'
+
+/** The LangFlow sidecar status snapshot (the embed's only wire record). */
+export type LangflowStatusView = ResponseValue<'langflow.status'>['status']
 export interface IApiClient {
   sessions: {
     list(payload: RequestPayload<'session.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.list'>>>
@@ -166,6 +174,11 @@ export interface IApiClient {
     libraryList(payload: RequestPayload<'flow.libraryList'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'flow.libraryList'>>>
     librarySave(payload: RequestPayload<'flow.librarySave'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'flow.librarySave'>>>
     libraryDelete(payload: RequestPayload<'flow.libraryDelete'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'flow.libraryDelete'>>>
+  }
+  langflow: {
+    status(payload: RequestPayload<'langflow.status'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'langflow.status'>>>
+    start(payload: RequestPayload<'langflow.start'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'langflow.start'>>>
+    stop(payload: RequestPayload<'langflow.stop'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'langflow.stop'>>>
   }
   workspace: {
     list(payload: RequestPayload<'workspace.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.list'>>>
@@ -263,6 +276,9 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'flow.libraryList': flowLibraryListValueSchema,
   'flow.librarySave': flowLibrarySaveValueSchema,
   'flow.libraryDelete': flowLibraryDeleteValueSchema,
+  'langflow.status': langflowStatusValueSchema,
+  'langflow.start': langflowStartValueSchema,
+  'langflow.stop': langflowStopValueSchema,
   'workspace.list': workspaceListValueSchema,
   'workspace.create': workspaceCreateValueSchema,
   'workspace.rename': workspaceRenameValueSchema,
@@ -539,6 +555,12 @@ export abstract class AbstractApiClient implements IApiClient {
     libraryList: (payload, signal) => this.callUnary('flow.libraryList', payload, signal),
     librarySave: (payload, signal) => this.callUnary('flow.librarySave', payload, signal),
     libraryDelete: (payload, signal) => this.callUnary('flow.libraryDelete', payload, signal),
+  }
+
+  readonly langflow: IApiClient['langflow'] = {
+    status: (payload, signal) => this.callUnary('langflow.status', payload, signal),
+    start: (payload, signal) => this.callUnary('langflow.start', payload, signal),
+    stop: (payload, signal) => this.callUnary('langflow.stop', payload, signal),
   }
 
   readonly workspace: IApiClient['workspace'] = {

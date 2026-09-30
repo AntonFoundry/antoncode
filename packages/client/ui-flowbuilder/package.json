@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-flowbuilder",
-  "description": "Workflows tab: editable flow canvas over the flow.* wire domain \u2014 palette, drag-to-connect typed ports, node inspector, run overlay, block library",
+  "description": "Workflows tab: the local LangFlow server embedded in a full-tab iframe — sidecar start/stop controls, live state pill, explicit starting/error states, over the langflow.* wire domain",
   "version": "0.1.0-rc.7",
   "publishConfig": {
     "access": "public"

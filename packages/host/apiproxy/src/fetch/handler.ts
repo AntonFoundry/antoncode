@@ -51,6 +51,11 @@ import {
   flowSaveRequestSchema,
 } from '../api/flow.schema.ts'
 import {
+  langflowStartRequestSchema,
+  langflowStatusRequestSchema,
+  langflowStopRequestSchema,
+} from '../api/langflow.schema.ts'
+import {
   workspaceArchiveSessionRequestSchema,
   workspaceCreateRequestSchema,
   workspaceDeleteRequestSchema,
@@ -144,6 +149,9 @@ const UNARY_ROUTES: UnaryRoutes = {
   'flow.libraryList': { schema: flowLibraryListRequestSchema, invoke: (api, r) => api.flow.libraryList(r) },
   'flow.librarySave': { schema: flowLibrarySaveRequestSchema, invoke: (api, r) => api.flow.librarySave(r) },
   'flow.libraryDelete': { schema: flowLibraryDeleteRequestSchema, invoke: (api, r) => api.flow.libraryDelete(r) },
+  'langflow.status': { schema: langflowStatusRequestSchema, invoke: (api, r) => api.langflow.status(r) },
+  'langflow.start': { schema: langflowStartRequestSchema, invoke: (api, r) => api.langflow.start(r) },
+  'langflow.stop': { schema: langflowStopRequestSchema, invoke: (api, r) => api.langflow.stop(r) },
   'workspace.list': { schema: workspaceListRequestSchema, invoke: (api, r) => api.workspace.list(r) },
   'workspace.create': { schema: workspaceCreateRequestSchema, invoke: (api, r) => api.workspace.create(r) },
   'workspace.rename': { schema: workspaceRenameRequestSchema, invoke: (api, r) => api.workspace.rename(r) },

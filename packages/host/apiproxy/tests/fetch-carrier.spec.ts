@@ -328,6 +328,11 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
       async librarySave() { return { rpcId: 'librarySave' as never, result: { ok: true as const, value: { block: { id: 'b', name: 'stub', kind: 'code', description: '', inputs: [], outputs: [], params: [], provenance: { createdAt: '' } } } } } },
       async libraryDelete() { return { rpcId: 'libraryDelete' as never, result: { ok: true as const, value: { deleted: true as const } } } },
     },
+    langflow: {
+      async status() { return { rpcId: 'status' as never, result: { ok: true as const, value: { status: { state: 'stopped' as const } } } } },
+      async start() { return { rpcId: 'start' as never, result: { ok: true as const, value: { status: { state: 'stopped' as const } } } } },
+      async stop() { return { rpcId: 'stop' as never, result: { ok: true as const, value: { status: { state: 'stopped' as const } } } } },
+    },
     orchestrator: {
       async board() { return { rpcId: 'board' as never, result: { ok: true as const, value: { items: [], archivedSessionIds: [], sessions: [] } } } },
       async act() { return { rpcId: 'act' as never, result: { ok: true as const, value: { accepted: true as const } } } },

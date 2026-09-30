@@ -158,6 +158,11 @@ function scriptedApi(overrides: {
       librarySave: r => ok(r, { block: { id: 'b', name: 'stub', kind: 'code', description: '', inputs: [], outputs: [], params: [], provenance: { createdAt: '' } } }),
       libraryDelete: r => ok(r, { deleted: true as const }),
     },
+    langflow: {
+      status: r => ok(r, { status: { state: 'stopped' as const } }),
+      start: r => ok(r, { status: { state: 'stopped' as const } }),
+      stop: r => ok(r, { status: { state: 'stopped' as const } }),
+    },
     orchestrator: {
       board: r => ok(r, { items: [], archivedSessionIds: [], sessions: [] }),
       act: r => ok(r, { accepted: true as const }),

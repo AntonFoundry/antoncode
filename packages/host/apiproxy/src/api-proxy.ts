@@ -36,6 +36,8 @@ import type { PresetBearingSession } from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-tools'
 // Declaration merge only: brings ctx.flowBuilder into this program.
 import type {} from '@deepseek-ai/dsh-flowbuilder-service'
+// Declaration merge only: brings ctx.langflow into this program.
+import type {} from '@deepseek-ai/dsh-langflow-sidecar'
 import type { BlockLibraryEntryRecord, FlowDefinitionRecord, FlowRunRecordRecord } from '@deepseek-ai/dsh-flowbuilder-domain'
 import type { BlockWire, FlowRunWire, FlowWire } from './api/index.ts'
 import type {
@@ -3108,6 +3110,23 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         } catch (error: unknown) {
           return flowError(request, error)
         }
+      },
+    },
+
+    langflow: {
+      // Thin projections over ctx.langflow: one method per lifecycle call;
+      // the sidecar's status snapshot is already wire-plain.
+      async status(request) {
+        return ok(request, { status: ctx.langflow.status() })
+      },
+
+      async start(request) {
+        return ok(request, { status: await ctx.langflow.start() })
+      },
+
+      async stop(request) {
+        await ctx.langflow.stop()
+        return ok(request, { status: ctx.langflow.status() })
       },
     },
 

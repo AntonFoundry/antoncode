@@ -2,26 +2,26 @@
 
 English
 
-The Workflows tab (`dagflow` entry of the conversation view slot, label "Workflows"/工作流): an editable canvas over the `flow.*` wire domain — flow list editing, a palette, drag-to-position node cards with typed in/out ports, a node inspector, save, run with a polling per-node status overlay, and the reusable block library.
+The Workflows tab (`dagflow` entry of the conversation view slot, label "Workflows"/工作流): the local [LangFlow](https://github.com/langflow-ai/langflow) server embedded in a full-tab iframe, over the `langflow.*` wire domain. The sidecar lifecycle (spawn, health, teardown) is owned by `@deepseek-ai/dsh-langflow-sidecar`; this package renders its status and forwards the user's start/stop gestures.
 
 ## Model Experience
 
-### Editable workflow canvas
+### LangFlow embed
 
 #### What the user sees
 
-The tab lists the user's saved workflows (name field, save button) and renders the selected definition as node cards connected by curved edges. The palette adds nodes of every executor kind; clicking an output port then an input port connects them (one edge per input port, enforced client-side too); the inspector edits title/kind/code (code and condition nodes get a code textarea; library nodes a block picker); Delete or Backspace removes the selection; the edge strip disconnects. Save writes through `flow.save` (wire rejections surface in the error strip); Run starts `flow.run` and polls `flow.runGet` every ~800 ms until terminal, tinting node borders by state and showing node errors and the run result. The library drawer lists `flow.libraryList` blocks, instantiates a block onto the canvas, and saves the selected node as a block via `flow.librarySave`.
+A slim control bar (state pill, Start/Stop, an open-in-new-window link while serving) above the LangFlow UI. First visit snapshots the sidecar state. Start shows the pill as "starting…" immediately — the underlying RPC resolves only at readiness, which can take minutes on a first run while uv downloads the LangFlow environment — and then mounts the iframe once the server answers. Stop tears the child down and returns to the stopped placeholder with the hint copy. Startup failures (launcher missing, early exit with the captured stderr tail, readiness timeout) render in the error strip and placeholder.
 
 #### Token effect
 
-None server-side beyond the `flow.*` RPCs the user triggers; the tab injects no prompts and registers no tools.
+None: the tab injects no prompts and registers no tools; only the user-triggered `langflow.status` / `langflow.start` / `langflow.stop` RPCs cross the wire.
 
 #### KV Cache effect
 
-None: canvas interactions are wire calls, never session-log content.
+None: embed interactions are wire calls, never session-log content.
 
 ## Known Limitations and Deferred Work
 
-- **No pan/zoom yet** — the canvas scrolls; pan and zoom controls (present in the old read-only projection) land with canvas polish.
-- **Params editing is read-only in the inspector** — param key/value rows render but the editor for adding params lands with canvas polish; code, kind, title, and block binding are fully editable.
-- **`agent` nodes cannot execute** — the backend executor is documented as unavailable (`dsh-flowbuilder-service` README); the canvas lets you place one but a run fails that node loudly.
+- **The custom canvas is gone** — the previous editable canvas over `flow.*` was removed in the LangFlow pivot (recoverable from git history); the `flow.*` wire domain, `flowBuilder` service, and model-facing tools remain for chat-driven flows and are not reachable from this tab.
+- **No session sync** — flows built in LangFlow live in its own database under the sidecar workdir; bridging chat-created flows into LangFlow's REST API is deferred.
+- **Single sidecar, fixed port** — one LangFlow server per app at the configured port; two browser tabs share the same server state.

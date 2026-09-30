@@ -72,7 +72,7 @@ export interface Config {
  */
 export class ApiProxyService extends Service implements ApiProxy {
   static inject = [
-    'agentDefaultModel', 'agents', 'attachments', 'directoryPicker', 'flowBuilder', 'llm', 'sessions', 'subagents',
+    'agentDefaultModel', 'agents', 'attachments', 'directoryPicker', 'flowBuilder', 'langflow', 'llm', 'sessions', 'subagents',
     'sessionQuery', 'tools', 'userQuestions', 'workspaceRegistry',
   ]
 
@@ -87,6 +87,7 @@ export class ApiProxyService extends Service implements ApiProxy {
   readonly subagents: ApiProxy['subagents']
   readonly orchestrator: ApiProxy['orchestrator']
   readonly flow: ApiProxy['flow']
+  readonly langflow: ApiProxy['langflow']
   readonly workspace: ApiProxy['workspace']
   readonly host: ApiProxy['host']
   readonly goals: ApiProxy['goals']
@@ -127,6 +128,7 @@ export class ApiProxyService extends Service implements ApiProxy {
     this.subagents = api.subagents
     this.orchestrator = api.orchestrator
     this.flow = api.flow
+    this.langflow = api.langflow
     this.workspace = api.workspace
     this.host = api.host
     this.goals = api.goals

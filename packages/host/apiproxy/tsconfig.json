@@ -30,6 +30,9 @@
       "path": "../../flowbuilder/flowbuilder-service"
     },
     {
+      "path": "../../flowbuilder/langflow-sidecar"
+    },
+    {
       "path": "../../api/remotes/tsconfig.host.json"
     },
     {
