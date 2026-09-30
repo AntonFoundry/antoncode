@@ -34,7 +34,7 @@ export interface ToolCallOwnerProps {
   block: ToolCallBlock
   /** Session workspace root for relative summaries. */
   cwd?: string | undefined
-  /** Open a Tool argument path through the Host. */
+  /** Open a Tool argument path: inline buffer split for viewer families, Host open otherwise. */
   openFile: (path: string) => void
   /** Inspect this call in the trajectory view when available. */
   inspect?: (() => void) | undefined

@@ -14,8 +14,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { PanelActions } from './service.ts'
 import { TopbarChrome, WmFrame } from './WmFrame.tsx'
 import { createLayoutStore, createScratchStore, createWmStore } from './stores.ts'
-import { ensureBuffer, firstLeafId, sessionBuffer, splitLeaf, swapBuffer } from './wm.ts'
-import { opensInline } from './file-view.ts'
+import { ensureBuffer, sessionBuffer, swapBuffer } from './wm.ts'
 import { watchHarnessBoot } from './bridge.ts'
 import { LayoutController } from './service.ts'
 import { ThemePresenter } from './theme-presenter.ts'
@@ -246,21 +245,10 @@ export function apply(ctx: ClientContext): void {
         const wm = wmStore.create()
         layout.attachWm(wm)
         const scratch = scratchStore.create()
-        // Inline file open: the same buffer-beside-the-focused-leaf flow the
-        // term command runs, driven from the inject closure over the wm
-        // store. Every opener-routed family lands here (text, markdown,
-        // image, video — file-view.ts keys); openPath diverts only the
-        // OS-open binary families first.
-        const openInline = (path: string): void => {
-          const snapshot = wm.store.getSnapshot()
-          const anchor = snapshot.focusedLeafId ?? firstLeafId(snapshot.tree)
-          if (anchor === undefined) return
-          const bufferId = `buffer:file:${path}`
-          const leafId = `leaf:${bufferId}`
-          wm.actions.setBuffers(ensureBuffer(snapshot.buffers, { id: bufferId, kind: 'file', path }))
-          wm.actions.setTree(splitLeaf(snapshot.tree, anchor, 'row', bufferId, leafId))
-          wm.actions.setFocus(leafId)
-        }
+        // Inline file open lives on the controller (ILayout.openFile): the
+        // same buffer-beside-the-focused-leaf flow, shared with every
+        // cross-plugin caller. The opener face below only keeps the routing
+        // decision's Host fallback.
         let previewOriginal: string | undefined
         return {
           hooks: { wm, scratch },
@@ -348,16 +336,13 @@ export function apply(ctx: ClientContext): void {
           listDirectory: (path?: string, opts?: { includeFiles?: boolean }, signal?: AbortSignal) =>
             ctx.workspaces.listDirectory(path, opts, signal),
           // The opener face: one routing decision for ido Enter and dired's
-          // open action alike. The OS-open binary families (file-view.ts)
-          // leave the app; everything else — text, markdown, image, video —
-          // opens inline as a `buffer:file:<path>` buffer beside the focused
-          // window, rendered by the `file.view` viewer its key dispatches to.
+          // open action alike, delegated to the controller's inline opener
+          // (ILayout.openFile — text, markdown, image, video split beside the
+          // focused window). The OS-open binary families (file-view.ts)
+          // leave the app through the workspaces service.
           openPath: (path: string): Promise<void> => {
-            if (!opensInline(path)) {
-              return ctx.workspaces.openPath(path)
-            }
-            openInline(path)
-            return Promise.resolve()
+            if (layout.openFile(path)) return Promise.resolve()
+            return ctx.workspaces.openPath(path)
           },
           // The inline viewers' binary-media face: the trust-fenced streaming
           // endpoint URL for one path (images and video render from it).

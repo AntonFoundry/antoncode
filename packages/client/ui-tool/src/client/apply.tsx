@@ -13,6 +13,7 @@ import { fileMutationToolview } from './tool/toolviews/file-mutation-row.tsx'
 import { readToolview } from './tool/toolviews/read-row.tsx'
 import { searchToolview } from './tool/toolviews/search-row.tsx'
 import { todoToolview } from './tool/toolviews/todo-row.tsx'
+import { planToolview } from './tool/toolviews/plan-row.tsx'
 import { webToolview } from './tool/toolviews/web-row.tsx'
 
 /** Required service: the slot registry that owns both Tool render seats. */
@@ -81,4 +82,5 @@ export function apply(ctx: ClientContext): void {
   ctx.plugin(webToolview)
   ctx.plugin(todoToolview)
   ctx.plugin(askQuestionToolview)
+  ctx.plugin(planToolview)
 }

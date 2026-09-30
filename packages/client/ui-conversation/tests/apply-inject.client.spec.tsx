@@ -57,7 +57,7 @@ async function bench() {
     summary: { title: 'R', displayTitle: 'R', cwd: '/proj' },
     session: sessionFake,
   })
-  const layoutFake = { openDetails: vi.fn(), closeDetails: vi.fn() }
+  const layoutFake = { openDetails: vi.fn(), closeDetails: vi.fn(), openFile: vi.fn(() => false) }
   runtime.provide('layout', layoutFake)
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.provide('locale', locale)
@@ -237,6 +237,20 @@ describe('conversation slot inject API', () => {
     await vi.waitFor(() => {
       expect(b.runtime.workspaces.calls).toContainEqual({ method: 'openPath', args: ['/proj/src/a.ts'] })
     })
+    // The inline-first routing tried the layout opener with the resolved path.
+    expect(b.layoutFake.openFile).toHaveBeenCalledWith('/proj/src/a.ts')
+    await b.runtime.dispose()
+  })
+
+  it('openFile (chat view face) opens inline through the layout and skips the Host open', async () => {
+    const b = await bench()
+    b.layoutFake.openFile.mockReturnValue(true)
+    const { injected } = b.chatViewApi(ROOT)
+    injected.openFile('implementation_plan.md')
+    await vi.waitFor(() => {
+      expect(b.layoutFake.openFile).toHaveBeenCalledWith('/proj/implementation_plan.md')
+    })
+    expect(b.runtime.workspaces.calls.some(c => c.method === 'openPath')).toBe(false)
     await b.runtime.dispose()
   })
 

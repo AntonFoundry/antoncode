@@ -414,7 +414,12 @@ export function apply(ctx: Context): void {
         fileMentions: owner => ctx.get('chatFileMentions')?.forClosing(owner),
         openFile: (path) => {
           const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd
-          void workspaces.openPath(resolveWorkspacePath(cwd, path)).catch(() => {
+          const resolved = resolveWorkspacePath(cwd, path)
+          // Inline-first: the layout's opener splits the focused leaf into a
+          // file buffer (the markdown plan opens beside the chat). Only the
+          // OS-open binary families fall through to the Host open.
+          if (layout.openFile(resolved)) return
+          void workspaces.openPath(resolved).catch(() => {
             // Host/OS open failures stay silent in the chat row; the native
             // app surfaces its own error dialog when the path is unusable.
           })

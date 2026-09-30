@@ -10,24 +10,33 @@
  */
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import type { createLayoutStore } from './stores.ts'
+import { opensInline } from './file-view.ts'
 import {
-  SIDEBAR_REATTACH_WEIGHT, WM_LEAF_DETAILS, WM_LEAF_SETTINGS, WM_LEAF_SIDEBAR, firstLeafId, findLeaf,
-  lastLeafId, removeLeaf, splitLeaf, type WmNode,
+  SIDEBAR_REATTACH_WEIGHT, WM_LEAF_DETAILS, WM_LEAF_SETTINGS, WM_LEAF_SIDEBAR, ensureBuffer, firstLeafId, findLeaf,
+  lastLeafId, removeLeaf, splitLeaf, type WmBuffer, type WmNode,
 } from './wm.ts'
 
 /** The layout store's bound action set (framework-baked, draft params peeled). */
 export type PanelActions = BoundActions<ReturnType<typeof createLayoutStore>>
 
 /**
- * The wm store face the controller needs: the current tree for its decisions
- * and the single write action. The engine store instance satisfies this
- * structurally; tests fake it with a plain object.
+ * The wm store face the controller needs: the current tree, buffer registry,
+ * and focus cursor for its decisions, and the write actions. The engine store
+ * instance satisfies this structurally; tests fake it with a plain object.
  */
 export interface WmTreeSource {
-  /** Read the current wm snapshot (tree included). */
-  getSnapshot(): { tree: WmNode }
-  /** Write a transformed tree back. */
-  actions: { setTree: (tree: WmNode) => void }
+  /** Read the current wm snapshot (tree, buffers, and focus included). */
+  getSnapshot(): {
+    tree: WmNode
+    buffers: WmBuffer[]
+    focusedLeafId: string | undefined
+  }
+  /** Write a transformed tree, replace the buffer registry, or move the focus. */
+  actions: {
+    setTree: (tree: WmNode) => void
+    setBuffers: (buffers: WmBuffer[]) => void
+    setFocus: (leafId: string) => void
+  }
 }
 
 /**
@@ -51,6 +60,15 @@ export interface ILayout {
   closeSettings(): void
   /** Toggle the settings window (closed ⟷ open). */
   toggleSettings(): void
+  /**
+   * Open one file path inline: split the focused leaf row-wise into a
+   * `buffer:file:<path>` buffer and focus it — the same flow the frame's
+   * opener face runs for inline families. Returns `false` when no wm store
+   * is attached or the path's family opens with the OS (`opensInline` is
+   * false); the caller owns the Host-open fallback then. `true` means the
+   * split happened and nothing further is needed.
+   */
+  openFile(path: string): boolean
 }
 
 /** Cross-plugin panel-action face (ctx.layout). */
@@ -173,6 +191,24 @@ export class LayoutController implements ILayout {
     const { tree } = this.#wm.getSnapshot()
     if (findLeaf(tree, WM_LEAF_SETTINGS) !== undefined) this.closeSettings()
     else this.openSettings()
+  }
+
+  /**
+   * Open one file path inline (see {@link ILayout.openFile}). Without an
+   * attached wm store this reports `false` — the caller falls back to the
+   * Host open, exactly as the frame face did before the face existed.
+   */
+  openFile(path: string): boolean {
+    if (this.#wm === undefined || !opensInline(path)) return false
+    const snapshot = this.#wm.getSnapshot()
+    const anchor = snapshot.focusedLeafId ?? firstLeafId(snapshot.tree)
+    if (anchor === undefined) return false
+    const bufferId = `buffer:file:${path}`
+    const leafId = `leaf:${bufferId}`
+    this.#wm.actions.setBuffers(ensureBuffer(snapshot.buffers, { id: bufferId, kind: 'file', path }))
+    this.#wm.actions.setTree(splitLeaf(snapshot.tree, anchor, 'row', bufferId, leafId))
+    this.#wm.actions.setFocus(leafId)
+    return true
   }
 
   /** Write one wm tree transform; the caller has checked the attachment. */

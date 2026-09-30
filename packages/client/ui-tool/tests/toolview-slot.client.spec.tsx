@@ -68,7 +68,7 @@ async function bench(nodes: ToolResultNode[]) {
   // ui-theme's Appearance row binds a durable scope through these two.
   runtime.provide('remote', { $on: () => () => {} })
   runtime.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
-  const layout = { openDetails: vi.fn(), closeDetails: vi.fn() }
+  const layout = { openDetails: vi.fn(), closeDetails: vi.fn(), openFile: vi.fn(() => false) }
   runtime.provide('layout', layout)
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.provide('locale', locale)
@@ -128,14 +128,30 @@ describe('keyed toolview hole through the real machinery', () => {
     await b.runtime.dispose()
   })
 
-  it('file-path clicks travel owner openFile → chat inject → workspaces.openPath', async () => {
+  it('file-path clicks travel owner openFile → chat inject: layout inline-first, Host fallback', async () => {
     const b = await bench([toolResult(3, 'c1', 'read', '{"path":"src/a.ts"}')])
     const view = b.runtime.renderRoot()
     view.getByText('src/a.ts').click()
+    // The inline-first routing tried the layout opener with the resolved path.
+    await vi.waitFor(() => {
+      expect(b.layout.openFile).toHaveBeenCalledWith('src/a.ts')
+    })
     expect(b.layout.openDetails).not.toHaveBeenCalled()
     await vi.waitFor(() => {
       expect(b.runtime.workspaces.calls).toContainEqual({ method: 'openPath', args: ['src/a.ts'] })
     })
+    await b.runtime.dispose()
+  })
+
+  it('a handled inline open skips the Host open', async () => {
+    const b = await bench([toolResult(3, 'c1', 'read', '{"path":"implementation_plan.md"}')])
+    b.layout.openFile.mockReturnValue(true)
+    const view = b.runtime.renderRoot()
+    view.getByText('implementation_plan.md').click()
+    await vi.waitFor(() => {
+      expect(b.layout.openFile).toHaveBeenCalledWith('implementation_plan.md')
+    })
+    expect(b.runtime.workspaces.calls.some(c => c.method === 'openPath')).toBe(false)
     await b.runtime.dispose()
   })
 
