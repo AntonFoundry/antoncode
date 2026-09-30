@@ -14,10 +14,15 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply as themeApply, inject as themeInject, ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
 import { apply, inject, LayoutController } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { apply as nodeApply } from '@deepseek-ai/dsh-client-ui-layout'
+import { THEME_STORAGE_KEY } from '@deepseek-ai/dsh-client-ui-layout/src/client/themes.ts'
 import * as invariant from '@deepseek-ai/dsh-client-ui-layout/invariant'
 
 beforeEach(() => {
   document.head.querySelectorAll('meta[name="theme-color"]').forEach((node) => { node.remove() })
+  document.body.removeAttribute('data-ds-dark-theme')
+  document.body.removeAttribute('data-ds-theme')
+  document.body.removeAttribute('style')
+  window.localStorage.clear()
 })
 
 async function bench() {
@@ -100,6 +105,7 @@ describe('ui-layout client apply', () => {
     theme.setTheme('dark')
     expect(document.documentElement.style.colorScheme).toBe('dark')
     expect(document.body.hasAttribute('data-ds-dark-theme')).toBe(true)
+    expect(document.body.getAttribute('data-ds-theme')).toBe('dark')
     expect(document.head.querySelector('meta[name="theme-color"]')).toBe(themeColorMeta)
     await fiber.dispose()
     expect(document.documentElement.style.colorScheme).toBe('')
@@ -110,6 +116,27 @@ describe('ui-layout client apply', () => {
     theme.setTheme('dark')
     expect(document.documentElement.style.colorScheme).toBe('')
     expect(document.body.hasAttribute('data-ds-dark-theme')).toBe(false)
+  })
+
+  it('boots the Aqua default under a system preference; a stored palette id wins', async () => {
+    // Fresh boot: no stored id, and the stubbed scope leaves the default
+    // `system` preference (jsdom has no matchMedia, so system resolves light)
+    // — the Aqua default applies without being persisted.
+    const fresh = await bench()
+    const fiber = fresh.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    expect(document.body.getAttribute('data-ds-theme')).toBe('macos')
+    const theme = fresh.ctx.get('theme') as ThemeRuntime
+    expect(theme.getTheme().preference).toBe('macos')
+    await fiber.dispose()
+
+    // A persisted load-theme choice beats the default.
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'nord')
+    const stored = await bench()
+    const storedFiber = stored.ctx.plugin({ inject: [...inject], apply })
+    await storedFiber.await()
+    expect(document.body.getAttribute('data-ds-theme')).toBe('nord')
+    await storedFiber.dispose()
   })
 
   it('teardown unwinds the service, the root registration, and the child declarations', async () => {

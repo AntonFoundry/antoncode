@@ -18,6 +18,124 @@ import type { ThemeDefinition } from '@deepseek-ai/dsh-client-ui-theme/client'
 /** One palette entry: token name → the palette's scheme-fixed CSS value. */
 type Palette = Record<string, string>
 
+/**
+ * macOS Aqua (light): the Apple light-appearance materials — systemGray6
+ * window base, white raised cards, systemBlue (`#007aff`) as the signature
+ * accent and mode-line fill, traffic-light state hues (systemRed/Green/Orange),
+ * overlay scrollbars, and soft large macOS card shadows.
+ */
+const macos: Palette = {
+  '--dsw-alias-bg-base': '#f2f2f6',
+  '--dsw-alias-bg-layer-1': '#ffffff',
+  '--dsw-alias-bg-layer-2': '#f7f7fa',
+  '--dsw-alias-bg-layer-3': '#ffffff',
+  '--dsw-alias-bg-overlay': '#f5f5f8',
+  '--dsw-alias-bg-module-platform': '#e9e9ee',
+  '--dsw-alias-bg-multi-select': '#e9e9ee',
+  '--dsw-alias-bg-skeleton': 'rgba(0, 0, 0, 0.05)',
+  '--dsw-alias-border-l1': 'rgba(0, 0, 0, 0.08)',
+  '--dsw-alias-border-l2': 'rgba(0, 0, 0, 0.12)',
+  '--dsw-alias-border-l3': 'rgba(0, 0, 0, 0.16)',
+  '--dsw-alias-border-l4': 'rgba(0, 0, 0, 0.2)',
+  '--dsw-alias-brand-primary': '#007aff',
+  '--dsw-alias-brand-text': '#1d1d1f',
+  '--dsw-alias-mode-line-active': '#007aff',
+  '--dsw-alias-button-primary-hover': '#0071e3',
+  '--dsw-alias-interactive-bg-hover': 'rgba(0, 0, 0, 0.05)',
+  '--dsw-alias-interactive-bg-active': 'rgba(0, 0, 0, 0.09)',
+  '--dsw-alias-interactive-bg-hover-solid': '#e8e8ed',
+  '--dsw-alias-interactive-bg-hover-accent': 'rgba(0, 122, 255, 0.12)',
+  '--dsw-alias-label-primary': '#1d1d1f',
+  '--dsw-alias-label-secondary': '#6e6e73',
+  '--dsw-alias-label-tertiary': '#8e8e93',
+  '--dsw-alias-label-caption': '#aeaeb2',
+  '--dsw-alias-state-error-primary': '#ff3b30',
+  '--dsw-alias-state-success-primary': '#34c759',
+  '--dsw-alias-state-warn-primary': '#ff9500',
+  '--dsw-alias-scrollbar-bg-l1': 'rgba(0, 0, 0, 0.22)',
+  '--dsw-alias-scrollbar-bg-l2': 'rgba(0, 0, 0, 0.28)',
+  '--dsw-alias-scrollbar-hover-l1': 'rgba(0, 0, 0, 0.36)',
+  '--dsw-alias-scrollbar-hover-l2': 'rgba(0, 0, 0, 0.42)',
+  '--dsw-alias-tooltip-bg': 'rgba(45, 45, 47, 0.9)',
+  '--dsw-alias-toast-bg': '#2c2c2e',
+  '--dsw-alias-markdown-citation': '#f0f0f3',
+  '--dsw-alias-markdown-code-block': '#f6f6f8',
+  '--dsw-alias-markdown-code-segment-selected': '#ffffff',
+  '--dsw-alias-markdown-inline-code': '#ececf0',
+  '--dsw-alias-markdown-tag': '#eef0f4',
+  '--dsw-specific-bubble-highlight': '#d6e6ff',
+  '--dsw-specific-bubble': '#eaf1ff',
+  '--dsw-specific-input-major': '#ffffff',
+  '--dsw-specific-selector': '#f0f0f3',
+  '--dsw-specific-sidebar-fill': '#ececf1',
+  '--dsw-specific-sidebar-nav-item-active-accent': 'rgba(0, 122, 255, 0.14)',
+  '--dsw-specific-sidebar-nav-item-active': '#e3e3e9',
+  '--dsw-specific-sidebar-nav-item-hover': '#e9e9ee',
+  '--dsw-shadow-lv1': '0 1px 3px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.05)',
+  '--dsw-shadow-lv1-blur': '0 4px 16px rgba(0, 0, 0, 0.05)',
+  '--dsw-shadow-lv2': '0 2px 8px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.09)',
+  '--dsw-shadow-lv3': '0 0 1px rgba(0, 0, 0, 0.12), 0 16px 48px rgba(0, 0, 0, 0.16)',
+}
+
+/**
+ * macOS Aqua (dark): the Apple dark-appearance materials — systemGray6/5
+ * elevated surfaces, systemBlue dark (`#0a84ff`) accent, dark traffic-light
+ * state hues, light overlay scrollbars, and the heavier shadows dark chrome
+ * needs to separate near-black layers.
+ */
+const macosDark: Palette = {
+  '--dsw-alias-bg-base': '#1c1c1e',
+  '--dsw-alias-bg-layer-1': '#28282a',
+  '--dsw-alias-bg-layer-2': '#232325',
+  '--dsw-alias-bg-layer-3': '#2c2c2e',
+  '--dsw-alias-bg-overlay': '#2c2c2e',
+  '--dsw-alias-bg-module-platform': '#232326',
+  '--dsw-alias-bg-multi-select': '#2c2c2e',
+  '--dsw-alias-bg-skeleton': 'rgba(255, 255, 255, 0.07)',
+  '--dsw-alias-border-l1': 'rgba(255, 255, 255, 0.08)',
+  '--dsw-alias-border-l2': 'rgba(255, 255, 255, 0.13)',
+  '--dsw-alias-border-l3': 'rgba(255, 255, 255, 0.18)',
+  '--dsw-alias-border-l4': 'rgba(255, 255, 255, 0.24)',
+  '--dsw-alias-brand-primary': '#0a84ff',
+  '--dsw-alias-brand-text': '#f5f5f7',
+  '--dsw-alias-mode-line-active': '#0a84ff',
+  '--dsw-alias-button-primary-hover': '#409cff',
+  '--dsw-alias-interactive-bg-hover': 'rgba(255, 255, 255, 0.07)',
+  '--dsw-alias-interactive-bg-active': 'rgba(255, 255, 255, 0.11)',
+  '--dsw-alias-interactive-bg-hover-solid': '#2c2c2e',
+  '--dsw-alias-interactive-bg-hover-accent': 'rgba(10, 132, 255, 0.2)',
+  '--dsw-alias-label-primary': '#f5f5f7',
+  '--dsw-alias-label-secondary': '#a1a1a6',
+  '--dsw-alias-label-tertiary': '#7c7c81',
+  '--dsw-alias-label-caption': '#636366',
+  '--dsw-alias-state-error-primary': '#ff453a',
+  '--dsw-alias-state-success-primary': '#30d158',
+  '--dsw-alias-state-warn-primary': '#ff9f0a',
+  '--dsw-alias-scrollbar-bg-l1': 'rgba(255, 255, 255, 0.25)',
+  '--dsw-alias-scrollbar-bg-l2': 'rgba(255, 255, 255, 0.32)',
+  '--dsw-alias-scrollbar-hover-l1': 'rgba(255, 255, 255, 0.4)',
+  '--dsw-alias-scrollbar-hover-l2': 'rgba(255, 255, 255, 0.46)',
+  '--dsw-alias-tooltip-bg': 'rgba(58, 58, 60, 0.95)',
+  '--dsw-alias-toast-bg': '#3a3a3c',
+  '--dsw-alias-markdown-citation': '#2e2e33',
+  '--dsw-alias-markdown-code-block': '#26262a',
+  '--dsw-alias-markdown-code-segment-selected': '#1c1c1e',
+  '--dsw-alias-markdown-inline-code': '#333338',
+  '--dsw-alias-markdown-tag': '#2c2c31',
+  '--dsw-specific-bubble-highlight': '#31405a',
+  '--dsw-specific-bubble': '#26303f',
+  '--dsw-specific-input-major': '#28282a',
+  '--dsw-specific-selector': '#2a2a2d',
+  '--dsw-specific-sidebar-fill': '#212123',
+  '--dsw-specific-sidebar-nav-item-active-accent': 'rgba(10, 132, 255, 0.22)',
+  '--dsw-specific-sidebar-nav-item-active': '#323236',
+  '--dsw-specific-sidebar-nav-item-hover': '#2a2a2d',
+  '--dsw-shadow-lv1': '0 1px 3px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3)',
+  '--dsw-shadow-lv1-blur': '0 4px 16px rgba(0, 0, 0, 0.35)',
+  '--dsw-shadow-lv2': '0 2px 8px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.45)',
+  '--dsw-shadow-lv3': '0 0 1px rgba(0, 0, 0, 0.5), 0 16px 48px rgba(0, 0, 0, 0.55)',
+}
+
 /** compos "paper" — the light design default from themes.scm. */
 const paper: Palette = {
   '--dsw-alias-bg-base': '#fdfcf8',
@@ -165,9 +283,11 @@ const tokyoNight: Palette = {
 /** The doom-emacs library ported from this machine (65 palettes). */
 import { DOOM_THEMES } from './doom-themes.ts'
 
-/** The curated compos palettes, plus the ported doom library. */
+/** The curated compos palettes, the macOS Aqua pair, and the ported doom library. */
 const CURATED_THEMES: readonly ThemeDefinition[] = [
   { id: 'anton-dark', colorScheme: 'dark', tokens: {} },
+  { id: 'macos', colorScheme: 'light', tokens: macos },
+  { id: 'macos-dark', colorScheme: 'dark', tokens: macosDark },
   { id: 'paper', colorScheme: 'light', tokens: paper },
   { id: 'sepia', colorScheme: 'light', tokens: sepia },
   { id: 'midnight', colorScheme: 'dark', tokens: midnight },

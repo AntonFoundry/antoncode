@@ -369,13 +369,22 @@ export function apply(ctx: ClientContext): void {
   // state through the getter once, then event-driven only; no React path.
   ctx.effect(() => {
     const presenter = new ThemePresenter()
-    // The compos-style palette: register the named themes, then restore the
+    // The compos-style palette: register the named themes, restore the
     // persisted choice (localStorage — the theme service persists only the
-    // light/dark/system preference, not registered ids).
+    // light/dark/system preference, not registered ids), or fall back to the
+    // Aqua default while the user has made no explicit choice.
     const disposers = LAYOUT_THEMES.map(t => ctx.theme.register(t))
     const stored = (() => { try { return window.localStorage.getItem(THEME_STORAGE_KEY) } catch { return null } })()
     if (stored !== null && LAYOUT_THEMES.some(t => t.id === stored)) {
       try { ctx.theme.setTheme(stored) } catch { /* a race with registration is not user-facing */ }
+    } else if (ctx.theme.getTheme().preference === 'system') {
+      // The default experience: the macOS Aqua palettes follow the OS
+      // appearance while the user has made no explicit choice. A built-in
+      // Light/Dark selection persists through the theme service and suppresses
+      // this on later boots; System returns to the Aqua default. Not persisted
+      // here — an explicit load-theme choice remains the only sticky palette.
+      const aqua = ctx.theme.getTheme().active.colorScheme === 'dark' ? 'macos-dark' : 'macos'
+      try { ctx.theme.setTheme(aqua) } catch { /* a race with registration is not user-facing */ }
     }
     presenter.apply(ctx.theme.getTheme())
     const off = ctx.on('theme/change', (snapshot) => {

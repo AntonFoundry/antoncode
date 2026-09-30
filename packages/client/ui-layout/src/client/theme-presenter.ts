@@ -1,7 +1,8 @@
 /**
  * Global theme DOM applier: projects the resolved ThemeSnapshot onto the
  * document — `html { color-scheme }` for native UA chrome (scrollbars, form
- * controls), `body[data-ds-dark-theme]` for the token palette, the active
+ * controls), `body[data-ds-dark-theme]` for the token palette,
+ * `body[data-ds-theme]` for theme-scoped refinement sheets, the active
  * theme's alias-token overrides as inline CSS variables on body, and one
  * presenter-owned `meta[name="theme-color"]` for surrounding browser UI. Pure
  * DOM writes, no React involvement; the presenter only ever retracts what it
@@ -11,6 +12,9 @@ import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
 
 /** Body attribute selecting the dark base palette in the token stylesheets. */
 export const DARK_ATTRIBUTE = 'data-ds-dark-theme'
+
+/** Body attribute carrying the active theme id for theme-scoped stylesheets. */
+export const THEME_ATTRIBUTE = 'data-ds-theme'
 
 /** Applies theme snapshots to the document; one instance per plugin fiber. */
 export class ThemePresenter {
@@ -28,10 +32,11 @@ export class ThemePresenter {
   /**
    * Project a snapshot onto the document: set root `color-scheme` and the body
    * palette attribute from `active.colorScheme` (never the id — `system` is
-   * resolved upstream), then replace the previously applied token variables
-   * with `active.tokens`. Browser theme-color metadata follows the computed
-   * body background after those writes, so the rendered palette remains the
-   * color authority.
+   * resolved upstream), publish the active theme id on `body[data-ds-theme]`
+   * for theme-scoped refinement sheets, then replace the previously applied
+   * token variables with `active.tokens`. Browser theme-color metadata follows
+   * the computed body background after those writes, so the rendered palette
+   * remains the color authority.
    * @param snapshot - resolved theme snapshot from ctx.theme.
    */
   apply(snapshot: ThemeSnapshot): void {
@@ -40,6 +45,7 @@ export class ThemePresenter {
     const body = document.body
     if (scheme === 'dark') body.setAttribute(DARK_ATTRIBUTE, '')
     else body.removeAttribute(DARK_ATTRIBUTE)
+    body.setAttribute(THEME_ATTRIBUTE, snapshot.active.id)
     for (const name of this.appliedTokens) body.style.removeProperty(name)
     this.appliedTokens = []
     for (const [name, value] of Object.entries(snapshot.active.tokens)) {
@@ -55,6 +61,7 @@ export class ThemePresenter {
     document.documentElement.style.removeProperty('color-scheme')
     const body = document.body
     body.removeAttribute(DARK_ATTRIBUTE)
+    body.removeAttribute(THEME_ATTRIBUTE)
     for (const name of this.appliedTokens) body.style.removeProperty(name)
     this.appliedTokens = []
     this.themeColorMeta.remove()
