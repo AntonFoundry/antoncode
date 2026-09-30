@@ -1836,6 +1836,14 @@ export function WmFrame({
         if (e.key === 'Escape' || (e.ctrlKey && (e.key === 'g' || e.key === 'G'))) {
           e.preventDefault()
           runCommand('cancel')
+          return
+        }
+        // Alt-only letter chords never mean text entry while a prompt is
+        // open (an M-x re-open, or the Option-symbol a macOS layout
+        // produces): consume them so the produced character cannot leak
+        // into the filter. Arrow and bare keys keep their native motion.
+        if (e.altKey && !e.ctrlKey && !e.metaKey && e.code.startsWith('Key')) {
+          e.preventDefault()
         }
         return
       }

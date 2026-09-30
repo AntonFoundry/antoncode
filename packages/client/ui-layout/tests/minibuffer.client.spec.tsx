@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { Minibuffer } from '@deepseek-ai/dsh-client-ui-layout/src/client/Minibuffer.tsx'
 import type { MinibufferCandidate } from '@deepseek-ai/dsh-client-ui-layout/src/client/Minibuffer.tsx'
 
@@ -74,11 +74,16 @@ describe('Minibuffer workspace sections', () => {
     expect(onExecute).toHaveBeenCalledWith('buffer:session:s1')
   })
 
-  it('filters by section text: a workspace name narrows to its sessions', () => {
+  it('filters by section text: a workspace name narrows to its sessions', async () => {
     const { container } = render(
       <Minibuffer prompt="Switch buffer" candidates={grouped()} onExecute={vi.fn()} onCancel={vi.fn()} />,
     )
     const input = container.querySelector('input')!
+    // Real typing shares no task with the keystroke that opened the prompt:
+    // cross the opening-swallow guard's 0ms window (Minibuffer drops a first
+    // input event inside that window as the opening keystroke's own leaked
+    // character) before typing.
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
     fireEvent.change(input, { target: { value: 'roadrash' } })
     const buttons = [...container.querySelectorAll('button')]
     expect(buttons.map(b => b.textContent)).toEqual(['Session three'])

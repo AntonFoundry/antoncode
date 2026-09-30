@@ -513,13 +513,24 @@ function press(key: string, mods: PressMods = {}): void {
 }
 
 /** Type into a React-controlled input (native value setter + input event). */
-function typeInput(input: HTMLInputElement, value: string): void {
+function typeInputValue(input: HTMLInputElement, value: string): void {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
   act(() => {
     input.focus()
     setter.call(input, value)
     input.dispatchEvent(new Event('input', { bubbles: true }))
   })
+}
+
+/**
+ * Real typing into a freshly opened minibuffer prompt. Advances the (faked)
+ * clock past the opening-swallow guard's 0ms disarm window first: a human
+ * keystroke never shares the opening keystroke's task, and this is what makes
+ * the call the "real typing" path rather than the leaked opening character.
+ */
+function typeInput(input: HTMLInputElement, value: string): void {
+  act(() => { vi.advanceTimersByTime(1) })
+  typeInputValue(input, value)
 }
 
 beforeEach(() => {
@@ -928,12 +939,18 @@ describe('per-window session buffers', () => {
     expect(findLeaf(wm.getSnapshot().tree, WM_LEAF_SIDEBAR)?.buffer).toBe('sidebar')
   })
 
-  it('C-x b labels session candidates with their workspace', () => {
+  it('C-x b groups session candidates under their workspace', () => {
     extraSessions.push({ id: 's-1', displayTitle: 'Alpha' })
     const { getByLabelText } = mountFrame(undefined, [{ id: 'ws-1', title: 'Project One', sessionIds: ['s-1'] }])
     press('x', { ctrlKey: true })
     press('b')
-    expect(getByLabelText('Switch buffer').parentElement?.textContent).toContain('Project One · Alpha')
+    // The session row renders grouped: a non-row header carries the
+    // workspace title, the candidate row beneath it the session title.
+    const minibuffer = getByLabelText('Switch buffer').closest('[data-minibuffer]')
+    expect(minibuffer?.querySelector('li > div')?.textContent).toBe('Project One')
+    // Row labels lead their button (the hint span trails); 'Alpha' is a row.
+    const labels = [...minibuffer?.querySelectorAll('button') ?? []].map(b => b.querySelector('span')?.textContent)
+    expect(labels).toContain('Alpha')
   })
 
   it('two chat windows report layoutSpan multi; one reports single', () => {
@@ -1175,6 +1192,37 @@ describe('Emacs chords (window listener)', () => {
     act(() => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
     // The default focus cursor is the first leaf (sidebar): single keeps it.
     expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR])
+  })
+
+  it('M-x swallows the opening keystroke\'s leaked character; later typing lands', () => {
+    const { getByLabelText } = mountFrame()
+    press('x', { altKey: true, code: 'KeyX' })
+    const input = getByLabelText('M-x') as HTMLInputElement
+    // The leak: the Option+X keystroke's own character arrives as the first
+    // input event inside the opening keystroke's task (the faked clock has
+    // not advanced, so the opening-swallow guard is still armed) — it must
+    // not seed the filter.
+    typeInputValue(input, '≈')
+    expect(input.value).toBe('')
+    // Past the 0ms swallow window (the clock advance runs the disarm timer),
+    // real typing lands normally.
+    typeInput(input, 'del')
+    expect(input.value).toBe('del')
+  })
+
+  it('M-x re-open with a prompt open is consumed (preventDefault), never typed', () => {
+    const { getByLabelText } = mountFrame()
+    press('x', { altKey: true, code: 'KeyX' })
+    const input = getByLabelText('M-x') as HTMLInputElement
+    // The re-open chord while the palette is up: the frame consumes the
+    // alt-only letter chord in its already-open branch, so the produced
+    // character (the key name here) cannot reach the filter.
+    const reopen = new KeyboardEvent('keydown', { key: '≈', altKey: true, code: 'KeyX', bubbles: true, cancelable: true })
+    const prevent = vi.spyOn(reopen, 'preventDefault')
+    act(() => { window.dispatchEvent(reopen) })
+    expect(prevent).toHaveBeenCalled()
+    expect(getByLabelText('M-x')).toBeTruthy()
+    expect(input.value).toBe('')
   })
 
   it('C-x k kills the focused buffer without typing — current leads the list', () => {
