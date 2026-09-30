@@ -17,6 +17,8 @@ export type PluginsSettingsLocaleKey =
   | 'contextTitle' | 'contextDescription' | 'contextEndpoint' | 'contextEndpointHint' | 'contextApiKey' | 'contextApiKeyHint'
   | 'contextProjectId' | 'contextProjectIdHint' | 'contextMaxSurfaceRatio' | 'contextMaxSurfaceRatioHint'
   | 'contextWindowTokens' | 'contextWindowTokensHint' | 'contextEvictorEnabled' | 'contextEvictorEnabledHint'
+  | 'contextMemoryOverride' | 'contextMemoryOverrideHint' | 'contextPagingOverride' | 'contextPagingOverrideHint'
+  | 'contextCodeMapOverride' | 'contextCodeMapOverrideHint'
   | 'subagentModelTitle' | 'subagentModelDescription'
   | 'subagentModelDefault' | 'subagentModelDefaultHint'
   | 'subagentModelInherit' | 'subagentModelCustom' | 'subagentModelLoading'
@@ -82,6 +84,12 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   contextWindowTokensHint: 'Explicit model window; leave blank to resolve it from the selected model.',
   contextEvictorEnabled: 'Automatic eviction',
   contextEvictorEnabledHint: 'Disable this while actively developing to keep the live conversation unchanged.',
+  contextMemoryOverride: 'Prompt override — memory contract',
+  contextMemoryOverrideHint: 'Replaces the c0ntext memory-contract section of the system prompt. Leave blank to use the built-in text; saves apply on the next turn without a restart.',
+  contextPagingOverride: 'Prompt override — paging reminder',
+  contextPagingOverrideHint: 'Replaces the high-context-pressure paging reminder. Leave blank to use the built-in text.',
+  contextCodeMapOverride: 'Prompt override — code-map guidance',
+  contextCodeMapOverrideHint: 'Replaces the ripwire code-map guidance section. Leave blank to use the built-in text.',
   subagentModelTitle: 'Subagent model',
   subagentModelDescription: 'Which model delegated children run when a delegation does not name its own.',
   subagentModelDefault: 'Default child model',
@@ -152,6 +160,12 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   contextWindowTokensHint: '显式模型窗口；留空则从当前模型解析。',
   contextEvictorEnabled: '自动驱逐',
   contextEvictorEnabledHint: '主动开发时可关闭，避免改写当前对话。',
+  contextMemoryOverride: '提示词覆盖 — 记忆契约',
+  contextMemoryOverrideHint: '替换系统提示中的 c0ntext 记忆契约段落。留空使用内置文本；保存后下一轮生效，无需重启。',
+  contextPagingOverride: '提示词覆盖 — 分页提醒',
+  contextPagingOverrideHint: '替换高上下文压力下的分页提醒。留空使用内置文本。',
+  contextCodeMapOverride: '提示词覆盖 — 代码地图指引',
+  contextCodeMapOverrideHint: '替换 ripwire 代码地图指引段落。留空使用内置文本。',
   subagentModelTitle: '子 Agent 模型',
   subagentModelDescription: '委派调用未指定模型时，子 agent 使用哪个模型。',
   subagentModelDefault: '默认子模型',

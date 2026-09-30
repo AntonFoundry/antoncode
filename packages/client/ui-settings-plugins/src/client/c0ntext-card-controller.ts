@@ -13,6 +13,12 @@ export interface C0ntextSettings {
   dreamProvider?: string
   dreamModel?: string
   dreamIdleHours?: number
+  /** Replacement text for the `c0ntext:memory` prompt section; empty = built-in. */
+  memoryContractOverride?: string
+  /** Replacement text for the `c0ntext:paging` prompt section; empty = built-in. */
+  pagingReminderOverride?: string
+  /** Replacement text for the `c0ntext:code-map` prompt section; empty = built-in. */
+  codeMapGuidanceOverride?: string
 }
 
 export interface C0ntextCardState extends CardShell {
@@ -25,6 +31,9 @@ export interface C0ntextCardState extends CardShell {
   dreamProvider: CardFieldState
   dreamModel: CardFieldState
   dreamIdleHours: CardFieldState
+  memoryContractOverride: CardFieldState
+  pagingReminderOverride: CardFieldState
+  codeMapGuidanceOverride: CardFieldState
 }
 
 export interface C0ntextCardFace extends CardActions {
@@ -46,6 +55,10 @@ export class C0ntextCardController {
       textField('endpoint'), textField('apiKey'), textField('projectId'), numberField('maxSurfaceRatio'),
       numberField('windowTokens'), booleanField('evictorEnabled'),
       textField('dreamProvider'), textField('dreamModel'), numberField('dreamIdleHours'),
+      // Prompt-section overrides: prose long enough to want textareas, but the
+      // same staged-text contract — an empty draft clears the stored override,
+      // which is exactly "use the built-in text" again.
+      textField('memoryContractOverride'), textField('pagingReminderOverride'), textField('codeMapGuidanceOverride'),
     ])
     this.store = this.form.bind(() => this.projection())
   }
@@ -62,6 +75,9 @@ export class C0ntextCardController {
       dreamProvider: this.form.field('dreamProvider'),
       dreamModel: this.form.field('dreamModel'),
       dreamIdleHours: this.form.field('dreamIdleHours'),
+      memoryContractOverride: this.form.field('memoryContractOverride'),
+      pagingReminderOverride: this.form.field('pagingReminderOverride'),
+      codeMapGuidanceOverride: this.form.field('codeMapGuidanceOverride'),
     }
   }
 

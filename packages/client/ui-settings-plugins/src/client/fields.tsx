@@ -48,27 +48,60 @@ export function ValueField(props: FieldProps & {
   numeric?: boolean
   /** Placeholder shown while the draft is empty. */
   placeholder?: string
+  /**
+   * Render a resizable textarea instead of a single-line input, for long
+   * prose overrides. What drafts the field accepts is still its spec's call.
+   */
+  multiline?: boolean
+  /** Visible text rows when `multiline` is set. */
+  rows?: number
 }) {
+  const head = (
+    <div className={css.head}>
+      <label className={css.label} htmlFor={props.id}>{props.label}</label>
+      {props.overridden
+        ? (
+          <span className={css.badges}>
+            <span className={css.badge}>{props.overriddenLabel}</span>
+            <button
+              type="button"
+              className={css.reset}
+              disabled={props.disabled}
+              onClick={props.onReset}
+            >
+              {props.resetLabel}
+            </button>
+          </span>
+        )
+        : null}
+    </div>
+  )
+  const foot = (
+    <p className={props.invalid ? css.invalid : css.hint}>
+      {props.invalid ? props.invalidLabel : props.hint}
+    </p>
+  )
+  if (props.multiline === true) {
+    return (
+      <div className={css.field}>
+        {head}
+        <textarea
+          id={props.id}
+          className={props.invalid ? css.inputInvalid : css.input}
+          rows={props.rows ?? 5}
+          {...props.invalid ? { 'aria-invalid': true } : {}}
+          value={props.text}
+          placeholder={props.placeholder ?? ''}
+          disabled={props.disabled}
+          onChange={(event) => { props.onEdit(event.target.value) }}
+        />
+        {foot}
+      </div>
+    )
+  }
   return (
     <div className={css.field}>
-      <div className={css.head}>
-        <label className={css.label} htmlFor={props.id}>{props.label}</label>
-        {props.overridden
-          ? (
-            <span className={css.badges}>
-              <span className={css.badge}>{props.overriddenLabel}</span>
-              <button
-                type="button"
-                className={css.reset}
-                disabled={props.disabled}
-                onClick={props.onReset}
-              >
-                {props.resetLabel}
-              </button>
-            </span>
-          )
-          : null}
-      </div>
+      {head}
       <input
         id={props.id}
         className={props.invalid ? css.inputInvalid : css.input}
@@ -80,9 +113,7 @@ export function ValueField(props: FieldProps & {
         disabled={props.disabled}
         onChange={(event) => { props.onEdit(event.target.value) }}
       />
-      <p className={props.invalid ? css.invalid : css.hint}>
-        {props.invalid ? props.invalidLabel : props.hint}
-      </p>
+      {foot}
     </div>
   )
 }

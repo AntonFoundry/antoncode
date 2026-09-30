@@ -5,12 +5,13 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { stubSettingsScope, type StubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
-import { CardForm, mapField, numberField, textField } from '../src/client/card-form.ts'
+import { CardForm, numberField, textField } from '../src/client/card-form.ts'
 import { AgentLoopCardController, type AgentLoopSettings } from '../src/client/agent-loop-card-controller.ts'
 import { BashCardController, type BashSettings } from '../src/client/bash-card-controller.ts'
 import { ConfigurablePluginsTabController } from '../src/client/tab-store.ts'
 import { SubagentModelCardController, type SubagentModelSettings } from '../src/client/subagent-model-card-controller.ts'
 import { WebSearchCardController, type WebSearchSettings } from '../src/client/web-search-card-controller.ts'
+import { C0ntextCardController } from '../src/client/c0ntext-card-controller.ts'
 
 /** Make the stub behave like a Host that accepts every write. */
 function acceptWrites<T>(host: StubSettingsScope<T>): void {
@@ -708,5 +709,25 @@ describe('ConfigurablePluginsTabController', () => {
 
     expect(controller.inject().hooks.configurablePlugins.getSnapshot())
       .toEqual({ loaded: true, namespaces: [] })
+  })
+})
+
+describe('C0ntextCardController prompt overrides', () => {
+  function overrideForm() {
+    const host = stubSettingsScope<Record<string, unknown>>()
+    const subject = new C0ntextCardController(host.scope)
+    host.publish({ status: 'ready', writable: true, value: {}, base: {}, user: {} })
+    acceptWrites(host)
+    return { host, subject }
+  }
+
+  it('round-trips a prose override through save as the trimmed text', async () => {
+    const { host, subject } = overrideForm()
+    const face = subject.inject()
+
+    face.edit('memoryContractOverride', '  Custom memory contract.  ')
+    await face.save()
+
+    expect(host.set.mock.calls).toEqual([['memoryContractOverride', 'Custom memory contract.']])
   })
 })
