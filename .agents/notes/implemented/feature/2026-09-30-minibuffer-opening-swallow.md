@@ -1,14 +1,14 @@
-# Minibuffer opening-swallow guard (stray M-x character)
+# Agent Note: Minibuffer opening-swallow guard (stray M-x character)
 
-Date: 2026-09-30 · Area: client/ui-layout · Status: implemented
+Status: implemented
 
-## Symptom
+## Problem
 
 Opening `M-x` (Option+X) seeded a small stray character into the freshly
 opened filter input. The `load-theme` prompt, opened via Enter from the
 palette, was clean — the character came from the Option+X keystroke itself.
 
-## Mechanism
+## Decision
 
 The frame's capture-phase `keydown` listener calls `preventDefault()` before
 dispatching `m-x`, but the browser focuses the minibuffer input during the
@@ -20,7 +20,7 @@ through), so the produced character landed in the input. A second, engine-
 independent leak: pressing M-x while a prompt was already open hit the
 listener's already-open early return, which never called `preventDefault`.
 
-## Fix
+## Consequences
 
 1. `Minibuffer`: an opening-swallow guard — armed at mount, disarmed by a
    0ms timer and by the input's own first keydown. The first input event
@@ -31,7 +31,7 @@ listener's already-open early return, which never called `preventDefault`.
    chords (`preventDefault`) before returning — Option+letter never means
    text entry in a filter; arrows and bare keys keep native motion.
 
-## Test story
+## Alternatives considered
 
 - `wm.client.spec.tsx`: the leak is simulated as a first input event at
   mount instant (faked clock unadvanced) and must not seed the filter; a

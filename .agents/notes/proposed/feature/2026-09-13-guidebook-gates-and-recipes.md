@@ -1,9 +1,11 @@
-# Guidebook, gates, and recipes — agent knowledge system
+# Agent Note: Guidebook, gates, and recipes — agent knowledge system
 
-Status: proposed. Class: feature. This note records the decision to build an
-agent knowledge system with five pieces (verdicts, gates, global recipe
-store, promotion pipeline, dream-cycle consolidation) plus a tier-3 upstream
-recipe repository, and the design invariants the implementation must keep.
+Status: proposed
+
+Class: feature. This note records the decision to build an agent knowledge
+system with five pieces (verdicts, gates, global recipe store, promotion
+pipeline, dream-cycle consolidation) plus a tier-3 upstream recipe
+repository, and the design invariants the implementation must keep.
 
 ## Problem
 
@@ -15,7 +17,7 @@ and never asks what must be true before a dangerous action; and compounding
 — procedures that succeeded once should be findable cross-repo by later
 sessions.
 
-## The pieces
+## Proposal
 
 1. **Verdicts** — a few one-line laws in the workspace `AGENT.md` the
    session always loads. Content, not code; ships first so gates have
@@ -61,14 +63,14 @@ lookup) and pieces 3–6 are not yet built.
 - Gate triggers are cheap and deterministic; the tuning budget goes to
   firing on dangerous actions without nagging.
 
-## What was given up
+## Risks
 
 File-based workflow cards (the px0 pattern) — rejected because the
 consumer is agents, not people; records give cross-repo scope, semantic
 retrieval, bitemporal provenance, and demotion natively. The escape hatch
 for a load-bearing recipe is promotion of its text into `AGENT.md`.
 
-## Required verification
+## Acceptance criteria
 
 - Gates: a keyless snapshot showing a `git push` tool call denied with the
   checklist in the tool result, and the unmodified retry after checks (the
