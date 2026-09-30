@@ -29,7 +29,7 @@ Both `plan_write` and `exit_plan_mode` return presentation metadata with `locati
 
 ### 3. Subagent Delegation Discipline in Prompts and Presets
 
-- `TODO_TREE_DISCIPLINE` in `@deepseek-ai/dsh-tools`: Instructs the model that when tasks are non-trivial (≥ 3 to-dos, multi-phase, cross-package), it must delegate codebase reconnaissance and plan drafting to a subagent (`subagent`) to preserve primary context, save the plan with `plan_write`, and link the plan artifact.
+- `TODO_TREE_DISCIPLINE` in `@deepseek-ai/dsh-tools`: Instructs the model that when tasks are non-trivial (≥ 3 to-dos, multi-phase, cross-package), it must record the plan with `plan_write` BEFORE writing the todo tree — delegating codebase reconnaissance to a subagent (`subagent`) while delegation works, and authoring the plan inline from current knowledge when it fails ([plan-before-tree amendment](../bug-fix/2026-09-30-todo-plan-gate-plan-before-tree.md)).
 - `tool-subagent` prompt section: Instructs the model on delegating architectural exploration and implementation planning to subagents for large tasks.
 - Agent presets (`standard`, `code`, `cordis`, and base patch): Updated `plan-mode` instructions to delegate exploration to subagents and record plans cleanly via `exit_plan_mode` and `implementation_plan.md`.
 
@@ -49,10 +49,8 @@ The `todoPlanGate` in `gate-policy` is extended with:
 
 ## Consequences
 
-Large project workflows are guided to follow a disciplined plan-first pattern:
-1. Model creates a todo tree via `todo_write`.
-2. When ≥ 3 tasks exist, mutation tools are gated.
-3. Model spawns a subagent via `subagent` to explore the codebase and draft the implementation plan.
-4. Subagent or parent agent records the plan to disk and session log via `plan_write` (or `exit_plan_mode`).
-5. User clicks the plan link to inspect the formatted plan in the right-hand editor buffer split.
-6. Mutation tools are unblocked, and the agent executes tasks guided by both the standing todo tree and standing implementation plan.
+Large project workflows follow a disciplined plan-first pattern ([plan-before-tree amendment](../bug-fix/2026-09-30-todo-plan-gate-plan-before-tree.md)):
+1. Model forms the plan and records it via `plan_write` (or `exit_plan_mode`) BEFORE any `todo_write` for non-trivial work; delegation to a `subagent` drafts the plan while delegation works, and inline authoring replaces a failed delegation.
+2. Model creates the todo tree via `todo_write`, so a tree at or above the gate threshold always has its implementation plan already recorded.
+3. Mutation tools therefore stay unblocked; the user clicks the plan link to inspect the formatted plan in the right-hand editor buffer split.
+4. The agent executes tasks guided by both the standing todo tree and the standing implementation plan.

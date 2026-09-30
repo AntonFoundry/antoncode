@@ -289,10 +289,11 @@ export function apply(ctx: Context, config: Config): void {
 
   const implementationPlanDenial = (toolName: string, todoCount: number, minTodos: number): string =>
     `Gate 'todo-plan' blocked this call. Your todo tree contains ${todoCount} tasks (threshold: ${minTodos}), `
-    + 'which indicates a non-trivial project. For tasks of this scale, you must create a detailed implementation plan first. '
-    + 'Delegate codebase exploration and plan authoring to a subagent (using `subagent`) to preserve context, '
-    + 'record the plan with `plan_write` (or `exit_plan_mode`), and link the plan artifact (e.g. `implementation_plan.md`). '
-    + `Then retry \`${toolName}\`. \`subagent\` and \`plan_write\` are never gated.`
+    + 'which indicates a non-trivial project: a detailed implementation plan must be recorded BEFORE the todo tree '
+    + 'grows past this threshold. Record it now with `plan_write` (or an approved `exit_plan_mode`), and link the plan '
+    + 'artifact (e.g. `implementation_plan.md`). Delegate codebase exploration to a `subagent` to draft the plan while '
+    + 'delegation works, but never stall on a failed or unavailable subagent: author the plan from current knowledge '
+    + `and record it. Then retry \`${toolName}\`. \`subagent\` and \`plan_write\` are never gated.`
 
   const getTodoPlanState = (execution: Readonly<ToolExecution>):
   { hasTodo: boolean; todoCount: number; hasImplementationPlan: boolean } => {

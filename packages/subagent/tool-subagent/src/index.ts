@@ -581,9 +581,10 @@ export function apply(ctx: Context, config: Config): void {
           + `pieces — separate files, surfaces, or concerns — fan them out to parallel ${toolName} calls in one `
           + 'assistant message instead of doing them inline. Keep only genuinely single-step or strictly '
           + 'sequential actions inline; do not wait to be asked to parallelize.'
-          + ` For relatively large tasks, multi-phase projects, or complex sets of to-dos, spawn a ${toolName} `
-          + 'to research the codebase and author a comprehensive implementation plan before mutating code, '
-          + 'then record the plan with plan_write.'
+          + ' For relatively large tasks, multi-phase projects, or complex sets of to-dos, delegate codebase '
+          + `exploration to a ${toolName} to draft the implementation plan — but the plan never waits on `
+          + 'delegation: if the subagent fails or is unavailable, author the plan from current knowledge and '
+          + 'record it with plan_write before writing the todo tree or mutating code.'
           + (backgroundEnabled && continuable
             ? ` Use ${toolName} in the background by default: start the independent delegations together and `
               + 'continue useful work while they run. Set `run_in_background: false` only when your next action '

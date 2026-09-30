@@ -179,8 +179,8 @@ describe('todo-plan gate', () => {
     expect(results[0]!.text).toBe('planned')
     expect(results[1]!.isError).toBe(true)
     expect(results[1]!.text).toContain("Gate 'todo-plan' blocked this call. Your todo tree contains 3 tasks (threshold: 3)")
-    expect(results[1]!.text).toContain('create a detailed implementation plan first')
-    expect(results[1]!.text).toContain('Delegate codebase exploration and plan authoring to a subagent')
+    expect(results[1]!.text).toContain('a detailed implementation plan must be recorded BEFORE the todo tree')
+    expect(results[1]!.text).toContain('never stall on a failed or unavailable subagent')
     expect(results[1]!.text).toContain('plan_write')
   })
 

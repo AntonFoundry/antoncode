@@ -55,18 +55,26 @@ export const Config: z<Config> = z.object({
 /**
  * The model-facing description's shared body. Ported from OpenCode's todowrite prompt
  * (`todowrite.txt`): plan first, write the tree, execute sequentially — with the nesting,
- * delegation, and lifecycle discipline spelled out where the model reads it.
+ * delegation, and lifecycle discipline spelled out where the model reads it. The plan is
+ * recorded with plan_write before the tree for non-trivial work, matching the todo-plan
+ * gate's threshold so a large tree never blocks execution tools mid-flight.
  */
 const DESCRIPTION_HEAD =
   'Create and manage a structured task tree for the current work. Send the ENTIRE '
   + 'tree every call — it REPLACES the previous tree (there are no partial updates, no per-node '
   + 'edits). Use it to plan multi-step work and show progress. Using this tool is the DEFAULT, '
-  + 'not an opt-in: before executing any work with more than one step, write the tree FIRST and '
-  + 'execute against it — do not wait for the user to ask for a plan.'
+  + 'not an opt-in: before executing any work with more than one step, plan first — recording '
+  + 'the plan with plan_write first when the work is non-trivial (3 or more tasks, multi-phase, '
+  + 'cross-package, or architectural) — then write the tree and execute against it; do not wait '
+  + 'for the user to ask for a plan.'
 
 const DESCRIPTION_WORKFLOW = `
 Workflow: plan first, then encode the plan as a todo tree, then execute it one node at a time:
-1. Plan: analyze the request and form a step-by-step plan before taking any action.
+1. Plan: analyze the request and form a step-by-step plan before taking any action. For
+   non-trivial work (3 or more tasks, multi-phase, cross-package, or architectural), record
+   the plan with plan_write BEFORE calling this tool; if a delegating subagent fails or is
+   unavailable, author the plan from current knowledge and proceed inline — never stall on
+   a failed delegation.
 2. Write the tree: convert the plan into this tool's \`todos\` argument. Nest child tasks under a
    parent when they are its concrete phases or subtasks — up to three levels (task, child,
    grandchild); never deeper, and keep simple work flat rather than nesting for its own sake.
@@ -76,10 +84,10 @@ Workflow: plan first, then encode the plan as a todo tree, then execute it one n
 
 Persistence: the tree OUTLIVES the turn — the user sees it between and across messages, so it
 is the standing plan, not a per-turn scratchpad. At the start of any new user request that
-involves multi-step work, write the tree FIRST (rewriting or extending the standing one) before
-any other tool call. When later phases or follow-ups remain, leave them \`pending\` on the tree
-rather than reporting everything completed; an all-settled tree is only correct when the whole
-request is genuinely finished.`
+involves multi-step work, plan first (plan_write for non-trivial work), then write the tree
+(rewriting or extending the standing one) before any other tool call. When later phases or
+follow-ups remain, leave them \`pending\` on the tree rather than reporting everything
+completed; an all-settled tree is only correct when the whole request is genuinely finished.`
 
 const DESCRIPTION_DELEGATION =
   '\nDelegation: every agent session owns its own tree. As the orchestrator, keep the top-level '
