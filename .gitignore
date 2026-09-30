@@ -44,3 +44,20 @@ dist/
 # whisper.cpp cmake build tree (reproducible from Vox/voxkit/ext/whisper.cpp)
 apps/anton-bridge/macos/vendor/build/
 !apps/anton-bridge/macos/vendor/lib/
+
+# Local agent-session residue and accidental in-source build output — never shipped.
+/.commandcode/
+/.tmp/
+/command-code-session-*.html
+/dsh-session/
+/gemini_not_replying.md
+/apps/web/dist */
+apps/anton-bridge/macos/vendor/build */
+packages/subprocess/subprocess/src/*.js
+packages/subprocess/subprocess/src/*.js.map
+packages/subprocess/subprocess/src/*.d.ts
+packages/subprocess/subprocess/src/*.d.ts.map
+vendor/timer/src/*.js
+vendor/timer/src/*.js.map
+vendor/timer/src/*.d.ts
+vendor/timer/src/*.d.ts.map
