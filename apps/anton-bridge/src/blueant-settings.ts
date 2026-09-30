@@ -16,6 +16,12 @@ export interface BlueantModelSelection {
   model: string
 }
 
+/** A local wake-word model: one of the catalog engines, referenced by bare model filename. */
+export interface BlueantWakeModelSelection {
+  engine: 'whisper' | 'parakeet'
+  file: string
+}
+
 export interface BlueantSettings {
   /** Ambient journal capture + triage loops run only when true. */
   journalEnabled: boolean
@@ -25,15 +31,43 @@ export interface BlueantSettings {
   mobileIngestEnabled: boolean
   /** Preferred model for new Blueant sessions; null = harness default. */
   model: BlueantModelSelection | null
+  /** Wake recognition model; defaults to Whisper Small. */
+  wakeModel: BlueantWakeModelSelection
+  /** Preferred input device id; null = system default microphone. */
+  inputDevice: string | null
 }
 
-const DEFAULT_SETTINGS: BlueantSettings = { journalEnabled: true, wakeWordEnabled: false, mobileIngestEnabled: true, model: null }
+const DEFAULT_WAKE_MODEL: BlueantWakeModelSelection = { engine: 'whisper', file: 'ggml-small.bin' }
+
+const DEFAULT_SETTINGS: BlueantSettings = {
+  journalEnabled: true, wakeWordEnabled: false, mobileIngestEnabled: true, model: null,
+  wakeModel: DEFAULT_WAKE_MODEL, inputDevice: null,
+}
 
 function settingsPath(): string {
   return join(homedir(), 'Library', 'Application Support', 'Anton', 'blueant', 'settings.json')
 }
 
 let current: BlueantSettings = loadSettings()
+
+/**
+ * A wake model is accepted only when the engine is in the catalog and the
+ * file is a bare `.bin` filename: the app resolves files inside its own
+ * models directory, so a path-bearing or foreign-extension value must never
+ * be persisted.
+ */
+export function isWakeModelSelection(value: unknown): value is BlueantWakeModelSelection {
+  if (typeof value !== 'object' || value === null) return false
+  const candidate = value as BlueantWakeModelSelection
+  if (candidate.engine !== 'whisper' && candidate.engine !== 'parakeet') return false
+  if (typeof candidate.file !== 'string' || candidate.file === '') return false
+  if (candidate.file.includes('/') || candidate.file.includes('\\') || candidate.file.includes('..')) return false
+  return candidate.file.endsWith('.bin')
+}
+
+function isInputDeviceId(value: unknown): value is string {
+  return typeof value === 'string' && value !== ''
+}
 
 function loadSettings(): BlueantSettings {
   try {
@@ -42,7 +76,12 @@ function loadSettings(): BlueantSettings {
     const wakeWordEnabled = typeof raw.wakeWordEnabled === 'boolean' ? raw.wakeWordEnabled : DEFAULT_SETTINGS.wakeWordEnabled
     const mobileIngestEnabled = typeof raw.mobileIngestEnabled === 'boolean' ? raw.mobileIngestEnabled : DEFAULT_SETTINGS.mobileIngestEnabled
     const model = isModelSelection(raw.model) ? raw.model : null
-    return { journalEnabled, wakeWordEnabled, mobileIngestEnabled, model }
+    // An invalid stored wake model or microphone falls back to the default
+    // rather than failing the load: settings are user data, and the app can
+    // always run on the built-in model and system microphone.
+    const wakeModel = isWakeModelSelection(raw.wakeModel) ? raw.wakeModel : DEFAULT_WAKE_MODEL
+    const inputDevice = isInputDeviceId(raw.inputDevice) ? raw.inputDevice : null
+    return { journalEnabled, wakeWordEnabled, mobileIngestEnabled, model, wakeModel, inputDevice }
   } catch {
     return { ...DEFAULT_SETTINGS }
   }
@@ -55,7 +94,7 @@ function isModelSelection(value: unknown): value is BlueantModelSelection {
 }
 
 export function getBlueantSettings(): BlueantSettings {
-  return { ...current }
+  return { ...current, wakeModel: { ...current.wakeModel } }
 }
 
 export function updateBlueantSettings(patch: Partial<BlueantSettings>): BlueantSettings {
@@ -64,6 +103,8 @@ export function updateBlueantSettings(patch: Partial<BlueantSettings>): BlueantS
     wakeWordEnabled: typeof patch.wakeWordEnabled === 'boolean' ? patch.wakeWordEnabled : current.wakeWordEnabled,
     mobileIngestEnabled: typeof patch.mobileIngestEnabled === 'boolean' ? patch.mobileIngestEnabled : current.mobileIngestEnabled,
     model: patch.model === null || isModelSelection(patch.model) ? patch.model : current.model,
+    wakeModel: isWakeModelSelection(patch.wakeModel) ? patch.wakeModel : current.wakeModel,
+    inputDevice: patch.inputDevice === undefined ? current.inputDevice : (isInputDeviceId(patch.inputDevice) ? patch.inputDevice : null),
   }
   const path = settingsPath()
   try {
@@ -76,7 +117,7 @@ export function updateBlueantSettings(patch: Partial<BlueantSettings>): BlueantS
     // when the disk write fails; the next successful write re-persists.
     current = next
   }
-  return { ...current }
+  return getBlueantSettings()
 }
 
 /** Cheap flag read for the journal loops' per-tick guard. */
