@@ -68,6 +68,8 @@
 
 .block :where(pre) {
   font: var(--dsl-code-block-content-font);
+  /* User monospace size (ui-theme font row). */
+  font-size: var(--dsw-font-size-code, 12px);
   padding: 16px;
   margin: 0 !important;
   overflow-x: auto;

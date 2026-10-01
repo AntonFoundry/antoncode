@@ -3,26 +3,32 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-import { injectBootTheme } from './boot-theme.ts'
+import { injectBootTheme, type BootFonts } from './boot-theme.ts'
 import {
-  DEFAULT_PREFERENCE, THEME_SETTINGS_NAMESPACE, ThemeSettingsSchema,
-  type ThemePreference, type ThemeSettings,
+  DEFAULT_MONO_FONT, DEFAULT_MONO_SIZE, DEFAULT_PREFERENCE, THEME_SETTINGS_NAMESPACE,
+  ThemeSettingsSchema, type ThemeSettings,
 } from './theme-settings.ts'
 
 export {
-  DEFAULT_PREFERENCE, THEME_PREFERENCE_FIELD, THEME_PREFERENCES, THEME_SETTINGS_NAMESPACE,
-  type ThemePreference, type ThemeSettings,
+  DEFAULT_MONO_FONT, DEFAULT_MONO_SIZE, DEFAULT_PREFERENCE, MONO_FONTS, MONO_FONT_FIELD,
+  MONO_SIZE_FIELD, MONO_SIZE_RANGE, THEME_PREFERENCE_FIELD, THEME_PREFERENCES,
+  THEME_SETTINGS_NAMESPACE, isMonoFont, monoFontStack,
+  type MonoFontOption, type ThemePreference, type ThemeSettings,
 } from './theme-settings.ts'
 
 const THEME_NAMESPACE = settingsNamespace(THEME_SETTINGS_NAMESPACE)
 
-/** Read the registered preference or use the schema default without a settings provider. */
-function readPreference(ctx: Context): ThemePreference {
+/** Read the registered section or the schema defaults without a settings provider. */
+function readSection(ctx: Context): ThemeSettings {
   const settings = ctx.get('settings')
-  if (settings === undefined) return DEFAULT_PREFERENCE
+  if (settings === undefined) {
+    return { preference: DEFAULT_PREFERENCE, monoFont: DEFAULT_MONO_FONT, monoSize: DEFAULT_MONO_SIZE }
+  }
   const section = settings.get(THEME_NAMESPACE) as ThemeSettings | undefined
-  if (section === undefined) return DEFAULT_PREFERENCE
-  return section.preference
+  if (section === undefined) {
+    return { preference: DEFAULT_PREFERENCE, monoFont: DEFAULT_MONO_FONT, monoSize: DEFAULT_MONO_SIZE }
+  }
+  return section
 }
 
 /**
@@ -36,7 +42,11 @@ export function apply(ctx: Context): void {
   })
   ctx.inject(['webServer'], (httpCtx) => {
     httpCtx.effect(
-      () => httpCtx.webServer.tapIndex(html => injectBootTheme(html, readPreference(ctx))),
+      () => httpCtx.webServer.tapIndex((html) => {
+        const section = readSection(ctx)
+        const fonts: BootFonts = { monoFont: section.monoFont, monoSize: section.monoSize }
+        return injectBootTheme(html, section.preference, fonts)
+      }),
       'client-ui-theme: initial theme bootstrap',
     )
   })

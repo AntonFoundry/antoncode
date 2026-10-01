@@ -75,9 +75,12 @@ export function TerminalView(props: TerminalViewProps) {
       const faces = facesRef.current
       const tokens = faces.themeTokens()
 
+      // User mono size preference (ui-theme font row) when resolved, else 13.
+      const sizeVar = Number.parseInt(
+        getComputedStyle(document.documentElement).getPropertyValue('--dsw-font-size-code'), 10)
       const term = new Terminal({
         cursorBlink: true,
-        fontSize: 13,
+        fontSize: sizeVar > 0 ? sizeVar : 13,
         // The Nerd Fonts installed on this machine carry lsd's icon glyphs;
         // Apple Color Emoji renders emoji; the system mono is the fallback.
         fontFamily: '\u0027FiraCode Nerd Font Mono\u0027, \u0027FiraCode Nerd Font\u0027, \u0027Hack Nerd Font Mono\u0027, \u0027Apple Color Emoji\u0027, ui-monospace, SFMono-Regular, Menlo, monospace',

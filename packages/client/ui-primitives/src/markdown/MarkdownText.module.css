@@ -140,6 +140,8 @@
 .markdown pre {
   margin: 16px 0;
   font-family: var(--ds-font-family-code);
+  /* User monospace size (ui-theme font row). */
+  font-size: var(--dsw-font-size-code, 12px);
   overflow: auto;
 }
 

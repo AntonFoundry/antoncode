@@ -4,8 +4,10 @@
  * `prefers-color-scheme`, and publishes immutable snapshots; it never touches
  * the DOM — ui-layout's presenter consumes the resolved snapshot. The Host
  * settings scope loads and stores the preference in the user-settings
- * document. The plugin also registers the Appearance preference row into the
- * settings General section — the theme feature owns its own settings surface.
+ * document. The plugin also registers the Appearance preference row and the
+ * Font row (monospace family + size, applied as `--ds-font-family-code` /
+ * `--dsw-font-size-code` on the document root) into the settings General
+ * section — the theme feature owns its own settings surface.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
@@ -17,6 +19,10 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { AppearanceRowInjected } from './AppearanceRow.tsx'
 import { AppearanceRow } from './AppearanceRow.tsx'
+import type { FontRowInjected } from './FontRow.tsx'
+import { FontRow } from './FontRow.tsx'
+import { createFontRowStore } from './font-store.ts'
+import { FontRuntime, type FontSnapshot } from './font-runtime.ts'
 import { createAppearanceRowStore } from './settings-store.ts'
 import { en, zh, type ThemeKey } from './locales.ts'
 import {
@@ -25,7 +31,10 @@ import {
 } from '../theme-settings.ts'
 
 export type { AppearanceRowComponentProps, AppearanceRowInjected } from './AppearanceRow.tsx'
+export type { FontRowComponentProps, FontRowInjected } from './FontRow.tsx'
 export type { AppearanceRowState } from './settings-store.ts'
+export type { FontRowState } from './font-store.ts'
+export type { FontSnapshot, FontSelection } from './font-runtime.ts'
 export type { ThemeKey } from './locales.ts'
 export type { ThemePreference, ThemeSettings } from '../theme-settings.ts'
 
@@ -103,6 +112,7 @@ export interface ThemeTokenInspection {
 declare module '@deepseek-ai/cordis' {
   interface Context {
     theme: ThemeRuntime
+    font: FontRuntime
   }
   interface Events {
     /**
@@ -112,6 +122,13 @@ declare module '@deepseek-ai/cordis' {
      * @mode emit
      */
     'theme/change'(snapshot: ThemeSnapshot): void
+    /**
+     * Monospace font selection changed (family or size switched, or the
+     * settings scope adopted a durable change from another surface).
+     * @param snapshot - Current immutable font snapshot.
+     * @mode emit
+     */
+    'font/change'(snapshot: FontSnapshot): void
   }
 }
 
@@ -386,6 +403,8 @@ export function apply(ctx: ClientContext): void {
   const host = ctx.settingsScope.bind<ThemeSettings>({ namespace: THEME_SETTINGS_NAMESPACE })
   const theme = new ThemeRuntime(ctx, host)
   ctx.provide('theme', theme)
+  const fonts = new FontRuntime(ctx, host)
+  ctx.provide('font', fonts)
 
   ctx.effect(() => ctx.locale.register(SETTINGS_NS, { zh, en }), 'ui-theme: settings row dictionaries')
 
@@ -412,4 +431,27 @@ export function apply(ctx: ClientContext): void {
     locale: SETTINGS_NS,
     inject: injected,
   }, AppearanceRow))
+
+  const fontStore = createFontRowStore()
+  let fontBound: BoundActions<typeof fontStore> | undefined
+  const syncFont = (snapshot: FontSnapshot): void => {
+    fontBound?.sync(snapshot.monoFont, snapshot.monoSize, snapshot.revision)
+  }
+  ctx.on('font/change', syncFont)
+  const fontInjected = (actions: BoundActions<typeof fontStore>): FontRowInjected => {
+    fontBound = actions
+    syncFont(fonts.getFont())
+    return {
+      setMonoFont: (id) => { fonts.setMonoFont(id) },
+      setMonoSize: (size) => { fonts.setMonoSize(size) },
+    }
+  }
+  ctx.slots.inject('settings.general.item', () => ctx.slots.register({
+    name: 'settings.general.item',
+    id: 'fonts',
+    order: 11,
+    store: fontStore,
+    locale: SETTINGS_NS,
+    inject: fontInjected,
+  }, FontRow))
 }
