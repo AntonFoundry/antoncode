@@ -34,7 +34,11 @@ async function bench(isLoopback = true) {
   const namespace = () => ({
     ns: THEME_SETTINGS_NAMESPACE,
     schema: ThemeSettingsSchema.toJSON(),
-    value: { preference, monoFont: 'monaco', monoSize: 15 },
+    value: {
+      preference,
+      uiFamily: 'system', uiScale: 100, chatScale: 100,
+      monoFont: 'monaco', monoSize: 15, termSize: 13,
+    },
     applies: 'live' as const,
     secrets: [],
     revision: 0,

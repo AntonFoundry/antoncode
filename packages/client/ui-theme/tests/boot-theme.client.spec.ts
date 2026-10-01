@@ -27,8 +27,12 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   document.documentElement.style.removeProperty('color-scheme')
+  document.documentElement.style.removeProperty('--dsw-font-family')
+  document.documentElement.style.removeProperty('--dsh-zoom-ui')
+  document.documentElement.style.removeProperty('--dsh-zoom-chat')
   document.documentElement.style.removeProperty('--ds-font-family-code')
   document.documentElement.style.removeProperty('--dsw-font-size-code')
+  document.documentElement.style.removeProperty('--dsh-font-size-term')
   document.body.removeAttribute(DARK_ATTRIBUTE)
 })
 
@@ -67,18 +71,31 @@ describe('theme boot index transform', () => {
     expect(document.body.hasAttribute(DARK_ATTRIBUTE)).toBe(false)
   })
 
-  it('embeds the durable monospace selection as pre-paint CSS vars', () => {
+  it('embeds the durable font selection as pre-paint CSS vars', () => {
     mockSystemDark(false)
-    executeBootstrap('dark', undefined, { monoFont: 'menlo', monoSize: 18 })
-    expect(document.documentElement.style.getPropertyValue('--ds-font-family-code')).toContain('Menlo')
-    expect(document.documentElement.style.getPropertyValue('--dsw-font-size-code')).toBe('18px')
+    executeBootstrap('dark', undefined, {
+      uiFamily: 'georgia', uiScale: 120, chatScale: 90,
+      monoFont: 'menlo', monoSize: 18, termSize: 16,
+    })
+    const style = document.documentElement.style
+    expect(style.getPropertyValue('--dsw-font-family')).toContain('Georgia')
+    expect(style.getPropertyValue('--dsh-zoom-ui')).toBe('1.2')
+    expect(style.getPropertyValue('--dsh-zoom-chat')).toBe('0.75')
+    expect(style.getPropertyValue('--ds-font-family-code')).toContain('Menlo')
+    expect(style.getPropertyValue('--dsw-font-size-code')).toBe('18px')
+    expect(style.getPropertyValue('--dsh-font-size-term')).toBe('16px')
   })
 
-  it('defaults to Monaco 15 when no font selection was persisted', () => {
+  it('defaults to the shipped selection when no font selection was persisted', () => {
     mockSystemDark(false)
     executeBootstrap()
-    expect(document.documentElement.style.getPropertyValue('--ds-font-family-code')).toContain('Monaco')
-    expect(document.documentElement.style.getPropertyValue('--dsw-font-size-code')).toBe('15px')
+    const style = document.documentElement.style
+    expect(style.getPropertyValue('--dsw-font-family')).toContain('-apple-system')
+    expect(style.getPropertyValue('--dsh-zoom-ui')).toBe('1')
+    expect(style.getPropertyValue('--dsh-zoom-chat')).toBe('1')
+    expect(style.getPropertyValue('--ds-font-family-code')).toContain('Monaco')
+    expect(style.getPropertyValue('--dsw-font-size-code')).toBe('15px')
+    expect(style.getPropertyValue('--dsh-font-size-term')).toBe('13px')
   })
 
   it('appends the script to a body-less fragment', () => {

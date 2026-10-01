@@ -7,7 +7,10 @@
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+// Type-only: the ui-theme Context merge carrying the `font/change` event.
+import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import { createBroadcastStore } from './broadcast.js'
+import { createTermFontStore } from './term-font.js'
 import { TerminalView } from './TerminalView.js'
 
 export const inject = ['slots', 'connection', 'theme']
@@ -29,6 +32,13 @@ export function apply(ctx: ClientContext): void {
     window.addEventListener('ui-terminal:toggle-broadcast', onToggle)
     return () => { window.removeEventListener('ui-terminal:toggle-broadcast', onToggle) }
   }, 'ui-terminal: multi-cursor toggle event')
+
+  // Live font selection: mirror the ui-theme `font/change` event into the
+  // term-font store (hooks compartment) so mounted views re-fit their xterm.
+  const termFont = createTermFontStore().create()
+  ctx.on('font/change', (snapshot) => {
+    termFont.actions.sync(snapshot.termSize, snapshot.monoFont)
+  })
 
   ctx.slots.inject('terminal.view', () => ctx.slots.register({
     name: 'terminal.view',
@@ -52,7 +62,7 @@ export function apply(ctx: ClientContext): void {
         workspacePath: owner?.workspacePath,
         onSessionCreated: owner?.onSessionCreated,
         broadcastActions: broadcast.actions,
-        hooks: { broadcast },
+        hooks: { broadcast, termFont },
       }
     },
   }, TerminalView))

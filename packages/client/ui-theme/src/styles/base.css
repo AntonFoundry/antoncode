@@ -8,9 +8,14 @@
     'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   --ds-font-family-code: Monaco, 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas,
     'Liberation Mono', Menlo, Courier, 'PingFang SC', 'Microsoft YaHei';
-  /* Monospace size; the ui-theme font row and boot bootstrap override both
-   * monospace tokens on the document root. */
+  /* Section font controls: the ui-theme font row and the boot bootstrap
+   * override all of these on the document root. zoom multiplies when
+   * nested, so the chat pane consumes the chat/ui ratio the runtime
+   * publishes. */
   --dsw-font-size-code: 15px;
+  --dsh-font-size-term: 13px;
+  --dsh-zoom-ui: 1;
+  --dsh-zoom-chat: 1;
   --ds-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
   --ds-transition-duration: 0.2s;
   --ds-transition-duration-fast: 0.1s;

@@ -8,6 +8,9 @@
   height: 100%;
   overflow: hidden;
   background: var(--dsw-alias-bg-base);
+  /* Interface font section: zoom scales the chrome, sidebar, settings, and
+   * file panes together (the ui-theme font row owns the var). */
+  zoom: var(--dsh-zoom-ui, 1);
 }
 
 /* Brand strip: same surface tokens as the sidebar's logo row, fixed at the
@@ -78,6 +81,13 @@
      pane's size comes from the flex layout, never its contents, so size
      containment cannot collapse it. */
   container-type: size;
+}
+
+/* Chat font section: the session pane carries the compensated chat/ui zoom
+ * ratio (zoom multiplies through the frame's interface zoom, so the runtime
+ * publishes chatScale/uiScale here). */
+.pane[data-buffer='session'] {
+  zoom: var(--dsh-zoom-chat, 1);
 }
 
 /* Slim mode line: buffer name left, window commands right (Emacs echo of

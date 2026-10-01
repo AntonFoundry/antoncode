@@ -1,21 +1,13 @@
-/* Font row (matches the Language 'Setting-Cell': gap 8, pad 16/0, hairline
- * separator; the section column removes the separator on its last child). */
+/* Font panel: one titled column of four sections (Interface, Chat, Code,
+ * Terminal). Sections follow the 'Setting-Cell' rhythm: 8px gap rows with a
+ * hairline separator between sections; the settings column removes the last
+ * child's separator. */
 
-.row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 16px 0;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
-}
-
-.rowText {
-  flex: 1;
-  min-width: 0;
+.panel {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding-right: 48px;
+  gap: 0;
+  padding: 16px 0;
 }
 
 .title {
@@ -25,7 +17,35 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* Live preview line in the selected family and size. */
+.section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.panel .section:last-child {
+  border-bottom: none;
+  padding-bottom: 4px;
+}
+
+.sectionText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sectionLabel {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Live preview line in the section's family and size. */
 .preview {
   color: var(--dsw-alias-label-secondary);
   line-height: 1.5;
@@ -38,9 +58,10 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: none;
 }
 
-/* Selector pill (matches the Language row: h36 r18, pad 0/14, gap 12). */
+/* Family selector pill (matches the Language row: h36 r18, pad 0/14, gap 12). */
 .selector {
   display: inline-flex;
   align-items: center;
@@ -62,7 +83,7 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-/* Size stepper (r18 pill matching the selector height). */
+/* Value stepper (r18 pill matching the selector height). */
 .stepper {
   display: inline-flex;
   align-items: center;
@@ -95,7 +116,7 @@
 }
 
 .sizeValue {
-  min-width: 26px;
+  min-width: 44px;
   text-align: center;
   font-size: 13px;
   line-height: 20px;

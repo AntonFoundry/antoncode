@@ -78,7 +78,7 @@ export const DEFAULT_MONO_SIZE = 15
 export const MONO_SIZE_RANGE = Object.freeze({ min: 10, max: 24 })
 
 /**
- * Resolve one family id to its CSS stack.
+ * Resolve one monospace family id to its CSS stack.
  * @param id - a curated family id.
  * @returns the CSS font-family value; the default stack for unknown ids.
  */
@@ -88,13 +88,87 @@ export function monoFontStack(id: string): string {
 }
 
 /**
- * Narrow one wire or registry value to a curated family id.
+ * Narrow one wire or registry value to a curated monospace family id.
  * @param value - value crossing the settings or registry boundary.
  * @returns whether the value is a curated family id.
  */
 export function isMonoFont(value: unknown): value is string {
   return MONO_FONTS.some(font => font.id === value)
 }
+
+/** Field carrying the selected UI (proportional) font family id. */
+export const UI_FONT_FIELD = 'uiFamily'
+
+/** Field carrying the interface zoom percent. */
+export const UI_SCALE_FIELD = 'uiScale'
+
+/** Field carrying the chat-pane zoom percent. */
+export const CHAT_SCALE_FIELD = 'chatScale'
+
+/** Field carrying the terminal font size in px. */
+export const TERM_SIZE_FIELD = 'termSize'
+
+/** One curated UI family: stable id, display label, and CSS stack. */
+export interface UiFontOption {
+  /** Settings-stable family id. */
+  id: string
+  /** Display label rendered in the settings row. */
+  label: string
+  /** Full CSS font-family value applied as `--dsw-font-family`. */
+  stack: string
+}
+
+/** The shipped proportional stack (base.css `--dsw-font-family` default). */
+export const SYSTEM_UI_STACK = "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', "
+  + "'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif"
+
+/**
+ * Curated UI families. Every stack keeps the CJK tail so Windows does not
+ * fall back to SimSun for Chinese copy.
+ */
+export const UI_FONTS: readonly UiFontOption[] = Object.freeze([
+  Object.freeze({ id: 'system', label: 'System', stack: SYSTEM_UI_STACK }),
+  Object.freeze({
+    id: 'helvetica', label: 'Helvetica Neue',
+    stack: "'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
+  }),
+  Object.freeze({
+    id: 'arial', label: 'Arial',
+    stack: "Arial, Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
+  }),
+  Object.freeze({
+    id: 'georgia', label: 'Georgia',
+    stack: "Georgia, 'Times New Roman', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', serif",
+  }),
+  Object.freeze({
+    id: 'rounded', label: 'Rounded',
+    stack: "ui-rounded, -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
+  }),
+])
+
+/** Default UI family id when the user-settings document has no override. */
+export const DEFAULT_UI_FAMILY = 'system'
+
+/**
+ * Resolve one UI family id to its CSS stack.
+ * @param id - a curated family id.
+ * @returns the CSS font-family value; the system stack for unknown ids.
+ */
+export function uiFontStack(id: string): string {
+  return UI_FONTS.find(font => font.id === id)?.stack ?? SYSTEM_UI_STACK
+}
+
+/** Accepted zoom percent range for the interface and chat sections, inclusive. */
+export const SCALE_RANGE = Object.freeze({ min: 80, max: 140 })
+
+/** Default interface and chat zoom percent. */
+export const DEFAULT_SCALE = 100
+
+/** Default terminal size in px. */
+export const DEFAULT_TERM_SIZE = 13
+
+/** Accepted terminal size range (px), inclusive. */
+export const TERM_SIZE_RANGE = Object.freeze({ min: 10, max: 24 })
 
 /** Durable theme section shared by the Host schema and the browser scope. */
 export interface ThemeSettings {
@@ -104,6 +178,14 @@ export interface ThemeSettings {
   monoFont: string
   /** Selected monospace size in px. */
   monoSize: number
+  /** Selected UI family id. */
+  uiFamily: string
+  /** Interface zoom percent. */
+  uiScale: number
+  /** Chat-pane zoom percent. */
+  chatScale: number
+  /** Terminal font size in px. */
+  termSize: number
 }
 
 /** Durable theme schema; also the wire envelope the browser scope validates against. */
@@ -112,6 +194,13 @@ export const ThemeSettingsSchema: z<ThemeSettings> = z.object({
   [MONO_FONT_FIELD]: z.string().default(DEFAULT_MONO_FONT),
   [MONO_SIZE_FIELD]: z.number()
     .min(MONO_SIZE_RANGE.min).max(MONO_SIZE_RANGE.max).default(DEFAULT_MONO_SIZE),
+  [UI_FONT_FIELD]: z.string().default(DEFAULT_UI_FAMILY),
+  [UI_SCALE_FIELD]: z.number()
+    .min(SCALE_RANGE.min).max(SCALE_RANGE.max).default(DEFAULT_SCALE),
+  [CHAT_SCALE_FIELD]: z.number()
+    .min(SCALE_RANGE.min).max(SCALE_RANGE.max).default(DEFAULT_SCALE),
+  [TERM_SIZE_FIELD]: z.number()
+    .min(TERM_SIZE_RANGE.min).max(TERM_SIZE_RANGE.max).default(DEFAULT_TERM_SIZE),
 })
 
 /**

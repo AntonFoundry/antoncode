@@ -21,15 +21,21 @@ describe('ui-theme host', () => {
     const fiber = ctx.plugin({ apply })
     await fiber.await()
     const ns = settingsNamespace(THEME_SETTINGS_NAMESPACE)
-    expect(ctx.settings.get(ns)).toEqual(
-      { preference: DEFAULT_PREFERENCE, monoFont: 'monaco', monoSize: 15 })
+    const defaults = {
+      preference: DEFAULT_PREFERENCE, uiFamily: 'system', uiScale: 100, chatScale: 100,
+      monoFont: 'monaco', monoSize: 15, termSize: 13,
+    }
+    expect(ctx.settings.get(ns)).toEqual(defaults)
     await ctx.settings.update(ns, { preference: 'dark' })
-    expect(ctx.settings.get(ns)).toEqual(
-      { preference: 'dark', monoFont: 'monaco', monoSize: 15 })
+    expect(ctx.settings.get(ns)).toEqual({ ...defaults, preference: 'dark' })
     await expect(ctx.settings.update(ns, { preference: 'sepia' })).rejects.toThrow()
     await expect(ctx.settings.update(ns, { monoSize: 99 })).rejects.toThrow()
+    await expect(ctx.settings.update(ns, { uiScale: 141 })).rejects.toThrow()
+    await expect(ctx.settings.update(ns, { chatScale: 79 })).rejects.toThrow()
+    await expect(ctx.settings.update(ns, { termSize: 25 })).rejects.toThrow()
     await ctx.settings.update(ns, { monoFont: 'menlo', monoSize: 17 })
-    expect(ctx.settings.get(ns)).toEqual({ preference: 'dark', monoFont: 'menlo', monoSize: 17 })
+    expect(ctx.settings.get(ns))
+      .toEqual({ ...defaults, preference: 'dark', monoFont: 'menlo', monoSize: 17 })
     await fiber.dispose()
     expect(ctx.settings.describe().map(row => row.ns)).not.toContain(ns)
   })
@@ -50,11 +56,19 @@ describe('ui-theme host', () => {
     expect(transform?.('<body></body>')).toContain('const preference = "system"')
     await ctx.settings.update(settingsNamespace(THEME_SETTINGS_NAMESPACE), { preference: 'dark' })
     expect(transform?.('<body></body>')).toContain('const preference = "dark"')
-    await ctx.settings.update(settingsNamespace(THEME_SETTINGS_NAMESPACE), { monoFont: 'menlo', monoSize: 18 })
+    await ctx.settings.update(settingsNamespace(THEME_SETTINGS_NAMESPACE), {
+      uiFamily: 'georgia', uiScale: 120, chatScale: 90,
+      monoFont: 'menlo', monoSize: 18, termSize: 16,
+    })
     const html = transform?.('<body></body>') ?? ''
+    expect(html).toContain("root.setProperty('--dsw-font-family'")
+    expect(html).toContain('Georgia')
+    expect(html).toContain("root.setProperty('--dsh-zoom-ui', \"1.2\")")
+    expect(html).toContain("root.setProperty('--dsh-zoom-chat', \"0.75\")")
     expect(html).toContain("root.setProperty('--ds-font-family-code'")
     expect(html).toContain("'Menlo'")
     expect(html).toContain("root.setProperty('--dsw-font-size-code', \"18px\")")
+    expect(html).toContain("root.setProperty('--dsh-font-size-term', \"16px\")")
     await fiber.dispose()
     expect(disposed).toBe(true)
     expect(transform?.('<body></body>')).toContain('const preference = "system"')

@@ -13,6 +13,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { BroadcastState } from './broadcast.js'
+import type { TermFontState } from './term-font.js'
 import css from './TerminalView.module.css'
 
 /** Term faces injected by the plugin's apply (over the `term` RPC domain). */
@@ -37,6 +38,8 @@ export interface TerminalViewProps {
   workspacePath?: string | undefined
   /** Broadcast-store read hook (bound from the hooks compartment). */
   useBroadcast: SnapshotSelectorHook<BroadcastState>
+  /** Live font selection read hook (ui-theme `font/change`, hooks compartment). */
+  useTermFont: SnapshotSelectorHook<TermFontState>
   /** Broadcast-store write face (the single instance's bound actions). */
   broadcastActions: {
     setBroadcast(on: boolean): void
@@ -61,6 +64,16 @@ export function TerminalView(props: TerminalViewProps) {
   broadcastRef.current = { on: broadcast.broadcast, sessions: broadcast.sessions }
   const toggleBroadcast = (): void => { props.broadcastActions.setBroadcast(!broadcastRef.current.on) }
 
+  // Live font selection share: subscribed here so a termSize change re-fits
+  // the mounted xterm (refs below are written once the effect creates it).
+  const termSize = props.useTermFont(s => s.termSize)
+  const termSizeRef = useRef(termSize)
+  termSizeRef.current = termSize
+  const fitRef = useRef<{ setSize: (size: number) => void } | null>(null)
+  useEffect(() => {
+    fitRef.current?.setSize(termSize)
+  }, [termSize])
+
   useEffect(() => {
     const host = hostRef.current
     if (host === null) return
@@ -75,12 +88,11 @@ export function TerminalView(props: TerminalViewProps) {
       const faces = facesRef.current
       const tokens = faces.themeTokens()
 
-      // User mono size preference (ui-theme font row) when resolved, else 13.
-      const sizeVar = Number.parseInt(
-        getComputedStyle(document.documentElement).getPropertyValue('--dsw-font-size-code'), 10)
+      // Terminal-section size preference (ui-theme font row); the mirrored
+      // ref carries the subscribed value without a hook call in the effect.
       const term = new Terminal({
         cursorBlink: true,
-        fontSize: sizeVar > 0 ? sizeVar : 13,
+        fontSize: termSizeRef.current,
         // The Nerd Fonts installed on this machine carry lsd's icon glyphs;
         // Apple Color Emoji renders emoji; the system mono is the fallback.
         fontFamily: '\u0027FiraCode Nerd Font Mono\u0027, \u0027FiraCode Nerd Font\u0027, \u0027Hack Nerd Font Mono\u0027, \u0027Apple Color Emoji\u0027, ui-monospace, SFMono-Regular, Menlo, monospace',
@@ -94,6 +106,13 @@ export function TerminalView(props: TerminalViewProps) {
       const fit = new FitAddon()
       term.loadAddon(fit)
       term.open(host)
+      // Live re-fit entry for the font-size subscription above.
+      fitRef.current = {
+        setSize: (size: number) => {
+          term.options.fontSize = size
+          try { fit.fit() } catch { /* zero-size container before layout settles */ }
+        },
+      }
       try { fit.fit() } catch { /* zero-size container before layout settles */ }
 
       // Debug capture (termdebug): record every write, fit, and resize with
@@ -242,6 +261,7 @@ export function TerminalView(props: TerminalViewProps) {
     return () => {
       disposed = true
       if (poll !== undefined) window.clearInterval(poll)
+      fitRef.current = null
       facesRef.current.broadcastActions.leave(props.sessionId ?? liveSession ?? '')
       host.innerHTML = ''
     }

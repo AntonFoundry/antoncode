@@ -3,32 +3,36 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-import { injectBootTheme, type BootFonts } from './boot-theme.ts'
+import { injectBootTheme } from './boot-theme.ts'
 import {
-  DEFAULT_MONO_FONT, DEFAULT_MONO_SIZE, DEFAULT_PREFERENCE, THEME_SETTINGS_NAMESPACE,
-  ThemeSettingsSchema, type ThemeSettings,
+  DEFAULT_MONO_FONT, DEFAULT_MONO_SIZE, DEFAULT_PREFERENCE, DEFAULT_SCALE,
+  DEFAULT_TERM_SIZE, DEFAULT_UI_FAMILY, THEME_SETTINGS_NAMESPACE, ThemeSettingsSchema,
+  type ThemeSettings,
 } from './theme-settings.ts'
 
 export {
-  DEFAULT_MONO_FONT, DEFAULT_MONO_SIZE, DEFAULT_PREFERENCE, MONO_FONTS, MONO_FONT_FIELD,
-  MONO_SIZE_FIELD, MONO_SIZE_RANGE, THEME_PREFERENCE_FIELD, THEME_PREFERENCES,
-  THEME_SETTINGS_NAMESPACE, isMonoFont, monoFontStack,
-  type MonoFontOption, type ThemePreference, type ThemeSettings,
+  DEFAULT_MONO_FONT, DEFAULT_MONO_SIZE, DEFAULT_PREFERENCE, DEFAULT_SCALE,
+  DEFAULT_TERM_SIZE, DEFAULT_UI_FAMILY, MONO_FONTS, MONO_FONT_FIELD, MONO_SIZE_FIELD,
+  MONO_SIZE_RANGE, SCALE_RANGE, TERM_SIZE_FIELD, TERM_SIZE_RANGE, THEME_PREFERENCE_FIELD,
+  THEME_PREFERENCES, THEME_SETTINGS_NAMESPACE, UI_FONTS, UI_FONT_FIELD, isMonoFont,
+  monoFontStack, uiFontStack,
+  type MonoFontOption, type ThemePreference, type ThemeSettings, type UiFontOption,
 } from './theme-settings.ts'
 
 const THEME_NAMESPACE = settingsNamespace(THEME_SETTINGS_NAMESPACE)
 
+/** Schema defaults for compositions without a settings provider. */
+const DEFAULT_SECTION: ThemeSettings = {
+  preference: DEFAULT_PREFERENCE,
+  uiFamily: DEFAULT_UI_FAMILY, uiScale: DEFAULT_SCALE, chatScale: DEFAULT_SCALE,
+  monoFont: DEFAULT_MONO_FONT, monoSize: DEFAULT_MONO_SIZE, termSize: DEFAULT_TERM_SIZE,
+}
+
 /** Read the registered section or the schema defaults without a settings provider. */
 function readSection(ctx: Context): ThemeSettings {
   const settings = ctx.get('settings')
-  if (settings === undefined) {
-    return { preference: DEFAULT_PREFERENCE, monoFont: DEFAULT_MONO_FONT, monoSize: DEFAULT_MONO_SIZE }
-  }
-  const section = settings.get(THEME_NAMESPACE) as ThemeSettings | undefined
-  if (section === undefined) {
-    return { preference: DEFAULT_PREFERENCE, monoFont: DEFAULT_MONO_FONT, monoSize: DEFAULT_MONO_SIZE }
-  }
-  return section
+  const section = settings === undefined ? undefined : settings.get(THEME_NAMESPACE) as ThemeSettings | undefined
+  return section ?? DEFAULT_SECTION
 }
 
 /**
@@ -43,9 +47,8 @@ export function apply(ctx: Context): void {
   ctx.inject(['webServer'], (httpCtx) => {
     httpCtx.effect(
       () => httpCtx.webServer.tapIndex((html) => {
-        const section = readSection(ctx)
-        const fonts: BootFonts = { monoFont: section.monoFont, monoSize: section.monoSize }
-        return injectBootTheme(html, section.preference, fonts)
+        const { preference, ...fonts } = readSection(ctx)
+        return injectBootTheme(html, preference, fonts)
       }),
       'client-ui-theme: initial theme bootstrap',
     )

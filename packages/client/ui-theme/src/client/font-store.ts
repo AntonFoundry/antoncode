@@ -4,20 +4,17 @@
  * props.useStore.
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
+import type { FontSelection } from './font-runtime.ts'
 
 /** Store state mirrored from the font snapshot. */
-export interface FontRowState {
-  /** Curated monospace family id. */
-  monoFont: string
-  /** Monospace size in px. */
-  monoSize: number
+export interface FontRowState extends FontSelection {
   /** Service revision; -1 until first sync so revision 0 lands as a change. */
   revision: number
 }
 
 /** Declared action shape giving the exported factory a stable return type. */
 type FontRowActions = {
-  sync: (draft: FontRowState, monoFont: string, monoSize: number, revision: number) => void
+  sync: (draft: FontRowState, selection: FontSelection, revision: number) => void
 }
 
 /**
@@ -26,12 +23,20 @@ type FontRowActions = {
  */
 export function createFontRowStore(): EngineStoreHandle<FontRowState, FontRowActions> {
   return defineStore({
-    init: (): FontRowState => ({ monoFont: 'monaco', monoSize: 15, revision: -1 }),
+    init: (): FontRowState => ({
+      uiFamily: 'system', uiScale: 100, chatScale: 100,
+      monoFont: 'monaco', monoSize: 15, termSize: 13,
+      revision: -1,
+    }),
     actions: {
-      sync: (d, monoFont: string, monoSize: number, revision: number) => {
+      sync: (d, selection: FontSelection, revision: number) => {
         if (revision <= d.revision) return
-        d.monoFont = monoFont
-        d.monoSize = monoSize
+        d.uiFamily = selection.uiFamily
+        d.uiScale = selection.uiScale
+        d.chatScale = selection.chatScale
+        d.monoFont = selection.monoFont
+        d.monoSize = selection.monoSize
+        d.termSize = selection.termSize
         d.revision = revision
       },
     },

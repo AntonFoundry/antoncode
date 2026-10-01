@@ -435,15 +435,20 @@ export function apply(ctx: ClientContext): void {
   const fontStore = createFontRowStore()
   let fontBound: BoundActions<typeof fontStore> | undefined
   const syncFont = (snapshot: FontSnapshot): void => {
-    fontBound?.sync(snapshot.monoFont, snapshot.monoSize, snapshot.revision)
+    const { revision, ...selection } = snapshot
+    fontBound?.sync(selection, revision)
   }
   ctx.on('font/change', syncFont)
   const fontInjected = (actions: BoundActions<typeof fontStore>): FontRowInjected => {
     fontBound = actions
     syncFont(fonts.getFont())
     return {
+      setUiFamily: (id) => { fonts.setUiFamily(id) },
+      setUiScale: (scale) => { fonts.setUiScale(scale) },
+      setChatScale: (scale) => { fonts.setChatScale(scale) },
       setMonoFont: (id) => { fonts.setMonoFont(id) },
       setMonoSize: (size) => { fonts.setMonoSize(size) },
+      setTermSize: (size) => { fonts.setTermSize(size) },
     }
   }
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({
