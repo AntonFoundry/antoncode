@@ -1713,6 +1713,14 @@ export function WmFrame({
         }
         return
       }
+      case 'webcam-stop': {
+        // M-x webcam-stop: kill the shared webcam buffer wherever it shows.
+        // Every pane showing it unmounts, the view cleanup releases the last
+        // engine lease, and the camera capture stops — the acceptance signal
+        // is the menu-bar camera light going dark.
+        killBufferById(WEBCAM_BUFFER_ID)
+        return
+      }
       case 'tidy-panes': {
         writeTree(tidyTree(treeRef.current))
         actions.setDetails(CONTEXT_DEFAULT)

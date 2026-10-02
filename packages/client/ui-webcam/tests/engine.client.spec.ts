@@ -41,6 +41,8 @@ function fakeVideoElement(): HTMLVideoElement {
   return {
     muted: false, playsInline: false, autoplay: false, srcObject: null, readyState: 4,
     play: vi.fn(async () => {}),
+    pause: vi.fn(),
+    load: vi.fn(),
   } as unknown as HTMLVideoElement
 }
 
@@ -98,6 +100,47 @@ describe('CameraEngine', () => {
     second.release()
     expect(stopTrack).toHaveBeenCalledTimes(1)
     expect(engine.snapshot().camera.phase).toBe('idle')
+  })
+
+  it('the last release resets the media pipeline so WebKit drops the capture', async () => {
+    const engine = new CameraEngine()
+    const lease = await engine.acquire(undefined)
+    lease.release()
+    expect(stopTrack).toHaveBeenCalledTimes(1)
+    expect(videoStub.pause).toHaveBeenCalled()
+    expect(videoStub.srcObject).toBeNull()
+    expect(videoStub.load).toHaveBeenCalled()
+    expect(engine.snapshot().camera.phase).toBe('idle')
+  })
+
+  it('a superseded start stops its own late stream so the capture cannot orphan', async () => {
+    let resolveFirst!: (stream: unknown) => void
+    let calls = 0
+    const lateStop = vi.fn()
+    getUserMedia.mockImplementation(async () => {
+      calls += 1
+      if (calls === 1) {
+        return await new Promise((resolve) => { resolveFirst = resolve })
+      }
+      return {
+        getTracks: () => [{ stop: stopTrack }],
+        getVideoTracks: () => [{ label: 'Other Camera', getSettings: () => ({ width: 1280, height: 720 }) }],
+      }
+    })
+    const engine = new CameraEngine()
+    const superseded = engine.acquire('cam-a') // parks on the deferred getUserMedia
+    const live = await engine.acquire('cam-b') // gen 2 completes first
+    resolveFirst({
+      getTracks: () => [{ stop: lateStop }],
+      getVideoTracks: () => [{ label: 'FaceTime HD Camera', getSettings: () => ({ width: 1280, height: 720 }) }],
+    })
+    await superseded
+    // The gen-1 stream landed after a newer start published: dropped, not orphaned.
+    expect(lateStop).toHaveBeenCalledTimes(1)
+    expect(engine.snapshot().camera.phase).toBe('ready')
+    live.release()
+    engine.dispose()
+    expect(stopTrack).toHaveBeenCalled()
   })
 
   it('restarts the capture when a lease names a different device', async () => {

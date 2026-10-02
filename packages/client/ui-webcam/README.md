@@ -8,7 +8,7 @@ The apply closure owns the two shared faces. The `CameraEngine` holds the single
 
 Model and wasm assets are vendored into the web frontend's static dist under `/mediapipe/` (`apps/web/public/mediapipe/`: the Apache-2.0 `selfie_segmenter.tflite` plus the tasks-vision wasm fileset copied from the npm package), reproduced by `scripts/vendor-assets.sh`. The paths are an assembly pairing between this package's constants (`MODEL_URL`/`WASM_BASE`) and the frontend tree — the same assembly-fact treatment the webserver's dist index gets, not deployment config.
 
-Effects are controlled per view (segmented 原始/移除/模糊/替换 dock, blur strength, studio/green remove colors, six built-in gradient backdrops plus a custom image, mirror toggle, camera picker) and share one settings store across panes, so a mode change in one leaf applies everywhere. `M-x webcam` on an open view shows the same shared buffer in the new window — both panes composite the one capture.
+Effects are controlled per view (segmented 原始/移除/模糊/替换 dock, blur strength, studio/green remove colors, six built-in gradient backdrops plus a custom image, mirror toggle, camera picker) and share one settings store across panes, so a mode change in one leaf applies everywhere. `M-x webcam` on an open view shows the same shared buffer in the new window — both panes composite the one capture. `M-x webcam-stop` kills the shared buffer wherever it shows: every pane unmounts, the last lease releases, and the engine stops the capture (track stop plus video `pause`/`load` pipeline reset — WebKit holds the camera light until the reset) so the menu-bar indicator goes dark.
 
 ## Model Experience
 

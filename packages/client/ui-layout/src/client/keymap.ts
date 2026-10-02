@@ -57,6 +57,8 @@ export type WmCommand =
   | 'term'
   /** Open the shared webcam buffer: live GPU background-removal camera view. */
   | 'webcam'
+  /** Kill the shared webcam buffer wherever it shows, releasing the camera. */
+  | 'webcam-stop'
   /** Toggle keystroke broadcast across every open terminal (multi-cursor). */
   | 'multi-cursor'
   /** Balance every split's weights to equal shares (tidy panes). */
@@ -215,6 +217,7 @@ export const COMMANDS: readonly CommandEntry[] = [
   { name: 'dump-layout', command: 'dump-layout', keys: 'M-x' },
   { name: 'term', command: 'term', keys: 'C-x t' },
   { name: 'webcam', command: 'webcam', keys: 'C-x v' },
+  { name: 'webcam-stop', command: 'webcam-stop', keys: 'M-x' },
   { name: 'multi-cursor', command: 'multi-cursor', keys: 'M-x' },
   { name: 'tidy-panes', command: 'tidy-panes', keys: 'M-x' },
   { name: 'flip-pane', command: 'flip-pane', keys: 'M-x' },

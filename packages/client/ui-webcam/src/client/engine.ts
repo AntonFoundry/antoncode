@@ -125,6 +125,7 @@ export class CameraEngine {
   #frameId = 0
   #lastFrameAt = 0
   #fps = 0
+  #startGen = 0
 
   /**
    * The current immutable status snapshot.
@@ -185,6 +186,7 @@ export class CameraEngine {
   }
 
   async #start(deviceId: string | undefined): Promise<void> {
+    const generation = ++this.#startGen
     this.#stopCapture()
     this.#setSnapshot({ camera: { phase: 'requesting' }, fps: 0 })
     if (typeof navigator === 'undefined' || navigator.mediaDevices?.getUserMedia === undefined) {
@@ -211,6 +213,13 @@ export class CameraEngine {
       video.addEventListener('loadeddata', () => { resolve() }, { once: true })
     })
     try { await video.play() } catch { /* detached autoplay rejection: the loop still receives frames once playing */ }
+    // A newer start (device switch racing a remount) or dispose() superseded
+    // this one while it awaited the stream: stop the fresh tracks here or
+    // they would orphan with the capture running and the light on.
+    if (generation !== this.#startGen || this.#disposed) {
+      for (const track of stream.getTracks()) track.stop()
+      return
+    }
     this.#stream = stream
     this.#video = video
     this.#activeDeviceId = deviceId
@@ -314,7 +323,16 @@ export class CameraEngine {
   #stopCapture(): void {
     this.#stopLoop()
     for (const track of this.#stream?.getTracks() ?? []) track.stop()
-    if (this.#video !== undefined) this.#video.srcObject = null
+    const video = this.#video
+    if (video !== undefined) {
+      // WebKit holds the capture session until the element's media pipeline
+      // resets: pause, detach the stream, and load() to force that reset —
+      // track.stop() alone can leave the menu-bar camera light lit while the
+      // element waits for garbage collection.
+      video.pause()
+      video.srcObject = null
+      video.load()
+    }
     this.#stream = undefined
     this.#video = undefined
     this.#activeDeviceId = undefined
