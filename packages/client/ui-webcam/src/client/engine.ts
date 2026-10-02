@@ -9,11 +9,11 @@
  */
 
 import type { MaskCanvas } from './mask.js'
-import { MaskStabilizer, personAlphaFromBackground } from './mask.js'
+import { MaskStabilizer, personAlphaFromConfidence } from './mask.js'
 import { createSegmenter, type SegmenterDelegate, type SegmenterHandle } from './segmenter.js'
 
-/** Same-origin URL of the vendored multiclass selfie model (web frontend dist). */
-export const MODEL_URL = '/mediapipe/selfie_multiclass_256x256.tflite'
+/** Same-origin URL of the vendored selfie segmenter model (web frontend dist). */
+export const MODEL_URL = '/mediapipe/selfie_segmenter.tflite'
 /** Directory serving the vendored tasks-vision wasm fileset (web frontend dist). */
 export const WASM_BASE = '/mediapipe/wasm'
 
@@ -259,11 +259,13 @@ export class CameraEngine {
       this.#ts = Math.max(this.#ts + 1, Math.round(now))
       try {
         const result = this.#segmenter.segment(video, this.#ts)
-        const background = result.confidenceMasks?.[0]
-        if (background !== undefined) {
+        // selfie_segmenter emits one confidence plane per category:
+        // index 0 background, index 1 person (MediaPipe model card).
+        const person = result.confidenceMasks?.[1]
+        if (person !== undefined) {
           // Lazily built: raw-only sessions never pay the canvas setup.
           this.#stabilizer ??= new MaskStabilizer()
-          this.#stabilizer.push(personAlphaFromBackground(background.getAsFloat32Array()))
+          this.#stabilizer.push(personAlphaFromConfidence(person.getAsFloat32Array()))
           mask = this.#stabilizer.canvas
         }
         result.close()

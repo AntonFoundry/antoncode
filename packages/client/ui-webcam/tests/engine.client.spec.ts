@@ -5,12 +5,18 @@
 // contracts are covered by segmenter-adjacent specs and mask.spec.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CameraEngine, type EngineFrame } from '../src/client/engine.js'
+import { MaskStabilizer } from '../src/client/mask.js'
 
 vi.mock('../src/client/segmenter.js', () => ({
   createSegmenter: vi.fn(async () => ({
-    delegate: 'GPU' as const,
+    delegate: 'CPU' as const,
     segment: vi.fn(() => ({
-      confidenceMasks: [{ getAsFloat32Array: () => new Float32Array(256 * 256) }],
+      // selfie_segmenter contract: one confidence plane per category —
+      // [0] background, [1] person (the plane the engine must consume).
+      confidenceMasks: [
+        { getAsFloat32Array: () => new Float32Array(256 * 256).fill(0.5) },
+        { getAsFloat32Array: () => new Float32Array(256 * 256).fill(0.8) },
+      ],
       close: vi.fn(),
     })),
     close: vi.fn(),
@@ -21,7 +27,11 @@ vi.mock('../src/client/mask.js', async importOriginal => ({
   ...(await importOriginal<object>()),
   MaskStabilizer: class {
     canvas = { width: 256, height: 256 }
-    push(): void {}
+    /** Records the plane the engine fed — the person plane, not background. */
+    static pushed: Float32Array[] = []
+    push(frame: Uint8ClampedArray<ArrayBuffer>): void {
+      MaskStabilizer.pushed.push(new Float32Array([frame[0]! / 255]))
+    }
     reset(): void {}
   },
 }))
@@ -106,10 +116,14 @@ describe('CameraEngine', () => {
     const releaseSeg = lease.enableSegmentation()
     await vi.advanceTimersByTimeAsync(50)
     expect(engine.snapshot().segmenter.phase).toBe('ready')
-    expect(engine.snapshot().segmenter.delegate).toBe('GPU')
+    expect(engine.snapshot().segmenter.delegate).toBe('CPU')
     const segmented = frames.filter(frame => frame.mask !== undefined)
     expect(segmented.length).toBeGreaterThan(0)
-    expect(segmented[0]!.delegate).toBe('GPU')
+    expect(segmented[0]!.delegate).toBe('CPU')
+    // The stabilizer is fed the PERSON plane (index 1, 0.8) — 0.8 → alpha 204 —
+    // never the background plane (index 0, 0.5).
+    const pushed = MaskStabilizer.pushed.at(-1)
+    expect(pushed?.[0]).toBeCloseTo(204 / 255)
     releaseSeg()
     lease.release()
   })

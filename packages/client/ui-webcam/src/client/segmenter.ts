@@ -1,16 +1,22 @@
 /**
- * MediaPipe ImageSegmenter wrapper: loads the vendored selfie multiclass
- * model (256×256, six classes) through the vendored wasm fileset, preferring
- * the GPU (WebGL2) delegate and falling back to CPU when delegate creation
- * fails. Per-frame `segment()` returns the raw MediaPipe result — the caller
- * owns closing it.
+ * MediaPipe ImageSegmenter wrapper: loads the vendored selfie segmenter
+ * (256×256, background/person) through the vendored wasm fileset on the CPU
+ * (wasm SIMD) delegate. Per-frame `segment()` returns the raw MediaPipe
+ * result — the caller owns closing it.
+ *
+ * The GPU delegate is deliberately not attempted: on it, mask typed arrays
+ * are served by a `readPixels(RED, FLOAT)` GPU readback that this WebKit
+ * build answers with near-constant junk (the mask arrives washed to a
+ * uniform mid value). On CPU the mask is a plain wasm-memory plane with no
+ * GL readback, which is why `delegate` is always `'CPU'` — visible in the
+ * view status line.
  * @module @deepseek-ai/dsh-client-ui-webcam/client/segmenter
  */
 
 import { FilesetResolver, ImageSegmenter, type ImageSegmenterResult } from '@mediapipe/tasks-vision'
 
-/** Which delegate the segmenter ended up on. */
-export type SegmenterDelegate = 'GPU' | 'CPU'
+/** Which delegate the segmenter runs on (CPU-only by construction, see above). */
+export type SegmenterDelegate = 'CPU'
 
 /** A live segmenter: one per engine, VIDEO running mode, confidence masks. */
 export interface SegmenterHandle {
@@ -31,30 +37,20 @@ export interface SegmenterHandle {
  * Create a segmenter over the vendored model + wasm assets (same-origin
  * `/mediapipe/…` paths built by the web frontend — an assembly pairing, not
  * deployment config).
- * @param modelUrl - same-origin URL of `selfie_multiclass_256x256.tflite`.
+ * @param modelUrl - same-origin URL of `selfie_segmenter.tflite`.
  * @param wasmBase - directory serving the tasks-vision wasm fileset.
  * @returns the segmenter handle.
  */
 export async function createSegmenter(modelUrl: string, wasmBase: string): Promise<SegmenterHandle> {
   const fileset = await FilesetResolver.forVisionTasks(wasmBase)
-  const options = {
-    baseOptions: { modelAssetPath: modelUrl },
+  const segmenter = await ImageSegmenter.createFromOptions(fileset, {
+    baseOptions: { modelAssetPath: modelUrl, delegate: 'CPU' },
     runningMode: 'VIDEO',
     outputCategoryMask: false,
     outputConfidenceMasks: true,
-  } as const
-  let delegate: SegmenterDelegate = 'GPU'
-  let segmenter: ImageSegmenter
-  try {
-    segmenter = await ImageSegmenter.createFromOptions(fileset, { ...options, baseOptions: { ...options.baseOptions, delegate: 'GPU' } })
-  } catch {
-    // GPU delegate creation can fail on stubbed WebGL contexts and older
-    // WebKit builds; CPU answers the same contract, just slower.
-    delegate = 'CPU'
-    segmenter = await ImageSegmenter.createFromOptions(fileset, { ...options, baseOptions: { ...options.baseOptions, delegate: 'CPU' } })
-  }
+  })
   return {
-    delegate,
+    delegate: 'CPU',
     segment: (video, timestampMs) => segmenter.segmentForVideo(video, timestampMs),
     close: () => { segmenter.close() },
   }

@@ -1,9 +1,9 @@
 /**
  * Mask-side image processing that runs on the 2D canvas (no GL): converting
- * the multiclass background-confidence plane into a person-alpha frame, and
- * the temporal exponential-moving-average that stabilizes the mask across
- * frames (NVIDIA-Broadcast-style flicker suppression). The stabilized canvas
- * is shared read-only with every mounted view; spatial feathering happens
+ * the segmenter's person-confidence plane into a person-alpha frame, and the
+ * temporal exponential-moving-average that stabilizes the mask across frames
+ * (NVIDIA-Broadcast-style flicker suppression). The stabilized canvas is
+ * shared read-only with every mounted view; spatial feathering happens
  * per-view in the composite shader.
  * @module @deepseek-ai/dsh-client-ui-webcam/client/mask
  */
@@ -15,16 +15,18 @@ export const MASK_SIZE = 256
 export const MASK_EMA_ALPHA = 0.4
 
 /**
- * Convert one background-confidence plane into RGBA bytes whose red channel
- * carries person alpha (`1 - background`). Other channels mirror the alpha so
- * any sampling channel works.
- * @param background - row-major background confidence, `MASK_SIZE²` floats.
+ * Convert one person-confidence plane into RGBA bytes whose red channel
+ * carries person alpha (the confidence directly — the selfie segmenter's
+ * person mask, not an inverted background). Other channels mirror the alpha
+ * so any sampling channel works. Reads past the plane's end (a short plane)
+ * fall back to 0 — erased, never fabricated person.
+ * @param confidence - row-major person confidence in [0,1], MASK_SIZE² floats.
  * @returns RGBA bytes for one `MASK_SIZE×MASK_SIZE` ImageData.
  */
-export function personAlphaFromBackground(background: Float32Array): Uint8ClampedArray<ArrayBuffer> {
+export function personAlphaFromConfidence(confidence: Float32Array): Uint8ClampedArray<ArrayBuffer> {
   const out = new Uint8ClampedArray(MASK_SIZE * MASK_SIZE * 4)
   for (let i = 0; i < MASK_SIZE * MASK_SIZE; i += 1) {
-    const alpha = Math.round(255 * (1 - Math.min(1, Math.max(0, background[i] ?? 1))))
+    const alpha = Math.round(255 * Math.min(1, Math.max(0, confidence[i] ?? 0)))
     const o = i * 4
     out[o] = alpha
     out[o + 1] = alpha
@@ -96,7 +98,7 @@ export class MaskStabilizer {
 
   /**
    * Blend one new person-alpha frame into the stabilized canvas.
-   * @param frame - RGBA bytes from {@link personAlphaFromBackground}.
+   * @param frame - RGBA bytes from {@link personAlphaFromConfidence}.
    */
   push(frame: Uint8ClampedArray<ArrayBuffer>): void {
     this.#scratchCtx.putImageData(new ImageData(frame, MASK_SIZE, MASK_SIZE), 0, 0)
