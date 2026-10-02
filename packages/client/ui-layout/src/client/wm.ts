@@ -16,7 +16,7 @@
 export type WmDirection = 'row' | 'column'
 
 /** The buffer kinds the registry knows. */
-export type WmBufferKind = 'sidebar' | 'conversation' | 'session' | 'details' | 'settings' | 'scratch' | 'files' | 'terminal' | 'file'
+export type WmBufferKind = 'sidebar' | 'conversation' | 'session' | 'details' | 'settings' | 'scratch' | 'files' | 'terminal' | 'webcam' | 'file'
 
 /**
  * One registry entry. `path` is present only on `files` buffers (the
@@ -50,6 +50,14 @@ export const SINGLETON_BUFFER_IDS: readonly string[] = ['sidebar', SESSION_BUFFE
 export const SCRATCH_BUFFER_ID = 'buffer:scratch'
 
 /**
+ * The webcam buffer's fixed id. Unlike terminal buffers (one PTY per
+ * buffer), every webcam pane shows the same shared buffer: one camera
+ * capture behind any number of compositing views, so opening it twice
+ * splits the same feed instead of starting a second camera.
+ */
+export const WEBCAM_BUFFER_ID = 'buffer:webcam'
+
+/**
  * Weight share the sidebar takes when it re-attaches (toggleSidebar, brand
  * strip, narrow-viewport restore) — the preferred column share, not a 50/50
  * split of the anchor.
@@ -70,6 +78,15 @@ export const SINGLETON_BUFFERS: readonly WmBuffer[] = [
  */
 export function scratchBuffer(): WmBuffer {
   return { id: SCRATCH_BUFFER_ID, kind: 'scratch' }
+}
+
+/**
+ * The shared webcam registry entry — one per registry, killable like a
+ * terminal buffer but shared by every pane that opens it.
+ * @returns the webcam registry entry.
+ */
+export function webcamBuffer(): WmBuffer {
+  return { id: WEBCAM_BUFFER_ID, kind: 'webcam' }
 }
 
 /**
@@ -128,6 +145,7 @@ export function bufferTitle(buffer: WmBuffer): string {
     case 'scratch': return '*scratch*'
     case 'files': return `Dired: ${buffer.path ?? '?'}`
     case 'terminal': return 'Terminal'
+    case 'webcam': return 'Webcam'
     case 'file': return buffer.path ?? '(file)'
   }
 }

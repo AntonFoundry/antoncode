@@ -8,6 +8,11 @@
 
 *.pdf binary
 
+# Vendored MediaPipe emscripten loaders (byte-exact copies reproduced by
+# packages/client/ui-webcam/scripts/vendor-assets.sh): machine-generated
+# output, excluded from diff-based gates like the whitespace check.
+apps/web/public/mediapipe/wasm/*.js -diff
+
 # Pairing records are generated from the three confirmed owner-blob pairs.
 # The worktree-local installer registers the fail-closed driver command.
 *.i18n.yaml merge=dsh-translation-pairing

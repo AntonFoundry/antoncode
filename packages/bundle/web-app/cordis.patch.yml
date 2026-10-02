@@ -79,6 +79,11 @@
     - id: ui-terminal-view
       name: '@deepseek-ai/dsh-client-ui-terminal'
 
+    # WM webcam buffers: the GPU background-removal camera view occupying the
+    # frame's webcam.view slot (one shared capture behind every webcam pane).
+    - id: ui-webcam-view
+      name: '@deepseek-ai/dsh-client-ui-webcam'
+
     - id: directory-picker
       name: '@deepseek-ai/dsh-host-directory-picker-auto'
 

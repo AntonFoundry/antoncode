@@ -1,0 +1,200 @@
+/* Webcam view styling: token-driven, no literal palette colors outside the
+   explicit green-screen/dark-gray backdrop swatches (those are content). */
+
+.host {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: #000;
+  display: flex;
+}
+
+.canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--wc-panel) 78%, transparent);
+}
+
+.card {
+  max-width: 22rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1.1rem 1.25rem;
+  border-radius: 10px;
+  background: var(--wc-panel);
+  border: 1px solid color-mix(in srgb, var(--wc-accent) 35%, transparent);
+}
+
+.cardTitle {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.cardBody {
+  font-size: 0.8rem;
+  opacity: 0.75;
+  line-height: 1.5;
+}
+
+.primaryButton {
+  align-self: flex-start;
+  padding: 0.3rem 0.9rem;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  color: #fff;
+  background: var(--wc-accent);
+  font-size: 0.8rem;
+}
+
+.primaryButton:hover {
+  filter: brightness(1.1);
+}
+
+.dock {
+  position: absolute;
+  left: 50%;
+  bottom: 0.6rem;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--wc-panel) 82%, transparent);
+  backdrop-filter: blur(10px);
+  border: 1px solid color-mix(in srgb, var(--wc-accent) 22%, transparent);
+  max-width: calc(100% - 1.2rem);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 1.6rem;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.segmented {
+  display: flex;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.segment {
+  padding: 0.18rem 0.55rem;
+  font-size: 0.75rem;
+  border: none;
+  cursor: pointer;
+  background: transparent;
+  color: inherit;
+}
+
+.segment[data-active] {
+  background: var(--wc-accent);
+  color: #fff;
+}
+
+.iconButton {
+  padding: 0.15rem 0.5rem;
+  font-size: 0.85rem;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.iconButton[data-active] {
+  background: var(--wc-accent);
+  color: #fff;
+  border-color: transparent;
+}
+
+.select {
+  max-width: 9rem;
+  font-size: 0.75rem;
+  padding: 0.15rem 0.3rem;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.select option {
+  color: #111;
+}
+
+.hint {
+  font-size: 0.72rem;
+  opacity: 0.65;
+  white-space: nowrap;
+}
+
+.slider {
+  width: 10rem;
+  accent-color: var(--wc-accent);
+}
+
+.swatch {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 5px;
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  cursor: pointer;
+  font-size: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.swatch[data-active] {
+  outline: 2px solid var(--wc-accent);
+  outline-offset: 1px;
+  font-size: 0;
+}
+
+.customLabel {
+  position: relative;
+  font-size: 0.72rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  border: 1px dashed color-mix(in srgb, currentColor 30%, transparent);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.fileInput {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.statusRow {
+  display: flex;
+  gap: 0.8rem;
+  font-size: 0.68rem;
+  opacity: 0.6;
+  justify-content: flex-end;
+}
+
+.warn {
+  color: #e8b34c;
+}

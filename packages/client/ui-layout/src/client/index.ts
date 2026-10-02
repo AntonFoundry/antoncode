@@ -132,6 +132,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * own close gesture is equivalent.
      */
     'settings.view': { kind: 'single'; scope: 'root' }
+    /**
+     * One live GPU-composited webcam surface for a `webcam` buffer leaf.
+     * OCCUPIED by ui-webcam's view; no owner props — the engine, settings
+     * store, and theme tokens arrive through the occupant's inject face.
+     */
+    'webcam.view': { kind: 'single'; scope: 'root' }
   }
 }
 
@@ -230,6 +236,7 @@ export function apply(ctx: ClientContext): void {
         'shell.topbar.right': { kind: 'list', scope: 'root' },
         'terminal.view': { kind: 'single', scope: 'root' },
         'settings.view': { kind: 'single', scope: 'root' },
+        'webcam.view': { kind: 'single', scope: 'root' },
         'file.view': { kind: 'keyed', scope: 'root' },
       },
       // Exclusive store: the factory itself — the framework instantiates per

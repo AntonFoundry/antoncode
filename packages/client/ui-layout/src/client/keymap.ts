@@ -55,6 +55,8 @@ export type WmCommand =
   | 'dump-layout'
   /** Open an interactive terminal buffer (login bash on a node-pty). */
   | 'term'
+  /** Open the shared webcam buffer: live GPU background-removal camera view. */
+  | 'webcam'
   /** Toggle keystroke broadcast across every open terminal (multi-cursor). */
   | 'multi-cursor'
   /** Balance every split's weights to equal shares (tidy panes). */
@@ -167,6 +169,7 @@ export function parseChord(event: KeyEventLike, prefix: ArmedPrefix): ChordResul
     case 'k': return prefix === 'x' ? { command: 'kill-buffer' } : null
     case 'l': return prefix === 'x' ? { command: 'reset-layout' } : null
     case 't': return prefix === 'x' ? { command: 'term' } : null
+    case 'v': return prefix === 'x' ? { command: 'webcam' } : null
     case 'o': return prefix === 'x' ? { command: 'other-window' } : null
     case '0': return prefix === 'x' ? { command: 'close' } : null
     case '1': return prefix === 'x' ? { command: 'single' } : null
@@ -211,6 +214,7 @@ export const COMMANDS: readonly CommandEntry[] = [
   { name: 'restart-app', command: 'restart-app', keys: 'M-x' },
   { name: 'dump-layout', command: 'dump-layout', keys: 'M-x' },
   { name: 'term', command: 'term', keys: 'C-x t' },
+  { name: 'webcam', command: 'webcam', keys: 'C-x v' },
   { name: 'multi-cursor', command: 'multi-cursor', keys: 'M-x' },
   { name: 'tidy-panes', command: 'tidy-panes', keys: 'M-x' },
   { name: 'flip-pane', command: 'flip-pane', keys: 'M-x' },
@@ -248,6 +252,8 @@ export const PREFIX_HINTS: Record<'x' | 'c', readonly PrefixHint[]> = {
     { keys: 'C-x ←', label: 'previous buffer' },
     { keys: 'C-x →', label: 'next buffer' },
     { keys: 'C-x l', label: 'reset layout' },
+    { keys: 'C-x t', label: 'terminal' },
+    { keys: 'C-x v', label: 'webcam' },
   ],
   c: [
     { keys: 'C-c ←', label: 'winner undo' },

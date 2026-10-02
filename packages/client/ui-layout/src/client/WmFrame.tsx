@@ -59,6 +59,7 @@ import {
   tabNeighborLeaf,
   SIDEBAR_REATTACH_WEIGHT,
   toggleTabbed,
+  WEBCAM_BUFFER_ID, webcamBuffer,
   type WmDir,
   flipWithSibling, keepOnlyLeaf, killBuffer, leafIds, removeLeaf, scratchBuffer, setWeights, splitLeaf, swapBuffer, tidyTree,
   type WmBuffer, type WmBufferKind, type WmDirection, type WmNode,
@@ -151,7 +152,7 @@ export interface WmFrameInjected {
 /** Full composed props: runtime share + child-slot render share + store share + injected wm face. */
 export type WmFrameProps =
   & PropsRuntime<'root'>
-  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'settings.view' | 'shell.overlay' | 'terminal.view' | 'shell.topbar.left' | 'shell.topbar.right' | 'file.view'>
+  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'settings.view' | 'shell.overlay' | 'terminal.view' | 'webcam.view' | 'shell.topbar.left' | 'shell.topbar.right' | 'file.view'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
   & WmFrameInjected
 
@@ -499,14 +500,16 @@ function LeafPane(props: NodeRenderProps & { node: Extract<WmNode, { kind: 'leaf
             workspacePath,
             onSessionCreated: (sessionId) => { onTerminalSessionCreated?.(node.buffer, sessionId) },
           })
-          : bufferKind === 'settings'
-            ? renderSlot('settings.view', {})
-            : bufferKind === 'session'
-              ? renderSlot('conversation', owner as ConvOwnerProps,
-                buffer?.sessionId !== undefined ? { scopeSessionId: buffer.sessionId } : undefined)
-              : bufferKind === 'sidebar'
-                ? renderSlot('sidebar', sidebarOwner)
-                : renderSlot(bufferKind as 'details', owner as ConvOwnerProps)
+          : bufferKind === 'webcam'
+            ? renderSlot('webcam.view', {})
+            : bufferKind === 'settings'
+              ? renderSlot('settings.view', {})
+              : bufferKind === 'session'
+                ? renderSlot('conversation', owner as ConvOwnerProps,
+                  buffer?.sessionId !== undefined ? { scopeSessionId: buffer.sessionId } : undefined)
+                : bufferKind === 'sidebar'
+                  ? renderSlot('sidebar', sidebarOwner)
+                  : renderSlot(bufferKind as 'details', owner as ConvOwnerProps)
   // The title uses the same id-based fallback as the kind: a registry gap
   // (stale snapshot before reconcile) still names singleton leaves.
   const title = buffer !== undefined
@@ -1689,6 +1692,23 @@ export function WmFrame({
           const bufferId = freshId('buffer:term')
           setBuffers(ensureBuffer(buffers, { id: bufferId, kind: 'terminal' }))
           writeTree(splitLeaf(t, anchor, 'row', bufferId, leafId))
+          setFocus(leafId)
+        }
+        return
+      }
+      case 'webcam': {
+        // M-x webcam (C-x v): open the shared webcam buffer beside the
+        // focused pane. The fixed id is the design — one camera capture
+        // behind every pane showing `buffer:webcam`, so a second open
+        // splits the same feed instead of starting a second camera. The
+        // view attaches to the shared engine when it mounts.
+        {
+          const t = treeRef.current
+          const anchor = focusRef.current ?? firstLeafId(t)
+          if (anchor === undefined) return
+          const leafId = freshLeafId()
+          setBuffers(ensureBuffer(buffers, webcamBuffer()))
+          writeTree(splitLeaf(t, anchor, 'row', WEBCAM_BUFFER_ID, leafId))
           setFocus(leafId)
         }
         return
