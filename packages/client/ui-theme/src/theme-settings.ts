@@ -96,14 +96,14 @@ export function isMonoFont(value: unknown): value is string {
   return MONO_FONTS.some(font => font.id === value)
 }
 
-/** Field carrying the selected UI (proportional) font family id. */
+/** Field carrying the selected UI (proportional) font family name. */
 export const UI_FONT_FIELD = 'uiFamily'
 
-/** Field carrying the interface zoom percent. */
-export const UI_SCALE_FIELD = 'uiScale'
+/** Field carrying the interface base text size in px. */
+export const UI_SIZE_FIELD = 'uiSize'
 
-/** Field carrying the chat-pane zoom percent. */
-export const CHAT_SCALE_FIELD = 'chatScale'
+/** Field carrying the chat-pane base text size in px. */
+export const CHAT_SIZE_FIELD = 'chatSize'
 
 /** Field carrying the terminal font size in px. */
 export const TERM_SIZE_FIELD = 'termSize'
@@ -146,23 +146,41 @@ export const UI_FONTS: readonly UiFontOption[] = Object.freeze([
   }),
 ])
 
-/** Default UI family id when the user-settings document has no override. */
+/** Default UI family name when the user-settings document has no override. */
 export const DEFAULT_UI_FAMILY = 'system'
 
+/** Fallback tail appended after a user-selected UI family. */
+const UI_FAMILY_FALLBACK = SYSTEM_UI_STACK
+
 /**
- * Resolve one UI family id to its CSS stack.
- * @param id - a curated family id.
- * @returns the CSS font-family value; the system stack for unknown ids.
+ * Build the CSS stack for a user-selected UI family: the family quoted
+ * first, then the shipped system tail so CJK and missing glyphs fall back
+ * predictably.
+ * @param family - any installed family name, or 'system'.
+ * @returns the CSS font-family value.
  */
-export function uiFontStack(id: string): string {
-  return UI_FONTS.find(font => font.id === id)?.stack ?? SYSTEM_UI_STACK
+export function uiFamilyStack(family: string): string {
+  if (family === DEFAULT_UI_FAMILY || family.trim() === '') return SYSTEM_UI_STACK
+  return `'${family.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}', ${UI_FAMILY_FALLBACK}`
 }
 
-/** Accepted zoom percent range for the interface and chat sections, inclusive. */
-export const SCALE_RANGE = Object.freeze({ min: 80, max: 140 })
+/** Accepted interface base size range (px), inclusive. */
+export const UI_SIZE_RANGE = Object.freeze({ min: 12, max: 20 })
 
-/** Default interface and chat zoom percent. */
-export const DEFAULT_SCALE = 100
+/** Default interface base size in px — the shipped UI text base. */
+export const DEFAULT_UI_SIZE = 14
+
+/** Interface zoom implementation base: the size that maps to zoom 1. */
+export const UI_ZOOM_BASE = 14
+
+/** Accepted chat base size range (px), inclusive. */
+export const CHAT_SIZE_RANGE = Object.freeze({ min: 12, max: 22 })
+
+/** Default chat base size in px — the shipped markdown text base. */
+export const DEFAULT_CHAT_SIZE = 16
+
+/** Chat zoom implementation base: the size that maps to zoom 1. */
+export const CHAT_ZOOM_BASE = 16
 
 /** Default terminal size in px. */
 export const DEFAULT_TERM_SIZE = 13
@@ -178,12 +196,12 @@ export interface ThemeSettings {
   monoFont: string
   /** Selected monospace size in px. */
   monoSize: number
-  /** Selected UI family id. */
+  /** Selected UI family name, or 'system'. */
   uiFamily: string
-  /** Interface zoom percent. */
-  uiScale: number
-  /** Chat-pane zoom percent. */
-  chatScale: number
+  /** Interface base text size in px. */
+  uiSize: number
+  /** Chat-pane base text size in px. */
+  chatSize: number
   /** Terminal font size in px. */
   termSize: number
 }
@@ -195,10 +213,10 @@ export const ThemeSettingsSchema: z<ThemeSettings> = z.object({
   [MONO_SIZE_FIELD]: z.number()
     .min(MONO_SIZE_RANGE.min).max(MONO_SIZE_RANGE.max).default(DEFAULT_MONO_SIZE),
   [UI_FONT_FIELD]: z.string().default(DEFAULT_UI_FAMILY),
-  [UI_SCALE_FIELD]: z.number()
-    .min(SCALE_RANGE.min).max(SCALE_RANGE.max).default(DEFAULT_SCALE),
-  [CHAT_SCALE_FIELD]: z.number()
-    .min(SCALE_RANGE.min).max(SCALE_RANGE.max).default(DEFAULT_SCALE),
+  [UI_SIZE_FIELD]: z.number()
+    .min(UI_SIZE_RANGE.min).max(UI_SIZE_RANGE.max).default(DEFAULT_UI_SIZE),
+  [CHAT_SIZE_FIELD]: z.number()
+    .min(CHAT_SIZE_RANGE.min).max(CHAT_SIZE_RANGE.max).default(DEFAULT_CHAT_SIZE),
   [TERM_SIZE_FIELD]: z.number()
     .min(TERM_SIZE_RANGE.min).max(TERM_SIZE_RANGE.max).default(DEFAULT_TERM_SIZE),
 })

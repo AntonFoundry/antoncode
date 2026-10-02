@@ -24,7 +24,7 @@ type FontRowActions = {
 export function createFontRowStore(): EngineStoreHandle<FontRowState, FontRowActions> {
   return defineStore({
     init: (): FontRowState => ({
-      uiFamily: 'system', uiScale: 100, chatScale: 100,
+      uiFamily: 'system', uiSize: 14, chatSize: 16,
       monoFont: 'monaco', monoSize: 15, termSize: 13,
       revision: -1,
     }),
@@ -32,8 +32,8 @@ export function createFontRowStore(): EngineStoreHandle<FontRowState, FontRowAct
       sync: (d, selection: FontSelection, revision: number) => {
         if (revision <= d.revision) return
         d.uiFamily = selection.uiFamily
-        d.uiScale = selection.uiScale
-        d.chatScale = selection.chatScale
+        d.uiSize = selection.uiSize
+        d.chatSize = selection.chatSize
         d.monoFont = selection.monoFont
         d.monoSize = selection.monoSize
         d.termSize = selection.termSize

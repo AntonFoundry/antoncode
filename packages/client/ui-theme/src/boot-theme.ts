@@ -7,19 +7,20 @@
  */
 
 import {
-  DEFAULT_MONO_FONT, DEFAULT_MONO_SIZE, DEFAULT_PREFERENCE, DEFAULT_SCALE,
-  DEFAULT_TERM_SIZE, DEFAULT_UI_FAMILY, monoFontStack, uiFontStack,
+  CHAT_ZOOM_BASE, DEFAULT_CHAT_SIZE, DEFAULT_MONO_FONT, DEFAULT_MONO_SIZE,
+  DEFAULT_PREFERENCE, DEFAULT_TERM_SIZE, DEFAULT_UI_FAMILY, DEFAULT_UI_SIZE,
+  monoFontStack, UI_ZOOM_BASE, uiFamilyStack,
   type ThemePreference,
 } from './theme-settings.ts'
 
 /** Durable font selection embedded in the bootstrap (mirrors FontSelection). */
 export interface BootFonts {
-  /** Curated UI family id. */
+  /** UI family name, or 'system'. */
   uiFamily: string
-  /** Interface zoom percent. */
-  uiScale: number
-  /** Chat pane zoom percent. */
-  chatScale: number
+  /** Interface base text size in px. */
+  uiSize: number
+  /** Chat-pane base text size in px. */
+  chatSize: number
   /** Curated monospace family id. */
   monoFont: string
   /** Monospace size in px. */
@@ -29,8 +30,11 @@ export interface BootFonts {
 }
 
 /** Build the inline script for one schema-validated built-in preference. */
-function bootThemeScript(preference: ThemePreference, fonts: BootFonts): string {
-  const chatZoom = fonts.chatScale / fonts.uiScale
+function bootThemeScript(preference: ThemePreference, fonts: BootFonts, uiFonts: readonly string[]): string {
+  // Zoom is an implementation detail: each section's px size is expressed
+  // as a ratio against the section's shipped base.
+  const uiZoom = fonts.uiSize / UI_ZOOM_BASE
+  const chatZoom = fonts.chatSize / CHAT_ZOOM_BASE / uiZoom
   return `<script>(() => {
   const preference = ${JSON.stringify(preference)}
   const systemDark = preference === 'system'
@@ -40,12 +44,13 @@ function bootThemeScript(preference: ThemePreference, fonts: BootFonts): string 
   document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
   document.body.toggleAttribute('data-ds-dark-theme', dark)
   const root = document.documentElement.style
-  root.setProperty('--dsw-font-family', ${JSON.stringify(uiFontStack(fonts.uiFamily))})
-  root.setProperty('--dsh-zoom-ui', ${JSON.stringify(String(fonts.uiScale / 100))})
+  root.setProperty('--dsw-font-family', ${JSON.stringify(uiFamilyStack(fonts.uiFamily))})
+  root.setProperty('--dsh-zoom-ui', ${JSON.stringify(String(uiZoom))})
   root.setProperty('--dsh-zoom-chat', ${JSON.stringify(String(chatZoom))})
   root.setProperty('--ds-font-family-code', ${JSON.stringify(monoFontStack(fonts.monoFont))})
   root.setProperty('--dsw-font-size-code', ${JSON.stringify(`${fonts.monoSize}px`)})
   root.setProperty('--dsh-font-size-term', ${JSON.stringify(`${fonts.termSize}px`)})
+  document.documentElement.dataset.uiFonts = ${JSON.stringify(JSON.stringify(uiFonts))}
 })()</script>`
 }
 
@@ -62,11 +67,12 @@ export function injectBootTheme(
   html: string,
   preference: ThemePreference = DEFAULT_PREFERENCE,
   fonts: BootFonts = {
-    uiFamily: DEFAULT_UI_FAMILY, uiScale: DEFAULT_SCALE, chatScale: DEFAULT_SCALE,
+    uiFamily: DEFAULT_UI_FAMILY, uiSize: DEFAULT_UI_SIZE, chatSize: DEFAULT_CHAT_SIZE,
     monoFont: DEFAULT_MONO_FONT, monoSize: DEFAULT_MONO_SIZE, termSize: DEFAULT_TERM_SIZE,
   },
+  uiFonts: readonly string[] = [],
 ): string {
-  const script = bootThemeScript(preference, fonts)
+  const script = bootThemeScript(preference, fonts, uiFonts)
   const body = /<body(?:\s[^>]*)?>/i.exec(html)
   if (body === null) return `${html}${script}`
   const at = body.index + body[0].length

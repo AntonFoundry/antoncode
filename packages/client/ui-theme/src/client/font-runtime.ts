@@ -9,19 +9,20 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
 import {
-  DEFAULT_MONO_FONT, DEFAULT_MONO_SIZE, DEFAULT_SCALE, DEFAULT_TERM_SIZE,
-  DEFAULT_UI_FAMILY, MONO_SIZE_RANGE, SCALE_RANGE, TERM_SIZE_RANGE,
-  isMonoFont, monoFontStack, uiFontStack, type ThemeSettings,
+  CHAT_SIZE_RANGE, CHAT_ZOOM_BASE, DEFAULT_CHAT_SIZE, DEFAULT_MONO_FONT,
+  DEFAULT_MONO_SIZE, DEFAULT_TERM_SIZE, DEFAULT_UI_FAMILY, DEFAULT_UI_SIZE,
+  MONO_SIZE_RANGE, TERM_SIZE_RANGE, UI_SIZE_RANGE, UI_ZOOM_BASE,
+  isMonoFont, monoFontStack, uiFamilyStack, type ThemeSettings,
 } from '../theme-settings.ts'
 
 /** Full font selection applied as document-root custom properties. */
 export interface FontSelection {
-  /** Curated UI family id (`--dsw-font-family`). */
+  /** UI family name, or 'system' (`--dsw-font-family`). */
   uiFamily: string
-  /** Interface zoom percent, 80–140 (`--dsh-zoom-ui`). */
-  uiScale: number
-  /** Chat pane zoom percent, 80–140 (compensated `--dsh-zoom-chat` ratio). */
-  chatScale: number
+  /** Interface base text size in px, 12–20 (drives `--dsh-zoom-ui`). */
+  uiSize: number
+  /** Chat-pane base text size in px, 12–22 (drives `--dsh-zoom-chat`). */
+  chatSize: number
   /** Curated monospace family id (`--ds-font-family-code`). */
   monoFont: string
   /** Monospace size in px, 10–24 (`--dsw-font-size-code`). */
@@ -38,14 +39,9 @@ export interface FontSnapshot extends FontSelection {
 
 /** Default selection when the settings document has no override. */
 export const DEFAULT_SELECTION: FontSelection = Object.freeze({
-  uiFamily: DEFAULT_UI_FAMILY, uiScale: DEFAULT_SCALE, chatScale: DEFAULT_SCALE,
+  uiFamily: DEFAULT_UI_FAMILY, uiSize: DEFAULT_UI_SIZE, chatSize: DEFAULT_CHAT_SIZE,
   monoFont: DEFAULT_MONO_FONT, monoSize: DEFAULT_MONO_SIZE, termSize: DEFAULT_TERM_SIZE,
 })
-
-/** Normalize a zoom percent to a unitless CSS factor. */
-function zoomFactor(percent: number): string {
-  return String(percent / 100)
-}
 
 /**
  * Write the selection's CSS custom properties onto the document root. The
@@ -57,9 +53,13 @@ function zoomFactor(percent: number): string {
 export function applyFontVars(selection: FontSelection): void {
   if (typeof document === 'undefined') return
   const root = document.documentElement.style
-  root.setProperty('--dsw-font-family', uiFontStack(selection.uiFamily))
-  root.setProperty('--dsh-zoom-ui', zoomFactor(selection.uiScale))
-  root.setProperty('--dsh-zoom-chat', String(selection.chatScale / selection.uiScale))
+  root.setProperty('--dsw-font-family', uiFamilyStack(selection.uiFamily))
+  // Zoom is the implementation of the px sizes: each section's zoom is its
+  // size over the section's shipped base; the chat pane consumes the
+  // chat/ui ratio so zoom multiplies back out to the requested chat size.
+  const uiZoom = selection.uiSize / UI_ZOOM_BASE
+  root.setProperty('--dsh-zoom-ui', String(uiZoom))
+  root.setProperty('--dsh-zoom-chat', String(selection.chatSize / CHAT_ZOOM_BASE / uiZoom))
   root.setProperty('--ds-font-family-code', monoFontStack(selection.monoFont))
   root.setProperty('--dsw-font-size-code', `${selection.monoSize}px`)
   root.setProperty('--dsh-font-size-term', `${selection.termSize}px`)
@@ -100,14 +100,24 @@ export class FontRuntime {
     return this.snapshot
   }
 
-  /** Switch the UI family; unknown ids throw. */
-  setUiFamily(id: string): void { this.writeId('uiFamily', id) }
+  /** Switch the UI family; any non-empty family name is accepted. */
+  setUiFamily(family: string): void { this.writeId('uiFamily', family) }
 
-  /** Switch the interface zoom percent; non-integer or out-of-range throws. */
-  setUiScale(scale: number): void { this.writeScale('uiScale', scale) }
+  /** Switch the interface base size in px; non-integer or out-of-range throws. */
+  setUiSize(size: number): void {
+    if (!Number.isInteger(size) || size < UI_SIZE_RANGE.min || size > UI_SIZE_RANGE.max) {
+      throw new Error(`ui size ${size} outside [${UI_SIZE_RANGE.min}, ${UI_SIZE_RANGE.max}]`)
+    }
+    this.writeNumber('uiSize', size)
+  }
 
-  /** Switch the chat zoom percent; non-integer or out-of-range throws. */
-  setChatScale(scale: number): void { this.writeScale('chatScale', scale) }
+  /** Switch the chat base size in px; non-integer or out-of-range throws. */
+  setChatSize(size: number): void {
+    if (!Number.isInteger(size) || size < CHAT_SIZE_RANGE.min || size > CHAT_SIZE_RANGE.max) {
+      throw new Error(`chat size ${size} outside [${CHAT_SIZE_RANGE.min}, ${CHAT_SIZE_RANGE.max}]`)
+    }
+    this.writeNumber('chatSize', size)
+  }
 
   /** Switch the monospace family; unknown ids throw. */
   setMonoFont(id: string): void {
@@ -136,7 +146,7 @@ export class FontRuntime {
     const section = this.host.getSnapshot().value
     if (section === undefined) return
     const next: FontSelection = {
-      uiFamily: section.uiFamily, uiScale: section.uiScale, chatScale: section.chatScale,
+      uiFamily: section.uiFamily, uiSize: section.uiSize, chatSize: section.chatSize,
       monoFont: section.monoFont, monoSize: section.monoSize, termSize: section.termSize,
     }
     if (sameSelection(this.selection, next)) return
@@ -151,14 +161,7 @@ export class FontRuntime {
     this.publish()
   }
 
-  private writeScale(field: 'uiScale' | 'chatScale', scale: number): void {
-    if (!Number.isInteger(scale) || scale < SCALE_RANGE.min || scale > SCALE_RANGE.max) {
-      throw new Error(`scale ${scale} outside [${SCALE_RANGE.min}, ${SCALE_RANGE.max}]`)
-    }
-    this.writeNumber(field, scale)
-  }
-
-  private writeNumber(field: 'uiScale' | 'chatScale' | 'monoSize' | 'termSize', value: number): void {
+  private writeNumber(field: 'uiSize' | 'chatSize' | 'monoSize' | 'termSize', value: number): void {
     if (this.selection[field] === value) return
     this.selection = { ...this.selection, [field]: value }
     void this.host.set(field, value)
@@ -179,7 +182,7 @@ export class FontRuntime {
 
 /** Field-by-field selection equality (revision excluded). */
 function sameSelection(left: FontSelection, right: FontSelection): boolean {
-  return left.uiFamily === right.uiFamily && left.uiScale === right.uiScale
-    && left.chatScale === right.chatScale && left.monoFont === right.monoFont
+  return left.uiFamily === right.uiFamily && left.uiSize === right.uiSize
+    && left.chatSize === right.chatSize && left.monoFont === right.monoFont
     && left.monoSize === right.monoSize && left.termSize === right.termSize
 }

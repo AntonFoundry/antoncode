@@ -22,7 +22,7 @@ describe('ui-theme host', () => {
     await fiber.await()
     const ns = settingsNamespace(THEME_SETTINGS_NAMESPACE)
     const defaults = {
-      preference: DEFAULT_PREFERENCE, uiFamily: 'system', uiScale: 100, chatScale: 100,
+      preference: DEFAULT_PREFERENCE, uiFamily: 'system', uiSize: 14, chatSize: 16,
       monoFont: 'monaco', monoSize: 15, termSize: 13,
     }
     expect(ctx.settings.get(ns)).toEqual(defaults)
@@ -30,8 +30,10 @@ describe('ui-theme host', () => {
     expect(ctx.settings.get(ns)).toEqual({ ...defaults, preference: 'dark' })
     await expect(ctx.settings.update(ns, { preference: 'sepia' })).rejects.toThrow()
     await expect(ctx.settings.update(ns, { monoSize: 99 })).rejects.toThrow()
-    await expect(ctx.settings.update(ns, { uiScale: 141 })).rejects.toThrow()
-    await expect(ctx.settings.update(ns, { chatScale: 79 })).rejects.toThrow()
+    await expect(ctx.settings.update(ns, { uiSize: 11 })).rejects.toThrow()
+    await expect(ctx.settings.update(ns, { uiSize: 21 })).rejects.toThrow()
+    await expect(ctx.settings.update(ns, { chatSize: 11 })).rejects.toThrow()
+    await expect(ctx.settings.update(ns, { chatSize: 23 })).rejects.toThrow()
     await expect(ctx.settings.update(ns, { termSize: 25 })).rejects.toThrow()
     await ctx.settings.update(ns, { monoFont: 'menlo', monoSize: 17 })
     expect(ctx.settings.get(ns))
@@ -57,14 +59,14 @@ describe('ui-theme host', () => {
     await ctx.settings.update(settingsNamespace(THEME_SETTINGS_NAMESPACE), { preference: 'dark' })
     expect(transform?.('<body></body>')).toContain('const preference = "dark"')
     await ctx.settings.update(settingsNamespace(THEME_SETTINGS_NAMESPACE), {
-      uiFamily: 'georgia', uiScale: 120, chatScale: 90,
+      uiFamily: 'Georgia', uiSize: 17, chatSize: 20,
       monoFont: 'menlo', monoSize: 18, termSize: 16,
     })
     const html = transform?.('<body></body>') ?? ''
     expect(html).toContain("root.setProperty('--dsw-font-family'")
-    expect(html).toContain('Georgia')
-    expect(html).toContain("root.setProperty('--dsh-zoom-ui', \"1.2\")")
-    expect(html).toContain("root.setProperty('--dsh-zoom-chat', \"0.75\")")
+    expect(html).toContain("'Georgia'")
+    expect(html).toContain(`root.setProperty('--dsh-zoom-ui', "${String(17 / 14)}")`)
+    expect(html).toContain(`root.setProperty('--dsh-zoom-chat', "${String((20 / 16) / (17 / 14))}")`)
     expect(html).toContain("root.setProperty('--ds-font-family-code'")
     expect(html).toContain("'Menlo'")
     expect(html).toContain("root.setProperty('--dsw-font-size-code', \"18px\")")

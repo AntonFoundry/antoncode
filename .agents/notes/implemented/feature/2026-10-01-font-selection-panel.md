@@ -8,11 +8,11 @@ The harness GUI had no way to change fonts: the monospace stack was a fixed lite
 
 ## Decision
 
-Font selection is a second settings surface owned by ui-theme, riding the same durable `ui-theme` namespace as the theme preference and the same pre-paint bootstrap. The settings document gained six fields across four sections: `uiFamily` + `uiScale` (Interface), `chatScale` (Chat), `monoFont` + `monoSize` (Code), and `termSize` (Terminal). `FontRuntime` (provided as `ctx.font`, event `font/change`) owns the live selection and applies it itself as six CSS custom properties on the document root: `--dsw-font-family`, `--dsh-zoom-ui`, `--dsh-zoom-chat`, `--ds-font-family-code`, `--dsw-font-size-code`, `--dsh-font-size-term`.
+Font selection is a second settings surface owned by ui-theme, riding the same durable `ui-theme` namespace as the theme preference and the same pre-paint bootstrap. The settings document holds six fields across four sections: `uiFamily` + `uiSize` (Interface), `chatSize` (Chat), `monoFont` + `monoSize` (Code), and `termSize` (Terminal). `FontRuntime` (provided as `ctx.font`, event `font/change`) owns the live selection and applies it itself as six CSS custom properties on the document root: `--dsw-font-family`, `--dsh-zoom-ui`, `--dsh-zoom-chat`, `--ds-font-family-code`, `--dsw-font-size-code`, `--dsh-font-size-term`. The section unit model (px sizes with zoom as implementation, the enumerated system family menu, and the portaled-overlay zoom coverage) is owned by the superseding [font system v3 note](2026-08-12-font-system-v3-px-units-system-fonts.md); this note keeps the section architecture.
 
 Size application follows the architecture rather than patching consumers:
 
-- **Interface/Chat scale through `zoom`.** Most UI text is fixed px (tokens plus literals), so per-token derivation cannot reach it. ui-layout's `.frame` carries `zoom: var(--dsh-zoom-ui)`; `.pane[data-buffer='session']` carries `zoom: var(--dsh-zoom-chat)`. The chat var holds the compensated ratio `chatScale/uiScale` because zoom multiplies when nested — each section therefore stays an independent percent of the 100% baseline.
+- **Interface/Chat size through `zoom`.** Most UI text is fixed px (tokens plus literals), so per-token derivation cannot reach it. ui-layout's `.frame` carries `zoom: var(--dsh-zoom-ui)`; `.pane[data-buffer='session']` carries `zoom: var(--dsh-zoom-chat)`. The chat var holds the compensated ratio because zoom multiplies when nested — each section therefore stays independent.
 - **Code size derives inside the font tokens.** The three mono shorthand tokens (`--dsw-font-markdown-code`, `-code-block`, `-code-block-small`) derive size and line-height from `--dsw-font-size-code`. This is the fix for the v1 failure: bash/tool cards consume `font: var(--dsl-terminal-font)` (the shorthand token), so per-consumer `font-size:` overrides never reached them while the family var did.
 - **Terminal size reaches xterm twice:** the boot var seeds the initial `fontSize`, and ui-terminal mirrors `font/change` into a hooks-compartment store so mounted views set `term.options.fontSize` and re-fit through FitAddon live.
 
@@ -30,7 +30,7 @@ Size application follows the architecture rather than patching consumers:
 
 ## Consequences
 
-Portaled overlays (menus, popovers, dialogs rendered outside `.frame`) do not follow the interface zoom. The terminal keeps its Nerd Font family stack for icon glyphs and follows only `termSize`. Fractional scales are refused (integer percent), and the persisted document upgrades in place through schema defaults.
+Portaled overlays follow the interface zoom since the v3 note (their portal roots carry the zoom var). The terminal keeps its Nerd Font family stack for icon glyphs and follows only `termSize`. Fractional sizes are refused (integer px), and the persisted document upgrades in place through schema defaults.
 
 ## Verification
 

@@ -399,7 +399,24 @@ export const inject = ['slots', 'locale', 'connection', 'remote', 'settingsScope
  * slot (a feature owns its settings surface).
  * @param ctx - client cordis context.
  */
+/** Installed system families embedded by the boot bootstrap (apply-time read). */
+let uiFontsCache: readonly string[] = []
+
+/** Read the boot bootstrap's dataset-embedded system family list. */
+function parseBootFontList(): readonly string[] {
+  if (typeof document === 'undefined') return []
+  const raw = document.documentElement.dataset.uiFonts
+  if (raw === undefined) return []
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : []
+  } catch {
+    return [] // malformed payload — the menu falls back to the System entry alone
+  }
+}
+
 export function apply(ctx: ClientContext): void {
+  uiFontsCache = parseBootFontList()
   const host = ctx.settingsScope.bind<ThemeSettings>({ namespace: THEME_SETTINGS_NAMESPACE })
   const theme = new ThemeRuntime(ctx, host)
   ctx.provide('theme', theme)
@@ -443,9 +460,10 @@ export function apply(ctx: ClientContext): void {
     fontBound = actions
     syncFont(fonts.getFont())
     return {
-      setUiFamily: (id) => { fonts.setUiFamily(id) },
-      setUiScale: (scale) => { fonts.setUiScale(scale) },
-      setChatScale: (scale) => { fonts.setChatScale(scale) },
+      uiFonts: uiFontsCache,
+      setUiFamily: (family) => { fonts.setUiFamily(family) },
+      setUiSize: (size) => { fonts.setUiSize(size) },
+      setChatSize: (size) => { fonts.setChatSize(size) },
       setMonoFont: (id) => { fonts.setMonoFont(id) },
       setMonoSize: (size) => { fonts.setMonoSize(size) },
       setTermSize: (size) => { fonts.setTermSize(size) },

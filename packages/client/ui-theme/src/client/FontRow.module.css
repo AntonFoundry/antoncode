@@ -123,3 +123,24 @@
   color: var(--dsw-alias-label-primary);
   font-variant-numeric: tabular-nums;
 }
+
+/* Family-menu filter input (footer seat of the portal menu). */
+.filter {
+  flex: none;
+  width: 100%;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: transparent;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.filter:focus {
+  outline: none;
+  border-color: var(--dsw-alias-brand-primary);
+}

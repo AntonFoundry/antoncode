@@ -15,8 +15,9 @@ function executeBootstrap(
   preference?: ThemePreference,
   html = '<html><body><div id="root"></div><script type="module"></script></body></html>',
   fonts?: BootFonts,
+  uiFonts: readonly string[] = [],
 ): string {
-  const injected = injectBootTheme(html, preference, fonts)
+  const injected = injectBootTheme(html, preference, fonts, uiFonts)
   const source = /<script>([\s\S]*?)<\/script>/.exec(injected)?.[1]
   if (source === undefined) throw new Error('theme bootstrap script missing')
   runInNewContext(source, { document, matchMedia: globalThis.matchMedia })
@@ -71,16 +72,18 @@ describe('theme boot index transform', () => {
     expect(document.body.hasAttribute(DARK_ATTRIBUTE)).toBe(false)
   })
 
-  it('embeds the durable font selection as pre-paint CSS vars', () => {
+  it('embeds the durable font selection as pre-paint CSS vars and the system family list', () => {
     mockSystemDark(false)
     executeBootstrap('dark', undefined, {
-      uiFamily: 'georgia', uiScale: 120, chatScale: 90,
+      uiFamily: 'Avenir Next', uiSize: 17, chatSize: 20,
       monoFont: 'menlo', monoSize: 18, termSize: 16,
-    })
+    }, ['Avenir Next', 'Georgia'])
+    expect(JSON.parse(document.documentElement.dataset.uiFonts ?? '[]')).toEqual(['Avenir Next', 'Georgia'])
     const style = document.documentElement.style
-    expect(style.getPropertyValue('--dsw-font-family')).toContain('Georgia')
-    expect(style.getPropertyValue('--dsh-zoom-ui')).toBe('1.2')
-    expect(style.getPropertyValue('--dsh-zoom-chat')).toBe('0.75')
+    expect(style.getPropertyValue('--dsw-font-family')).toContain("'Avenir Next'")
+    // Sizes are px; the zoom vars are ratios against the section bases.
+    expect(style.getPropertyValue('--dsh-zoom-ui')).toBe(String(17 / 14))
+    expect(style.getPropertyValue('--dsh-zoom-chat')).toBe(String((20 / 16) / (17 / 14)))
     expect(style.getPropertyValue('--ds-font-family-code')).toContain('Menlo')
     expect(style.getPropertyValue('--dsw-font-size-code')).toBe('18px')
     expect(style.getPropertyValue('--dsh-font-size-term')).toBe('16px')

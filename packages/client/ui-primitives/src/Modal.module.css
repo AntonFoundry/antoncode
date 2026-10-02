@@ -7,6 +7,8 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
+  /* Portaled outside .frame, so it carries the interface zoom itself. */
+  zoom: var(--dsh-zoom-ui, 1);
 }
 
 /* User/spec mask: rgba(0,0,0,0.24) + blur(2px) via --dsw-alias-bg-mask-1 /

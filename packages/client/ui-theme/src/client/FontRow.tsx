@@ -9,8 +9,8 @@ import { useState } from 'react'
 import type { PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import { IconChevronDownOutline14, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
-  MONO_FONTS, MONO_SIZE_RANGE, SCALE_RANGE, TERM_SIZE_RANGE, UI_FONTS,
-  monoFontStack, uiFontStack,
+  CHAT_SIZE_RANGE, MONO_FONTS, MONO_SIZE_RANGE, TERM_SIZE_RANGE, UI_SIZE_RANGE,
+  SYSTEM_UI_STACK, monoFontStack, uiFamilyStack,
 } from '../theme-settings.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { createFontRowStore } from './font-store.ts'
@@ -18,12 +18,14 @@ import css from './FontRow.module.css'
 
 /** Injected business face: the preference writes (t rides the standard locale seat). */
 export interface FontRowInjected {
-  /** Switch the UI family (a curated id). */
-  setUiFamily: (id: string) => void
-  /** Switch the interface zoom percent. */
-  setUiScale: (scale: number) => void
-  /** Switch the chat zoom percent. */
-  setChatScale: (scale: number) => void
+  /** Installed system font families for the interface menu. */
+  uiFonts: readonly string[]
+  /** Switch the UI family (any installed family name, or 'system'). */
+  setUiFamily: (family: string) => void
+  /** Switch the interface base size in px. */
+  setUiSize: (size: number) => void
+  /** Switch the chat base size in px. */
+  setChatSize: (size: number) => void
   /** Switch the monospace family (a curated id). */
   setMonoFont: (id: string) => void
   /** Switch the monospace size (px inside the accepted range). */
@@ -42,13 +44,11 @@ interface StepperProps {
   value: number
   min: number
   max: number
-  /** Value unit shown after the number (empty for percent, which shows %). */
-  unit: '%' | ''
   onStep: (next: number) => void
 }
 
-/** One labeled stepper (− value +) clamped to its range. */
-function Stepper({ label, value, min, max, unit, onStep }: StepperProps) {
+/** One labeled stepper (− value +) clamped to its range. Values are px. */
+function Stepper({ label, value, min, max, onStep }: StepperProps) {
   return (
     <div className={css.stepper} role="group" aria-label={label}>
       <button
@@ -57,7 +57,7 @@ function Stepper({ label, value, min, max, unit, onStep }: StepperProps) {
       >
         −
       </button>
-      <span className={css.sizeValue}>{`${value}${unit}`}</span>
+      <span className={css.sizeValue}>{`${value}px`}</span>
       <button
         type="button" className={css.stepButton} disabled={value >= max}
         onClick={() => { onStep(value + 1) }}
@@ -71,25 +71,51 @@ function Stepper({ label, value, min, max, unit, onStep }: StepperProps) {
 interface FamilyMenuProps {
   options: readonly { id: string; label: string; stack: string }[]
   selected: string
+  /** Menu label shown when the selected value has no curated option row. */
+  selectedLabel: string
+  /** Optional filter input shown above the list (for long system menus). */
+  filterable?: boolean
   onSelect: (id: string) => void
 }
 
 /** Family pill opening a menu whose rows preview in their own family. */
-function FamilyMenu({ options, selected, onSelect }: FamilyMenuProps) {
+function FamilyMenu({ options, selected, selectedLabel, filterable = false, onSelect }: FamilyMenuProps) {
   const [open, setOpen] = useState(false)
+  const [filter, setFilter] = useState('')
   const active = options.find(font => font.id === selected)
+  const needle = filter.trim().toLowerCase()
+  const visible = needle === ''
+    ? options
+    : options.filter(font => font.label.toLowerCase().includes(needle))
   return (
     <Menu
       open={open}
-      onClose={() => { setOpen(false) }}
-      items={options.map(font => ({
+      onClose={() => {
+        setOpen(false)
+        setFilter('')
+      }}
+      items={visible.map(font => ({
         id: font.id,
         label: <span style={{ fontFamily: font.stack }}>{font.label}</span>,
       }))}
+      {...(filterable
+        ? {
+          header: (
+            <input
+              className={css.filter}
+              placeholder={tFilter}
+              value={filter}
+              onChange={(e) => { setFilter(e.target.value) }}
+              onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false) }}
+            />
+          ),
+        }
+        : {})}
       selectedId={selected}
       onSelect={(id) => {
         onSelect(id)
         setOpen(false)
+        setFilter('')
       }}
       align="end"
       portal
@@ -100,7 +126,7 @@ function FamilyMenu({ options, selected, onSelect }: FamilyMenuProps) {
           aria-haspopup="menu" aria-expanded={open}
           onClick={() => { setOpen(v => !v) }}
         >
-          {active?.label ?? selected}
+          {active?.label ?? selectedLabel}
           <IconChevronDownOutline14 className={css.chevron} />
         </button>
       )}
@@ -108,20 +134,27 @@ function FamilyMenu({ options, selected, onSelect }: FamilyMenuProps) {
   )
 }
 
+/** Filter placeholder is a fixed product string (the row owns no seat for it). */
+const tFilter = 'Filter…'
+
 /**
  * Render the Font panel.
  * @param props - composed slot props.
  * @returns the panel element tree.
  */
 export function FontRow({
-  t, setUiFamily, setUiScale, setChatScale, setMonoFont, setMonoSize, setTermSize, useStore,
+  t, uiFonts, setUiFamily, setUiSize, setChatSize, setMonoFont, setMonoSize, setTermSize, useStore,
 }: FontRowComponentProps) {
   const uiFamily = useStore(s => s.uiFamily)
-  const uiScale = useStore(s => s.uiScale)
-  const chatScale = useStore(s => s.chatScale)
+  const uiSize = useStore(s => s.uiSize)
+  const chatSize = useStore(s => s.chatSize)
   const monoFont = useStore(s => s.monoFont)
   const monoSize = useStore(s => s.monoSize)
   const termSize = useStore(s => s.termSize)
+  const uiOptions = [
+    { id: 'system', label: t('font.system'), stack: SYSTEM_UI_STACK },
+    ...uiFonts.map(family => ({ id: family, label: family, stack: uiFamilyStack(family) })),
+  ]
 
   return (
     <div className={css.panel}>
@@ -130,15 +163,19 @@ export function FontRow({
       <div className={css.section}>
         <div className={css.sectionText}>
           <div className={css.sectionLabel}>{t('font.interface')}</div>
-          <div className={css.preview} style={{ fontFamily: uiFontStack(uiFamily) }}>
+          <div className={css.preview} style={{ fontFamily: uiFamilyStack(uiFamily) }}>
             {t('font.previewUi')}
           </div>
         </div>
         <div className={css.controls}>
-          <FamilyMenu options={UI_FONTS} selected={uiFamily} onSelect={setUiFamily} />
+          <FamilyMenu
+            options={uiOptions} selected={uiFamily}
+            selectedLabel={uiFamily} filterable
+            onSelect={setUiFamily}
+          />
           <Stepper
-            label={t('font.scale')} value={uiScale} unit="%"
-            min={SCALE_RANGE.min} max={SCALE_RANGE.max} onStep={setUiScale}
+            label={t('font.size')} value={uiSize}
+            min={UI_SIZE_RANGE.min} max={UI_SIZE_RANGE.max} onStep={setUiSize}
           />
         </div>
       </div>
@@ -150,8 +187,8 @@ export function FontRow({
         </div>
         <div className={css.controls}>
           <Stepper
-            label={t('font.scale')} value={chatScale} unit="%"
-            min={SCALE_RANGE.min} max={SCALE_RANGE.max} onStep={setChatScale}
+            label={t('font.size')} value={chatSize}
+            min={CHAT_SIZE_RANGE.min} max={CHAT_SIZE_RANGE.max} onStep={setChatSize}
           />
         </div>
       </div>
@@ -167,9 +204,12 @@ export function FontRow({
           </div>
         </div>
         <div className={css.controls}>
-          <FamilyMenu options={MONO_FONTS} selected={monoFont} onSelect={setMonoFont} />
+          <FamilyMenu
+            options={MONO_FONTS} selected={monoFont} selectedLabel={monoFont}
+            onSelect={setMonoFont}
+          />
           <Stepper
-            label={t('font.size')} value={monoSize} unit=""
+            label={t('font.size')} value={monoSize}
             min={MONO_SIZE_RANGE.min} max={MONO_SIZE_RANGE.max} onStep={setMonoSize}
           />
         </div>
@@ -187,7 +227,7 @@ export function FontRow({
         </div>
         <div className={css.controls}>
           <Stepper
-            label={t('font.size')} value={termSize} unit=""
+            label={t('font.size')} value={termSize}
             min={TERM_SIZE_RANGE.min} max={TERM_SIZE_RANGE.max} onStep={setTermSize}
           />
         </div>

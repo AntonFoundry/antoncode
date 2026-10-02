@@ -36,7 +36,7 @@ async function bench(isLoopback = true) {
     schema: ThemeSettingsSchema.toJSON(),
     value: {
       preference,
-      uiFamily: 'system', uiScale: 100, chatScale: 100,
+      uiFamily: 'system', uiSize: 14, chatSize: 16,
       monoFont: 'monaco', monoSize: 15, termSize: 13,
     },
     applies: 'live' as const,

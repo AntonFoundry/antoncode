@@ -28,7 +28,7 @@ function scopeOf(section: ThemeSettings | undefined): SettingsScope<ThemeSetting
 }
 
 const BASE_SECTION: ThemeSettings = {
-  preference: 'system', uiFamily: 'system', uiScale: 100, chatScale: 100,
+  preference: 'system', uiFamily: 'system', uiSize: 14, chatSize: 16,
   monoFont: 'monaco', monoSize: 15, termSize: 13,
 }
 
@@ -42,18 +42,20 @@ afterEach(clearVars)
 
 describe('applyFontVars', () => {
   it('writes all six custom properties on the document root', () => {
-    applyFontVars({ ...DEFAULT_SELECTION, uiFamily: 'georgia', uiScale: 120, chatScale: 90 })
+    applyFontVars({ ...DEFAULT_SELECTION, uiFamily: 'Avenir Next', uiSize: 14, chatSize: 20 })
     const style = document.documentElement.style
-    expect(style.getPropertyValue('--dsw-font-family')).toContain('Georgia')
-    expect(style.getPropertyValue('--dsh-zoom-ui')).toBe('1.2')
-    expect(style.getPropertyValue('--dsh-zoom-chat')).toBe('0.75')
+    expect(style.getPropertyValue('--dsw-font-family')).toContain("'Avenir Next'")
+    // Zoom is the implementation of the px sizes: uiSize/14, and the chat
+    // pane consumes the chat/ui ratio so sections stay independent.
+    expect(style.getPropertyValue('--dsh-zoom-ui')).toBe('1')
+    expect(style.getPropertyValue('--dsh-zoom-chat')).toBe(String((20 / 16)))
     expect(style.getPropertyValue('--ds-font-family-code')).toContain('Monaco')
     expect(style.getPropertyValue('--dsw-font-size-code')).toBe('15px')
     expect(style.getPropertyValue('--dsh-font-size-term')).toBe('13px')
   })
 
-  it('falls back to the default stacks for unknown family ids', () => {
-    applyFontVars({ ...DEFAULT_SELECTION, uiFamily: 'nope', monoFont: 'not-a-font' })
+  it('falls back to the system stack for the system family and unknown ids', () => {
+    applyFontVars({ ...DEFAULT_SELECTION, uiFamily: 'system', monoFont: 'not-a-font' })
     const style = document.documentElement.style
     expect(style.getPropertyValue('--dsw-font-family')).toContain('-apple-system')
     expect(style.getPropertyValue('--ds-font-family-code')).toContain('Monaco')
@@ -75,30 +77,33 @@ describe('FontRuntime', () => {
     const runtime = new FontRuntime(ctx, host)
     const seen = vi.fn()
     ctx.on('font/change', seen)
-    runtime.setUiFamily('georgia')
-    expect(host.set).toHaveBeenCalledWith('uiFamily', 'georgia')
-    expect(document.documentElement.style.getPropertyValue('--dsw-font-family')).toContain('Georgia')
-    expect(seen).toHaveBeenCalledWith({ ...DEFAULT_SELECTION, uiFamily: 'georgia', revision: 1 })
+    runtime.setUiFamily('Georgia')
+    expect(host.set).toHaveBeenCalledWith('uiFamily', 'Georgia')
+    expect(document.documentElement.style.getPropertyValue('--dsw-font-family')).toContain("'Georgia'")
+    expect(seen).toHaveBeenCalledWith({ ...DEFAULT_SELECTION, uiFamily: 'Georgia', revision: 1 })
     // Same-id write is a no-op.
-    runtime.setUiFamily('georgia')
+    runtime.setUiFamily('Georgia')
     expect(seen).toHaveBeenCalledTimes(1)
     await ctx.fiber.dispose()
   })
 
-  it('setUiScale/setChatScale validate the range and compensate the chat zoom var', async () => {
+  it('setUiSize/setChatSize validate the range and compensate the chat zoom var', async () => {
     const ctx = new Context()
     const host = scopeOf(BASE_SECTION)
     const runtime = new FontRuntime(ctx, host)
-    runtime.setUiScale(120)
-    expect(host.set).toHaveBeenCalledWith('uiScale', 120)
-    expect(document.documentElement.style.getPropertyValue('--dsh-zoom-ui')).toBe('1.2')
-    runtime.setChatScale(90)
-    // chat zoom var = chat/ui = 0.75 so the two sections stay independent.
-    expect(document.documentElement.style.getPropertyValue('--dsh-zoom-chat')).toBe('0.75')
-    expect(() => runtime.setUiScale(79)).toThrow('outside [80, 140]')
-    expect(() => runtime.setUiScale(141)).toThrow('outside [80, 140]')
-    expect(() => runtime.setUiScale(100.5)).toThrow('outside [80, 140]')
-    expect(() => runtime.setChatScale(70)).toThrow('outside [80, 140]')
+    runtime.setUiSize(17)
+    expect(host.set).toHaveBeenCalledWith('uiSize', 17)
+    expect(document.documentElement.style.getPropertyValue('--dsh-zoom-ui')).toBe(String(17 / 14))
+    runtime.setChatSize(20)
+    // chat zoom var = (20/16)/(17/14) so the pane renders 20px text while
+    // the frame renders 17px-equivalent UI.
+    expect(document.documentElement.style.getPropertyValue('--dsh-zoom-chat'))
+      .toBe(String((20 / 16) / (17 / 14)))
+    expect(() => runtime.setUiSize(11)).toThrow('outside [12, 20]')
+    expect(() => runtime.setUiSize(21)).toThrow('outside [12, 20]')
+    expect(() => runtime.setUiSize(13.5)).toThrow('outside [12, 20]')
+    expect(() => runtime.setChatSize(11)).toThrow('outside [12, 22]')
+    expect(() => runtime.setChatSize(23)).toThrow('outside [12, 22]')
     await ctx.fiber.dispose()
   })
 
@@ -132,12 +137,12 @@ describe('FontRuntime', () => {
   it('adopts a durable selection pushed through the scope without writing back', async () => {
     const ctx = new Context()
     const host = scopeOf({
-      ...BASE_SECTION, uiFamily: 'helvetica', uiScale: 110, chatScale: 130,
+      ...BASE_SECTION, uiFamily: 'Helvetica Neue', uiSize: 13, chatSize: 18,
       monoFont: 'sf-mono', monoSize: 12, termSize: 16,
     })
     const runtime = new FontRuntime(ctx, host)
     const expected: FontSelection = {
-      uiFamily: 'helvetica', uiScale: 110, chatScale: 130,
+      uiFamily: 'Helvetica Neue', uiSize: 13, chatSize: 18,
       monoFont: 'sf-mono', monoSize: 12, termSize: 16,
     }
     expect(runtime.getFont()).toEqual({ ...expected, revision: 1 })
