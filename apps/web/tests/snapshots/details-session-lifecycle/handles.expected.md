@@ -1,7 +1,6 @@
-# AppFrame drag handles
+# Root split sashes
 
-## sidebar
+## sash 0
 
-- hit strip present: true
 - cursor: col-resize
-- pill generated: false
+- data-dragging flag present: false

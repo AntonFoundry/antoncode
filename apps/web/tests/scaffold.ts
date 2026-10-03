@@ -222,6 +222,14 @@ export interface LaunchOptions {
    */
   toolsMode?: 'native' | 'code' | 'both'
   /**
+   * The scenario's recorded/generated scripts call gated tools directly
+   * (`bash` with no preceding todo_write). Opts into `native` tool
+   * presentation AND disables the shipped todo-plan gate for this scaffold —
+   * the two divergences those scripts need to run as recorded. The paged
+   * catalog and the gate itself have their own coverage elsewhere.
+   */
+  directToolCalls?: boolean
+  /**
    * Insert the opt-in model-facing Cordis tool provider into the shipped tree.
    * Record and replay use the same tool surface, so captured request headers
    * remain reconstructable without making the tools a product default.
@@ -468,6 +476,22 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       // Never the derived harness-home root: a developer's own presets must not
       // be able to change a golden, whatever roots a scenario asks for.
       : [{ id: 'agent-presets', config: { ...options.agentPresets, includeUserRoot: false } }],
+    // `directToolCalls` scenarios opt into BOTH divergences below; without
+    // it the scaffold keeps the shipped composition verbatim.
+    ...options.directToolCalls === true
+      ? [
+        // Native presentation: these scripts call tools like `bash` directly
+        // (the session/tool binding under test). The shipped web-app default
+        // (`paged`, catalog + tool_search grants) has its own coverage in the
+        // tools package suite.
+        { id: 'tools', config: { mode: 'native' } },
+        // The shipped base bundle enables the todo-plan gate (plan-first
+        // deployment policy for live agents). These scripts call gated tools
+        // without a preceding todo_write — the gate would deny exactly the
+        // turns under test; the gate's own spec covers it.
+        { id: 'gate-policy', config: { todoPlanGate: { enabled: false, tools: [] } } },
+      ]
+      : [],
     ...options.toolsMode === undefined ? [] : [{ id: 'tools', config: { mode: options.toolsMode } }],
     // The shipped Web bundle already owns both runners and the Cordis UI. This
     // scenario adds only the model-facing tools that exercise those services.

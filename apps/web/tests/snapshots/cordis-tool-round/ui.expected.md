@@ -1,3 +1,14 @@
+- text: Chat · Use only Cordis tools. First
+- button "Split below"
+- button "Split right"
+- button "Tidy panes"
+- button "Move pane left"
+- button "Move pane right"
+- button "Move pane up"
+- button "Move pane down"
+- button "Expand pane"
+- button "Close":
+  - img
 - banner:
   - navigation "Session hierarchy":
     - button "Use only Cordis tools. First" [disabled]
@@ -6,11 +17,16 @@
   - button "Session log":
     - text: Session log
     - img
+  - button "展开全部工具卡片"
   - tablist:
     - tab "Chat" [selected]
+    - tab "Orchestrator"
+    - tab "Workflows"
     - tab "Trajectory"
 - text: "Use only Cordis tools. First call cordis_inspect_self with no arguments. Then call cordis_define with plugin kind \"new\", idPrefix \"snap\", name \"snapshot noop\", purpose \"does nothing, for the snapshot\", code.host exactly \"return { name: \\\"snapshot-noop\\\", apply(ctx) {} }\" and code.client exactly \"return { inject: [\\\"slots\\\"], apply(ctx) { ctx.slots.register({ name: \\\"shell.overlay\\\", id: \\\"snapshot-probe\\\" }, () => React.createElement(\\\"div\\\", { \\\"data-snapshot-probe\\\": \\\"loaded\\\" })) } }\". Read its returned pluginId and packageId, then call cordis_run with those exact IDs and mode \"run\". After the run request returns, reply exactly CORDIS_UI_READY and stop. {{clock}}"
 - button "Copy":
+  - img
+- button "More actions":
   - img
 - button "Context injection @deepseek-ai/dsh-system-prompt":
   - img
@@ -38,7 +54,7 @@
   - text: javascript
   - button "Copy"
   - code: "return { name: \"snapshot-noop\", apply(ctx) {} }"
-- text: Result Defined snap-1/pkg-1 (snapshot noop); it is not running yet. Use cordis_run to activate this Package. Run controls live in the Cordis panel above Settings
+- text: "Result Defined snap-1/pkg-1 (snapshot noop); it is not running yet. Detected capabilities: none. Use cordis_run to activate this Package. Run controls live in the Cordis panel above Settings"
 - button "Inspect"
 - button "Think The Host returned snap-1/pkg-1, so I will request its first activation.":
   - img
@@ -61,6 +77,8 @@
   - img
 - button "Branch into a new conversation":
   - img
+- button "More actions":
+  - img
 - text: {{clock}} Ran for {{duration}}
 - button "Context injection cordis-host-runner":
   - img
@@ -79,8 +97,12 @@
   - img
 - button "Branch into a new conversation":
   - img
+- button "More actions":
+  - img
 - text: {{clock}} Ran for {{duration}} Use only Cordis tools. Call cordis_stop with pluginId "snap-1". After it succeeds, reply exactly CORDIS_UI_DONE and stop. {{clock}}
 - button "Copy":
+  - img
+- button "More actions":
   - img
 - status:
   - text: "This turn failedllm-replay: script exhausted — session requested model call #7 but its script has only 6; re-record the scenario"

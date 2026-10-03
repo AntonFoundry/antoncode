@@ -34,7 +34,7 @@ import type { SidebarOwnerProps, ConvOwnerProps, FileViewOwnerProps } from './in
 import { viewerKeyFor } from './file-view.ts'
 import {
   clampWidth, CONTEXT_DEFAULT, CONTEXT_MAX, CONTEXT_MIN,
-  DETAILS_DEFAULT, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN,
+  DETAILS_DEFAULT, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN,
 } from './columns.ts'
 
 /** Untouched-preference sidebar share of the frame width (committed baseline). */
@@ -732,6 +732,7 @@ function NodeView(props: NodeRenderProps & { node: WmNode }) {
           )}
           <div
             className={css.paneWrapper}
+            data-pane={pinAt(i)?.kind ?? 'content'}
             style={pinAt(i) !== undefined
               ? // A pinned home pane IS its column: pinned to the width
               // preference, so the divider sits exactly on its edge.
@@ -1023,6 +1024,13 @@ export function WmFrame({
       if (raf !== null) cancelAnimationFrame(raf)
     }
   }, [])
+
+  // Narrow-viewport auto-collapse: the frame owns the breakpoint decision
+  // (columns.ts constant, resize-observed viewport); the store's setNarrow
+  // flips the sidebar toggle semantics and drops the manual expand override.
+  useEffect(() => {
+    actions.setNarrow(viewport < SIDEBAR_AUTO_COLLAPSE)
+  }, [actions, viewport])
 
   /** Registry write for a files buffer's navigate-in-place. */
   const navigateBuffer = useCallback((bufferId: string, target: string | undefined) => {
@@ -1908,19 +1916,19 @@ export function WmFrame({
   // frame; a dragged preference (any other store value) is honored in px but
   // re-clamped into [SIDEBAR_MIN, 20% of the frame], so the column never
   // exceeds a fifth of the window and the buffer area keeps the rest.
-  const shareTarget = clampWidth(
-    Math.round(viewport * SIDEBAR_SHARE),
-    SIDEBAR_MIN,
-    Math.max(SIDEBAR_MIN, Math.round(viewport * SIDEBAR_SHARE_MAX)),
-  )
+  const shareMax = Math.max(SIDEBAR_MIN, Math.round(viewport * SIDEBAR_SHARE_MAX))
+  const shareTarget = clampWidth(Math.round(viewport * SIDEBAR_SHARE), SIDEBAR_MIN, shareMax)
   const sidebarOwner: SidebarOwnerProps & { brandInFrame: true } = {
-    collapsed: panels.sidebar === 0,
+    // Narrow viewport auto-collapses to the rail (the store's documented
+    // setNarrow/narrowExpanded contract); the manual override re-expands over
+    // the squeezed center without rewriting the width preference.
+    collapsed: panels.sidebar === 0 || (panels.narrow && !panels.narrowExpanded),
     width:
       panels.sidebar === 0
         ? 56
         : panels.sidebar === SIDEBAR_DEFAULT
           ? shareTarget
-          : Math.min(clampWidth(panels.sidebar, SIDEBAR_MIN, SIDEBAR_MAX), shareTarget),
+          : Math.min(clampWidth(panels.sidebar, SIDEBAR_MIN, SIDEBAR_MAX), shareMax),
     brandInFrame: true,
     scopeSessionId: (() => {
       const active = focusedId === undefined ? undefined : findLeaf(tree, focusedId)
@@ -2002,7 +2010,7 @@ export function WmFrame({
   }
 
   return (
-    <div ref={frameRef} className={css.frame} data-dragging={dragging || undefined}>
+    <div ref={frameRef} className={css.frame} data-app-frame="" data-dragging={dragging || undefined}>
       <div className={css.brandRow}>
         <BrandWordmark size={30} />
         <button

@@ -169,6 +169,9 @@ export function SidebarRoot({
         css.root, !wide && css.collapsed, !wide && everWide.current && css.railIn,
         collapsed && wide && css.fading, !pointerInside && css.quietBars,
       )}
+      // The settled collapsed-rail state, as a stable hook for geometry e2e
+      // (the auto-collapse breakpoint in columns.ts flips it).
+      data-sidebar-collapsed={!wide || undefined}
       style={wide ? { width: collapsed ? lastWideWidth.current : width } : undefined}
       onPointerEnter={() => {
         cancelLinger()
