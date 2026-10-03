@@ -189,6 +189,40 @@ describe('dsh-tool-subagent-control/list-agents', () => {
     )
   })
 
+  it('renders a child usage bracket with the cache-hit percentage', async () => {
+    const { ctx, parent } = await setup([textResponse('done')])
+    const started = await ctx.subagents.startContinuable({
+      provider: 'spawn',
+      label: 'cached child',
+      request: { prompt: [{ type: 'text', text: 'child task' }], parent },
+      signal: testToolSignal,
+    })
+    await waitNoActivation(ctx, started.childId)
+    ctx.subagents.listChildren = () => Promise.resolve([
+      {
+        kind: 'child',
+        id: started.childId,
+        label: 'cached child',
+        mode: 'continuable',
+        activity: 'inactive',
+        hasChildren: false,
+        usage: {
+          uncachedInputTokens: 10,
+          outputTokens: 4,
+          cacheReadTokens: 7,
+          cacheWriteTokens: 2,
+          cacheHitRate: 7 / 19,
+        },
+      },
+    ])
+    const result = await callTool(ctx, 'list_agents', {}, parent)
+    expect(result.isError).toBe(false)
+    expect(text(result)).toBe(
+      `${started.childId} [ready] — cached child`
+      + ' tokens[in=10 out=4 cache-read=7 cache-write=2 hit=37%]',
+    )
+  })
+
   it('resolves omitted scope to children and forwards the tool cancellation signal', async () => {
     const { ctx, parent } = await setup([])
     const signal = new AbortController().signal

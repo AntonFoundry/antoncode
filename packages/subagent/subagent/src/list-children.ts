@@ -8,7 +8,9 @@
  * seq gate), and one persistence inspection folded through the registry
  * otherwise, validated against the enumerated lifecycle. The projection fold
  * is the single classification authority — this module parses no descriptor
- * itself. Absent persistence, enumeration is live-only: a cold child is
+ * itself. Each child row also carries the child's cumulative provider usage
+ * when the `tokenUsage` projection unit is registered and the child has
+ * reported usage. Absent persistence, enumeration is live-only: a cold child is
  * unreachable for resume anyway, so its absence is capability absence, not an
  * error. The module owns no catalog state and does not consult Activation,
  * Agent-registry, continuation-manager, or provider state.
@@ -20,9 +22,11 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import type { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
+import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
 import type { SessionProjectionCache } from '@deepseek-ai/dsh-session-projection-cache'
 import { SubagentError } from './error.ts'
 import type { SubagentIdentityProjection } from './projection-types.ts'
+import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 
 /**
  * Concurrent cold inspections per listing; a constant because it bounds one
@@ -55,6 +59,13 @@ export type SubagentListEntry =
     readonly activity: 'running' | 'inactive'
     /** Whether a direct descendant has durable `origin: 'subagent'`. */
     readonly hasChildren: boolean
+    /**
+     * Cumulative provider-reported usage folded from the child's own log
+     * (`tokenUsage` projection, including the derived `cacheHitRate`), absent
+     * until the child's first usage report and when the token-meter unit is
+     * not registered in this deployment's projection registry.
+     */
+    readonly usage?: TokenUsageProjection
   } & (
     | {
       /** A terminal one-shot child. */
@@ -258,8 +269,10 @@ async function resolveCandidateRows(
     // reads; a live child without an identity yet is the creation window
     // before the establishing provider appends its descriptor.
     let identity: SubagentIdentityProjection | null | undefined
+    let values: Partial<SessionProjectionMap>
     try {
-      identity = projections.snapshot(candidate.live).values.subagent
+      values = projections.snapshot(candidate.live).values
+      identity = values.subagent
     } catch {
       // The snapshot folds EVERY registered unit over this child's log, so
       // any unit's fold or schema can reject damaged payloads. That is
@@ -271,7 +284,9 @@ async function resolveCandidateRows(
     // The unit's serializable no-value sentinel is `null`; `undefined` can
     // only mean the key was dropped at a JSON boundary. Both are no value.
     if (identity === undefined || identity === null) return
-    rows[index] = childRow(childId, identity, 'running', subagentParents.has(childId))
+    rows[index] = childRow(
+      childId, identity, 'running', subagentParents.has(childId), servedUsage(values.tokenUsage),
+    )
   })
 
   // Cold candidates exist only when persistence listed them, so the narrow
@@ -356,13 +371,16 @@ async function resolveColdIdentity(
   const childId = header.id
   if (cache !== undefined) {
     let cached: SubagentIdentityProjection | null | undefined
+    let cachedValues: Partial<SessionProjectionMap> | undefined
     try {
-      cached = cache.cachedSnapshot(header)?.values.subagent
+      cachedValues = cache.cachedSnapshot(header)?.values
+      cached = cachedValues?.subagent
     } catch {
       // Unlike the preparation fold below, a throwing cache read renders no
       // verdict: the cache is derived data, so its damage (a poisoned stored
       // row of ANY unit) silently falls through to the authoritative re-fold.
       cached = undefined
+      cachedValues = undefined
     }
     // A child's OWN descriptor is immutable once appended, so a cached
     // identity is final only when the seq gate proves it was folded from the
@@ -373,7 +391,9 @@ async function resolveColdIdentity(
     // `null` sentinel, whose verdict belongs to the authoritative re-fold,
     // not to a derived row.
     if (cached !== undefined && cached !== null && cached.seq >= (header.seedLength ?? 0)) {
-      return childRow(childId, cached, 'inactive', hasChildren)
+      return childRow(
+        childId, cached, 'inactive', hasChildren, servedUsage(cachedValues?.tokenUsage),
+      )
     }
   }
   assertListingNotCancelled(signal)
@@ -394,8 +414,10 @@ async function resolveColdIdentity(
     return { kind: 'diagnostic', id: childId, reason: 'corrupt' }
   }
   let identity: SubagentIdentityProjection | null | undefined
+  let values: Partial<SessionProjectionMap>
   try {
-    identity = projections.restore({}, inspected.events, 0).snapshot.values.subagent
+    values = projections.restore({}, inspected.events, 0).snapshot.values
+    identity = values.subagent
   } catch {
     // The restore folds EVERY registered unit over this child's log, so any
     // unit's fold or schema can reject damaged payloads — deterministic data
@@ -405,7 +427,18 @@ async function resolveColdIdentity(
   if (identity === undefined || identity === null) {
     return { kind: 'diagnostic', id: childId, reason: 'corrupt' }
   }
-  return childRow(childId, identity, 'inactive', hasChildren)
+  return childRow(childId, identity, 'inactive', hasChildren, servedUsage(values.tokenUsage))
+}
+
+/** The served usage row, absent before the child's first usage report. */
+function servedUsage(value: TokenUsageProjection | null | undefined): TokenUsageProjection | undefined {
+  if (value === undefined || value === null) return undefined
+  return value.uncachedInputTokens === 0
+    && value.outputTokens === 0
+    && value.cacheReadTokens === 0
+    && value.cacheWriteTokens === 0
+    ? undefined
+    : value
 }
 
 /** Materialize one served identity as its child row. */
@@ -414,7 +447,9 @@ function childRow(
   identity: SubagentIdentityProjection,
   activity: 'running' | 'inactive',
   hasChildren: boolean,
+  usage: TokenUsageProjection | undefined,
 ): SubagentListEntry {
+  const withUsage = usage === undefined ? {} : { usage }
   return identity.mode === 'one-shot'
     ? {
       kind: 'child',
@@ -423,6 +458,7 @@ function childRow(
       ...identity.label !== undefined ? { label: identity.label } : {},
       activity,
       hasChildren,
+      ...withUsage,
     }
     : {
       kind: 'child',
@@ -431,6 +467,7 @@ function childRow(
       label: identity.label,
       activity,
       hasChildren,
+      ...withUsage,
     }
 }
 

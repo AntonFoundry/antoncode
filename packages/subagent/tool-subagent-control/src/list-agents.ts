@@ -13,6 +13,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { assertNever } from '@deepseek-ai/dsh-llm'
 import type { SubagentDescendantListEntry, SubagentListEntry } from '@deepseek-ai/dsh-subagent'
+import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 
 export const name = 'tool-subagent-list-agents'
 export const inject = ['tools', 'subagents', 'agents']
@@ -35,6 +36,7 @@ type ListAgentsEntry =
     readonly status: 'running' | 'idle' | 'ready'
     readonly parent?: SessionId
     readonly depth?: number
+    readonly usage?: TokenUsageProjection
   }
   | {
     readonly kind: 'diagnostic'
@@ -47,6 +49,21 @@ type ListAgentsEntry =
 /** Resolve the optional model request into an internal required-scope spec. */
 function resolveListAgentsRequest(request: ListAgentsRequest): ListAgentsSpec {
   return { scope: request.scope ?? 'children' }
+}
+
+/**
+ * Render one child's cumulative usage as a compact bracket, absent for a
+ * child that has not reported usage. `hit` is the cache-read share of
+ * prompt tokens, the continuation signal: a high hit means `send_message`
+ * re-reads mostly cached prefix.
+ */
+function renderUsage(usage: TokenUsageProjection | undefined): string {
+  if (usage === undefined) return ''
+  const hit = usage.cacheHitRate === undefined
+    ? ''
+    : ` hit=${Math.round(usage.cacheHitRate * 100)}%`
+  return ` tokens[in=${usage.uncachedInputTokens} out=${usage.outputTokens}`
+    + ` cache-read=${usage.cacheReadTokens} cache-write=${usage.cacheWriteTokens}${hit}]`
 }
 
 /**
@@ -80,6 +97,7 @@ function project(
     id: entry.id,
     label: entry.label,
     status: statusOf(agents, entry.id),
+    ...(entry.usage !== undefined ? { usage: entry.usage } : {}),
     ...at,
   }
 }
@@ -99,7 +117,10 @@ export function apply(ctx: Context): void {
       + 'terminal, and not a result waiting to be collected; a `send_message` starts a new turn on the same '
       + 'conversation, and a direct child remains a `send_message` candidate in every status. The snapshot is not a delivery '
       + 'promise — `send_message` performs the authoritative check and may still fail. Children that could '
-      + 'not be read are reported as diagnostics instead of being silently dropped. Scope `descendants` '
+      + 'not be read are reported as diagnostics instead of being silently dropped. A child entry may carry '
+      + '`tokens` — its cumulative provider usage, where hit is the cache-read share of its prompt tokens; '
+      + 'a high hit means the conversation prefix is largely cached, so continuing it with `send_message` '
+       + 'is cheaper than starting a fresh agent for related work. Scope `descendants` '
       + 'walks the whole tree below you in stable pre-order, annotating each entry with its durable direct-parent '
       + 'session id and depth. You may use `send_message` only for depth-1 entries; deeper entries are '
       + 'candidates for `interrupt_agent` only.',
@@ -125,6 +146,17 @@ export function apply(ctx: Context): void {
                 status: { type: 'string', required: true, enum: ['running', 'idle', 'ready'] },
                 parent: { type: 'string' },
                 depth: { type: 'number' },
+                usage: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    uncachedInputTokens: { type: 'number', required: true },
+                    outputTokens: { type: 'number', required: true },
+                    cacheReadTokens: { type: 'number', required: true },
+                    cacheWriteTokens: { type: 'number', required: true },
+                    cacheHitRate: { type: 'number' },
+                  },
+                },
               },
             },
             {
@@ -155,7 +187,7 @@ export function apply(ctx: Context): void {
                 ? ` parent=${String(entry.parent)} depth=${String(entry.depth)}`
                 : ''
               return entry.kind === 'child'
-                ? `${entry.id} [${entry.status}]${at} — ${entry.label}`
+                ? `${entry.id} [${entry.status}]${at} — ${entry.label}${renderUsage(entry.usage)}`
                 : `${entry.id} [diagnostic: ${entry.reason}]${at}`
             }).join('\n'),
         }]

@@ -96,6 +96,8 @@ describe('tokenUsage session projection', () => {
   it('serves zero buckets for an empty log', async () => {
     const { ctx, session } = await harness()
     expect(projected(ctx, session)).toEqual(ZERO)
+    // No reported usage yet: the ratio is absent, not 0.
+    expect(projected(ctx, session).cacheHitRate).toBeUndefined()
   })
 
   it('does not count a usage chunk and identical final usage twice', async () => {
@@ -120,6 +122,7 @@ describe('tokenUsage session projection', () => {
       outputTokens: 4,
       cacheReadTokens: 7,
       cacheWriteTokens: 2,
+      cacheHitRate: 7 / 19,
     })
     expect(changes).toHaveLength(1)
   })
@@ -144,6 +147,7 @@ describe('tokenUsage session projection', () => {
       outputTokens: 5,
       cacheReadTokens: 8,
       cacheWriteTokens: 1,
+      cacheHitRate: 8 / 23,
     })
   })
 
@@ -181,6 +185,7 @@ describe('tokenUsage session projection', () => {
       outputTokens: 15,
       cacheReadTokens: 2,
       cacheWriteTokens: 4,
+      cacheHitRate: 2 / 36,
     })
   })
 
@@ -194,6 +199,7 @@ describe('tokenUsage session projection', () => {
       outputTokens: 1,
       cacheReadTokens: 0,
       cacheWriteTokens: 0,
+      cacheHitRate: 0,
     })
   })
 
@@ -220,6 +226,7 @@ describe('tokenUsage session projection', () => {
       outputTokens: 3,
       cacheReadTokens: 0,
       cacheWriteTokens: 0,
+      cacheHitRate: 0,
     })
   })
 
@@ -240,7 +247,22 @@ describe('tokenUsage session projection', () => {
       outputTokens: 2,
       cacheReadTokens: 5,
       cacheWriteTokens: 0,
+      cacheHitRate: 5 / 13,
     })
+  })
+
+  it('derives a full cache hit for a pure-cache request', async () => {
+    const { ctx, session } = await harness()
+    startStep(session, 1, 1)
+    usageChunk(session, { inputTokens: 0, outputTokens: 3, cacheReadTokens: 500 }, 1, 1)
+    expect(projected(ctx, session).cacheHitRate).toBe(1)
+  })
+
+  it('counts cache writes as uncached prompt tokens, not hits', async () => {
+    const { ctx, session } = await harness()
+    startStep(session, 1, 1)
+    usageChunk(session, { inputTokens: 0, outputTokens: 1, cacheWriteTokens: 100 }, 1, 1)
+    expect(projected(ctx, session).cacheHitRate).toBe(0)
   })
 })
 

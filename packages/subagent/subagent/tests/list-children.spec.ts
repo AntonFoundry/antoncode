@@ -13,6 +13,7 @@ import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import SessionProjectionCache from '@deepseek-ai/dsh-session-projection-cache'
+import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
@@ -34,7 +35,7 @@ afterEach(() => {
 /** Boot the continuable stack with real JSONL session persistence. */
 async function setup(
   script: Script,
-  options: { sessionProjections?: boolean; projectionCache?: boolean } = {},
+  options: { sessionProjections?: boolean; projectionCache?: boolean; tokenMeter?: boolean } = {},
 ) {
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx)
@@ -43,6 +44,7 @@ async function setup(
   await ctx.plugin(JsonlSessionPersistence, { root })
   await ctx.plugin(AgentLoop, { agents: [] })
   if (options.sessionProjections !== false) await ctx.plugin(SessionProjectionRegistry)
+  if (options.tokenMeter === true) await ctx.plugin(TokenMeter)
   if (options.projectionCache === true) {
     await ctx.plugin(Storage)
     ctx.storage.backend.register('memory', new MemoryStorageBackend(new MemoryMediaPool()))
@@ -310,6 +312,80 @@ describe('SubagentRuntime.listChildren', () => {
       {
         kind: 'child', id: labeled, mode: 'one-shot', label: 'labeled one-shot',
         activity: 'inactive', hasChildren: false,
+      },
+    ])
+  })
+
+  it('carries the child cumulative usage and its derived cache-hit rate', async () => {
+    const { ctx, parent } = await setup([textResponse('done')], { tokenMeter: true })
+    const events = childEvents(descriptorPayload('summarize the doc'))
+    const childId = await authorChild(ctx, '00000000-0000-4000-8000-00000000ab03', {
+      parentSession: parent.id,
+      origin: 'subagent',
+    }, [
+      ...events.slice(0, 3),
+      {
+        type: 'assistant/chunk',
+        seq: 3,
+        time: 4,
+        data: {
+          turn: 1,
+          step: 1,
+          chunk: {
+            type: 'usage',
+            usage: { inputTokens: 10, outputTokens: 4, cacheReadTokens: 7, cacheWriteTokens: 2 },
+          },
+        },
+      },
+      { ...events[3], seq: 4, time: 5 },
+    ] as SessionEvent[])
+    await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([
+      {
+        kind: 'child', id: childId, mode: 'continuable', label: 'summarize the doc',
+        activity: 'inactive', hasChildren: false,
+        usage: {
+          uncachedInputTokens: 10, outputTokens: 4, cacheReadTokens: 7, cacheWriteTokens: 2,
+          cacheHitRate: 7 / 19,
+        },
+      },
+    ])
+  })
+
+  it('omits usage before the child reports any', async () => {
+    const { ctx, parent } = await setup([textResponse('done')], { tokenMeter: true })
+    const childId = await authorChild(ctx, '00000000-0000-4000-8000-00000000ab04', {
+      parentSession: parent.id,
+      origin: 'subagent',
+    }, childEvents(descriptorPayload('quiet child')))
+    await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([
+      {
+        kind: 'child', id: childId, mode: 'continuable', label: 'quiet child',
+        activity: 'inactive', hasChildren: false,
+      },
+    ])
+  })
+
+  it('carries usage for a live child from the projection snapshot', async () => {
+    const { ctx, parent } = await setup([textResponse('done')], { tokenMeter: true })
+    const liveId = SessionId('live-child-usage')
+    const live = ctx.sessions.create(liveId, {
+      meta: { parentSession: parent.id, origin: 'subagent' },
+    })
+    live.append('turn/start', { turn: 1 })
+    live.append('subagent/descriptor', descriptorPayload('live child'))
+    live.append('assistant/chunk', {
+      turn: 1,
+      step: 1,
+      chunk: { type: 'usage', usage: { inputTokens: 0, outputTokens: 2, cacheReadTokens: 500 } },
+    })
+    await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([
+      {
+        kind: 'child', id: liveId, mode: 'continuable', label: 'live child',
+        activity: 'running', hasChildren: false,
+        usage: {
+          uncachedInputTokens: 0, outputTokens: 2, cacheReadTokens: 500, cacheWriteTokens: 0,
+          cacheHitRate: 1,
+        },
       },
     ])
   })

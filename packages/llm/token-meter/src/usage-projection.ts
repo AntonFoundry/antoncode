@@ -7,6 +7,7 @@ import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import type { ContextPressureProjection, TokenUsageProjection } from './projection.ts'
+import { cacheHitRateOf } from './projection.ts'
 import { foldSurfaceProjection } from './surface-projection.ts'
 import type { ShadowPriceClaim } from './surface-projection.ts'
 
@@ -52,12 +53,16 @@ const addReplacing = (
   cacheWriteTokens: totals.cacheWriteTokens - (previous?.cacheWriteTokens ?? 0) + next.cacheWriteTokens,
 })
 
+// Cast for the optional value: under exactOptionalPropertyTypes zod infers
+// `number | undefined` where the interface declares absent-or-number fields
+// (same rationale as pressureSchema below).
 const projectionSchema = z.object({
   uncachedInputTokens: z.number().int().nonnegative(),
   outputTokens: z.number().int().nonnegative(),
   cacheReadTokens: z.number().int().nonnegative(),
   cacheWriteTokens: z.number().int().nonnegative(),
-}).strict()
+  cacheHitRate: z.number().min(0).max(1).optional(),
+}).strict() as unknown as z.ZodType<TokenUsageProjection>
 
 // Cast for the optional values: under exactOptionalPropertyTypes zod infers
 // `number | undefined` where the interface declares absent-or-number fields.
@@ -135,7 +140,10 @@ ProjectionDefinition<'tokenUsage', TokenUsageState> = {
       last: { turn, step, buckets },
     }
   },
-  view: state => state.totals,
+  view: (state) => {
+    const hitRate = cacheHitRateOf(state.totals)
+    return hitRate === undefined ? state.totals : { ...state.totals, cacheHitRate: hitRate }
+  },
   stateVersion: 1,
 }
 
