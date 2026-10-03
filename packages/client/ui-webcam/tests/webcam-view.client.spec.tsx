@@ -61,23 +61,23 @@ describe('WebcamView', () => {
   it('renders the effect dock and drives the shared store from the segmented control', async () => {
     const { props, store } = viewSetup()
     render(<WebcamView {...props} />)
-    expect(screen.getByText('原始')).toBeDefined()
-    fireEvent.click(screen.getByText('移除'))
+    expect(screen.getByText('Raw')).toBeDefined()
+    fireEvent.click(screen.getByText('Remove'))
     await waitFor(() => expect(store.getSnapshot().effect).toBe('remove'))
-    fireEvent.click(screen.getByText('替换'))
+    fireEvent.click(screen.getByText('Replace'))
     await waitFor(() => expect(store.getSnapshot().effect).toBe('replace'))
   })
 
   it('shows remove-style and replace backdrops only for their effects; slider rides blur', async () => {
     const { props, store } = viewSetup()
     render(<WebcamView {...props} />)
-    expect(screen.queryByText('绿幕')).toBeNull()
-    fireEvent.click(screen.getByText('移除'))
-    await waitFor(() => expect(screen.getByText('绿幕')).toBeDefined())
-    fireEvent.click(screen.getByText('绿幕'))
+    expect(screen.queryByText('Green')).toBeNull()
+    fireEvent.click(screen.getByText('Remove'))
+    await waitFor(() => expect(screen.getByText('Green')).toBeDefined())
+    fireEvent.click(screen.getByText('Green'))
     await waitFor(() => expect(store.getSnapshot().removeStyle).toBe('green'))
-    fireEvent.click(screen.getByText('模糊'))
-    await waitFor(() => expect(screen.getByText('强度')).toBeDefined())
+    fireEvent.click(screen.getByText('Blur'))
+    await waitFor(() => expect(screen.getByText('Strength')).toBeDefined())
     fireEvent.change(screen.getByRole('slider'), { target: { value: '80' } })
     await waitFor(() => expect(store.getSnapshot().blurStrength).toBe(80))
   })
@@ -88,7 +88,7 @@ describe('WebcamView', () => {
       { deviceId: 'cam-1', kind: 'videoinput', label: 'External Cam', groupId: 'g', toJSON: () => ({}) },
     ] as MediaDeviceInfo[])
     render(<WebcamView {...props} />)
-    fireEvent.click(screen.getByTitle('镜像'))
+    fireEvent.click(screen.getByTitle('Mirror'))
     await waitFor(() => expect(store.getSnapshot().mirror).toBe(false))
     await waitFor(() => expect(screen.getByText('External Cam')).toBeDefined())
   })
@@ -106,11 +106,11 @@ describe('WebcamView', () => {
         useSettings={sel => sel(store.getSnapshot())}
       />,
     )
-    await waitFor(() => expect(screen.getByText('相机权限被拒绝')).toBeDefined())
-    expect(screen.getByText(/浏览器设置中允许/)).toBeDefined()
-    fireEvent.click(screen.getByText('重试'))
+    await waitFor(() => expect(screen.getByText('Camera access denied')).toBeDefined())
+    expect(screen.getByText(/Allow camera access/)).toBeDefined()
+    fireEvent.click(screen.getByText('Retry'))
     await waitFor(() => expect(acquire).toHaveBeenCalledTimes(2))
-    await waitFor(() => expect(screen.queryByText('相机权限被拒绝')).toBeNull())
+    await waitFor(() => expect(screen.queryByText('Camera access denied')).toBeNull())
   })
 
   it('fills the status line from frame events', async () => {

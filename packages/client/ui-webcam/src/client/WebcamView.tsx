@@ -15,10 +15,10 @@ import type { WebcamEffect, WebcamSettingsActions, WebcamSettingsState } from '.
 import css from './WebcamView.module.css'
 
 const EFFECT_LABELS: readonly { id: WebcamEffect; label: string }[] = [
-  { id: 'off', label: '原始' },
-  { id: 'remove', label: '移除' },
-  { id: 'blur', label: '模糊' },
-  { id: 'replace', label: '替换' },
+  { id: 'off', label: 'Raw' },
+  { id: 'remove', label: 'Remove' },
+  { id: 'blur', label: 'Blur' },
+  { id: 'replace', label: 'Replace' },
 ]
 
 /** Overlay failure the view renders instead of the canvas. */
@@ -182,16 +182,16 @@ export function WebcamView(props: WebcamViewProps) {
         <div className={css.overlay}>
           <div className={css.card}>
             <div className={css.cardTitle}>
-              {error.kind === 'denied' ? '相机权限被拒绝' : error.kind === 'unavailable' ? '未找到摄像头' : '相机启动失败'}
+              {error.kind === 'denied' ? 'Camera access denied' : error.kind === 'unavailable' ? 'No camera found' : 'Camera failed to start'}
             </div>
             <div className={css.cardBody}>
               {error.kind === 'denied'
-                ? '请在系统与浏览器设置中允许此应用访问摄像头，然后重试。也可以用浏览器打开 GUI 使用本视图。'
+                ? 'Allow camera access for this app in System Settings and the browser, then retry. Opening the GUI in a browser also works for this view.'
                 : error.kind === 'unavailable'
-                  ? '没有可用的摄像头设备。接入设备后按重试。'
-                  : error.message ?? '未知错误，请重试。'}
+                  ? 'No camera device found. Connect one, then retry.'
+                  : error.message ?? 'Unknown error — retry.'}
             </div>
-            <button type="button" className={css.primaryButton} onClick={() => { setAttempt(a => a + 1) }}>重试</button>
+            <button type="button" className={css.primaryButton} onClick={() => { setAttempt(a => a + 1) }}>Retry</button>
           </div>
         </div>
       )}
@@ -211,7 +211,7 @@ export function WebcamView(props: WebcamViewProps) {
             </div>
             <div className={css.spacer} />
             <button
-              type="button" className={css.iconButton} title="镜像"
+              type="button" className={css.iconButton} title="Mirror"
               data-active={settings.mirror || undefined}
               onClick={() => { props.settingsActions.toggleMirror() }}
             >⇋</button>
@@ -220,13 +220,13 @@ export function WebcamView(props: WebcamViewProps) {
               value={settings.deviceId ?? ''}
               onChange={(event) => { props.settingsActions.setDeviceId(event.target.value === '' ? undefined : event.target.value) }}
             >
-              <option value="">默认摄像头</option>
-              {devices.map(device => <option key={device.deviceId} value={device.deviceId}>{device.label || '摄像头'}</option>)}
+              <option value="">Default camera</option>
+              {devices.map(device => <option key={device.deviceId} value={device.deviceId}>{device.label || 'Camera'}</option>)}
             </select>
           </div>
           {settings.effect === 'blur' && (
             <div className={css.row}>
-              <span className={css.hint}>强度</span>
+              <span className={css.hint}>Strength</span>
               <input
                 type="range" min={0} max={100} className={css.slider}
                 value={settings.blurStrength}
@@ -236,22 +236,22 @@ export function WebcamView(props: WebcamViewProps) {
           )}
           {settings.effect === 'remove' && (
             <div className={css.row}>
-              <span className={css.hint}>背景</span>
+              <span className={css.hint}>Background</span>
               <button
                 type="button" className={css.swatch} data-active={settings.removeStyle === 'studio' || undefined}
                 style={{ background: 'linear-gradient(to bottom, #33373f, #1a1d24)' }}
                 onClick={() => { props.settingsActions.setRemoveStyle('studio') }}
-              >深灰</button>
+              >Studio</button>
               <button
                 type="button" className={css.swatch} data-active={settings.removeStyle === 'green' || undefined}
                 style={{ background: 'linear-gradient(to bottom, #00c540, #00b140)' }}
                 onClick={() => { props.settingsActions.setRemoveStyle('green') }}
-              >绿幕</button>
+              >Green</button>
             </div>
           )}
           {settings.effect === 'replace' && (
             <div className={css.row}>
-              <span className={css.hint}>背景</span>
+              <span className={css.hint}>Background</span>
               {BACKDROPS.map((backdrop, index) => (
                 <button
                   key={backdrop.id} type="button" className={css.swatch}
@@ -262,7 +262,7 @@ export function WebcamView(props: WebcamViewProps) {
                 />
               ))}
               <label className={css.customLabel}>
-                {backdropImage !== undefined ? '已选图片' : '自定义…'}
+                {backdropImage !== undefined ? 'Image selected' : 'Custom…'}
                 <input
                   type="file" accept="image/*" className={css.fileInput}
                   onChange={(event) => {

@@ -19,12 +19,12 @@ export interface Backdrop {
 
 /** The built-in gradient backdrops, in picker order. */
 export const BACKDROPS: readonly Backdrop[] = [
-  { id: 'dawn', label: '晨雾', top: [0.99, 0.85, 0.67], bottom: [0.91, 0.56, 0.44] },
-  { id: 'dusk', label: '暮色', top: [0.35, 0.29, 0.62], bottom: [0.90, 0.40, 0.52] },
-  { id: 'pine', label: '松林', top: [0.42, 0.65, 0.55], bottom: [0.10, 0.29, 0.30] },
-  { id: 'abyss', label: '深海', top: [0.16, 0.42, 0.69], bottom: [0.03, 0.12, 0.28] },
-  { id: 'graphite', label: '石墨', top: [0.36, 0.39, 0.44], bottom: [0.13, 0.14, 0.17] },
-  { id: 'rose', label: '玫瑰', top: [0.98, 0.72, 0.78], bottom: [0.72, 0.28, 0.45] },
+  { id: 'dawn', label: 'Dawn Mist', top: [0.99, 0.85, 0.67], bottom: [0.91, 0.56, 0.44] },
+  { id: 'dusk', label: 'Dusk', top: [0.35, 0.29, 0.62], bottom: [0.90, 0.40, 0.52] },
+  { id: 'pine', label: 'Pine Forest', top: [0.42, 0.65, 0.55], bottom: [0.10, 0.29, 0.30] },
+  { id: 'abyss', label: 'Deep Sea', top: [0.16, 0.42, 0.69], bottom: [0.03, 0.12, 0.28] },
+  { id: 'graphite', label: 'Graphite', top: [0.36, 0.39, 0.44], bottom: [0.13, 0.14, 0.17] },
+  { id: 'rose', label: 'Rose', top: [0.98, 0.72, 0.78], bottom: [0.72, 0.28, 0.45] },
 ]
 
 /** Solid colors for the remove effect, linear 0–1 RGB with labels. */
