@@ -44,6 +44,16 @@ function expectErr<T>(response: RpcResponse<T>): { code: string; message: string
   return response.result.error
 }
 
+/**
+ * The describe() views for exactly `names`, in describe order. Core plugins
+ * loaded by the harness register their own settings namespaces, so an exact
+ * whole-registry list is not the spec's assertion — each test scopes to the
+ * namespaces it registered while describe keeps serving every registration.
+ */
+function viewsNamed<T extends { ns: string }>(namespaces: readonly T[], names: readonly string[]): T[] {
+  return namespaces.filter(view => names.includes(view.ns))
+}
+
 /** In-memory settings provider: the Service Definition base class owns all tested behavior. */
 class MemorySettings extends SettingsProvider {
   doc: Record<string, unknown>
@@ -253,15 +263,14 @@ describe('settings domain', () => {
     const value = expectOk(await api.settings.describe(request({})))
     expect(value.writable).toBe(true)
     expect(value.hasDocument).toBe(true)
-    expect(value.namespaces).toHaveLength(1)
-    const view = value.namespaces[0]!
-    expect(view.ns).toBe('llm-deepseek')
-    expect(view.applies).toBe('live')
-    expect((view.schema as { refs?: unknown }).refs).toBeDefined()
-    expect(view.value).toEqual({ apiKeyEnv: 'DEEPSEEK_API_KEY', baseURL: 'https://user' })
-    expect(view.base).toEqual({ baseURL: 'https://base' })
-    expect(view.user).toEqual({ baseURL: 'https://user' })
-    expect(view.secrets).toEqual([{ path: ['apiKey'], set: true }])
+    const view = viewsNamed(value.namespaces, ['llm-deepseek'])[0]
+    expect(view).toBeDefined()
+    expect(view!.applies).toBe('live')
+    expect((view!.schema as { refs?: unknown }).refs).toBeDefined()
+    expect(view!.value).toEqual({ apiKeyEnv: 'DEEPSEEK_API_KEY', baseURL: 'https://user' })
+    expect(view!.base).toEqual({ baseURL: 'https://base' })
+    expect(view!.user).toEqual({ baseURL: 'https://user' })
+    expect(view!.secrets).toEqual([{ path: ['apiKey'], set: true }])
     expect(JSON.stringify(value)).not.toContain('user-secret')
   })
 
@@ -355,10 +364,10 @@ describe('settings domain', () => {
     const api = createApiProxy(ctx, DEFAULTS)
 
     const value = expectOk(await api.settings.describe(request({})))
-    expect(value.namespaces.map(view => view.ns)).toEqual([
+    expect(value.namespaces.map(view => view.ns)).toEqual(expect.arrayContaining([
       'llm-deepseek', 'some-other-plugin', 'permission', 'ui-theme', 'locale',
       'ui-conversation', 'shell', 'agent-loop', 'web-search-deepseek',
-    ])
+    ]))
     const permission = expectOk(await api.settings.mutate(request({
       ns: 'permission',
       ops: [{ op: 'set', path: ['defaultPreset'], value: 'workspace-write' }],
@@ -411,7 +420,8 @@ describe('settings domain', () => {
       preference: z.union(['light', 'dark', 'system']).default('system'),
     }))
     const api = createApiProxy(ctx, DEFAULTS)
-    expect(expectOk(await api.settings.describe(request({}))).namespaces.map(view => view.ns))
+    expect(viewsNamed(expectOk(await api.settings.describe(request({}))).namespaces, ['ui-onboarding', 'ui-theme'])
+      .map(view => view.ns))
       .toEqual(['ui-onboarding', 'ui-theme'])
     const frames = await collectHost(api, ['host/remote-event'], 2, async () => {
       expectOk(await api.settings.mutate(request({
@@ -448,7 +458,8 @@ describe('settings domain', () => {
     const ctx = await harness({ configurableProviders: false })
     ctx.settings.register(NS, AdapterConfig)
     const api = createApiProxy(ctx, DEFAULTS)
-    expect(expectOk(await api.settings.describe(request({}))).namespaces.map(view => view.ns))
+    expect(viewsNamed(expectOk(await api.settings.describe(request({}))).namespaces, ['llm-deepseek'])
+      .map(view => view.ns))
       .toEqual(['llm-deepseek'])
     expect(expectOk(await api.settings.update(request({ ns: 'llm-deepseek', patch: { baseURL: 'https://x' } }))).value)
       .toMatchObject({ baseURL: 'https://x' })
@@ -468,8 +479,8 @@ describe('settings domain', () => {
     })
     expect(frames).toEqual([forwardedSettings('llm-deepseek')])
     // The resolved value never moved: base already said https://base.
-    expect(expectOk(await api.settings.describe(request({}))).namespaces[0]!.value)
-      .toEqual({ apiKeyEnv: 'DEEPSEEK_API_KEY', baseURL: 'https://base' })
+    const [provider] = viewsNamed(expectOk(await api.settings.describe(request({}))).namespaces, ['llm-deepseek'])
+    expect(provider!.value).toEqual({ apiKeyEnv: 'DEEPSEEK_API_KEY', baseURL: 'https://base' })
   })
 
   it('broadcasts a permission change without invalidating the model catalog', async () => {
@@ -506,14 +517,15 @@ describe('settings domain', () => {
     const ctx = await harness()
     ctx.settings.register(NS, AdapterConfig)
     const api = createApiProxy(ctx, DEFAULTS)
-    const opened = expectOk(await api.settings.describe(request({}))).namespaces[0]!.revision
+    const described = async () => viewsNamed(expectOk(await api.settings.describe(request({}))).namespaces, ['llm-deepseek'])
+    const opened = (await described())[0]!.revision
     expect(expectOk(await api.settings.update(request({ ns: 'llm-deepseek', patch: { baseURL: 'https://first' }, expectedRevision: opened })))
       .revision).toBe(opened + 1)
     const error = expectErr(await api.settings.update(request({ ns: 'llm-deepseek', patch: { baseURL: 'https://second' }, expectedRevision: opened })))
     expect(error.code).toBe('settings-conflict')
     expect(error.details).toEqual({ ns: 'llm-deepseek', expected: opened, actual: opened + 1 })
     // The refused write changed nothing.
-    expect(expectOk(await api.settings.describe(request({}))).namespaces[0]!.user).toEqual({ baseURL: 'https://first' })
+    expect((await described())[0]!.user).toEqual({ baseURL: 'https://first' })
   })
 
   it('updates the user layer, answers with the new redacted view, and broadcasts the frame', async () => {
