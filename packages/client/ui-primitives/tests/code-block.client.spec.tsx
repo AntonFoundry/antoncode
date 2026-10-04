@@ -39,6 +39,13 @@ describe('highlightToHtml', () => {
     'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'cs', 'kotlin', 'swift', 'php',
     'yaml', 'toml', 'ini', 'md', 'mdx', 'html', 'css', 'scss', 'less', 'sql',
     'xml', 'lua',
+    // The wider common-language set: one alias per added grammar family, so a
+    // regression in any new LAZY_GRAMMARS entry surfaces here.
+    'scala', 'dart', 'pl', 'hs', 'ex', 'erl', 'clj', 'rkt', 'scm', 'ml',
+    'fs', 'jl', 'm', 'r', 'ps1', 'gradle', 'cmake', 'dockerfile', 'mk',
+    'conf', 'diff', 'gql', 'vim', 'zig', 'nim', 'nix', 'sol', 'vue',
+    'svelte', 'astro', 'tex', 'properties', 'json5', 'vb', 'coffee', 'reg',
+    'proto', 'hcl', 'tf', 'pas', 'http',
   ]
 
   it('lazily loads every read-card grammar: plain first, highlighted after load', async () => {

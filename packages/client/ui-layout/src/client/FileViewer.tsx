@@ -1,10 +1,16 @@
-// FileViewer: the built-in plain-text file buffer — the `file.view` keyed
+// FileViewer: the built-in text file buffer — the `file.view` keyed
 // dispatch's fallback for paths whose viewer key has no registrant (the
 // text case and any not-yet-shipped viewer). The content is fetched once
 // per path through the injected read face; a fetch failure renders the
-// message instead of the body.
+// message instead of the body. When the path's extension resolves to a
+// grammar (`viewerLanguageFor`), the body renders through the shared
+// CodeBlock shiki path — the same surface markdown fences and the read
+// card use; unknown extensions take CodeBlock's identical-geometry plain
+// fallback.
 
 import { memo, useEffect, useState } from 'react'
+import { CodeBlock } from '@deepseek-ai/dsh-client-ui-primitives'
+import { viewerLanguageFor } from './file-view.ts'
 import css from './FileViewer.module.css'
 
 export interface FileViewerProps {
@@ -40,7 +46,7 @@ export const FileViewer = memo(function FileViewer({ path, readText }: FileViewe
   return (
     <div className={css.root} data-testid="file-viewer" data-truncated={state.truncated || undefined}>
       {state.truncated && <p className={css.note}>showing the first 512 KiB</p>}
-      <pre className={css.body}>{state.content}</pre>
+      <CodeBlock className={css.body} code={state.content} lang={viewerLanguageFor(path)} />
     </div>
   )
 })

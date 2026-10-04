@@ -3,7 +3,8 @@
  * buffer resolves through. The key domain is the shipped viewer roster
  * (`markdown` | `image` | `video`); anything else maps to `text`, which has
  * no slot registrant — the LeafPane dispatch's fallback `FileViewer` renders
- * it as plain text. Each viewer key is owned by its own client plugin
+ * it as text, syntax-highlighted when {@link viewerLanguageFor} resolves the
+ * extension to a grammar. Each viewer key is owned by its own client plugin
  * package (ui-file-markdown / ui-file-image / ui-file-video); this module
  * owns only the routing, so the map and the packages move together with the
  * web-app composition rows.
@@ -34,6 +35,53 @@ export function viewerKeyFor(path: string): FileViewKey {
   if (IMAGE_EXTENSIONS.includes(ext)) return 'image'
   if (VIDEO_EXTENSIONS.includes(ext)) return 'video'
   return 'text'
+}
+
+/**
+ * Extension → grammar hint for the text fallback's syntax highlighting. The
+ * values are language ids (aliases) ui-primitives' shared shiki highlighter
+ * accepts — the same set the markdown fence aliases and the host read tool's
+ * `langFromPath` resolve — so an unknown extension here degrades to plain text
+ * inside `CodeBlock`, never an error. Own-property access only: a filename
+ * whose extension is an `Object.prototype` key (`foo.constructor`) must miss,
+ * not resolve an inherited member.
+ */
+const LANG_BY_EXTENSION: Readonly<Record<string, string>> = {
+  ts: 'ts', tsx: 'tsx', js: 'js', jsx: 'jsx', mjs: 'js', cjs: 'js',
+  json: 'json', jsonc: 'json', json5: 'json5',
+  py: 'py', rb: 'rb', go: 'go', rs: 'rs', java: 'java',
+  c: 'c', h: 'c', cc: 'cpp', cpp: 'cpp', hpp: 'cpp', cxx: 'cpp',
+  cs: 'cs', kt: 'kotlin', swift: 'swift', php: 'php',
+  scala: 'scala', dart: 'dart', groovy: 'groovy', gradle: 'groovy',
+  pl: 'perl', pm: 'perl', hs: 'hs', ex: 'ex', exs: 'exs', erl: 'erl', hrl: 'hrl',
+  clj: 'clj', cljs: 'cljs', cljc: 'cljc', edn: 'edn', rkt: 'rkt', scm: 'scm',
+  ml: 'ml', mli: 'mli', fs: 'fs', fsi: 'fsi', fsx: 'fsx', jl: 'jl',
+  m: 'objc', mm: 'objc', r: 'r',
+  ps1: 'ps1', psm1: 'ps1', psd1: 'ps1',
+  sh: 'sh', bash: 'sh', zsh: 'sh',
+  yaml: 'yaml', yml: 'yaml', toml: 'toml', ini: 'ini', properties: 'properties', conf: 'conf',
+  html: 'html', htm: 'htm', css: 'css', scss: 'scss', less: 'less',
+  sql: 'sql', xml: 'xml', lua: 'lua', graphql: 'graphql', gql: 'gql', http: 'http',
+  dockerfile: 'dockerfile', mk: 'mk', cmake: 'cmake', diff: 'diff', patch: 'patch',
+  vim: 'vim', zig: 'zig', nim: 'nim', nix: 'nix', sol: 'sol', reg: 'reg', proto: 'proto',
+  hcl: 'hcl', tf: 'tf', tfvars: 'tfvars',
+  vue: 'vue', svelte: 'svelte', astro: 'astro',
+  tex: 'tex', latex: 'latex', pas: 'pas', vb: 'vb', coffee: 'coffee',
+}
+
+/**
+ * Derive the syntax-highlighting language hint for a text-fallback path.
+ * Pure and case-insensitive on the extension; a dotfile with no extension
+ * (`.gitignore`) and an unknown extension both yield `undefined` (plain text).
+ * @param path - the file path the viewer opened.
+ * @returns the grammar hint for {@link LANG_BY_EXTENSION}, or `undefined` when the extension maps to none.
+ */
+export function viewerLanguageFor(path: string): string | undefined {
+  const dot = path.lastIndexOf('.')
+  // A leading dot is a dotfile (no extension), not an empty extension.
+  if (dot <= 0) return undefined
+  const ext = path.slice(dot + 1).toLowerCase()
+  return Object.hasOwn(LANG_BY_EXTENSION, ext) ? LANG_BY_EXTENSION[ext] : undefined
 }
 
 /** Extensions the opener hands to the host OS default application (every other path opens inline). */

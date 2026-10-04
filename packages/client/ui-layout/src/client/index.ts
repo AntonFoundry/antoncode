@@ -116,7 +116,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * Keyed inline file view for the `file` buffers, dispatched by
      * `viewerKeyFor(path)` (`markdown` | `image` | `video`). Register with
      * `key: '<viewer id>'` to own how one viewer family renders; an
-     * unclaimed key falls back to the built-in plain-text FileViewer, so
+     * unclaimed key falls back to the built-in text FileViewer (shiki-
+     * highlighted when `viewerLanguageFor` resolves the extension), so
      * registering a viewer is additive and the text fallback always stands.
      * Each shipped viewer is its own package (ui-file-markdown /
      * ui-file-image / ui-file-video); the key→package coupling lives in the

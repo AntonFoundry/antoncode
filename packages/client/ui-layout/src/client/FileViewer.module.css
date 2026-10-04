@@ -13,15 +13,17 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* CodeBlock draws its own card chrome (banner, background, radius, mono font);
+   the pane only positions it: fill the pane, drop the card's flow margins.
+   The banner wrapper must keep its natural height — stretching it to the pane
+   height would push the code body below the fold. */
 .body {
   flex: 1;
   min-height: 0;
   margin: 0;
-  padding: 8px 12px;
   overflow: auto;
-  font-family: var(--dsw-font-mono, ui-monospace, monospace);
-  font-size: 12px;
-  line-height: 1.5;
-  white-space: pre;
-  color: var(--dsw-alias-label-primary);
+}
+
+.body > :global(div) {
+  margin: 0;
 }
