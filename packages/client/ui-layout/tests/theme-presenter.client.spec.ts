@@ -87,6 +87,26 @@ describe('ThemePresenter', () => {
     expect(document.body.style.getPropertyValue('--dsw-alias-fg')).toBe('')
   })
 
+  it('projects the theme syntax palette as --shiki-* variables and retracts it with the theme', () => {
+    const presenter = new ThemePresenter()
+    const syntax = { '--shiki-token-keyword': '#ff79c6', '--shiki-token-string': '#f1fa8c' }
+    const active = { id: 'dracula-test', colorScheme: 'dark', tokens: {}, syntax } as ThemeSnapshot['active']
+    presenter.apply({ preference: 'dark', active, themes: [active], revision: 1 })
+    expect(document.body.style.getPropertyValue('--shiki-token-keyword')).toBe('#ff79c6')
+    expect(document.body.style.getPropertyValue('--shiki-token-string')).toBe('#f1fa8c')
+    // Switching to a theme without a syntax palette retracts every hue, so the
+    // shiki.css default pair stands again.
+    presenter.apply(snapshot('dark'))
+    expect(document.body.style.getPropertyValue('--shiki-token-keyword')).toBe('')
+    expect(document.body.style.getPropertyValue('--shiki-token-string')).toBe('')
+  })
+
+  it('a theme without a syntax palette projects no --shiki-* variables (defaults stand)', () => {
+    const presenter = new ThemePresenter()
+    presenter.apply(snapshot('light'))
+    expect(document.body.getAttribute('style') ?? '').not.toContain('--shiki-token-')
+  })
+
   it('dispose removes color-scheme, the attribute, and every applied variable, sparing foreign inline styles', () => {
     document.body.style.setProperty('--foreign', 'kept')
     const presenter = new ThemePresenter()

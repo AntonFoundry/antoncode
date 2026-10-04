@@ -66,6 +66,13 @@ export interface ThemeTokenModes {
 /** Override-layer dictionary: token names to per-mode value pairs. */
 export type ThemeTokenOverrides = Record<string, ThemeTokenModes>
 
+/**
+ * Syntax-highlight palette: the theme's `--shiki-token-*` colors, keyed by the
+ * token sheet's variable names. Foreground and background stay aliased to the
+ * markdown code-block tokens, so a theme only supplies the nine token hues.
+ */
+export type ThemeSyntaxPalette = Record<string, string>
+
 /** One selectable theme: id, dark/light semantics, and alias-token overrides. */
 export interface ThemeDefinition {
   /** Theme id (the setTheme argument for concrete themes). */
@@ -77,6 +84,12 @@ export interface ThemeDefinition {
   colorScheme: 'light' | 'dark'
   /** Alias-layer overrides applied as inline CSS variables over the base palette. */
   tokens: ThemeTokens
+  /**
+   * Theme's own syntax-highlight hues, projected as inline `--shiki-*`
+   * variables over the shiki.css default pair. Omitted themes keep the
+   * stylesheet defaults.
+   */
+  syntax?: ThemeSyntaxPalette
 }
 
 /** Immutable theme state published on every change. */

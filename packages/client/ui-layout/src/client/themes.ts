@@ -13,7 +13,7 @@
  * hue, so switching themes reads as an obvious color change — not a
  * background shuffle between near-identical darks.
  */
-import type { ThemeDefinition } from '@deepseek-ai/dsh-client-ui-theme/client'
+import type { ThemeDefinition, ThemeSyntaxPalette } from '@deepseek-ai/dsh-client-ui-theme/client'
 
 /** One palette entry: token name → the palette's scheme-fixed CSS value. */
 type Palette = Record<string, string>
@@ -77,6 +77,19 @@ const macos: Palette = {
   '--dsw-shadow-lv3': '0 0 1px rgba(0, 0, 0, 0.12), 0 16px 48px rgba(0, 0, 0, 0.16)',
 }
 
+/** macos syntax hues: the theme's own shiki token palette. */
+const macosSyntax: ThemeSyntaxPalette = {
+  '--shiki-token-constant': '#272ad8',
+  '--shiki-token-string': '#d12f1b',
+  '--shiki-token-comment': '#707f8c',
+  '--shiki-token-keyword': '#ad3da4',
+  '--shiki-token-parameter': '#3e8087',
+  '--shiki-token-function': '#326d74',
+  '--shiki-token-string-expression': '#366317',
+  '--shiki-token-punctuation': '#3e3e3e',
+  '--shiki-token-link': '#0f68a0',
+}
+
 /**
  * macOS Aqua (dark): the Apple dark-appearance materials — systemGray6/5
  * elevated surfaces, systemBlue dark (`#0a84ff`) accent, dark traffic-light
@@ -136,6 +149,19 @@ const macosDark: Palette = {
   '--dsw-shadow-lv3': '0 0 1px rgba(0, 0, 0, 0.5), 0 16px 48px rgba(0, 0, 0, 0.55)',
 }
 
+/** macosDark syntax hues: the theme's own shiki token palette. */
+const macosDarkSyntax: ThemeSyntaxPalette = {
+  '--shiki-token-constant': '#d0bf69',
+  '--shiki-token-string': '#fc6a5d',
+  '--shiki-token-comment': '#7f8c98',
+  '--shiki-token-keyword': '#fc5fa3',
+  '--shiki-token-parameter': '#dabaff',
+  '--shiki-token-function': '#67b7a4',
+  '--shiki-token-string-expression': '#ffd479',
+  '--shiki-token-punctuation': '#dfe3ea',
+  '--shiki-token-link': '#41a1c0',
+}
+
 /** compos "paper" — the light design default from themes.scm. */
 const paper: Palette = {
   '--dsw-alias-bg-base': '#fdfcf8',
@@ -150,6 +176,19 @@ const paper: Palette = {
   '--dsw-specific-sidebar-fill': '#f3efe2',
   '--dsw-alias-brand-primary': '#2653c9',
   '--dsw-alias-mode-line-active': '#2f6bcc',
+}
+
+/** paper syntax hues: the theme's own shiki token palette. */
+const paperSyntax: ThemeSyntaxPalette = {
+  '--shiki-token-constant': '#2653c9',
+  '--shiki-token-string': '#2f7d4f',
+  '--shiki-token-comment': '#8a8578',
+  '--shiki-token-keyword': '#a83b7c',
+  '--shiki-token-parameter': '#6d4a9e',
+  '--shiki-token-function': '#0f7f8c',
+  '--shiki-token-string-expression': '#48823a',
+  '--shiki-token-punctuation': '#45423b',
+  '--shiki-token-link': '#2653c9',
 }
 
 /** compos "sepia" — warm amber paper with a sun-baked accent. */
@@ -168,6 +207,19 @@ const sepia: Palette = {
   '--dsw-alias-mode-line-active': '#a86f14',
 }
 
+/** sepia syntax hues: the theme's own shiki token palette. */
+const sepiaSyntax: ThemeSyntaxPalette = {
+  '--shiki-token-constant': '#8a5a12',
+  '--shiki-token-string': '#5f7d2f',
+  '--shiki-token-comment': '#a09272',
+  '--shiki-token-keyword': '#a34a6e',
+  '--shiki-token-parameter': '#7c5295',
+  '--shiki-token-function': '#3f6f8f',
+  '--shiki-token-string-expression': '#6f7d33',
+  '--shiki-token-punctuation': '#5c4a30',
+  '--shiki-token-link': '#8a5a12',
+}
+
 /** compos "midnight" — deep indigo with a luminous periwinkle accent. */
 const midnight: Palette = {
   '--dsw-alias-bg-base': '#0d1120',
@@ -182,6 +234,19 @@ const midnight: Palette = {
   '--dsw-specific-sidebar-fill': '#141a30',
   '--dsw-alias-brand-primary': '#82a7ff',
   '--dsw-alias-mode-line-active': '#4f74e3',
+}
+
+/** midnight syntax hues: the theme's own shiki token palette. */
+const midnightSyntax: ThemeSyntaxPalette = {
+  '--shiki-token-constant': '#86c7ff',
+  '--shiki-token-string': '#8fe3a9',
+  '--shiki-token-comment': '#6b76a8',
+  '--shiki-token-keyword': '#b7a5ff',
+  '--shiki-token-parameter': '#f2a68c',
+  '--shiki-token-function': '#82a7ff',
+  '--shiki-token-string-expression': '#96e0c0',
+  '--shiki-token-punctuation': '#c3cdf2',
+  '--shiki-token-link': '#86c7ff',
 }
 
 /** nord — the dark base with nord's blue-grey cast and frost accent. */
@@ -200,6 +265,19 @@ const nord: Palette = {
   '--dsw-alias-mode-line-active': '#5e81ac',
 }
 
+/** nord syntax hues: the theme's own shiki token palette. */
+const nordSyntax: ThemeSyntaxPalette = {
+  '--shiki-token-constant': '#b48ead',
+  '--shiki-token-string': '#a3be8c',
+  '--shiki-token-comment': '#616e88',
+  '--shiki-token-keyword': '#81a1c1',
+  '--shiki-token-parameter': '#d8dee9',
+  '--shiki-token-function': '#88c0d0',
+  '--shiki-token-string-expression': '#ebcb8b',
+  '--shiki-token-punctuation': '#d8dee9',
+  '--shiki-token-link': '#8fbcbb',
+}
+
 /** gruvbox — warm, high-contrast dark with the retro yellow accent. */
 const gruvbox: Palette = {
   '--dsw-alias-bg-base': '#282828',
@@ -214,6 +292,19 @@ const gruvbox: Palette = {
   '--dsw-specific-sidebar-fill': '#32302f',
   '--dsw-alias-brand-primary': '#fabd2f',
   '--dsw-alias-mode-line-active': '#d79921',
+}
+
+/** gruvbox syntax hues: the theme's own shiki token palette. */
+const gruvboxSyntax: ThemeSyntaxPalette = {
+  '--shiki-token-constant': '#d3869b',
+  '--shiki-token-string': '#b8bb26',
+  '--shiki-token-comment': '#928374',
+  '--shiki-token-keyword': '#fb4934',
+  '--shiki-token-parameter': '#83a598',
+  '--shiki-token-function': '#fabd2f',
+  '--shiki-token-string-expression': '#8ec07c',
+  '--shiki-token-punctuation': '#bdae93',
+  '--shiki-token-link': '#83a598',
 }
 
 /** monokai-pro — the doom theme this workspace actually runs (active in ~/.config/doom). */
@@ -232,6 +323,19 @@ const monokaiPro: Palette = {
   '--dsw-alias-mode-line-active': '#a9dc76',
 }
 
+/** monokaiPro syntax hues: the theme's own shiki token palette. */
+const monokaiProSyntax: ThemeSyntaxPalette = {
+  '--shiki-token-constant': '#ab9df2',
+  '--shiki-token-string': '#ffd866',
+  '--shiki-token-comment': '#72696a',
+  '--shiki-token-keyword': '#ff6188',
+  '--shiki-token-parameter': '#fc9867',
+  '--shiki-token-function': '#a9dc76',
+  '--shiki-token-string-expression': '#78dce8',
+  '--shiki-token-punctuation': '#fcfcfa',
+  '--shiki-token-link': '#78dce8',
+}
+
 /** doom-one — the default doom look (the commented pick in the config history). */
 const doomOne: Palette = {
   '--dsw-alias-bg-base': '#282c34',
@@ -246,6 +350,19 @@ const doomOne: Palette = {
   '--dsw-specific-sidebar-fill': '#3b4048',
   '--dsw-alias-brand-primary': '#51afef',
   '--dsw-alias-mode-line-active': '#2f7bd9',
+}
+
+/** doomOne syntax hues: the theme's own shiki token palette. */
+const doomOneSyntax: ThemeSyntaxPalette = {
+  '--shiki-token-constant': '#ff6c6b',
+  '--shiki-token-string': '#98be65',
+  '--shiki-token-comment': '#68768c',
+  '--shiki-token-keyword': '#c678dd',
+  '--shiki-token-parameter': '#d19a66',
+  '--shiki-token-function': '#51afef',
+  '--shiki-token-string-expression': '#46d9ff',
+  '--shiki-token-punctuation': '#bbc2cf',
+  '--shiki-token-link': '#51afef',
 }
 
 /** doom-dracula — the transylvanian palette with a purple heart accent. */
@@ -264,6 +381,19 @@ const dracula: Palette = {
   '--dsw-alias-mode-line-active': '#8b5fd0',
 }
 
+/** dracula syntax hues: the theme's own shiki token palette. */
+const draculaSyntax: ThemeSyntaxPalette = {
+  '--shiki-token-constant': '#bd93f9',
+  '--shiki-token-string': '#f1fa8c',
+  '--shiki-token-comment': '#6272a4',
+  '--shiki-token-keyword': '#ff79c6',
+  '--shiki-token-parameter': '#8be9fd',
+  '--shiki-token-function': '#50fa7b',
+  '--shiki-token-string-expression': '#8be9fd',
+  '--shiki-token-punctuation': '#f8f8f2',
+  '--shiki-token-link': '#8be9fd',
+}
+
 /** doom-tokyo-night — the neon-on-dark tokyo palette. */
 const tokyoNight: Palette = {
   '--dsw-alias-bg-base': '#1a1b26',
@@ -280,23 +410,36 @@ const tokyoNight: Palette = {
   '--dsw-alias-mode-line-active': '#7aa2f7',
 }
 
+/** tokyoNight syntax hues: the theme's own shiki token palette. */
+const tokyoNightSyntax: ThemeSyntaxPalette = {
+  '--shiki-token-constant': '#ff9e64',
+  '--shiki-token-string': '#9ece6a',
+  '--shiki-token-comment': '#565f89',
+  '--shiki-token-keyword': '#bb9af7',
+  '--shiki-token-parameter': '#7dcfff',
+  '--shiki-token-function': '#7aa2f7',
+  '--shiki-token-string-expression': '#89ddff',
+  '--shiki-token-punctuation': '#a9b1d6',
+  '--shiki-token-link': '#7dcfff',
+}
+
 /** The doom-emacs library ported from this machine (65 palettes). */
 import { DOOM_THEMES } from './doom-themes.ts'
 
 /** The curated compos palettes, the macOS Aqua pair, and the ported doom library. */
 const CURATED_THEMES: readonly ThemeDefinition[] = [
   { id: 'anton-dark', colorScheme: 'dark', tokens: {} },
-  { id: 'macos', colorScheme: 'light', tokens: macos },
-  { id: 'macos-dark', colorScheme: 'dark', tokens: macosDark },
-  { id: 'paper', colorScheme: 'light', tokens: paper },
-  { id: 'sepia', colorScheme: 'light', tokens: sepia },
-  { id: 'midnight', colorScheme: 'dark', tokens: midnight },
-  { id: 'nord', colorScheme: 'dark', tokens: nord },
-  { id: 'gruvbox', colorScheme: 'dark', tokens: gruvbox },
-  { id: 'monokai-pro', colorScheme: 'dark', tokens: monokaiPro },
-  { id: 'doom-one', colorScheme: 'dark', tokens: doomOne },
-  { id: 'dracula', colorScheme: 'dark', tokens: dracula },
-  { id: 'tokyo-night', colorScheme: 'dark', tokens: tokyoNight },
+  { id: 'macos', colorScheme: 'light', tokens: macos , syntax: macosSyntax },
+  { id: 'macos-dark', colorScheme: 'dark', tokens: macosDark , syntax: macosDarkSyntax },
+  { id: 'paper', colorScheme: 'light', tokens: paper , syntax: paperSyntax },
+  { id: 'sepia', colorScheme: 'light', tokens: sepia , syntax: sepiaSyntax },
+  { id: 'midnight', colorScheme: 'dark', tokens: midnight , syntax: midnightSyntax },
+  { id: 'nord', colorScheme: 'dark', tokens: nord , syntax: nordSyntax },
+  { id: 'gruvbox', colorScheme: 'dark', tokens: gruvbox , syntax: gruvboxSyntax },
+  { id: 'monokai-pro', colorScheme: 'dark', tokens: monokaiPro , syntax: monokaiProSyntax },
+  { id: 'doom-one', colorScheme: 'dark', tokens: doomOne , syntax: doomOneSyntax },
+  { id: 'dracula', colorScheme: 'dark', tokens: dracula , syntax: draculaSyntax },
+  { id: 'tokyo-night', colorScheme: 'dark', tokens: tokyoNight , syntax: tokyoNightSyntax },
 ]
 
 /** The palette the M-x load-theme lists. */

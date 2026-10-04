@@ -3,8 +3,9 @@
  * document — `html { color-scheme }` for native UA chrome (scrollbars, form
  * controls), `body[data-ds-dark-theme]` for the token palette,
  * `body[data-ds-theme]` for theme-scoped refinement sheets, the active
- * theme's alias-token overrides as inline CSS variables on body, and one
- * presenter-owned `meta[name="theme-color"]` for surrounding browser UI. Pure
+ * theme's alias-token overrides and `--shiki-*` syntax hues as inline CSS
+ * variables on body, and one presenter-owned `meta[name="theme-color"]` for
+ * surrounding browser UI. Pure
  * DOM writes, no React involvement; the presenter only ever retracts what it
  * wrote itself, so foreign attributes, metadata, and inline styles survive.
  */
@@ -49,6 +50,13 @@ export class ThemePresenter {
     for (const name of this.appliedTokens) body.style.removeProperty(name)
     this.appliedTokens = []
     for (const [name, value] of Object.entries(snapshot.active.tokens)) {
+      body.style.setProperty(name, value)
+      this.appliedTokens.push(name)
+    }
+    // The theme's own syntax hues ride the same inline-variable channel, so
+    // they override the shiki.css default pair while the theme is active and
+    // retract with it; themes without a `syntax` palette keep the defaults.
+    for (const [name, value] of Object.entries(snapshot.active.syntax ?? {})) {
       body.style.setProperty(name, value)
       this.appliedTokens.push(name)
     }
