@@ -14,13 +14,13 @@ const contextRoot = resolve(sourceRoot, 'c0ntext')
 // Build into a hidden staging bundle under the repo's dist/ (a build-artifact
 // directory, never the install location), then install it into ANTON_INSTALL_DIR
 // (default /Applications) with rename(2) after quitting the old app; the
-// replaced bundle is kept one generation deep for instant rollback. The
-// staging name is not a documented interface, so nothing outside this script
-// targets it.
+// replaced bundle goes to the Trash instead of accumulating beside the install
+// (recoverable from the Trash for 30 days). The staging name is not a
+// documented interface, so nothing outside this script targets it.
 const appRoot = resolve(harnessRoot, 'dist/.anton-staging.app')
 const installDir = process.env.ANTON_INSTALL_DIR ?? '/Applications'
 const installedRoot = join(installDir, 'Anton.app')
-const previousRoot = join(installDir, 'Anton.previous.app')
+const legacyPreviousRoot = join(installDir, 'Anton.previous.app')
 const contents = join(appRoot, 'Contents')
 const resources = join(contents, 'Resources')
 const macOS = join(contents, 'MacOS')
@@ -273,8 +273,27 @@ if (!inPlaceSwap) {
     }
   }
 }
-rmSync(previousRoot, { recursive: true, force: true })
-if (existsSync(installedRoot)) renameSync(installedRoot, previousRoot)
+/**
+ * Move a path to the Trash via Finder (recoverable for 30 days), waiting for
+ * it to disappear so a subsequent install never collides with it.
+ */
+function trashPath(target: string): void {
+  const moved = spawnSync('osascript', ['-e', `tell application "Finder" to delete POSIX file ${JSON.stringify(target)}`], { encoding: 'utf8' })
+  if (moved.status !== 0) throw new Error(`Failed to move ${target} to the Trash: ${moved.stderr}`)
+  for (let elapsed = 0; elapsed < 30_000; elapsed += 250) {
+    if (!existsSync(target)) return
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250)
+  }
+  throw new Error(`${target} is still present after moving it to the Trash`)
+}
+
+// No previous-generation bundle is kept beside the install anymore: retire a
+// leftover from the old scheme, then trash the outgoing install itself.
+if (existsSync(legacyPreviousRoot)) {
+  console.log(`Moving leftover ${legacyPreviousRoot} to the Trash`)
+  trashPath(legacyPreviousRoot)
+}
+if (existsSync(installedRoot)) trashPath(installedRoot)
 // The staging bundle lives in the repo's dist/ while the install dir may be
 // another volume (/Applications on a separate disk): rename(2) then EXDEV
 // fallback to ditto, which preserves the bundle's symlinks verbatim.
@@ -294,7 +313,7 @@ if (legacyInstall !== installedRoot && existsSync(legacyInstall)) {
   console.log(`Removed legacy install at ${legacyInstall}`)
 }
 if (inPlaceSwap) {
-  console.log(`Swapped ${installedRoot} in place; previous bundle kept at ${previousRoot}. Restart the harness to activate it.`)
+  console.log(`Swapped ${installedRoot} in place; the outgoing bundle went to the Trash. Restart the harness to activate it.`)
 } else {
   run(['open', installedRoot])
   // Own the launch: a queued launch can lose the race with the last dying
@@ -317,6 +336,6 @@ if (inPlaceSwap) {
     }
   }
   console.log(launched
-    ? `Installed ${installedRoot} and Anton is running; previous bundle kept at ${previousRoot}`
-    : `Installed ${installedRoot} but Anton did not launch — open it manually. Previous bundle: ${previousRoot}`)
+    ? `Installed ${installedRoot} and Anton is running; the outgoing bundle went to the Trash`
+    : `Installed ${installedRoot} but Anton did not launch — open it manually. The outgoing bundle is in the Trash`)
 }
