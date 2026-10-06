@@ -133,6 +133,29 @@
   overflow-y: auto;
 }
 
+.search {
+  flex: 0 0 auto;
+  width: calc(100% - 8px);
+  height: 34px;
+  margin: 4px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: 8px;
+  outline: none;
+  background: var(--dsw-specific-menu);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+}
+
+.search:focus-visible {
+  box-shadow: 0 0 0 2px var(--dsw-alias-border-l3);
+}
+
+.search::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
 .group + .group {
   margin-top: 4px;
 }
