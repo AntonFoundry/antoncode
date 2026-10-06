@@ -164,6 +164,9 @@
   position: sticky;
   top: 0;
   z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
   margin: 4px 4px 2px;
   padding: 5px 8px 4px;
   border-left: 3px solid var(--dsw-alias-state-business-primary);
@@ -173,6 +176,25 @@
   font-size: 12px;
   line-height: 18px;
   font-weight: 600;
+}
+
+.providerLogo {
+  display: grid;
+  place-items: center;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: var(--dsw-specific-menu);
+  color: var(--dsw-alias-label-primary);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.providerLogo svg {
+  width: 13px;
+  height: 13px;
+  fill: currentColor;
 }
 
 .option {
