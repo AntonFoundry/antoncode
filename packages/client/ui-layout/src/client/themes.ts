@@ -12,8 +12,17 @@
  * mode-line fill, and hue-tinted surfaces/borders all take the theme's own
  * hue, so switching themes reads as an obvious color change — not a
  * background shuffle between near-identical darks.
+ *
+ * The hand-authored maps in this file are identity anchors, not complete
+ * palettes: LAYOUT_THEMES runs every entry through `completeTheme()`
+ * (theme-derive.ts, the opencode-style OKLCH derivation), which fills every
+ * remaining base-sheet token — chat bubbles, composer input, markdown code
+ * blocks, selectors, scrollbars, state colors, shadows — from the theme's own
+ * bg/ink/accent/syntax anchors. Hand tokens always win; `anton-dark` (empty
+ * tokens) stays the pure base.
  */
 import type { ThemeDefinition, ThemeSyntaxPalette } from '@deepseek-ai/dsh-client-ui-theme/client'
+import { completeTheme } from './theme-derive.ts'
 
 /** One palette entry: token name → the palette's scheme-fixed CSS value. */
 type Palette = Record<string, string>
@@ -442,13 +451,13 @@ const CURATED_THEMES: readonly ThemeDefinition[] = [
   { id: 'tokyo-night', colorScheme: 'dark', tokens: tokyoNight , syntax: tokyoNightSyntax },
 ]
 
-/** The palette the M-x load-theme lists. */
+/** The palette the M-x load-theme lists, every entry completed to the full base-sheet token set. */
 export const LAYOUT_THEMES: readonly ThemeDefinition[] = [
   ...CURATED_THEMES,
   // Doom themes whose id collides with a curated one (doom-one) are skipped —
   // the curated palette wins its name.
   ...DOOM_THEMES.filter(doom => !CURATED_THEMES.some(theme => theme.id === doom.id)),
-]
+].map(completeTheme)
 
 /** The localStorage key holding the chosen theme id across loads. */
 export const THEME_STORAGE_KEY = 'dsh.layout.theme'
