@@ -19,11 +19,10 @@ import clsx from 'clsx'
 import type { ModelReasoningEffort, ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14,
-  IconWarningOutline16, Toast,
+  IconWarningOutline16, ProviderLogo, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelSelectInjected } from './slots.ts'
-import { ProviderLogo } from './ProviderLogo.tsx'
 import css from './ModelSelect.module.css'
 
 /** Which pane the dropdown shows: the two-row root or one drilled-in list. */
@@ -326,7 +325,7 @@ export function ModelSelect(
                   return (
                     <section role="group" aria-labelledby={headingId} className={css.group} key={group.id}>
                       <div className={css.groupTitle} id={headingId}>
-                        <ProviderLogo id={group.id} name={group.name} />
+                        <ProviderLogo provider={group.id} name={group.name} size={18} />
                         <span>{group.name}</span>
                       </div>
                       {models.map((model) => {

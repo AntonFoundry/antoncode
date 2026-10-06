@@ -178,25 +178,6 @@
   font-weight: 600;
 }
 
-.providerLogo {
-  display: grid;
-  place-items: center;
-  flex: 0 0 18px;
-  width: 18px;
-  height: 18px;
-  border-radius: 5px;
-  background: var(--dsw-specific-menu);
-  color: var(--dsw-alias-label-primary);
-  font-size: 11px;
-  line-height: 18px;
-}
-
-.providerLogo svg {
-  width: 13px;
-  height: 13px;
-  fill: currentColor;
-}
-
 .option {
   display: flex;
   align-items: center;

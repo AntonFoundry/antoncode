@@ -15,7 +15,7 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
-import { Button, IconPlusOutline16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconPlusOutline16, Modal, ProviderLogo } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-web-react'
 import { CustomProviderCard } from './CustomProviderCard.tsx'
 import {
@@ -402,6 +402,7 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
             <li key={row.entry.provider} className={styles['rowCard']}>
               <div className={styles['rowHead']}>
                 <span className={styles['rowIdentity']}>
+                  <ProviderLogo provider={target.provider} name={target.displayName} size={24} />
                   <span
                     className={`${styles['rowName']} ${row.enabled ? '' : styles['rowNameDisabled']}`}
                   >{target.displayName}</span>
