@@ -65,6 +65,27 @@ describe('ThemeRuntime', () => {
     expect(theme.getTheme().preference).toBe('dark')
   })
 
+  it('never demotes an active registered palette through scope adoption', () => {
+    const { theme, events, host } = make()
+    const dispose = theme.register({ id: 'nord', colorScheme: 'dark', tokens: {} })
+    theme.setTheme('nord')
+    expect(theme.getTheme().preference).toBe('nord')
+    // The loaded Host section (default `system`) arrives after the palette is
+    // active: adoption must not demote the load-theme choice — this publish
+    // is exactly what wiped the localStorage choice before the guard.
+    host.publish({ status: 'ready', value: { preference: 'system' }, revision: 1, writable: true })
+    host.publish({ value: { preference: 'dark' }, revision: 2 })
+    expect(theme.getTheme().preference).toBe('nord')
+    expect(events[events.length - 1]).toBe(theme.getTheme())
+    // An explicit release (built-in setTheme) re-arms adoption, and the next
+    // section settles the durable preference again.
+    theme.setTheme('dark')
+    expect(host.set).toHaveBeenCalledWith('preference', 'dark')
+    host.publish({ value: { preference: 'light' }, revision: 3 })
+    expect(theme.getTheme().preference).toBe('light')
+    dispose()
+  })
+
   it('throws on unknown setTheme ids, duplicate registration, and the system id', () => {
     const { theme } = make()
     expect(() => { theme.setTheme('sepia') }).toThrow('not registered')

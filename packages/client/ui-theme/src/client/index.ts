@@ -260,8 +260,15 @@ export class ThemeRuntime {
     this.publish()
   }
 
-  /** Adopt the scope's accepted durable preference without writing it back. */
+  /**
+   * Adopt the scope's accepted durable preference without writing it back.
+   * The durable section models only the built-in preferences, so it never
+   * demotes an active registered palette (an explicit load-theme choice that
+   * rides over the stored built-in until released by an explicit built-in
+   * setTheme or by the palette's registration disposer).
+   */
   private adopt(): void {
+    if (!isThemePreference(this.preference)) return
     const section = this.host.getSnapshot().value
     if (section === undefined || this.preference === section.preference) return
     this.preference = section.preference

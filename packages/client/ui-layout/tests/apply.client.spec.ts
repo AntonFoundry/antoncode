@@ -11,6 +11,7 @@ import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import type { ThemeSettings } from '@deepseek-ai/dsh-client-ui-theme/client'
 import { apply as themeApply, inject as themeInject, ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
 import { apply, inject, LayoutController } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { apply as nodeApply } from '@deepseek-ai/dsh-client-ui-layout'
@@ -34,7 +35,10 @@ async function bench() {
   ctx.provide('connection', { api: { settings: {} }, isLoopback: false } as never)
   // ui-theme's Appearance row binds a durable scope through these two.
   ctx.provide('remote', { $on: () => () => {} } as never)
-  ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+  // One stub per bench, exposed so a test can publish the loaded Host
+  // section (ThemeRuntime's adoption input) after boot.
+  const host = stubSettingsScope<ThemeSettings>()
+  ctx.provide('settingsScope', { bind: () => host.scope } as never)
   // The frame's inject face resolves workspaces/sessions at call time only;
   // the plugin declaration needs the services present.
   ctx.provide('workspaces', {
@@ -47,7 +51,7 @@ async function bench() {
   } as never)
   await ctx.plugin({ inject: themeInject, apply: themeApply }).await()
   await slotsFiber.await()
-  return { ctx, slots: ctx.get('slots') as SlotRegistry }
+  return { ctx, slots: ctx.get('slots') as SlotRegistry, host }
 }
 
 describe('ui-layout client apply', () => {
@@ -137,6 +141,32 @@ describe('ui-layout client apply', () => {
     await storedFiber.await()
     expect(document.body.getAttribute('data-ds-theme')).toBe('nord')
     await storedFiber.dispose()
+  })
+
+  it('a stored palette survives the Host section loading after boot; a built-in choice releases it', async () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'nord')
+    const { ctx, host } = await bench()
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    expect(document.body.getAttribute('data-ds-theme')).toBe('nord')
+    // The real scope publishes the loaded section (default `system`) after
+    // boot; the palette must ride over it and the stored id must survive —
+    // this publish is what used to delete the key and revert the theme. The
+    // section carries every schema-resolved field: FontRuntime shares the
+    // scope and reads the font fields on the same adoption.
+    host.publish({
+      status: 'ready',
+      value: { preference: 'system', monoFont: 'monaco', monoSize: 15, uiFamily: 'system', uiSize: 14, chatSize: 16, termSize: 13 },
+      revision: 1,
+      writable: true,
+    })
+    expect(document.body.getAttribute('data-ds-theme')).toBe('nord')
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('nord')
+    // An explicit built-in choice (Settings → Appearance) releases the stored
+    // palette so it cannot resurrect on the next boot.
+    const theme = ctx.get('theme') as ThemeRuntime
+    theme.setTheme('dark')
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBeNull()
   })
 
   it('teardown unwinds the service, the root registration, and the child declarations', async () => {
