@@ -6,6 +6,7 @@
  */
 import { useLayoutEffect, useState } from 'react'
 import type { RefObject } from 'react'
+import { fixedInsetScale } from './zoom-scale.ts'
 
 /** Safe distance kept between the overlay and the viewport top edge (mirrors the Menu portal margin). */
 const MARGIN = 12
@@ -16,7 +17,9 @@ const MARGIN = 12
  * @param cap - design max-height in px (the clamp never exceeds it).
  * @param signal - re-measure trigger: pass the overlay's render state so anchor
  *   moves (composer growth) re-fit; resize/scroll re-fit while mounted.
- * @returns the max-height to apply inline, in px.
+ * @returns the max-height to apply inline, in px — the measured viewport
+ *   clearance divided by the overlay subtree's zoom, since the engine
+ *   multiplies a zoomed subtree's applied lengths by that factor.
  */
 export function useAnchoredMaxHeight(ref: RefObject<HTMLElement>, cap: number, signal: unknown): number {
   const [maxHeight, setMaxHeight] = useState(cap)
@@ -24,7 +27,7 @@ export function useAnchoredMaxHeight(ref: RefObject<HTMLElement>, cap: number, s
     const el = ref.current
     if (el === null) return
     const fit = () => {
-      setMaxHeight(Math.min(cap, Math.max(0, el.getBoundingClientRect().bottom - MARGIN)))
+      setMaxHeight(Math.min(cap, Math.max(0, (el.getBoundingClientRect().bottom - MARGIN) / fixedInsetScale(el))))
     }
     fit()
     window.addEventListener('resize', fit)

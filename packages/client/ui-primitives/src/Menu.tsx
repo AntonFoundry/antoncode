@@ -14,6 +14,7 @@ import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import { IconCheckOutline16 } from './icons/index.tsx'
 import { usePointerGrace } from './pointer-grace.ts'
+import { fixedInsetScale } from './zoom-scale.ts'
 import css from './Menu.module.css'
 
 /** Selectable row (optionally with a nested submenu). */
@@ -135,6 +136,14 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
       const listEl = listRef.current
       const lw = listEl?.offsetWidth ?? 0
       const lh = listEl?.offsetHeight ?? 0
+      // The portaled list carries the interface zoom itself (Menu.module.css
+      // .portal), and the engine multiplies a zoomed fixed element's insets
+      // by that factor. Position math below runs in TRUE viewport space
+      // (measured rects are true); the final insets divide by the factor so
+      // the painted list lands on the anchor.
+      const insetScale = fixedInsetScale(listEl)
+      const drawnWidth = lw * insetScale
+      const drawnHeight = lh * insetScale
 
       let x: number
       let y: number
@@ -143,16 +152,16 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
         y = r.top
       } else if (align === 'start') {
         x = r.left
-        y = side === 'bottom' ? r.bottom + 4 : r.top - lh - 4
+        y = side === 'bottom' ? r.bottom + 4 : r.top - drawnHeight - 4
       } else {
-        x = r.right - lw
-        y = side === 'bottom' ? r.bottom + 4 : r.top - lh - 4
+        x = r.right - drawnWidth
+        y = side === 'bottom' ? r.bottom + 4 : r.top - drawnHeight - 4
       }
 
-      if (lw > 0) x = Math.min(Math.max(x, MARGIN), vw - lw - MARGIN)
-      if (lh > 0) y = Math.min(Math.max(y, MARGIN), vh - lh - MARGIN)
+      if (lw > 0) x = Math.min(Math.max(x, MARGIN), vw - drawnWidth - MARGIN)
+      if (lh > 0) y = Math.min(Math.max(y, MARGIN), vh - drawnHeight - MARGIN)
 
-      setFixedPos({ left: x, top: y })
+      setFixedPos({ left: x / insetScale, top: y / insetScale })
     }
     // First run measures the hidden pre-render (same commit as `open`), so
     // end/top alignment and clamping use real dimensions before anything

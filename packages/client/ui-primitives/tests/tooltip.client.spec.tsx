@@ -354,4 +354,32 @@ describe('Tooltip', () => {
     )
     expect(screen.queryByRole('tooltip')).toBeNull()
   })
+
+  it('divides anchor coordinates and clamp deltas by the subtree zoom', () => {
+    // The chat pane zooms the anchor subtree; the bubble inherits that zoom
+    // and the engine multiplies its insets by it, so the stored coordinates
+    // and the fit-pass delta both divide by 1.25.
+    const rectSpy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(rect(900, 1100))
+    const styleSpy = vi.spyOn(window, 'getComputedStyle').mockImplementation((el) => {
+      const zoomed = el instanceof Element && el.tagName === 'BUTTON'
+      return { zoom: zoomed ? '1.25' : '' } as unknown as CSSStyleDeclaration
+    })
+    try {
+      render(
+        <Tooltip label="More actions" side="bottom">
+          <button type="button">anchor</button>
+        </Tooltip>,
+      )
+      fireEvent.mouseEnter(screen.getByText('anchor'))
+      const bubble = screen.getByRole('tooltip')
+      // pos.x = 1000/1.25 = 800; the measured right edge 1100 overflows the
+      // 1012 viewport limit by 88 true px → dx/1.25 = -70.4.
+      expect(bubble.style.left).toBe('729.6px')
+      // bottom 20/1.25 = 16, plus the 8px gap.
+      expect(bubble.style.top).toBe('24px')
+    } finally {
+      rectSpy.mockRestore()
+      styleSpy.mockRestore()
+    }
+  })
 })

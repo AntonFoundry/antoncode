@@ -10,6 +10,7 @@
 
 import { cloneElement, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { FocusEventHandler, MouseEventHandler, MutableRefObject, ReactElement, Ref } from 'react'
+import { fixedInsetScale } from './zoom-scale.ts'
 import css from './Tooltip.module.css'
 
 /** Bubble placement relative to the anchor. */
@@ -49,8 +50,13 @@ export function Tooltip({ label, side = 'right', delayMs = 0, disabled = false, 
     else if (childRef != null) (childRef as MutableRefObject<HTMLElement | null>).current = el
   }, [childRef])
   // The anchor's edges rather than final coordinates: a vertical flip has to
-  // re-derive the bubble's own top from the opposite edge.
-  const [pos, setPos] = useState<{ x: number; top: number; bottom: number } | null>(null)
+  // re-derive the bubble's own top from the opposite edge. Coordinates are
+  // stored in INSET space (divided by the zoom factor acting on the bubble —
+  // the bubble is a sibling of the anchor, so one subtree zoom context): the
+  // engine multiplies a fixed element's insets by that factor, so an inset
+  // of viewportX/scale paints at viewportX. The fit pass reads true viewport
+  // rects and converts its deltas back with the same factor.
+  const [pos, setPos] = useState<{ x: number; top: number; bottom: number; scale: number } | null>(null)
   // Where the bubble actually sits, which is the requested side until the
   // viewport refuses it.
   const [placement, setPlacement] = useState<TooltipSide>(side)
@@ -82,7 +88,8 @@ export function Tooltip({ label, side = 'right', delayMs = 0, disabled = false, 
       let dx = 0
       if (r.right > window.innerWidth - EDGE_MARGIN) dx = window.innerWidth - EDGE_MARGIN - r.right
       if (r.left + dx < EDGE_MARGIN) dx = EDGE_MARGIN - r.left
-      el.style.left = `${pos.x + dx}px`
+      // dx is a true-viewport delta; the inset store is divided by the scale.
+      el.style.left = `${pos.x + dx / pos.scale}px`
       if (side === 'right') return
       // Flip only into a side that genuinely fits, so an anchor with room on
       // neither side keeps the requested placement instead of oscillating.
@@ -125,7 +132,10 @@ export function Tooltip({ label, side = 'right', delayMs = 0, disabled = false, 
     // Every show starts from the requested side; the fit pass flips it only
     // where this anchor's position demands it.
     setPlacement(side)
-    setPos({ x: side === 'right' ? r.right + 10 : r.left + r.width / 2, top: r.top, bottom: r.bottom })
+    // The bubble inherits the anchor subtree's zoom: its fixed insets are
+    // multiplied by that factor, so store anchor coordinates divided by it.
+    const scale = fixedInsetScale(el)
+    setPos({ x: (side === 'right' ? r.right + 10 : r.left + r.width / 2) / scale, top: r.top / scale, bottom: r.bottom / scale, scale })
   }
   const showAfterHoverDelay = () => {
     cancelShow()

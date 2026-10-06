@@ -9,6 +9,7 @@ import type {
 import { IconCheckOutline16, IconCopyOutline16 } from './icons/index.tsx'
 import { Menu } from './Menu.tsx'
 import type { MenuEntry } from './Menu.tsx'
+import { fixedInsetScale } from './zoom-scale.ts'
 import css from './JsonTree.module.css'
 
 const OBJECT_PREVIEW_LIMIT = 4
@@ -456,10 +457,14 @@ export function JsonTree({
     if (root === null) throw new Error('JsonTree root is not mounted')
     const rootRect = root.getBoundingClientRect()
     const rowRect = row.getBoundingClientRect()
+    // The copy anchor is fixed inside the (possibly zoomed) tree subtree: its
+    // insets are multiplied by the subtree zoom, so store row coordinates
+    // divided by that factor and keep the 26px pull-in in local units.
+    const insetScale = fixedInsetScale(root)
     return {
-      left: rootRect.left + root.clientWidth - 26,
-      side: rowRect.top - rootRect.top > root.clientHeight / 2 ? 'top' : 'bottom',
-      top: rowRect.top,
+      left: rootRect.left / insetScale + root.clientWidth - 26,
+      side: rowRect.top - rootRect.top > rootRect.height / 2 ? 'top' : 'bottom',
+      top: rowRect.top / insetScale,
     }
   }
 
