@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
-import { ModelsDevCatalog, parseFreeModels } from '@deepseek-ai/dsh-llm-models-dev'
+import { ModelsDevCatalog, parseFreeModels, parseModelProtocols } from '@deepseek-ai/dsh-llm-models-dev'
 import * as LlmModelsDev from '@deepseek-ai/dsh-llm-models-dev'
 
 const FREE_MODEL = {
@@ -161,5 +161,44 @@ describe('llm-models-dev mount freshness', () => {
       if (!disposed) await ctx.fiber.dispose()
       await rm(home, { recursive: true, force: true })
     }
+  })
+})
+
+describe('parseModelProtocols', () => {
+  const RESPONSES_MODEL = {
+    ...FREE_MODEL,
+    cost: { input: 1.25, output: 4.25 },
+    provider: { npm: '@ai-sdk/openai' },
+  }
+
+  it('maps every Responses-protocol model id, free or paid', () => {
+    expect(parseModelProtocols(payload({
+      'free-spark': { ...FREE_MODEL, provider: { npm: '@ai-sdk/openai' } },
+      'paid-spark': RESPONSES_MODEL,
+      'chat-model': FREE_MODEL,
+      'other-npm': { ...FREE_MODEL, provider: { npm: '@ai-sdk/anthropic' } },
+      '': FREE_MODEL,
+    }), 'opencode')).toEqual(new Map([
+      ['free-spark', 'responses'],
+      ['paid-spark', 'responses'],
+    ]))
+  })
+
+  it('rejects malformed payloads and yields an empty map for absent providers', () => {
+    expect(() => parseModelProtocols(undefined, 'opencode')).toThrow(/not an object/)
+    expect(parseModelProtocols({}, 'opencode')).toEqual(new Map())
+    expect(() => parseModelProtocols({ opencode: {} }, 'opencode')).toThrow(/no model map/)
+  })
+
+  it('peekProtocol routes cached models without triggering a refresh', async () => {
+    vi.stubGlobal('fetch', okFetchOf(() => payload({
+      'free-spark': { ...FREE_MODEL, provider: { npm: '@ai-sdk/openai' } },
+    })))
+    const catalog = new ModelsDevCatalog('https://models.dev', 3_600_000)
+    expect(catalog.peekProtocol('opencode', 'free-spark')).toBeUndefined()
+    await catalog.freeModels('opencode')
+    expect(catalog.peekProtocol('opencode', 'free-spark')).toBe('responses')
+    expect(catalog.peekProtocol('opencode', 'test-free')).toBeUndefined()
+    expect(catalog.peekProtocol('missing', 'free-spark')).toBeUndefined()
   })
 })

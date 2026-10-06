@@ -572,6 +572,18 @@
     - id: llm-models-dev
       name: '@deepseek-ai/dsh-llm-models-dev'
 
+    # The local opencode server adapter: generations run inside the user's own
+    # opencode server (the only path OpenCode's free tier serves — direct
+    # gateway calls fail FreeTierError outside genuine OpenCode), discovered
+    # per request from serverURL, OPENCODE_SERVER_URL, the CLI registration
+    # file, or live `opencode service status`, with the Basic password read
+    # per request from the registration file (service.json, OPENCODE_SERVER_PASSWORD
+    # fallback). One `opencode-server` route ships live with pure discovery;
+    # an unreachable server fails TRANSPORT with recovery guidance instead of
+    # breaking registration.
+    - id: llm-opencode
+      name: '@deepseek-ai/dsh-llm-opencode'
+
     # Weekly model-strength datasheet + the `auto` child-model resolver for
     # the subagent tool: a persisted fetchedAt marker gives restart-surviving
     # cron semantics, a cheap effect-owned interval checks staleness, and the

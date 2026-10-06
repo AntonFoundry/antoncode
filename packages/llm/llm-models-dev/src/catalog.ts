@@ -139,10 +139,43 @@ export function parseFreeModels(payload: unknown, provider: string): Map<string,
   return models
 }
 
-/** Cached snapshot of one provider's free models. */
+/**
+ * Extract the wire protocol of every model in one provider's snapshot, free
+ * or paid. The free-model map ({@link parseFreeModels}) is the picker
+ * surface and drops paid entries, but request routing must still know a paid
+ * model's protocol: OpenCode Zen's Muse Spark family rejects
+ * chat-completions with a bare 500 and completes on `/responses`, whether
+ * the caller uses the `-free` or the paid model id. Presence in the returned
+ * map means `responses`; absence means chat-completions. An absent provider
+ * yields an empty map rather than `undefined`: routing treats an unknown
+ * model as chat-completions either way, so unlike the picker surface there
+ * is no absent-versus-empty distinction to preserve.
+ *
+ * @param payload - the parsed `/api.json` document.
+ * @param provider - the catalog provider id, e.g. `opencode`.
+ * @returns each Responses-protocol model id.
+ */
+export function parseModelProtocols(payload: unknown, provider: string): Map<string, 'responses'> {
+  if (!isRecord(payload)) throw new Error('llm-models-dev: catalog payload is not an object')
+  const entry = payload[provider]
+  if (entry === undefined) return new Map()
+  const rawModels = isRecord(entry) && isRecord(entry.models) ? entry.models : null
+  if (rawModels === null) throw new Error(`llm-models-dev: catalog provider "${provider}" has no model map`)
+
+  const protocols = new Map<string, 'responses'>()
+  for (const [id, raw] of Object.entries(rawModels)) {
+    if (typeof id !== 'string' || id.length === 0 || !isRecord(raw)) continue
+    const model = raw as WireModel
+    if (model.provider?.npm === RESPONSES_PROVIDER_NPM) protocols.set(id, 'responses')
+  }
+  return protocols
+}
+
+/** One cached provider snapshot: the free-model picker map plus every model's wire protocol. */
 interface CacheEntry {
   readonly at: number
   readonly models: ReadonlyMap<string, CatalogModel>
+  readonly protocols: ReadonlyMap<string, 'responses'>
 }
 
 /**
@@ -151,6 +184,10 @@ interface CacheEntry {
  * eagerly at mount and re-fetches on the configured interval through
  * {@link ModelsDevCatalog.refresh}, and a failed refresh keeps serving the
  * previous snapshot, so a catalog outage never empties a working picker.
+ *
+ * Each entry pairs the free-model picker map with the wire protocol of every
+ * catalog model: paid ids never enter the picker, but request routing still
+ * needs their protocol (see {@link parseModelProtocols}).
  */
 export class ModelsDevCatalog {
   readonly #catalogURL: string
@@ -173,9 +210,9 @@ export class ModelsDevCatalog {
     const cached = this.#cache.get(provider)
     if (cached !== undefined && Date.now() - cached.at < this.#refreshMs) return cached.models
     try {
-      const models = await this.#fetch(provider)
-      this.#cache.set(provider, { at: Date.now(), models })
-      return models
+      const snapshot = await this.#fetch(provider)
+      this.#cache.set(provider, { at: Date.now(), ...snapshot })
+      return snapshot.models
     } catch (error) {
       if (cached !== undefined) {
         onError?.(error)
@@ -194,6 +231,18 @@ export class ModelsDevCatalog {
   }
 
   /**
+   * The cached wire protocol of one model id without triggering a refresh,
+   * for synchronous request-time routing. `responses` when the catalog marks
+   * the model for the OpenAI Responses protocol; `undefined` means the
+   * chat-completions default (or no snapshot has been fetched yet).
+   * @param provider - the catalog provider id.
+   * @param model - the wire model id.
+   */
+  peekProtocol(provider: string, model: string): 'responses' | undefined {
+    return this.#cache.get(provider)?.protocols.get(model)
+  }
+
+  /**
    * Fetch now and replace the cached snapshot regardless of its age; a failed
    * fetch keeps the previous snapshot and reports through `onError` instead of
    * rejecting. The mount-time and scheduled refreshes call this so a restart
@@ -204,14 +253,14 @@ export class ModelsDevCatalog {
    */
   async refresh(provider: string, onError?: (error: unknown) => void): Promise<void> {
     try {
-      const models = await this.#fetch(provider)
-      this.#cache.set(provider, { at: Date.now(), models })
+      const snapshot = await this.#fetch(provider)
+      this.#cache.set(provider, { at: Date.now(), ...snapshot })
     } catch (error) {
       onError?.(error)
     }
   }
 
-  async #fetch(provider: string): Promise<Map<string, CatalogModel>> {
+  async #fetch(provider: string): Promise<{ models: Map<string, CatalogModel>; protocols: Map<string, 'responses'> }> {
     const base = this.#catalogURL.endsWith('/') ? this.#catalogURL : `${this.#catalogURL}/`
     const response = await fetch(new URL('api.json', base), {
       method: 'GET',
@@ -221,10 +270,11 @@ export class ModelsDevCatalog {
     if (!response.ok) {
       throw new Error(`llm-models-dev: catalog fetch from ${base}api.json failed with ${response.status}`)
     }
-    const models = parseFreeModels(await response.json(), provider)
+    const document: unknown = await response.json() as unknown
+    const models = parseFreeModels(document, provider)
     if (models === undefined) {
       throw new Error(`llm-models-dev: catalog provider "${provider}" is not published on ${base}`)
     }
-    return models
+    return { models, protocols: parseModelProtocols(document, provider) }
   }
 }

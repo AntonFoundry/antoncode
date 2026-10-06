@@ -5,8 +5,8 @@
  * catalog OpenCode itself bundles) and lists each route's zero-cost chat
  * models, keeping deprecated entries exactly as OpenCode's picker does;
  * streaming rides each provider's own OpenAI-compatible gateway through the
- * inherited llm-openai transport, stamped with the client identity facts
- * OpenCode Zen's free tier requires (see {@link ZEN_CLIENT_USER_AGENT}).
+ * inherited llm-openai transport, stamped with the client identity headers
+ * OpenCode Zen's free tier requires (see `extraHeaders` below).
  *
  * Two routes ship live: `opencode-free` (OpenCode Zen, anonymous access with
  * the gateway's literal `public` key, exactly as opencode itself falls back)
@@ -44,7 +44,7 @@ import { ModelsDevAdapter } from './adapter.ts'
 
 export { ModelsDevAdapter } from './adapter.ts'
 export type { ModelsDevAdapterOptions, ModelsDevConnectionOptions } from './adapter.ts'
-export { ModelsDevCatalog, parseFreeModels } from './catalog.ts'
+export { ModelsDevCatalog, parseFreeModels, parseModelProtocols } from './catalog.ts'
 export type { CatalogModel } from './catalog.ts'
 
 export const name = 'llm-models-dev'
@@ -59,13 +59,11 @@ export const DEFAULT_CATALOG_REFRESH_MS = 3_600_000
 /** The literal anonymous key OpenCode Zen accepts for its free tier. */
 const ZEN_ANONYMOUS_KEY = 'public'
 /**
- * The client identity OpenCode Zen's free tier demands: requests without an
- * `opencode/*` User-Agent and a session id fail `MissingSessionID` before the
- * model is ever consulted. This plugin is the port of OpenCode's own free
- * picker, so it presents the same client facts. The User-Agent value is an
- * external wire requirement of the gateway, not a deployment tunable.
+ * The project header value when the caller carries no project identity.
+ * OpenCode sends its project id (`global` for non-git directories); the
+ * harness has no project concept, so it sends the same fallback.
  */
-const ZEN_CLIENT_USER_AGENT = 'opencode/1.0'
+const ZEN_PROJECT_FALLBACK = 'global'
 /** Session-id fallback for a request that carries no conversation session. */
 const fallbackSessionId = crypto.randomUUID()
 
@@ -175,6 +173,33 @@ export const Config: z<Config> = z.object({
 
 /** One resolution's complete request facts (the adapter's connection options). */
 export type ResolvedModelsDevOptions = ModelsDevConnectionOptions
+
+/**
+ * Build the Zen client headers for one request, mirroring antoncode-ui's
+ * opencode provider (`packages/opencode/src/session/llm.ts`:
+ * `x-antoncode-project/session/request/client` for provider ids starting
+ * with `opencode`) with the upstream `x-opencode-*` names stamped alongside —
+ * the Zen gateway routes and caches on the upstream names.
+ * @param provider - the route the request targets; non-`opencode*` routes get no headers.
+ * @param sessionId - the conversation session id, or `undefined` for the process fallback.
+ * @returns the route-scoped headers for this one request.
+ */
+export function resolveZenHeaders(provider: string, sessionId: string | undefined): Record<string, string> {
+  if (!provider.startsWith('opencode')) return {}
+  const session = sessionId ?? fallbackSessionId
+  const request = `msg_${crypto.randomUUID()}`
+  const client = process.env.OPENCODE_CLIENT ?? 'cli'
+  return {
+    'x-antoncode-project': ZEN_PROJECT_FALLBACK,
+    'x-antoncode-session': session,
+    'x-antoncode-request': request,
+    'x-antoncode-client': client,
+    'x-opencode-project': ZEN_PROJECT_FALLBACK,
+    'x-opencode-session': session,
+    'x-opencode-request': request,
+    'x-opencode-client': client,
+  }
+}
 
 /**
  * The one explicit resolve step from raw config to one route's validated
@@ -322,21 +347,20 @@ export function apply(ctx: Context, config: Config): void {
     resolveApiKey,
     resolveUserId,
     catalog,
-    // The anonymous Zen free tier is client-gated: without these facts the
-    // gateway answers MissingSessionID regardless of model or key. Sent on
-    // every route in this family — OpenCode itself stamps them regardless of
-    // authentication — and the conversation session id scopes the gateway's
-    // per-session free-quota bucket to this conversation.
-    extraHeaders: (_provider, _connection, sessionId) => ({
-      'user-agent': ZEN_CLIENT_USER_AGENT,
-      'x-session-id': sessionId ?? fallbackSessionId,
-    }),
+    // The Zen free tier is client-gated: without a session header the
+    // gateway answers MissingSessionID regardless of model or key (see
+    // {@link resolveZenHeaders}). Only `opencode*` routes carry these: other
+    // family routes (e.g. `openrouter-free`) must not see them. User-Agent
+    // stays with the mandatory harness attribution (the transport merges it
+    // after these extras); opencode itself sets no explicit UA on Zen requests.
+    extraHeaders: (provider, _connection, sessionId) => resolveZenHeaders(provider, sessionId),
     // The catalog declares each model's wire protocol (`provider.npm`):
     // Muse Spark on Zen serves only the OpenAI Responses protocol, and
-    // chat-completions for it is a hard 500.
+    // chat-completions for it is a hard 500 — free or paid id alike. The
+    // protocol map covers every catalog model, not just the free picker set,
+    // so a paid id like `muse-spark-1.3` routes to `/responses` too.
     modelProtocol: (provider, model) => catalog
-      .peekCached(options(provider).catalogProvider)
-      ?.get(model)?.protocol === 'responses'
+      .peekProtocol(options(provider).catalogProvider, model) === 'responses'
       ? 'responses'
       : 'chat-completions',
     onCatalogError,

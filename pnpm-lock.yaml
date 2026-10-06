@@ -1094,6 +1094,9 @@ importers:
       '@deepseek-ai/dsh-llm-openai':
         specifier: workspace:^
         version: link:../../llm/llm-openai
+      '@deepseek-ai/dsh-llm-opencode':
+        specifier: workspace:^
+        version: link:../../llm/llm-opencode
       '@deepseek-ai/dsh-llm-pi-ai':
         specifier: workspace:^
         version: link:../../llm/llm-pi-ai
