@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type {
-  SidebarFooterActionOwnerProps, SidebarRootComponentProps, SidebarSectionOwnerProps,
-  SidebarSettingsOwnerProps,
+  SidebarFooterActionOwnerProps, SidebarRegionOwnerProps, SidebarRootComponentProps,
+  SidebarSectionOwnerProps, SidebarSettingsOwnerProps,
 } from '../src/client/contract/slots.ts'
 import { SidebarRoot } from '../src/client/SidebarRoot.tsx'
 import { en } from '../src/client/locales.ts'
@@ -24,7 +24,7 @@ const neverHook = (() => { throw new Error('shell must not read global hooks') }
 function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; width?: number } = {}) {
   const startSession = vi.fn()
   const toggleSidebar = vi.fn()
-  let regionOwner: SidebarSectionOwnerProps | undefined
+  let regionOwner: SidebarRegionOwnerProps | undefined
   let memoryOwner: SidebarSectionOwnerProps | undefined
   let settingsOwner: SidebarSettingsOwnerProps | undefined
   let footerActionOwner: SidebarFooterActionOwnerProps | undefined
@@ -36,7 +36,7 @@ function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; w
       startSession={startSession} toggleSidebar={toggleSidebar} t={t}
       renderSlot={((
         key: string,
-        owner: SidebarFooterActionOwnerProps | SidebarSectionOwnerProps | SidebarSettingsOwnerProps,
+        owner: SidebarFooterActionOwnerProps | SidebarRegionOwnerProps | SidebarSectionOwnerProps | SidebarSettingsOwnerProps,
       ) => {
         if (key === 'sidebar.settings') {
           settingsOwner = owner
@@ -50,7 +50,7 @@ function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; w
           memoryOwner = owner as SidebarSectionOwnerProps
           return <div data-testid="memory-seat" data-wide={owner.wide} />
         }
-        regionOwner = owner as SidebarSectionOwnerProps
+        regionOwner = owner as SidebarRegionOwnerProps
         return <div data-testid="region" data-wide={owner.wide} />
       }) as SidebarRootComponentProps['renderSlot']}
     />
@@ -83,15 +83,32 @@ function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; w
 }
 
 describe('SidebarRoot shell', () => {
-  it('routes New Session (capsule + wordmark) and the column toggle', () => {
+  it('routes New Session (wordmark) and raises New Workspace presses as region requests', () => {
     const b = mountShell()
-    // Expanded, both the wordmark and the capsule start a session.
-    const starters = screen.getAllByRole('button', { name: 'New session' })
-    expect(starters).toHaveLength(2)
-    for (const button of starters) fireEvent.click(button)
-    expect(b.startSession).toHaveBeenCalledTimes(2)
+    // The wordmark keeps the New Session shortcut; the capsule no longer
+    // starts sessions (per-workspace ＋ rows own that gesture).
+    fireEvent.click(screen.getByRole('button', { name: 'New session' }))
+    expect(b.startSession).toHaveBeenCalledTimes(1)
+    // Each capsule press is one monotonic request edge for the region's
+    // add-workspace flow — never a session start.
+    fireEvent.click(screen.getByRole('button', { name: 'New workspace' }))
+    expect(b.startSession).toHaveBeenCalledTimes(1)
+    expect(b.regionOwner().newWorkspaceRequests).toBe(1)
+    fireEvent.click(screen.getByRole('button', { name: 'New workspace' }))
+    expect(b.regionOwner().newWorkspaceRequests).toBe(2)
     fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
     expect(b.toggleSidebar).toHaveBeenCalledOnce()
+  })
+
+  it('hides the New Workspace capsule while the region reports no picking affordance', () => {
+    const b = mountShell()
+    // The default assumes the shipped composition's picker; a no-picker
+    // composition reports and the capsule drops out instead of going dead.
+    expect(screen.getByRole('button', { name: 'New workspace' })).toBeTruthy()
+    act(() => { b.regionOwner().reportAddWorkspaceAvailability(false) })
+    expect(screen.queryByRole('button', { name: 'New workspace' })).toBeNull()
+    act(() => { b.regionOwner().reportAddWorkspaceAvailability(true) })
+    expect(screen.getByRole('button', { name: 'New workspace' })).toBeTruthy()
   })
 
   it('hands the region its wide flag and clamps expandSidebar to the collapsed state', () => {
@@ -118,6 +135,9 @@ describe('SidebarRoot shell', () => {
     expect(screen.getByTestId('region')).toBeTruthy()
     b.regionOwner().expandSidebar()
     expect(b.toggleSidebar).toHaveBeenCalledOnce()
+    // The rail capsule is the same New Workspace control: its press counts too.
+    fireEvent.click(screen.getByRole('button', { name: 'New workspace' }))
+    expect(b.regionOwner().newWorkspaceRequests).toBe(1)
   })
 
   it('renders statically collapsed on a cold start (no crossfade classes)', () => {

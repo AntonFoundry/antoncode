@@ -5,9 +5,13 @@
  * dialogs. Wide state renders the full browser; rail state renders the two
  * region icons (search / add workspace) as 36px controls on the shell's shared
  * rail entry path, each requesting expansion through the owner share. Adding
- * is the header button's one action, so it raises the directory flow with no
- * menu in between; the flow and its error dialog live in WorkspacePicker
- * (same package — direct composition, no slot between them).
+ * has two triggers and one flow: the header ＋ button and the shell's New
+ * Workspace capsule (raised through the owner share's request count) both
+ * open the directory flow with no menu in between; the flow and its error
+ * dialog live in WorkspacePicker (same package — direct composition, no slot
+ * between them). The region also reports its add availability back through
+ * the owner share, so the shell can hide the capsule when no picking
+ * affordance exists.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
@@ -803,6 +807,8 @@ function SearchResults({
 export function WorkspaceBrowser({
   wide,
   expandSidebar,
+  newWorkspaceRequests,
+  reportAddWorkspaceAvailability,
   useSessions,
   useWorkspaces,
   useStore,
@@ -860,6 +866,25 @@ export function WorkspaceBrowser({
   const [wsPickerOpen, setWsPickerOpen] = useState(false)
   const wsPlusRef = useRef<HTMLButtonElement>(null)
   const composingRef = useRef(false)
+
+  // Shell New Workspace presses arrive as a monotonic count: each value past
+  // the seen baseline raises the same add flow the header ＋ owns (the add-only
+  // surface consumes `open` straight into the directory flow). A request that
+  // lands while no picking affordance exists is dropped — the shell hides its
+  // capsule in that composition anyway; this is the matching belt.
+  const seenNewWorkspaceRequests = useRef(newWorkspaceRequests)
+  useEffect(() => {
+    if (newWorkspaceRequests === seenNewWorkspaceRequests.current) return
+    seenNewWorkspaceRequests.current = newWorkspaceRequests
+    if (directoryFlowAvailable) setWsPickerOpen(true)
+  }, [newWorkspaceRequests, directoryFlowAvailable])
+  // The shell hides its New Workspace capsule while this region has no
+  // picking affordance, so report occupancy live and clear it when the region
+  // unmounts (the shell keeps no independent read on the directory-flow hole).
+  useEffect(() => {
+    reportAddWorkspaceAvailability(directoryFlowAvailable)
+    return () => { reportAddWorkspaceAvailability(false) }
+  }, [reportAddWorkspaceAvailability, directoryFlowAvailable])
 
   // Rail search = expand + land in the search box: the flag arms before the
   // expand request; once the shell flips wide the input mounts and takes focus.

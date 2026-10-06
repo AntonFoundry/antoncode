@@ -74,6 +74,8 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
   const props: WorkspaceBrowserProps = {
     wide: true,
     expandSidebar: vi.fn(),
+    newWorkspaceRequests: 0,
+    reportAddWorkspaceAvailability: vi.fn(),
     useSessions: hook(sessionState([])),
     useWorkspaces: hook(workspaceState([])),
     useStore: bindSnapshotSelector(store),
@@ -740,6 +742,30 @@ describe('WorkspaceBrowser', () => {
     // Nothing to add with, so the header offers no dead button.
     expect(screen.queryByRole('button', { name: '添加工作区' })).toBeNull()
     expect(screen.getByText('alpha')).toBeTruthy()
+  })
+
+  it('raises the directory flow on a rising shell New Workspace request edge', () => {
+    const b = mount({ useWorkspaces: hook(workspaceState([workspace('alpha', [])])) })
+    expect(screen.queryByTestId('directory-flow')).toBeNull()
+    // The shell capsule's press count is a monotonic ticket: the new value
+    // past the seen baseline is the edge, and the add-only surface consumes
+    // it straight into the flow (no menu), same as the header ＋.
+    rerender(b, { newWorkspaceRequests: 1 })
+    expect(screen.getByTestId('directory-flow')).toBeTruthy()
+  })
+
+  it('reports add availability to the shell and drops requests while none exists', () => {
+    const report = vi.fn()
+    const b = mount({
+      reportAddWorkspaceAvailability: report,
+      useWorkspaces: hook(workspaceState([workspace('alpha', [])])),
+      useDirectoryFlow: bindSnapshotSelector({ getSnapshot: () => false, subscribe: () => () => {} }),
+    })
+    // The shell learns the hole is empty and hides its capsule.
+    expect(report).toHaveBeenLastCalledWith(false)
+    // A press raised while no picking affordance exists is dropped.
+    rerender(b, { newWorkspaceRequests: 1 })
+    expect(screen.queryByTestId('directory-flow')).toBeNull()
   })
 
   it('uses the full expanded Workspace section when resolving a Workspace drop half', () => {

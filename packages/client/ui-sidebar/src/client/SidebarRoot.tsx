@@ -6,9 +6,13 @@
  * controls enter the 56px rail from the same horizontal offset (one icon each,
  * same top-down order) on one fade that ends with the slide. The bottom-pinned
  * settings control only fades. The workspace/session browsing region between
- * the New Session button and the foot is the `sidebar.workspaces` registrant's,
- * and the foot holds `sidebar.settings` plus `sidebar.footer.action`; the shell
- * hands them the wide flag (plus an expand request callback for the browser).
+ * the New Workspace capsule and the foot is the `sidebar.workspaces`
+ * registrant's, and the foot holds `sidebar.settings` plus
+ * `sidebar.footer.action`; the shell hands them the wide flag (plus an expand
+ * request callback for the browser). The wordmark doubles as the New Session
+ * shortcut; the capsule raises the region's add-workspace flow (a monotonic
+ * request count down, availability reported back up — it drops out entirely
+ * in a composition with no picking affordance).
  *
  * The column also owns whether the scroll regions nested in it draw a
  * scrollbar at all: the shell tracks the pointer and rebinds ui-theme's
@@ -19,7 +23,7 @@ import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   BrandWordmark, FishLogo,
-  IconNewChatOutline16, IconPanelLeftOutline16,
+  IconPanelLeftOutline16, IconProjectAddOutline16,
   Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SidebarRootComponentProps } from './contract/slots.ts'
@@ -59,6 +63,14 @@ export function SidebarRoot({
     return () => { window.clearTimeout(timer) }
   }, [collapsed])
   const wide = !collapsed || !settled
+
+  // New Workspace: presses accumulate as a monotonic count the region
+  // consumes (one rising edge per press); the region reports back whether an
+  // add-workspace flow exists at all. The report lands in an effect after the
+  // first paint, so the default assumes the shipped composition's picker and
+  // only a no-picker composition ever corrects it (dropping the capsule).
+  const [newWorkspaceRequests, setNewWorkspaceRequests] = useState(0)
+  const [addWorkspaceAvailable, setAddWorkspaceAvailable] = useState(true)
 
   // Freeze the content at its expanded width while it fades out (collapsed
   // && wide): the sliding column then clips it instead of reflowing it. The
@@ -213,25 +225,33 @@ export function SidebarRoot({
         </div>
       )}
 
-      {/* Expanded, the button carries its own label — tooltip only on the rail. */}
-      <Tooltip label={t('session.new.label')} delayMs={500} disabled={wide}>
-        <button
-          type="button"
-          className={css.newSession}
-          aria-label={t('session.new.label')}
-          onClick={() => { startSession() }}
-        >
-          <IconNewChatOutline16 size={wide ? 14 : 18} />
-          {wide && <span className={clsx(css.newSessionLabel, css.wide)}>{t('session.new')}</span>}
-        </button>
-      </Tooltip>
+      {/* Expanded, the capsule carries its own label — tooltip only on the rail.
+          Hidden while the region reports no picking affordance: a composition
+          that can add nothing gets no dead control. */}
+      {addWorkspaceAvailable && (
+        <Tooltip label={t('workspace.new.label')} delayMs={500} disabled={wide}>
+          <button
+            type="button"
+            className={css.newWorkspace}
+            aria-label={t('workspace.new.label')}
+            onClick={() => { setNewWorkspaceRequests(count => count + 1) }}
+          >
+            <IconProjectAddOutline16 size={wide ? 14 : 18} />
+            {wide && <span className={clsx(css.newWorkspaceLabel, css.wide)}>{t('workspace.new')}</span>}
+          </button>
+        </Tooltip>
+      )}
 
       {/* The browsing region fills the column between the controls and the
-          foot in both states; its rail icon column rides the same slot. */}
+          foot in both states; its rail icon column rides the same slot. The
+          owner share carries the New Workspace conversation: presses down,
+          add availability up. */}
       <div className={css.regionArea}>
         {renderSlot('sidebar.workspaces', {
           wide,
           expandSidebar: () => { if (collapsed) toggleSidebar() },
+          newWorkspaceRequests,
+          reportAddWorkspaceAvailability: setAddWorkspaceAvailable,
         })}
       </div>
 

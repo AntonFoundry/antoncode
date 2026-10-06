@@ -1,7 +1,7 @@
 /**
  * Sidebar slot contract: the registrant-side props composition for the
  * layout-owned `sidebar` slot, plus the holes this shell declares. The shell
- * owns column geometry (fold state machine, brand row, New Session);
+ * owns column geometry (fold state machine, brand row, New Workspace);
  * everything between the section header and the list bottom is the
  * `sidebar.workspaces` registrant's (ui-workspace), and the foot is the
  * `sidebar.settings` registrant's (ui-settings), followed by optional footer
@@ -21,7 +21,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * package's 'sidebar' entry (declaring is claiming); ui-workspace
      * registers the browser.
      */
-    'sidebar.workspaces': { kind: 'single'; scope: 'root'; owner: SidebarSectionOwnerProps }
+    'sidebar.workspaces': { kind: 'single'; scope: 'root'; owner: SidebarRegionOwnerProps }
     /**
      * Persistent, plugin-owned context/memory area.  It deliberately sits
      * outside the workspace browser so extensions can expose working-memory
@@ -54,6 +54,21 @@ export interface SidebarSectionOwnerProps {
 }
 
 /**
+ * Owner share of the workspace browsing region: the section share plus the
+ * New Workspace conversation. The shell capsule raises presses as a
+ * monotonic request count (plain data down); the region reports whether
+ * adding is possible at all (callback up), so the shell can drop the capsule
+ * in a composition with no picking affordance instead of leaving a dead
+ * control.
+ */
+export interface SidebarRegionOwnerProps extends SidebarSectionOwnerProps {
+  /** Monotonic count of shell New Workspace presses; the region consumes each rising edge. */
+  newWorkspaceRequests: number
+  /** Report the region's add-workspace availability (its directory-flow hole occupancy). */
+  reportAddWorkspaceAvailability: (available: boolean) => void
+}
+
+/**
  * Owner share of the sidebar settings seat: the column display state the
  * occupant's trigger row must render against (wide row vs rail icon).
  */
@@ -71,7 +86,7 @@ export interface SidebarFooterActionOwnerProps {
 /**
  * Registrant-private injected share (arrives via the register inject
  * factory). The shell keeps only its own controls: starting a Session from
- * the New Session button and toggling the column.
+ * the wordmark shortcut and toggling the column.
  */
 export type SidebarRootInjected = {
   /**

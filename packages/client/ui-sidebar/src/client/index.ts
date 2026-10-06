@@ -7,7 +7,7 @@ import { SidebarRoot } from './SidebarRoot.tsx'
 import { en, zh, type SidebarKey } from './locales.ts'
 
 export type {
-  SidebarFooterActionOwnerProps, SidebarRootComponentProps, SidebarRootInjected,
+  SidebarFooterActionOwnerProps, SidebarRegionOwnerProps, SidebarRootComponentProps, SidebarRootInjected,
   SidebarSectionOwnerProps, SidebarSettingsOwnerProps,
 } from './contract/slots.ts'
 export type { SidebarKey } from './locales.ts'
@@ -32,8 +32,10 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-sidebar: dictionaries')
 
   const injectProps = (): SidebarRootInjected => ({
-    // The shell's New Session button rides the runtime's shared action
-    // (current Session Workspace, then recent Workspace).
+    // The wordmark's New Session shortcut rides the runtime's shared action
+    // (current Session Workspace, then recent Workspace). The New Workspace
+    // capsule is component state — its presses travel through the region
+    // owner share, not this inject face.
     startSession: (workspaceId) => { ctx.workspaces.startSession(workspaceId) },
     toggleSidebar: () => { ctx.layout.toggleSidebar() },
   })

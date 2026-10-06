@@ -64,7 +64,7 @@
    horizontally fixed. Only a live collapse gets .railIn; a cold collapsed
    render stays static. */
 .railIn .iconButton,
-.railIn .newSession,
+.railIn .newWorkspace,
 .railIn .regionArea {
   animation: rail-in 150ms var(--ds-ease-in-out) backwards;
 }
@@ -169,9 +169,11 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* New Session: 38px bar, 12px radius (figma 133:7634 geometry, squared-off
-   corners); collapsed it renders as the rail's plain icon control. */
-.newSession {
+/* New Workspace: 38px bar, 12px radius (same figma 133:7634 geometry the New
+   Session capsule used, squared-off corners); collapsed it renders as the
+   rail's plain icon control. The press raises the region's add-workspace
+   flow; ui-workspace owns everything after the click. */
+.newWorkspace {
   flex: none;
   display: flex;
   align-items: center;
@@ -192,11 +194,11 @@
   overflow: hidden;
 }
 
-.newSession:hover {
+.newWorkspace:hover {
   background: var(--dsw-alias-button-floating-hover);
 }
 
-.collapsed .newSession {
+.collapsed .newWorkspace {
   align-self: flex-start;
   width: 36px;
   height: 36px;
@@ -207,17 +209,17 @@
   background: transparent;
 }
 
-.collapsed .newSession:hover {
+.collapsed .newWorkspace:hover {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-.newSessionLabel {
+.newWorkspaceLabel {
   max-width: 200px;
   overflow: hidden;
   white-space: nowrap;
 }
 
-.collapsed .newSessionLabel {
+.collapsed .newWorkspaceLabel {
   max-width: 0;
 }
 
@@ -328,7 +330,7 @@
   .wide,
   .fading > *,
   .railIn .iconButton,
-  .railIn .newSession,
+  .railIn .newWorkspace,
   .railIn .footArea,
   .railIn .regionArea {
     transition: none;

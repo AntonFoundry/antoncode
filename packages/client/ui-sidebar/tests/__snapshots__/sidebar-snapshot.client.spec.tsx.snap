@@ -39,17 +39,16 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
       </button>
     </div>
     <button
-      aria-label="New session"
-      class="newSession"
+      aria-label="New workspace"
+      class="newWorkspace"
       type="button"
     >
       <svg
-        data-content="c0ce4dcc"
+        data-content="7011389d"
         fill="none"
         height="18"
         viewBox="0 0 16 16"
         width="18"
-        xmlns="http://www.w3.org/2000/svg"
       />
     </button>
     <div
@@ -144,22 +143,21 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
       </button>
     </div>
     <button
-      aria-label="New session"
-      class="newSession"
+      aria-label="New workspace"
+      class="newWorkspace"
       type="button"
     >
       <svg
-        data-content="c0ce4dcc"
+        data-content="7011389d"
         fill="none"
         height="14"
         viewBox="0 0 16 16"
         width="14"
-        xmlns="http://www.w3.org/2000/svg"
       />
       <span
-        class="newSessionLabel wide"
+        class="newWorkspaceLabel wide"
       >
-        New Session
+        New Workspace
       </span>
     </button>
     <div
@@ -261,22 +259,21 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
       </button>
     </div>
     <button
-      aria-label="新建会话"
-      class="newSession"
+      aria-label="新建工作区"
+      class="newWorkspace"
       type="button"
     >
       <svg
-        data-content="c0ce4dcc"
+        data-content="7011389d"
         fill="none"
         height="14"
         viewBox="0 0 16 16"
         width="14"
-        xmlns="http://www.w3.org/2000/svg"
       />
       <span
-        class="newSessionLabel wide"
+        class="newWorkspaceLabel wide"
       >
-        新会话
+        新建工作区
       </span>
     </button>
     <div
