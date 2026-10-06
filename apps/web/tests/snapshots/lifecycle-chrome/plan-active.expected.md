@@ -1,14 +1,32 @@
-- button "New session"
-- button "Collapse sidebar":
+- button "Toggle workspace sidebar":
   - img
-- button "New session":
+- tablist "Layout mode":
+  - tab "Agents"
+  - tab "Chat" [selected]
+- button "Toggle context panel"
+- button "Notifications"
+- button "Account"
+- text: Workspace
+- button "Split below"
+- button "Split right"
+- button "Tidy panes"
+- button "Move pane left"
+- button "Move pane right"
+- button "Move pane up"
+- button "Move pane down"
+- button "Expand pane"
+- button "Close":
   - img
-  - text: New Session
+- button "New workspace":
+  - img
+  - text: New Workspace
 - text: Workspaces
 - button "Search sessions":
   - img
 - textbox "Search sessions..."
 - button "View options":
+  - img
+- button "Select sessions":
   - img
 - button "Add workspace":
   - img
@@ -17,9 +35,22 @@
     - img
     - text: workspace
   - treeitem "New Session" [selected]
+- separator "Resize the memory panel"
+- text: Todo Tree No running tasks
 - button "Settings":
   - img
   - text: Settings
+- text: Chat · workspace
+- button "Split below"
+- button "Split right"
+- button "Tidy panes"
+- button "Move pane left"
+- button "Move pane right"
+- button "Move pane up"
+- button "Move pane down"
+- button "Expand pane"
+- button "Close":
+  - img
 - text: Into the Unknown Preview
 - button "Choose workspace":
   - img
@@ -38,6 +69,4 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "Send message" [disabled]
-- text: Details
-- button "Close details"
-- text: Click a tool row in the message flow to view its details
+- text: (Chat · workspace) Chat · workspace · 2 windows

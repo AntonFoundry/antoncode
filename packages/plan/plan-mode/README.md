@@ -12,7 +12,7 @@ Logged, per-agent plan collaboration state with deployment-owned guidance, direc
 
 ## Model and human interactions
 
-While active, `plan:policy` renders the configured `section` at prompt order 50. In addition, `plan:standing-plan` renders the latest recorded implementation plan at prompt order 52 (following `todo:standing-plan` at order 51), keeping the model grounded in its active plan without polluting the conversation transcript.
+While active, `plan:policy` renders the configured `section` at prompt order 50. In addition, `plan:standing-plan` renders the latest recorded implementation plan at prompt order 52 (following `todo:standing-plan` at order 51), keeping the model grounded in its active plan without polluting the conversation transcript. The standing section preserves plan text literally, including any `{{…}}` groups.
 
 The plugin registers two tools:
 - `exit_plan_mode`: Reviews and exits plan mode. Takes `plan` markdown and optional `path` (default `implementation_plan.md`). On approval, saves the file to disk, appends `plan/write` to the session log, flips plan mode to inactive, and renders presentation `locations: [{ path }]` so the UI opens the plan in a right-hand buffer split side-by-side with chat.

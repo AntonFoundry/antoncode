@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage, CallId } from '@deepseek-ai/dsh-llm'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { RUN_CODE_NAME, defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import { Session, SessionId, type UserMessage } from '@deepseek-ai/dsh-session'
 import AgentRegistry, { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
@@ -1144,6 +1144,7 @@ describe('plan:standing-plan', () => {
     const policyIdx = assembly1.sections.findIndex(s => s.name === 'plan:policy')
     const standingIdx = assembly1.sections.findIndex(s => s.name === 'plan:standing-plan')
     expect(standingIdx).toBeGreaterThan(policyIdx)
+    expect(assembly1.sections[standingIdx]?.interpolate).toBe(false)
     expect(assembly1.sections[standingIdx]?.text).toBe(standingImplementationPlanSection('# Initial Plan\nStep 1', 'Initial'))
 
     // Second write replaces standing plan
@@ -1166,6 +1167,14 @@ describe('plan:standing-plan', () => {
     const assembly = await assembleFor(ctx, agent)
     expect(assembly.sections.find(s => s.name === 'plan:standing-plan')?.text)
       .toBe(standingImplementationPlanSection('# Approved Feature\nScope', 'Approved Feature'))
+  })
+
+  it('keeps template-looking implementation-plan text literal', async () => {
+    const ctx = await setup()
+    const agent = await agentWithSession(ctx)
+    agent.session.append('plan/write', { plan: '# Plan\nKeep {{source}} verbatim.' })
+    const assembly = await assembleFor(ctx, agent)
+    expect(renderPrompt(assembly)).toContain('Keep {{source}} verbatim.')
   })
 })
 

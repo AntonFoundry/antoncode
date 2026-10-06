@@ -282,6 +282,7 @@ export class PlanModeController extends Service {
     ctx.systemPrompt.section({
       name: 'plan:standing-plan',
       order: 52,
+      interpolate: false,
       text: (context) => {
         if (context.agent === undefined) return ''
         const events = context.agent.session.events

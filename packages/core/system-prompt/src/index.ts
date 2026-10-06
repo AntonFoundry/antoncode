@@ -72,6 +72,11 @@ export interface PromptSection {
    * More than one effective complete section makes assembly fail.
    */
   readonly complete?: boolean
+  /**
+   * Interpolate registered `{{variable}}` references in this section. Set false
+   * when text contains model- or user-authored content that must remain literal.
+   */
+  readonly interpolate?: boolean
 }
 
 /** Dynamic model context materialized as a durable user-role snapshot. */
@@ -90,6 +95,8 @@ export interface AssembledSection {
   name: string
   /** The resolved (but not yet interpolated) section text. */
   text: string
+  /** Whether registered variable references are rendered in this section. */
+  interpolate?: boolean
 }
 
 /** One resolved dynamic context contribution. */
@@ -202,8 +209,8 @@ export interface Config {
 }
 
 /**
- * Interpolate strict `{{variable}}` references, drop empty sections, and join
- * the rest with blank lines. Malformed, unknown, or undefined references throw;
+ * Interpolate strict `{{variable}}` references in enabled sections, drop empty
+ * sections, and join the rest with blank lines. Malformed, unknown, or undefined references throw;
  * a lone `{{` without any later `}}` is literal prose, and substituted values
  * are not scanned again.
  * @param assembly - the assembly whose sections and variables to render.
@@ -211,7 +218,7 @@ export interface Config {
  */
 export function renderPrompt(assembly: PromptAssembly): string {
   return assembly.sections
-    .map(section => interpolate(section, assembly.variables, 'section'))
+    .map(section => section.interpolate === false ? section.text : interpolate(section, assembly.variables, 'section'))
     .filter(text => text.length > 0)
     .join('\n\n')
 }
@@ -512,6 +519,7 @@ export class SystemPrompt extends Service {
         const assembled = {
           name: section.name,
           text: typeof section.text === 'function' ? section.text(context) : section.text,
+          ...(section.interpolate === undefined ? {} : { interpolate: section.interpolate }),
         }
         if (section.complete === true) completeSection = { ...assembled }
         return assembled

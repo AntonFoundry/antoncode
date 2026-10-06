@@ -9,6 +9,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -136,6 +137,7 @@ describe('standing-plan prompt section', () => {
     const assembly = await bench.ctx.systemPrompt.assemble({ agent, scope: agent } as never)
     const section = assembly.sections.find(candidate => candidate.name === 'todo:standing-plan')
     expect(section).toBeDefined()
+    expect(section?.interpolate).toBe(false)
     expect(section?.text).toContain('- [x] Phase 1: tiles')
     expect(section?.text).toContain('- [x] Phase 2: control')
     expect(section?.text).toContain('- [ ] Phase 3: ptys')
@@ -158,5 +160,13 @@ describe('standing-plan prompt section', () => {
     const text = assembly.sections.find(candidate => candidate.name === 'todo:standing-plan')?.text ?? ''
     expect(text).toContain('- [~] new plan')
     expect(text).not.toContain('old')
+  })
+
+  it('keeps template-looking todo content literal', async () => {
+    const bench = await harness(true)
+    bench.session.append('todo/write', { todos: [{ content: 'Preserve {{source}}', status: 'pending', children: [] }] })
+    const agent = { session: bench.session }
+    const assembly = await bench.ctx.systemPrompt.assemble({ agent, scope: agent } as never)
+    expect(renderPrompt(assembly)).toContain('Preserve {{source}}')
   })
 })

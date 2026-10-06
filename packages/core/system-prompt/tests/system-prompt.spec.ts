@@ -505,6 +505,16 @@ describe('SystemPrompt', () => {
         .rejects.toThrow('unknown prompt variable "{{modle}}" in section "persona"; registered variables: model')
     })
 
+    it('keeps model-authored section text literal when interpolation is disabled', () => {
+      const text = renderPrompt({
+        sections: [{ name: 'standing-plan', text: 'Keep {{source}} verbatim.', interpolate: false }],
+        contexts: [],
+        tools: [],
+        variables: { model: 'm' },
+      })
+      expect(text).toBe('Keep {{source}} verbatim.')
+    })
+
     it('names "(none)" when no variables are registered at all', () => {
       expect(() => renderPrompt({ sections: [{ name: 's', text: '{{x}}' }], contexts: [], tools: [], variables: {} }))
         .toThrow('unknown prompt variable "{{x}}" in section "s"; registered variables: (none)')

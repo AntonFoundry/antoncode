@@ -346,6 +346,7 @@ export function apply(ctx: Context, config: Config): void {
     promptCtx.systemPrompt.section({
       name: 'todo:standing-plan',
       order: 51,
+      interpolate: false,
       text: (context) => {
         if (context.agent === undefined) return ''
         const events = context.agent.session.events

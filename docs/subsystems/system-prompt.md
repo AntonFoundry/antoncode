@@ -39,7 +39,7 @@ interface ToolProviderResult {
 
 ## Prompt sections
 
-`PromptSection` is a readonly same-process registration contract. Its text may be static or resolved from the current assembly context. One effective `complete` section becomes the sole prompt section after cooperative assembly.
+`PromptSection` is a readonly same-process registration contract. Its text may be static or resolved from the current assembly context. Set `interpolate: false` for content that must preserve literal variable-looking text. One effective `complete` section becomes the sole prompt section after cooperative assembly.
 
 ```ts type-equiv
 /** One contributed section of the system prompt (registry input). */
@@ -65,6 +65,11 @@ interface PromptSection {
    * More than one effective complete section makes assembly fail.
    */
   readonly complete?: boolean
+  /**
+   * Interpolate registered `{{variable}}` references in this section. Set false
+   * when text contains model- or user-authored content that must remain literal.
+   */
+  readonly interpolate?: boolean
 }
 ```
 
