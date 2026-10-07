@@ -11,10 +11,10 @@ vi.mock('../src/client/segmenter.js', () => ({
   createSegmenter: vi.fn(async () => ({
     delegate: 'CPU' as const,
     segment: vi.fn(() => ({
-      // selfie_segmenter contract: one confidence plane per category —
-      // [0] background, [1] person (the plane the engine must consume).
+      // selfie_segmenter contract: ONE person-confidence plane (proven
+      // against the vendored model — a two-plane stub once hid a regression
+      // where the engine read plane [1] of a one-plane result).
       confidenceMasks: [
-        { getAsFloat32Array: () => new Float32Array(256 * 256).fill(0.5) },
         { getAsFloat32Array: () => new Float32Array(256 * 256).fill(0.8) },
       ],
       close: vi.fn(),
@@ -163,8 +163,8 @@ describe('CameraEngine', () => {
     const segmented = frames.filter(frame => frame.mask !== undefined)
     expect(segmented.length).toBeGreaterThan(0)
     expect(segmented[0]!.delegate).toBe('CPU')
-    // The stabilizer is fed the PERSON plane (index 1, 0.8) — 0.8 → alpha 204 —
-    // never the background plane (index 0, 0.5).
+    // The stabilizer is fed the person plane (the single plane, 0.8) —
+    // 0.8 → alpha 204 — proving the engine consumes the one real plane.
     const pushed = MaskStabilizer.pushed.at(-1)
     expect(pushed?.[0]).toBeCloseTo(204 / 255)
     releaseSeg()

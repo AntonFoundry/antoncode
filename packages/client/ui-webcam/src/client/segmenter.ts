@@ -1,8 +1,8 @@
 /**
  * MediaPipe ImageSegmenter wrapper: loads the vendored selfie segmenter
- * (256×256, background/person) through the vendored wasm fileset on the CPU
- * (wasm SIMD) delegate. Per-frame `segment()` returns the raw MediaPipe
- * result — the caller owns closing it.
+ * (256×256, single person-confidence plane) through the vendored wasm fileset
+ * on the CPU (wasm SIMD) delegate. Per-frame `segment()` returns the raw
+ * MediaPipe result — the caller owns closing it.
  *
  * The GPU delegate is deliberately not attempted: on it, mask typed arrays
  * are served by a `readPixels(RED, FLOAT)` GPU readback that this WebKit

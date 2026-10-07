@@ -268,9 +268,16 @@ export class CameraEngine {
       this.#ts = Math.max(this.#ts + 1, Math.round(now))
       try {
         const result = this.#segmenter.segment(video, this.#ts)
-        // selfie_segmenter emits one confidence plane per category:
-        // index 0 background, index 1 person (MediaPipe model card).
-        const person = result.confidenceMasks?.[1]
+        // selfie_segmenter emits ONE confidence plane — the sigmoid person
+        // probability (proven against the vendored model: confidenceMasks
+        // length 1, values ≈0 off-person, rising on a person-shaped region).
+        // The model card's background=0/person=1 indexing describes the
+        // CATEGORY mask, not the confidence planes; reading plane [1] here
+        // was always undefined and silently blanked every effect. The last
+        // plane also stays correct for a multi-category model, whose
+        // foreground category is enumerated last.
+        const masks = result.confidenceMasks
+        const person = masks !== undefined && masks.length > 0 ? masks[masks.length - 1] : undefined
         if (person !== undefined) {
           // Lazily built: raw-only sessions never pay the canvas setup.
           this.#stabilizer ??= new MaskStabilizer()
