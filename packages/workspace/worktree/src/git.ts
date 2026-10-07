@@ -173,6 +173,7 @@ export async function worktreeStatus(path: string): Promise<{
   const branch = lines.length > 0 ? branchFromStatusHeader(lines[0] as string) : '(unknown)'
   const dirty = lines.some((line, index) => index > 0 && line.trim() !== '')
   const head = await runGit(path, ['rev-parse', '--short', 'HEAD'])
+  /* v8 ignore next -- `git stash list` does not fail on a valid repository; the catch only guards exotic git states. */
   const stashOutput = await runGit(path, ['stash', 'list']).catch(() => '')
   const stashCount = stashOutput === '' ? 0 : stashOutput.split('\n').length
   const upstream = await runGit(path, ['rev-list', '--left-right', '--count', '@{upstream}...HEAD'])

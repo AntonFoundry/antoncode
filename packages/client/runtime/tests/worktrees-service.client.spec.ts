@@ -234,6 +234,20 @@ describe('startSession worktree interception', () => {
     })
   })
 
+  it('falls back to the checkout when the worktree workspace row never lands', async () => {
+    const record = worktree({ worktreeId: 'wt-slow', workspaceId: 'ws-never' })
+    const { api, runtime } = await booted({
+      prefs: { '/w/repo': { mode: 'new' } as never },
+    })
+    api.onWorktreeCreate = () => Promise.resolve(ok({ worktree: record as never }))
+    runtime.startSession()
+    // No frame ever carries ws-never: after the bounded wait the checkout
+    // workspace receives the session (never a lost user gesture).
+    await vi.waitFor(() => {
+      expect(api.callsOf('session.create').at(-1)).toMatchObject({ workspaceId: 'repo' })
+    }, { timeout: 3000 })
+  })
+
   it('keeps the plain checkout flow when no preference governs the workspace', async () => {
     const { api, runtime } = await booted()
     runtime.startSession()

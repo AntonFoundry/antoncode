@@ -274,6 +274,33 @@ describe('worktree registry', () => {
     expect(await registry.list(repo.path)).toEqual([])
   })
 
+  it('creates the worktree even when its workspace registration fails, without a workspaceId', async () => {
+    const repo = await makeRepo(root, 'ws-fail')
+    const ctx = new Context()
+    await ctx.plugin(Storage)
+    ctx.storage.backend.register('memory', new MemoryStorageBackend(new MemoryMediaPool()))
+    const facility = new DomainFacility(ctx, { backend: 'memory', routes: {} })
+    ctx.storage.mount('domain', facility)
+    ctx.provide('storageDomain', facility)
+    // Cordis gives every Context a default logger; spy on the warn channel
+    // the registry degrades through.
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    ctx.provide('workspaceRegistry', {
+      create: async () => { throw new Error('registry unavailable') },
+      delete: async () => true,
+    } as never)
+    await ctx.plugin(InvariantRegistry)
+    await ctx.plugin(WorktreeRegistry, { branchPrefix: 'agent/', parentSuffix: '.worktrees' })
+    await ctx.plugin(WorktreeInvariant)
+    const registry = ctx.worktreeRegistry
+    const record = await registry.create(repo.path, { name: 'ungrouped' })
+    // The git side committed; only the grouping degraded (warn, no workspaceId).
+    expect(record.workspaceId).toBeUndefined()
+    expect(record.path).toBe(join(repo.worktreeParent, 'ungrouped'))
+    expect(await registry.list(repo.path)).toHaveLength(1)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('workspace registration failed'))
+  })
+
   it('rolls the git worktree and workspace registration back when the durable write fails', async () => {
     const repo = await makeRepo(root, 'rollback')
     const { registry, workspaceDeletes } = await harness()
