@@ -225,6 +225,8 @@ type SessionTreeProps = Pick<
   | 'insertWorkspaceBefore' | 'insertSessionBefore' | 't'
 > & {
   workspaces: readonly WorkspaceView[]
+  /** WorkspaceId → worktree directory name; sessions of that workspace display `<worktree>/<title>`. */
+  worktreeNames: Readonly<Record<string, string>>
   /** Explicit persisted zero-or-five-session state by Workspace group. */
   groupExpansion: Readonly<Record<string, boolean>>
   /** Persist one Workspace group's zero-or-five-session state. */
@@ -259,7 +261,7 @@ type SessionTreeProps = Pick<
 
 /** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
 function SessionTree({
-  useSessions, startSession, open, forkSession, workspaces, archivedSessionIds,
+  useSessions, startSession, open, forkSession, workspaces, worktreeNames, archivedSessionIds,
   onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive,
   selectionMode, selectedSessionIds, onToggleSessionSelected,
   insertWorkspaceBefore, insertSessionBefore, orderBy,
@@ -533,6 +535,7 @@ function SessionTree({
             <SessionNodeItem
               key={node.id}
               node={node}
+              worktreeName={group.workspaceId === undefined ? undefined : worktreeNames[group.workspaceId]}
               currentId={current}
               now={now}
               onOpen={open}
@@ -832,6 +835,9 @@ export function WorkspaceBrowser({
   const workspaces = useWorkspaces(state => state.items)
   const workspacePhase = useWorkspaces(state => state.phase)
   const archivedSessionIds = useWorkspaces(state => state.archivedSessionIds)
+  // Worktree name per workspace id: sessions of a worktree workspace display
+  // `<worktree>/<title>` (the isolation made visible in the sidebar).
+  const worktreeNames = useWorkspaces(state => state.worktrees.namesByWorkspaceId)
   // Live occupancy of this surface's directory-flow hole (the same source the
   // flow reads): a composition without a picking affordance can add nothing.
   const directoryFlowAvailable = useDirectoryFlow(occupied => occupied)
@@ -1294,6 +1300,7 @@ export function WorkspaceBrowser({
                 selectedSessionIds={selectedSessionIds}
                 onToggleSessionSelected={onToggleSessionSelected}
                 workspaces={workspaces}
+                worktreeNames={worktreeNames}
                 groupExpansion={groupExpansion}
                 setGroupExpanded={actions.setGroupExpanded}
                 sessionOrderByAccount={sessionOrderByAccount}

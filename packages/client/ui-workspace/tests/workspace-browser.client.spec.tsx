@@ -44,6 +44,7 @@ const workspace = (id: string, sessionIds: string[], title = id): WorkspaceView 
 const workspaceState = (items: readonly WorkspaceView[], archivedSessionIds: readonly SessionId[] = []): WorkspaceListState => ({
   items, archivedSessionIds, state: 'idle', phase: 'ready', error: null, baselinesReady: true,
   recentWorkspaceId: items[0]?.workspaceId,
+  worktrees: { byRepo: {}, prefs: {}, namesByWorkspaceId: {} },
 })
 function hook<T>(snapshot: T) {
   return function select<S>(selector: (state: T) => S): S { return selector(snapshot) }

@@ -1,0 +1,44 @@
+/* Workspace-mode select trigger: same shape as the sibling access-mode and
+   model triggers (IconGlyph + label + chevron, one-row height budget). */
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: var(--dsw-radius-m, 8px);
+  background: transparent;
+  color: var(--dsw-text-secondary, var(--dsw-text-secondary, #9a9a9a));
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+  max-width: 220px;
+}
+
+.trigger:hover {
+  background: var(--dsw-fill-hover, rgba(255, 255, 255, 0.06));
+  color: var(--dsw-text-primary, var(--dsw-text-primary, #e6e6e6));
+}
+
+.trigger:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.triggerIcon {
+  display: inline-flex;
+  flex: none;
+}
+
+.triggerLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chevron {
+  display: inline-flex;
+  flex: none;
+  opacity: 0.7;
+}

@@ -21,9 +21,11 @@ import css from './Rows.module.css'
 /** The standard locale seat, prop-passed from the browser root. */
 type RowTranslate = WorkspaceBrowserProps['t']
 
-/** Row display title: blank rows show the localized New Session label. */
-function displayTitle(node: SessionNode, t: RowTranslate): string {
-  return node.blank ? t('session.new') : node.title
+/** Row display title: blank rows show the localized New Session label; a
+    worktree-owned session prefixes the worktree's directory name. */
+function displayTitle(node: SessionNode, t: RowTranslate, worktreeName?: string | undefined): string {
+  const base = node.blank ? t('session.new') : node.title
+  return worktreeName === undefined ? base : `${worktreeName}/${base}`
 }
 
 /** Localized compact relative time ("now"/"5min"). */
@@ -377,9 +379,11 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
  * @param props.t - the browser root's locale seat.
  * @returns the session row.
  */
-export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork, onArchive,
+export function SessionNodeItem({ node, worktreeName, currentId, now, onOpen, onRename, onFork, onArchive,
   selectionMode = false, selected: selectionChecked = false, onToggleSelect, drag, flat = false, t }: {
   node: SessionNode
+  /** The owning workspace is a worktree: prefix row titles with its directory name. */
+  worktreeName?: string | undefined
   currentId: string | undefined
   now: number
   onOpen: (id: SessionNode['id']) => void
@@ -402,7 +406,7 @@ export function SessionNodeItem({ node, currentId, now, onOpen, onRename, onFork
   t: RowTranslate
 }) {
   const row = node
-  const title = displayTitle(node, t)
+  const title = displayTitle(node, t, worktreeName)
   const selected = node.id === currentId
   const statuses = sessionStatuses(node, t)
   const primaryStatus = statuses[0]
