@@ -17,6 +17,7 @@ export type PluginsSettingsLocaleKey =
   | 'contextTitle' | 'contextDescription' | 'contextEndpoint' | 'contextEndpointHint' | 'contextApiKey' | 'contextApiKeyHint'
   | 'contextProjectId' | 'contextProjectIdHint' | 'contextMaxSurfaceRatio' | 'contextMaxSurfaceRatioHint'
   | 'contextWindowTokens' | 'contextWindowTokensHint' | 'contextEvictorEnabled' | 'contextEvictorEnabledHint'
+  | 'contextRetrievalMode' | 'contextRetrievalModeHint'
   | 'contextMemoryOverride' | 'contextMemoryOverrideHint' | 'contextPagingOverride' | 'contextPagingOverrideHint'
   | 'contextCodeMapOverride' | 'contextCodeMapOverrideHint'
   | 'subagentModelTitle' | 'subagentModelDescription'
@@ -84,6 +85,8 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   contextWindowTokensHint: 'Explicit model window; leave blank to resolve it from the selected model.',
   contextEvictorEnabled: 'Automatic eviction',
   contextEvictorEnabledHint: 'Disable this while actively developing to keep the live conversation unchanged.',
+  contextRetrievalMode: 'Memory retrieval mode',
+  contextRetrievalModeHint: 'Fast skips the zone-anchor pass, entity walk, and reranker. Full enables these extra precision stages and can take longer; it does not prevent timeouts or guarantee relevant results.',
   contextMemoryOverride: 'Prompt override — memory contract',
   contextMemoryOverrideHint: 'Replaces the c0ntext memory-contract section of the system prompt. Leave blank to use the built-in text; saves apply on the next turn without a restart.',
   contextPagingOverride: 'Prompt override — paging reminder',
@@ -160,6 +163,8 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   contextWindowTokensHint: '显式模型窗口；留空则从当前模型解析。',
   contextEvictorEnabled: '自动驱逐',
   contextEvictorEnabledHint: '主动开发时可关闭，避免改写当前对话。',
+  contextRetrievalMode: '记忆检索模式',
+  contextRetrievalModeHint: '快速模式跳过区域锚点、实体遍历和重排器。完整模式启用这些精度阶段，但耗时可能更长；它不能避免超时，也不保证结果相关。',
   contextMemoryOverride: '提示词覆盖 — 记忆契约',
   contextMemoryOverrideHint: '替换系统提示中的 c0ntext 记忆契约段落。留空使用内置文本；保存后下一轮生效，无需重启。',
   contextPagingOverride: '提示词覆盖 — 分页提醒',

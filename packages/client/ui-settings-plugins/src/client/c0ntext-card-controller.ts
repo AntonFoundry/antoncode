@@ -10,6 +10,7 @@ export interface C0ntextSettings {
   maxSurfaceRatio?: number
   windowTokens?: number
   evictorEnabled?: boolean
+  retrieveMode?: 'fast' | 'full'
   dreamProvider?: string
   dreamModel?: string
   dreamIdleHours?: number
@@ -28,6 +29,7 @@ export interface C0ntextCardState extends CardShell {
   maxSurfaceRatio: CardFieldState
   windowTokens: CardFieldState
   evictorEnabled: CardFieldState
+  retrieveMode: CardFieldState
   dreamProvider: CardFieldState
   dreamModel: CardFieldState
   dreamIdleHours: CardFieldState
@@ -54,6 +56,7 @@ export class C0ntextCardController {
     this.form = new CardForm(scope, [
       textField('endpoint'), textField('apiKey'), textField('projectId'), numberField('maxSurfaceRatio'),
       numberField('windowTokens'), booleanField('evictorEnabled'),
+      textField('retrieveMode'),
       textField('dreamProvider'), textField('dreamModel'), numberField('dreamIdleHours'),
       // Prompt-section overrides: prose long enough to want textareas, but the
       // same staged-text contract — an empty draft clears the stored override,
@@ -72,6 +75,7 @@ export class C0ntextCardController {
       maxSurfaceRatio: this.form.field('maxSurfaceRatio'),
       windowTokens: this.form.field('windowTokens'),
       evictorEnabled: this.form.field('evictorEnabled'),
+      retrieveMode: this.form.field('retrieveMode'),
       dreamProvider: this.form.field('dreamProvider'),
       dreamModel: this.form.field('dreamModel'),
       dreamIdleHours: this.form.field('dreamIdleHours'),

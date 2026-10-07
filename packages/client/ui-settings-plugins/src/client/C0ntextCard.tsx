@@ -2,6 +2,7 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import { SelectField, ValueField } from './fields.tsx'
 import { useEffect, useState } from 'react'
 import { PluginCard } from './PluginCard.tsx'
+import modeCss from './C0ntextCard.module.css'
 import type { C0ntextCardFace } from './c0ntext-card-controller.ts'
 import type {} from './slot-contract.ts'
 
@@ -43,6 +44,32 @@ export function C0ntextCard(props: C0ntextCardProps) {
     <ValueField id="plugin-config-context-ratio" label={t('contextMaxSurfaceRatio')} hint={t('contextMaxSurfaceRatioHint')} overriddenLabel={t('overridden')} resetLabel={t('reset')} invalidLabel={t('invalidNumber')} numeric disabled={!state.writable} {...state.maxSurfaceRatio} onEdit={text => props.edit('maxSurfaceRatio', text)} onReset={() => props.resetField('maxSurfaceRatio')} />
     <ValueField id="plugin-config-context-window" label={t('contextWindowTokens')} hint={t('contextWindowTokensHint')} overriddenLabel={t('overridden')} resetLabel={t('reset')} invalidLabel={t('invalidNumber')} numeric disabled={!state.writable} {...state.windowTokens} onEdit={text => props.edit('windowTokens', text)} onReset={() => props.resetField('windowTokens')} />
     <ValueField id="plugin-config-context-evictor" label={t('contextEvictorEnabled')} hint={t('contextEvictorEnabledHint')} overriddenLabel={t('overridden')} resetLabel={t('reset')} invalidLabel={t('invalidNumber')} disabled={!state.writable} {...state.evictorEnabled} onEdit={text => props.edit('evictorEnabled', text)} onReset={() => props.resetField('evictorEnabled')} />
+    <div className={modeCss.field}>
+      <div className={modeCss.head}>
+        <span className={modeCss.label} id="plugin-config-context-retrieval-mode-label">{t('contextRetrievalMode')}</span>
+        {state.retrieveMode.overridden ? (
+          <span className={modeCss.badges}>
+            <span className={modeCss.badge}>{t('overridden')}</span>
+            <button className={modeCss.reset} type="button" disabled={!state.writable} onClick={() => props.resetField('retrieveMode')}>{t('reset')}</button>
+          </span>
+        ) : null}
+      </div>
+      <div className={modeCss.choices} role="group" aria-labelledby="plugin-config-context-retrieval-mode-label">
+        {(['fast', 'full'] as const).map(mode => (
+          <button
+            key={mode}
+            className={modeCss.choice}
+            type="button"
+            aria-pressed={(state.retrieveMode.text || 'fast') === mode}
+            disabled={!state.writable}
+            onClick={() => { props.edit('retrieveMode', mode) }}
+          >
+            {mode === 'fast' ? 'Fast' : 'Full'}
+          </button>
+        ))}
+      </div>
+      <p className={modeCss.hint}>{t('contextRetrievalModeHint')}</p>
+    </div>
     <SelectField id="plugin-config-context-dream-provider" label="Dream model" hint="Who processes offline dream cycles: the tiers, or any configured provider/model route from this deployment." overriddenLabel={t('overridden')} resetLabel={t('reset')} disabled={!state.writable} invalid={false} invalidLabel={t('invalidNumber')} value={state.dreamProvider.text} overridden={state.dreamProvider.overridden} options={[...tierOptions, ...dreamRoutes]} onEdit={text => props.edit('dreamProvider', text)} onReset={() => props.resetField('dreamProvider')} />
     {isLocal && localModels.length > 0 ? (
       <SelectField id="plugin-config-context-dream-model" label="Local dream model" hint="Models currently served by your on-device endpoint (LM Studio / Ollama)." overriddenLabel={t('overridden')} resetLabel={t('reset')} disabled={!state.writable} invalid={false} invalidLabel={t('invalidNumber')} value={state.dreamModel.text} overridden={state.dreamModel.overridden} options={localModels} onEdit={text => props.edit('dreamModel', text)} onReset={() => props.resetField('dreamModel')} />
