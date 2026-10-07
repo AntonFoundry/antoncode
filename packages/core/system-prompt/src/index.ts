@@ -55,8 +55,9 @@ export interface PromptSection {
   readonly name: string
   /**
    * Sections are concatenated in ascending order. Convention: `-100` is the
-   * harness identity, `0` the deployment persona, tool guidance uses 100–199;
-   * other negative orders also render before the persona.
+   * harness identity, `-99` the harness commit discipline, `0` the deployment
+   * persona, tool guidance uses 100–199; other negative orders also render
+   * before the persona.
    */
   readonly order: number
   /**
@@ -365,9 +366,18 @@ export class SystemPrompt extends Service {
       this.section({
         name: 'harness:identity',
         order: -100,
-        text: 'You are an AI agent powered by DeepSeek Harness.',
+        text: 'You are an AI agent powered by DeepSeek Harness.\n\nCommit discipline: when a feature or bug fix passes its narrow checks, commit it immediately with a deliberate conventional message — never wait to be asked. Do not end a turn with finished, verified work left uncommitted; survey the working tree and group unrelated pending changes into logical feature commits when found. Keep each commit atomic: one concern per commit.',
       })
     }
+    // Standing workflow discipline, harness-owned like the identity opener and
+    // always on: finished, verified work is committed in the same session —
+    // the user never has to ask. A scoped section of the same name shadows it
+    // where a preset replaces the default.
+    this.section({
+      name: 'harness:commit-discipline',
+      order: -99,
+      text: 'Commit discipline: when a feature or bug fix passes its narrow checks, commit it immediately with a deliberate conventional message — never wait to be asked. Do not end a turn with finished, verified work left uncommitted; survey the working tree and group unrelated pending changes into logical feature commits when found. Keep each commit atomic: one concern per commit.',
+    })
     this.section({
       name: PERSONA_SECTION,
       order: PERSONA_ORDER,

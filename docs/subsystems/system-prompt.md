@@ -39,7 +39,7 @@ interface ToolProviderResult {
 
 ## Prompt sections
 
-`PromptSection` is a readonly same-process registration contract. Its text may be static or resolved from the current assembly context. Set `interpolate: false` for content that must preserve literal variable-looking text. One effective `complete` section becomes the sole prompt section after cooperative assembly.
+`PromptSection` is a readonly same-process registration contract. Its text may be static or resolved from the current assembly context. Set `interpolate: false` for content that must preserve literal variable-looking text. One effective `complete` section becomes the sole prompt section after cooperative assembly. Besides the configured persona, this plugin registers two harness-owned sections in every assembly: `harness:identity` (order −100) and `harness:commit-discipline` (order −99), the standing instruction to commit each verified fix or feature immediately and never end a turn with finished work uncommitted; a scoped section of the same name shadows either.
 
 ```ts type-equiv
 /** One contributed section of the system prompt (registry input). */
@@ -48,8 +48,9 @@ interface PromptSection {
   readonly name: string
   /**
    * Sections are concatenated in ascending order. Convention: `-100` is the
-   * harness identity, `0` the deployment persona, tool guidance uses 100–199;
-   * other negative orders also render before the persona.
+   * harness identity, `-99` the harness commit discipline, `0` the deployment
+   * persona, tool guidance uses 100–199; other negative orders also render
+   * before the persona.
    */
   readonly order: number
   /**

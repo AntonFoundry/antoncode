@@ -27,6 +27,7 @@ import {
   type NormalizeContext,
 } from '@deepseek-ai/dsh-acp-snapshot'
 import { resolveExampleLaunch } from '@deepseek-ai/dsh-loader-smoke'
+import { PLUGIN_DISCIPLINE, TOKEN_EFFICIENCY, TODO_TREE_DISCIPLINE } from '@deepseek-ai/dsh-tools'
 import { DeepSeekHarness, type HarnessNotification, type RunResult } from '@deepseek-ai/dsh-sdk-client'
 
 const testsDir = dirOf(import.meta.url)
@@ -39,6 +40,17 @@ const runtimeBin = fileURLToPath(new URL('../../../packages/examples/jsonrpc-dem
 const repoTsconfig = fileURLToPath(new URL('../../../tsconfig.json', import.meta.url))
 
 const MINIMAL_SYSTEM_PROMPT = 'You are the environment-selected minimal software engineer.'
+// The assembled system prompt: the harness commit-discipline section, the
+// persona (the DSH_SYSTEM_PROMPT env override replaces only that slot), then
+// the harness tool-discipline sections, pinned from their owning constants.
+const COMMIT_DISCIPLINE = 'Commit discipline: when a feature or bug fix passes its narrow checks, commit it immediately with a deliberate conventional message — never wait to be asked. Do not end a turn with finished, verified work left uncommitted; survey the working tree and group unrelated pending changes into logical feature commits when found. Keep each commit atomic: one concern per commit.'
+const MINIMAL_EXPECTED_SYSTEM = [
+  COMMIT_DISCIPLINE,
+  MINIMAL_SYSTEM_PROMPT,
+  TODO_TREE_DISCIPLINE,
+  TOKEN_EFFICIENCY,
+  PLUGIN_DISCIPLINE,
+].join('\n\n')
 const MINIMAL_BASH_DESCRIPTION = `Run commands in a bash shell
 * When invoking this tool, the contents of the "command" parameter does NOT need to be XML-escaped.
 * You don't have access to the internet via this tool.
@@ -109,7 +121,7 @@ const SCENARIOS: SdkScenario[] = [
     environment: { DSH_SYSTEM_PROMPT: MINIMAL_SYSTEM_PROMPT },
     expectedFiles: { 'note.txt': 'target:\n\tnew\n' },
     expectedTools: { bash: ['command'], str_replace_editor: ['command', 'path'] },
-    expectedSystem: MINIMAL_SYSTEM_PROMPT,
+    expectedSystem: MINIMAL_EXPECTED_SYSTEM,
     expectedToolDescriptions: { bash: MINIMAL_BASH_DESCRIPTION },
     runtimeContext: false,
   },
