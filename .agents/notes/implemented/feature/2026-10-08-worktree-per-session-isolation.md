@@ -1,6 +1,6 @@
 # Agent Note: per-session git worktree isolation + repo status
 
-Status: implemented — host service this commit; wire domain and client surfaces land in the sibling commits of this change set
+Status: implemented
 
 ## Problem
 
@@ -14,7 +14,7 @@ Sessions in the Anton web GUI all run inside one checkout. Parallel sessions ste
 - **Repo identity**: `git rev-parse --git-common-dir`'s parent canonicalizes any checkout-or-worktree directory to the same repository key, so preferences and list filters written from a worktree resolve identically to the main checkout.
 - **Failure order**: git runs before any durable write; a failed registry write rolls the worktree and the workspace registration back (the commit point is the durable put). `worktree prune` runs before each add so externally deleted worktree directories cannot wedge a reattach. `remove` accepts git's not-a-working-tree complaint so stale records clear; it refuses dirty trees unless forced and never deletes branches (merge-back keeps them).
 - **Wire**: `worktree.list/create/status/pref/setPref/remove` join the apiproxy RPC map beside `workspace.*`.
-- **Client**: the workspaces domain (which owns New Session) gains the worktree slice — per-repo pref, worktree list, status, and the `startSession` interception that materializes a worktree before connecting the session. The UI is a new `ui-worktree` plugin package occupying the existing `conversation.input.left` (mode select) and `conversation.session.header.actions` (status chip) seats — zero ui-conversation changes.
+- **Client**: the workspaces domain (which owns New Session) gains the worktree slice — per-repo pref, worktree list, status, and the `startSession` interception that materializes a worktree before connecting the session. The UI is a new `ui-worktree` plugin package occupying the existing `conversation.input.left` (mode select) and `conversation.session.header.actions` (status chip) seats — zero ui-conversation changes — and the sidebar prefixes a worktree workspace's sessions with `<worktree>/<title>` (display-only; durable titles stay clean).
 
 ## Alternatives considered
 
