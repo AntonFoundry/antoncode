@@ -60,6 +60,9 @@
     - id: workspace
       name: '@deepseek-ai/dsh-workspace'
 
+    - id: worktree
+      name: '@deepseek-ai/dsh-worktree'
+
     - id: session-projection-cache
       name: '@deepseek-ai/dsh-session-projection-cache'
       config:
