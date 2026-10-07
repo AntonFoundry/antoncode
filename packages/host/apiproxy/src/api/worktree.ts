@@ -67,12 +67,15 @@ export type WorktreeModePrefView =
 /** Worktree-domain unary methods (the map keys worktree.* of RpcMethodMap). */
 export interface WorktreeApi {
   /**
-   * Lists durable worktree records, newest first.
+   * Lists durable worktree records, newest first, plus the full
+   * per-repository default-mode preference map (one read for clients
+   * projecting every workspace's mode).
    * @param request.payload.repoPath - When given, only worktrees of the
    *   repository owning that directory (any checkout or worktree of it) are
-   *   returned.
+   *   returned; `prefs` is unaffected and always complete.
    */
-  list(request: RpcRequest<{ repoPath?: string }>): Promise<RpcResponse<{ items: WorktreeView[] }>>
+  list(request: RpcRequest<{ repoPath?: string }>):
+  Promise<RpcResponse<{ items: WorktreeView[]; prefs: Record<string, WorktreeModePrefView> }>>
 
   /**
    * Materializes a git worktree for a repository and registers it durably.

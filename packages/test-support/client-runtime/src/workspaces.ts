@@ -2,6 +2,7 @@
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   DirectoryListing, IWorkspaces, SessionId, SnapshotStore, WorkspaceId, WorkspaceListState, WorkspaceView,
+  WorktreeId, WorktreeModePrefView, WorktreeStatusView, WorktreeView,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { workspaceListState } from './fixtures.ts'
 import type { Stabilizer } from './fixtures.ts'
@@ -68,6 +69,65 @@ export class TestWorkspaces implements IWorkspaces {
   startSession(workspaceId?: WorkspaceId): void {
     this.calls.push({ method: 'startSession', args: [workspaceId] })
     this.stubs.get('startSession')?.(workspaceId)
+  }
+
+  /**
+   * Worktree projection reload (recorded). The default resolves immediately;
+   * tests shape the projection through {@link update}.
+   */
+  async refreshWorktrees(): Promise<void> {
+    this.calls.push({ method: 'refreshWorktrees', args: [] })
+    await (this.stubs.get('refreshWorktrees')?.() as Promise<void> | undefined)
+  }
+
+  /**
+   * Worktree create (recorded). The default echoes a synthetic record with no
+   * workspace; stub for failure or workspace-coupled flows.
+   * @param input - the Host create payload.
+   * @returns the record plus its workspace (undefined by default).
+   */
+  async createWorktree(
+    input: { repoPath: string; name?: string; base?: string },
+  ): Promise<{ worktree: WorktreeView; workspace: WorkspaceView | undefined }> {
+    this.calls.push({ method: 'createWorktree', args: [input] })
+    const stub = this.stubs.get('createWorktree')
+    if (stub !== undefined) return await (stub(input) as Promise<{ worktree: WorktreeView; workspace: WorkspaceView | undefined }>)
+    const slug = input.name ?? 'wt'
+    return {
+      worktree: {
+        worktreeId: `wt-${input.repoPath}-${slug}` as WorktreeId,
+        repoPath: input.repoPath,
+        path: `${input.repoPath}.worktrees/${slug}`,
+        branch: `agent/${slug}`,
+        base: input.base ?? 'origin/main',
+        createdAt: new Date().toISOString(),
+      },
+      workspace: undefined,
+    }
+  }
+
+  /**
+   * Per-repo default mode write (recorded; default no-op).
+   * @param repoPath - the repository path.
+   * @param pref - the mode preference.
+   */
+  async setWorktreePref(repoPath: string, pref: WorktreeModePrefView): Promise<void> {
+    this.calls.push({ method: 'setWorktreePref', args: [repoPath, pref] })
+    await (this.stubs.get('setWorktreePref')?.(repoPath, pref) as Promise<void> | undefined)
+  }
+
+  /**
+   * Live git status query (recorded). The default serves a clean main; stub
+   * for branch/stash shapes.
+   * @param path - working directory to query.
+   * @param signal - abort signal (recorded, forwarded to stubs).
+   * @returns the status bundle.
+   */
+  async worktreeStatus(path: string, signal?: AbortSignal): Promise<WorktreeStatusView> {
+    this.calls.push({ method: 'worktreeStatus', args: [path, signal] })
+    const stub = this.stubs.get('worktreeStatus') as ((p: string, s?: AbortSignal) => Promise<WorktreeStatusView>) | undefined
+    if (stub !== undefined) return stub(path, signal)
+    return { path, branch: 'main', head: 'test00', dirty: false, stashCount: 0, ahead: 0, behind: 0 }
   }
 
   /**

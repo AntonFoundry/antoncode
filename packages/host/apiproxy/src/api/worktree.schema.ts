@@ -53,6 +53,7 @@ export const worktreeListRequestSchema = z.object({
 /** worktree.list response value. */
 export const worktreeListValueSchema = z.object({
   items: z.array(worktreeViewSchema),
+  prefs: z.record(z.string(), worktreeModePrefSchema),
 }) satisfies z.ZodType<Wire<ResponseValue<'worktree.list'>>>
 
 /** worktree.create request payload: any directory inside the target repository. */

@@ -6,13 +6,20 @@
  * the concrete class. Widening this interface is the explicit act of
  * widening what features may do to the workspaces domain.
  */
-import type { DirectoryListing, SessionId, WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-remotes/client'
+import type {
+  DirectoryListing, SessionId, WorkspaceId, WorkspaceView,
+  WorktreeModePrefView, WorktreeStatusView, WorktreeView,
+} from '@deepseek-ai/dsh-api-remotes/client'
 import type { WorkspaceListState } from '../workspaces/service.ts'
 import type { ObservableSnapshot } from './store.ts'
 
 /** The workspaces-service face injected as `ctx.workspaces`. */
 export interface IWorkspaces {
-  /** The useWorkspaces standard feed (read face — writes stay inside the domain). */
+  /**
+   * The useWorkspaces standard feed (read face — writes stay inside the
+   * domain). Carries the runtime's worktree projection alongside the
+   * workspace baseline (records, per-repo default mode, worktree-name map).
+   */
   readonly list: ObservableSnapshot<WorkspaceListState>
   /**
    * Connect a Workspace to its reusable or freshly created blank session.
@@ -22,12 +29,41 @@ export interface IWorkspaces {
   connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId>
   /**
    * The New Session flow: connect the explicit, current-Session, or recent
-   * Workspace and open the resulting session; failures surface on the session
-   * list state.
+   * Workspace and open the resulting session; the workspace's per-repo
+   * default mode intercepts (`new` = fresh worktree first, `reuse` = the
+   * named worktree's workspace). Failures surface on the session list state.
    * @param workspaceId - explicit target; omitted inherits the current
    * Session's Workspace before falling back to the recency projection.
    */
   startSession(workspaceId?: WorkspaceId): void
+  /**
+   * Reload the worktree projection (records + per-repo preferences) from the
+   * Host; coalesced with any in-flight pull.
+   * @returns completion of the current or newly started worktree pull.
+   */
+  refreshWorktrees(): Promise<void>
+  /**
+   * Materialize a git worktree for a repository and register it durably.
+   * @param input - the repository (any directory inside it), optional slug
+   *   source name, and optional verified base ref.
+   * @returns the record plus its registered workspace, when visible yet.
+   */
+  createWorktree(
+    input: { repoPath: string; name?: string; base?: string },
+  ): Promise<{ worktree: WorktreeView; workspace: WorkspaceView | undefined }>
+  /**
+   * Write the per-repository default workspace mode for new sessions.
+   * @param repoPath - the repository (any directory inside it).
+   * @param pref - checkout, fresh-worktree-per-session, or a named worktree.
+   */
+  setWorktreePref(repoPath: string, pref: WorktreeModePrefView): Promise<void>
+  /**
+   * Live git status of one working directory (branch, stash count, dirty …).
+   * @param path - working directory to query.
+   * @param signal - aborts the wire request when the caller supersedes it.
+   * @returns the status bundle.
+   */
+  worktreeStatus(path: string, signal?: AbortSignal): Promise<WorktreeStatusView>
   /**
    * Register an existing path as a Workspace.
    * @param input - the Host create payload.

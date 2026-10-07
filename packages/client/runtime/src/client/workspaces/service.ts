@@ -4,6 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {
   DirectoryListing, IApiClient, RpcError,
   SessionId, WorkspaceId, WorkspaceView,
+  WorktreeModePrefView, WorktreeStatusView, WorktreeView,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SnapshotStore } from '../contract/store.ts'
 import { createSnapshotStore } from '../contract/store.ts'
@@ -11,8 +12,30 @@ import type { SessionsPort, SessionsPortList } from '../contract/sessions-port.t
 import type { IWorkspaces } from '../contract/workspaces.ts'
 import { WorkspaceManager, type WorkspaceListPhase } from './manager.ts'
 
+/**
+ * Worktree projection the runtime owns alongside the workspace baseline: the
+ * records per canonical repository path, the per-repository default
+ * workspace-mode preference, and the workspaceId → worktree-name map the
+ * sidebar uses for its `<worktree>/<title>` session prefix. Refreshed from
+ * `worktree.list` on demand (first baseline, after every mutation).
+ */
+export interface WorkspaceWorktreeState {
+  /** Known worktree records per canonical repository path, newest first. */
+  byRepo: Readonly<Record<string, readonly WorktreeView[]>>
+  /** Per-repository default workspace mode keyed by canonical repository path. */
+  prefs: Readonly<Record<string, WorktreeModePrefView>>
+  /** Workspace ids registered over worktree directories → worktree directory name. */
+  namesByWorkspaceId: Readonly<Record<string, string>>
+}
+
+/** Worktree projection carried by the workspace list state. */
+export interface WorkspaceListStateWorktrees {
+  /** See {@link WorkspaceWorktreeState}. */
+  worktrees: WorkspaceWorktreeState
+}
+
 /** Workspace list plus the two-baseline readiness and default-target projection. */
-export interface WorkspaceListState {
+export interface WorkspaceListState extends WorkspaceListStateWorktrees {
   items: readonly WorkspaceView[]
   /**
    * Registry-global archive set in Host order: grouping surfaces hide these
@@ -39,6 +62,19 @@ export class WorkspaceCreateError extends Error {
   }
 }
 
+/** Structured worktree failure (create / preference write / status query) for UI flows. */
+export class WorktreeActionError extends Error {
+  constructor(readonly rpcError: RpcError) {
+    super(`worktree action failed: ${rpcError.code}: ${rpcError.message}`)
+    this.name = 'WorktreeActionError'
+  }
+}
+
+/** The empty worktree projection (no records, no preferences). */
+export function emptyWorktreeState(): WorkspaceWorktreeState {
+  return { byRepo: {}, prefs: {}, namesByWorkspaceId: {} }
+}
+
 /** Structured browse failure so the directory browser can branch on Host business codes. */
 export class DirectoryBrowseError extends Error {
   constructor(readonly rpcError: RpcError) {
@@ -57,6 +93,8 @@ export class WorkspaceRuntime implements IWorkspaces {
   private readonly connecting = new Map<WorkspaceId, Promise<SessionId>>()
   /** Guards the runtime-owned one-shot initial-selection subscription. */
   private initialSelectionStarted = false
+  /** Guards repeated worktree.list pulls before the first success lands. */
+  private worktreeRefreshInFlight: Promise<void> | undefined
 
   /**
    * @param ctx - client root context.
@@ -67,7 +105,7 @@ export class WorkspaceRuntime implements IWorkspaces {
     this.manager = new WorkspaceManager(api)
     this.list = createSnapshotStore<WorkspaceListState>({
       items: [], archivedSessionIds: [], state: 'idle', phase: 'pending', error: null,
-      baselinesReady: false, recentWorkspaceId: undefined,
+      baselinesReady: false, recentWorkspaceId: undefined, worktrees: emptyWorktreeState(),
     })
     this.manager.subscribe(() => { this.project() })
     this.sessions.list.subscribe(() => { this.project() })
@@ -134,6 +172,13 @@ export class WorkspaceRuntime implements IWorkspaces {
       if (disposed || state !== 'waiting') return
       const workspace = this.list.getSnapshot()
       if (!workspace.baselinesReady) return
+      // First complete baseline is also the worktree projection's boot hook:
+      // one pull so the sidebar prefix and mode defaults are ready without
+      // waiting for a first user interaction. Failures retry on the next
+      // explicit refresh (mutation or UI mount), never block selection.
+      void this.refreshWorktrees().catch((reason: unknown) => {
+        console.warn('worktree projection refresh failed:', reason)
+      })
       const current = this.sessions.list.getSnapshot().current
       const target = workspace.recentWorkspaceId
       if (current !== undefined || target === undefined) {
@@ -170,6 +215,10 @@ export class WorkspaceRuntime implements IWorkspaces {
    * then the current Session's Workspace, then the recent-Workspace
    * projection — connect its blank session and navigate there; with no
    * Workspace at all, clear the selection into the New Session view state.
+   * The target workspace's per-repository default mode intercepts first: `new`
+   * materializes a fresh worktree (and its workspace) before connecting,
+   * `reuse` connects the named worktree's workspace; both fall back to the
+   * checkout when the worktree step fails or the reused record is gone.
    * Connect failures are non-fatal (console diagnostics; the current view
    * stays usable).
    * @param workspaceId - explicit target Workspace for scoped actions.
@@ -185,10 +234,162 @@ export class WorkspaceRuntime implements IWorkspaces {
       this.sessions.clear()
       return
     }
+    const targetWorkspace = workspace.items.find(item => item.workspaceId === target)
+    const resolved = targetWorkspace === undefined ? undefined : this.resolvePref(targetWorkspace.path)
+    const pref = resolved?.pref
+    if (targetWorkspace !== undefined && pref?.mode === 'new') {
+      void this.createWorktree({ repoPath: targetWorkspace.path }).then(
+        async ({ worktree, workspace: created }) => {
+          const landingId = created?.workspaceId ?? worktree.workspaceId
+          if (landingId === undefined) return this.connectWorkspace(target)
+          // The workspace row travels the host stream; the fresh record is
+          // already in the projection, so a bounded wait resolves the row
+          // without a silent checkout fallback.
+          const landing = await this.waitForWorkspace(landingId)
+          return this.connectWorkspace(landing === undefined ? target : landing.workspaceId)
+        },
+      ).then(
+        (sessionId) => { this.sessions.open(sessionId) },
+        (reason: unknown) => { console.warn('new worktree session failed:', reason) },
+      )
+      return
+    }
+    if (targetWorkspace !== undefined && pref?.mode === 'reuse') {
+      const reused = Object.values(workspace.worktrees.byRepo).flat()
+        .find(record => record.worktreeId === pref.worktreeId && record.workspaceId !== undefined)
+      if (reused?.workspaceId !== undefined) {
+        void this.connectWorkspace(reused.workspaceId).then(
+          (sessionId) => { this.sessions.open(sessionId) },
+          (reason: unknown) => { console.warn('worktree reattach failed:', reason) },
+        )
+        return
+      }
+      // The preferred worktree is gone (removed or its registration failed at
+      // create): the stored preference can never resolve again, so clear it —
+      // keyed by the canonical repository, not the workspace path.
+      void this.setWorktreePref(resolved?.repoKey ?? targetWorkspace.path, { mode: 'checkout' }).catch(() => {})
+    }
     void this.connectWorkspace(target).then(
       (sessionId) => { this.sessions.open(sessionId) },
       (reason: unknown) => { console.warn('new session failed:', reason) },
     )
+  }
+
+  /**
+   * Reload the worktree projection (records + per-repo preferences) from the
+   * Host. Coalesced: a second call while one is in flight awaits it.
+   * @returns completion of the current or newly started worktree pull.
+   */
+  async refreshWorktrees(): Promise<void> {
+    if (this.worktreeRefreshInFlight !== undefined) return this.worktreeRefreshInFlight
+    const pull = this.api.worktree.list({}).then((response) => {
+      if (!response.result.ok) throw new WorktreeActionError(response.result.error)
+      const { items, prefs } = response.result.value
+      const byRepo: Record<string, WorktreeView[]> = {}
+      const namesByWorkspaceId: Record<string, string> = {}
+      for (const record of items) {
+        (byRepo[record.repoPath] ??= []).push(record)
+        if (record.workspaceId !== undefined) {
+          namesByWorkspaceId[record.workspaceId] = record.path.split('/').filter(Boolean).at(-1) ?? record.path
+        }
+      }
+      const previous = this.list.getSnapshot().worktrees.prefs
+      this.list.update((draft) => {
+        draft.worktrees = {
+          byRepo,
+          namesByWorkspaceId,
+          prefs: { ...previous, ...prefs },
+        }
+      })
+    }).finally(() => { this.worktreeRefreshInFlight = undefined })
+    this.worktreeRefreshInFlight = pull
+    return pull
+  }
+
+  /**
+   * Materialize a git worktree for a workspace's repository and register it
+   * durably. The projection refreshes before resolution so the next reader
+   * sees the new record; the registered workspace row itself arrives on the
+   * Host workspace stream and is resolved best-effort from the live list.
+   * @param input - the repository (any directory inside it), optional slug
+   *   source name, and optional verified base ref.
+   * @returns the record plus its registered workspace, when visible yet.
+   */
+  async createWorktree(
+    input: { repoPath: string; name?: string; base?: string },
+  ): Promise<{ worktree: WorktreeView; workspace: WorkspaceView | undefined }> {
+    const response = await this.api.worktree.create(input)
+    if (!response.result.ok) throw new WorktreeActionError(response.result.error)
+    const worktree = response.result.value.worktree
+    await this.refreshWorktrees()
+    const workspace = worktree.workspaceId === undefined
+      ? undefined
+      : this.list.getSnapshot().items.find(item => item.workspaceId === worktree.workspaceId)
+    return { worktree, workspace }
+  }
+
+  /**
+   * Write the per-repository default workspace mode for new sessions and
+   * refresh the projection from the authoritative response.
+   * @param repoPath - the repository (any directory inside it).
+   * @param pref - checkout, fresh-worktree-per-session, or a named worktree.
+   */
+  async setWorktreePref(repoPath: string, pref: WorktreeModePrefView): Promise<void> {
+    const response = await this.api.worktree.setPref({ repoPath, pref })
+    if (!response.result.ok) throw new WorktreeActionError(response.result.error)
+    this.list.update((draft) => {
+      draft.worktrees = { ...draft.worktrees, prefs: { ...draft.worktrees.prefs, [repoPath]: pref } }
+    })
+  }
+
+  /**
+   * Live git status of one working directory (branch, stash count, dirty …).
+   * @param path - working directory to query.
+   * @param signal - aborts the wire request when the caller supersedes it.
+   * @returns the status bundle.
+   */
+  async worktreeStatus(path: string, signal?: AbortSignal): Promise<WorktreeStatusView> {
+    const response = await this.api.worktree.status({ path }, signal)
+    if (!response.result.ok) throw new WorktreeActionError(response.result.error)
+    return response.result.value
+  }
+
+  /**
+   * The per-repository default mode governing a workspace path, with the
+   * canonical repository key it is stored under: the exact key wins, else the
+   * longest recorded repository key that contains the path — as a child path
+   * (`repo/…`) or the worktree sibling layout (`repo.worktrees/…`).
+   * `undefined` means no stored preference — the checkout.
+   * @param path - canonical workspace path.
+   * @returns the governing preference with its repository key, when one exists.
+   */
+  private resolvePref(path: string): { repoKey: string; pref: WorktreeModePrefView } | undefined {
+    const prefs = this.list.getSnapshot().worktrees.prefs
+    if (prefs[path] !== undefined) return { repoKey: path, pref: prefs[path] as WorktreeModePrefView }
+    let best: string | undefined
+    let bestPref: WorktreeModePrefView | undefined
+    for (const [repo, pref] of Object.entries(prefs)) {
+      const contained = path === repo || path.startsWith(`${repo}/`) || path.startsWith(`${repo}.`)
+      if (contained && (best === undefined || repo.length > best.length)) {
+        best = repo
+        bestPref = pref
+      }
+    }
+    return best === undefined || bestPref === undefined ? undefined : { repoKey: best, pref: bestPref }
+  }
+
+  /**
+   * Bounded wait for a workspace row to arrive on the workspace stream.
+   * @param workspaceId - the row to wait for.
+   * @returns the row, or `undefined` once the bounded wait expires.
+   */
+  private async waitForWorkspace(workspaceId: WorkspaceId): Promise<WorkspaceView | undefined> {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const found = this.list.getSnapshot().items.find(item => item.workspaceId === workspaceId)
+      if (found !== undefined) return found
+      await new Promise<void>((resolve) => { setTimeout(resolve, 50) })
+    }
+    return undefined
   }
 
   /**
@@ -369,6 +570,7 @@ export class WorkspaceRuntime implements IWorkspaces {
       error: workspace.error,
       baselinesReady,
       recentWorkspaceId: baselinesReady ? recentWorkspace(workspace.items, sessions.byId) : undefined,
+      worktrees: this.list.getSnapshot().worktrees,
     })
   }
 }

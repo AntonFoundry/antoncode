@@ -4,7 +4,7 @@
 import type {
   ClientResponse, HostFrame, IApiClient, ModelSelection, MuxFrame,
   RpcError, RpcReceipt, RpcRequest, RpcResponse, SessionId, SessionModels, SessionSearchItem, SkillEntry,
-  WorkspaceId, WorkspaceView,
+  WorkspaceId, WorkspaceView, WorktreeStatusView, WorktreeView,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import { RpcId } from '@deepseek-ai/dsh-client-connection/client'
 import type { SessionRemotes } from '../src/client/sessions/remotes.ts'
@@ -18,6 +18,19 @@ function fakeWorkspace(id: string, over: Partial<WorkspaceView> = {}): Workspace
     sessionIds: [],
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
+    ...over,
+  }
+}
+
+/** Programmable-default worktree record anchored at the given repository path. */
+function fakeWorktree(repoPath: string, over: Partial<WorktreeView> = {}): WorktreeView {
+  return {
+    worktreeId: `fk-wt-${repoPath}` as WorktreeView['worktreeId'],
+    repoPath,
+    path: `${repoPath}.worktrees/fk`,
+    branch: 'agent/fk',
+    base: 'origin/main',
+    createdAt: '2026-01-01T00:00:00.000Z',
     ...over,
   }
 }
@@ -206,6 +219,39 @@ export class FakeApiClient implements IApiClient {
 
   onWorkspaceArchiveSession: (payload: unknown) => Promise<RpcResponse<{ archivedSessionIds: SessionId[] }>> =
     payload => Promise.resolve(ok({ archivedSessionIds: [(payload as { sessionId: SessionId }).sessionId] }))
+
+  onWorktreeList: (payload: unknown) =>
+  Promise<RpcResponse<{ items: never[]; prefs: Record<string, never> }>> =
+    () => Promise.resolve(ok({ items: [], prefs: {} }))
+
+  onWorktreeCreate: (payload: unknown) => Promise<RpcResponse<{ worktree: WorktreeView }>> =
+    payload => Promise.resolve(ok({ worktree: fakeWorktree((payload as { repoPath: string }).repoPath) }))
+
+  onWorktreeStatus: (payload: unknown) => Promise<RpcResponse<WorktreeStatusView>> =
+    payload => Promise.resolve(ok({
+      path: (payload as { path: string }).path,
+      branch: 'main', head: 'fk00000', dirty: false, stashCount: 0, ahead: 0, behind: 0,
+    }))
+
+  onWorktreeSetPref: (payload: unknown) => Promise<RpcResponse<{ saved: true }>> =
+    () => Promise.resolve(ok({ saved: true as const }))
+
+  onWorktreeRemove: (payload: unknown) => Promise<RpcResponse<{ deleted: true }>> =
+    () => Promise.resolve(ok({ deleted: true as const }))
+
+  readonly worktree: IApiClient['worktree'] = {
+    list: (payload: unknown) => this.record('worktree.list', payload, this.onWorktreeList(payload)),
+    create: (payload: unknown) => this.record('worktree.create', payload, this.onWorktreeCreate(payload)),
+    status: (payload: unknown) => this.record('worktree.status', payload, this.onWorktreeStatus(payload)),
+    pref: (payload: unknown) =>
+      this.record('worktree.pref', payload, this.onWorktreeList(payload).then(response => (
+        response.result.ok
+          ? { ...response, result: { ok: true as const, value: { pref: null } } }
+          : response
+      )) as ReturnType<IApiClient['worktree']['pref']>),
+    setPref: (payload: unknown) => this.record('worktree.setPref', payload, this.onWorktreeSetPref(payload)),
+    remove: (payload: unknown) => this.record('worktree.remove', payload, this.onWorktreeRemove(payload)),
+  }
 
   readonly workspace: IApiClient['workspace'] = {
     list: (payload: unknown) => this.record('workspace.list', payload, this.onWorkspaceList(payload).then(response => (

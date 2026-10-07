@@ -2818,6 +2818,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         items: worktrees
           .filter(w => request.payload.repoPath === undefined || w.repoPath === request.payload.repoPath)
           .map(w => ({ ...w })),
+        prefs: Object.fromEntries(worktreePrefs),
       }),
       create: (request) => {
         const { repoPath, name, base } = request.payload

@@ -219,6 +219,15 @@ export class WorktreeRegistry extends Service {
   }
 
   /**
+   * The full per-repository preference map, keyed by canonical repository
+   * path. One read for clients projecting every workspace's default mode.
+   * @returns a fresh copy of the durable preferences.
+   */
+  prefs(): Record<string, WorktreeModePref> {
+    return { ...this.requireState().prefs }
+  }
+
+  /**
    * Read the per-repository default workspace mode for new sessions.
    * @param repoPath - Any directory inside the repository.
    * @returns the stored preference, or `undefined` when the repo has none.

@@ -3291,7 +3291,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     worktree: {
       async list(request) {
         const items = await ctx.worktreeRegistry.list(request.payload.repoPath)
-        return ok(request, { items: items.map(worktreeView) })
+        return ok(request, { items: items.map(worktreeView), prefs: ctx.worktreeRegistry.prefs() })
       },
 
       async create(request) {

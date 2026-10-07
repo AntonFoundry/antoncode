@@ -64,9 +64,10 @@ export type {
 export type { SessionListPhase, SessionSearchResultItem, SubagentCatalogSnapshot } from './sessions/manager.ts'
 export type { SubagentAddress, JobView } from '@deepseek-ai/dsh-client-connection/client'
 export type { WorkspaceListPhase } from './workspaces/manager.ts'
-export type { WorkspaceListState } from './workspaces/service.ts'
+export type { WorkspaceListState, WorkspaceWorktreeState } from './workspaces/service.ts'
 export type {
   DirectoryEntry, DirectoryListing, WorkspaceId, WorkspaceView,
+  WorktreeId, WorktreeModePrefView, WorktreeStatusView, WorktreeView,
 } from '@deepseek-ai/dsh-client-connection/client'
 // Runtime owns the snapshot store; web-react only binds it to React.
 export { createSnapshotStore, defineStore, shallowEqual } from './contract/store.ts'
