@@ -29,7 +29,11 @@ export class GitCommandError extends Error {
    * @param args - The git arguments, without the `git` literal.
    * @param stderr - Combined git diagnostic output.
    */
-  constructor(repoPath: string, args: readonly string[], readonly stderr: string) {
+  constructor(
+    readonly repoPath: string,
+    args: readonly string[],
+    readonly stderr: string,
+  ) {
     super(`git ${args.join(' ')} failed under '${repoPath}': ${stderr.trim()}`)
     this.name = 'GitCommandError'
   }
