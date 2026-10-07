@@ -27,6 +27,11 @@ import {
   workspaceDomainState, workspaceRecord, WorkspaceId as brandWorkspaceId,
   WorkspaceMoveInvalidError, WorkspaceOrderInvalidError, WorkspaceUnknownSessionError,
 } from '@deepseek-ai/dsh-workspace'
+import {
+  GitCommandError, GitNotARepositoryError, WorktreeUnknownError,
+} from '@deepseek-ai/dsh-worktree'
+import type { WorktreeRecord as RegistryWorktreeRecord } from '@deepseek-ai/dsh-worktree'
+import { WorktreeId as brandWorktreeId } from '@deepseek-ai/dsh-worktree'
 // Type-only: brings the `ctx.tools` Context merge into this program (viewFor reads presenters).
 import {
   InvalidPresetIdError, PresetExistsError, PresetMountError,
@@ -46,6 +51,7 @@ import type {
   ModelReasoning, MuxFrame, PromptContentPart, QuestionResponsePayload, SessionListMetadata, SessionProjectionsBlock, SessionSearchItem,
   QueuedInboxItem, SessionSummary, SettingsNamespaceView, SubagentAddress, JobView, ToolEventView,
   WorkspaceId, WorkspaceView,
+  WorktreeId, WorktreeView,
 } from './api/index.ts'
 import {
   DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
@@ -1190,6 +1196,19 @@ function workspaceView(workspace: Workspace): WorkspaceView {
     sessionIds: [...workspace.sessionIds],
     createdAt: workspace.createdAt,
     updatedAt: workspace.updatedAt,
+  }
+}
+
+/** Wire projection of one durable worktree record (the worktree.* value row). */
+function worktreeView(record: RegistryWorktreeRecord): WorktreeView {
+  return {
+    worktreeId: record.id as WorktreeId,
+    repoPath: record.repoPath,
+    path: record.path,
+    branch: record.branch,
+    base: record.base,
+    ...(record.workspaceId === undefined ? {} : { workspaceId: record.workspaceId as WorkspaceId }),
+    createdAt: record.createdAt,
   }
 }
 
@@ -3266,6 +3285,83 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           })
         }
         return ok(request, { archivedSessionIds: [...ctx.workspaceRegistry.archivedSessionIds] })
+      },
+    },
+
+    worktree: {
+      async list(request) {
+        const items = await ctx.worktreeRegistry.list(request.payload.repoPath)
+        return ok(request, { items: items.map(worktreeView) })
+      },
+
+      async create(request) {
+        const { repoPath, name, base } = request.payload
+        try {
+          const record = await ctx.worktreeRegistry.create(repoPath, {
+            ...(name === undefined ? {} : { name }),
+            ...(base === undefined ? {} : { base }),
+          })
+          return ok(request, { worktree: worktreeView(record) })
+        } catch (error: unknown) {
+          // Git-side failures are the business codes of this domain; storage
+          // and durability faults propagate as internal errors.
+          if (error instanceof GitNotARepositoryError) {
+            return err(request, {
+              code: 'worktree-not-a-repository',
+              message: error.message,
+              details: { path: error.path },
+            })
+          }
+          if (error instanceof GitCommandError) {
+            return err(request, {
+              code: 'worktree-git-error',
+              message: error.message,
+              details: { repoPath: error.repoPath },
+            })
+          }
+          throw error
+        }
+      },
+
+      async status(request) {
+        try {
+          return ok(request, await ctx.worktreeRegistry.status(request.payload.path))
+        } catch (error: unknown) {
+          if (!(error instanceof GitNotARepositoryError)) throw error
+          return err(request, {
+            code: 'worktree-not-a-repository',
+            message: error.message,
+            details: { path: error.path },
+          })
+        }
+      },
+
+      async pref(request) {
+        const pref = await ctx.worktreeRegistry.pref(request.payload.repoPath)
+        return ok(request, { pref: pref ?? null })
+      },
+
+      async setPref(request) {
+        await ctx.worktreeRegistry.setPref(request.payload.repoPath, request.payload.pref)
+        return ok(request, { saved: true as const })
+      },
+
+      async remove(request) {
+        const { worktreeId, force } = request.payload
+        try {
+          await ctx.worktreeRegistry.remove(
+            brandWorktreeId(worktreeId),
+            force === undefined ? {} : { force },
+          )
+        } catch (error: unknown) {
+          if (!(error instanceof WorktreeUnknownError)) throw error
+          return err(request, {
+            code: 'worktree-not-found',
+            message: error.message,
+            details: { worktreeId },
+          })
+        }
+        return ok(request, { deleted: true as const })
       },
     },
 

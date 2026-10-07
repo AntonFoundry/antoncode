@@ -45,6 +45,9 @@ export interface RpcErrorDetailsMap {
   'flow-graph-invalid': {}
   'workspace-name-conflict': { name: string }
   'workspace-move-invalid': { workspaceId: string; sessionId: SessionId; beforeSessionId?: SessionId }
+  'worktree-not-found': { worktreeId: string }
+  'worktree-not-a-repository': { path: string }
+  'worktree-git-error': { repoPath: string }
   'directory-unreadable': { path: string }
   'directory-exists': { path: string }
   'directory-create-failed': { path: string }

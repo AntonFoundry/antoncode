@@ -62,6 +62,14 @@ import {
   workspaceListValueSchema,
   workspaceRenameValueSchema,
 } from '../api/workspace.schema.ts'
+import {
+  worktreeCreateValueSchema,
+  worktreeListValueSchema,
+  worktreePrefValueSchema,
+  worktreeRemoveValueSchema,
+  worktreeSetPrefValueSchema,
+  worktreeStatusValueSchema,
+} from '../api/worktree.schema.ts'
 import { skillListValueSchema } from '../api/skills.schema.ts'
 import {
   agentPresetCopyValueSchema, agentPresetListValueSchema, agentPresetOpenDocumentValueSchema,
@@ -189,6 +197,14 @@ export interface IApiClient {
     insertSessionBefore(payload: RequestPayload<'workspace.insertSessionBefore'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.insertSessionBefore'>>>
     archiveSession(payload: RequestPayload<'workspace.archiveSession'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'workspace.archiveSession'>>>
   }
+  worktree: {
+    list(payload: RequestPayload<'worktree.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'worktree.list'>>>
+    create(payload: RequestPayload<'worktree.create'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'worktree.create'>>>
+    status(payload: RequestPayload<'worktree.status'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'worktree.status'>>>
+    pref(payload: RequestPayload<'worktree.pref'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'worktree.pref'>>>
+    setPref(payload: RequestPayload<'worktree.setPref'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'worktree.setPref'>>>
+    remove(payload: RequestPayload<'worktree.remove'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'worktree.remove'>>>
+  }
   skills: {
     list(payload: RequestPayload<'skill.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'skill.list'>>>
   }
@@ -286,6 +302,12 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'workspace.insertBefore': workspaceInsertBeforeValueSchema,
   'workspace.insertSessionBefore': workspaceInsertSessionBeforeValueSchema,
   'workspace.archiveSession': workspaceArchiveSessionValueSchema,
+  'worktree.list': worktreeListValueSchema,
+  'worktree.create': worktreeCreateValueSchema,
+  'worktree.status': worktreeStatusValueSchema,
+  'worktree.pref': worktreePrefValueSchema,
+  'worktree.setPref': worktreeSetPrefValueSchema,
+  'worktree.remove': worktreeRemoveValueSchema,
   'skill.list': skillListValueSchema,
   'agentPreset.list': agentPresetListValueSchema,
   'agentPreset.select': agentPresetSelectValueSchema,
@@ -571,6 +593,15 @@ export abstract class AbstractApiClient implements IApiClient {
     insertBefore: (payload, signal) => this.callUnary('workspace.insertBefore', payload, signal),
     insertSessionBefore: (payload, signal) => this.callUnary('workspace.insertSessionBefore', payload, signal),
     archiveSession: (payload, signal) => this.callUnary('workspace.archiveSession', payload, signal),
+  }
+
+  readonly worktree: IApiClient['worktree'] = {
+    list: (payload, signal) => this.callUnary('worktree.list', payload, signal),
+    create: (payload, signal) => this.callUnary('worktree.create', payload, signal),
+    status: (payload, signal) => this.callUnary('worktree.status', payload, signal),
+    pref: (payload, signal) => this.callUnary('worktree.pref', payload, signal),
+    setPref: (payload, signal) => this.callUnary('worktree.setPref', payload, signal),
+    remove: (payload, signal) => this.callUnary('worktree.remove', payload, signal),
   }
 
   readonly skills: IApiClient['skills'] = {

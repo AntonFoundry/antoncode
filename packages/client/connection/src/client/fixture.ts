@@ -35,6 +35,7 @@ import type {
   ApiProxy, ClientRequest, ClientResponse, HistoryEntry, HostFrame, MuxFrame, RpcReceipt,
   ModelProviderGroup, ModelSelection, RpcRequest, RpcResponse, RpcResult, ServerRequest, ServerResponse, SessionSummary,
   ToolCallView, ToolEventView, ToolResultView, WorkspaceId, WorkspaceView,
+  WorktreeId, WorktreeModePrefView, WorktreeView,
 } from './api.ts'
 import type { RequestPayload, ResponseValue, RpcMethodMap } from '@deepseek-ai/dsh-host-apiproxy/api'
 import { AbstractApiClient, RpcId, SESSION_SEARCH_RESULT_LIMIT } from './api.ts'
@@ -1557,6 +1558,13 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     updatedAt: fixtureEpoch,
   }]
   let nextWorkspace = 1
+  // Worktree records and per-repo mode preferences mirroring the host
+  // registry; the fixture list starts empty (no git behind it) and create
+  // synthesizes records so the New Session worktree flow can drive end to end.
+  const wtid = (raw: string): WorktreeId => raw as WorktreeId
+  const worktrees: WorktreeView[] = []
+  const worktreePrefs = new Map<string, WorktreeModePrefView>()
+  let nextWorktree = 0
   // Registry-global archive set mirroring the host: archived sessions keep
   // their workspace accounting slot and only grouping surfaces hide them.
   const archivedSessionIds: SessionId[] = []
@@ -2802,6 +2810,70 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         return ok(request, { archivedSessionIds: [...archivedSessionIds] })
       },
     },
+
+    worktree: {
+      // In-memory only: the fixture has no git; create synthesizes a record
+      // plus its workspace so the New Session flow can connect to it.
+      list: request => ok(request, {
+        items: worktrees
+          .filter(w => request.payload.repoPath === undefined || w.repoPath === request.payload.repoPath)
+          .map(w => ({ ...w })),
+      }),
+      create: (request) => {
+        const { repoPath, name, base } = request.payload
+        const slug = (name ?? `fixture-${nextWorktree}`)
+          .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+        const now = new Date().toISOString()
+        const branch = `agent/${slug}`
+        const created: WorktreeView = {
+          worktreeId: wtid(`fx-wt-${nextWorktree++}`),
+          repoPath,
+          path: `${repoPath}.worktrees/${slug}`,
+          branch,
+          base: base ?? 'origin/main',
+          createdAt: now,
+        }
+        const workspace: WorkspaceView = {
+          workspaceId: wid(`fx-ws-wt-${nextWorkspace++}`),
+          path: created.path,
+          title: branch,
+          sessionIds: [],
+          createdAt: now,
+          updatedAt: now,
+        }
+        created.workspaceId = workspace.workspaceId
+        worktrees.unshift(created)
+        workspaces.unshift(workspace)
+        emitHost({ type: 'host/workspace-changed', workspace: { ...workspace } })
+        return ok(request, { worktree: { ...created } })
+      },
+      status: request => ok(request, {
+        path: request.payload.path,
+        branch: worktrees.some(w => w.path === request.payload.path) ? 'agent/fixture' : 'main',
+        head: 'fixture1',
+        dirty: false,
+        stashCount: 0,
+        ahead: 0,
+        behind: 0,
+      }),
+      pref: request => ok(request, { pref: worktreePrefs.get(request.payload.repoPath) ?? null }),
+      setPref: (request) => {
+        worktreePrefs.set(request.payload.repoPath, request.payload.pref)
+        return ok(request, { saved: true as const })
+      },
+      remove: (request) => {
+        const index = worktrees.findIndex(w => w.worktreeId === request.payload.worktreeId)
+        if (index === -1) {
+          return err(request, {
+            code: 'worktree-not-found',
+            message: `no worktree ${request.payload.worktreeId}`,
+            details: { worktreeId: request.payload.worktreeId },
+          })
+        }
+        worktrees.splice(index, 1)
+        return ok(request, { deleted: true as const })
+      },
+    },
     agentPresets: {
       // Both trusts appear, because a surface must present a locally authored
       // preset differently from one the deployment vetted.
@@ -3235,6 +3307,12 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'workspace.insertBefore': return this.api.workspace.insertBefore(request)
       case 'workspace.insertSessionBefore': return this.api.workspace.insertSessionBefore(request)
       case 'workspace.archiveSession': return this.api.workspace.archiveSession(request)
+      case 'worktree.list': return this.api.worktree.list(request)
+      case 'worktree.create': return this.api.worktree.create(request)
+      case 'worktree.status': return this.api.worktree.status(request)
+      case 'worktree.pref': return this.api.worktree.pref(request)
+      case 'worktree.setPref': return this.api.worktree.setPref(request)
+      case 'worktree.remove': return this.api.worktree.remove(request)
       case 'skill.list': return this.api.skills.list(request)
       case 'agentPreset.list': return this.api.agentPresets.list(request)
       case 'agentPreset.select': return this.api.agentPresets.select(request)

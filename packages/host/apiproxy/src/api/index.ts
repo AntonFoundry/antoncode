@@ -10,6 +10,7 @@ import type { OrchestratorApi } from './orchestrator.ts'
 import type { FlowApi } from './flow.ts'
 import type { LangflowApi } from './langflow.ts'
 import type { WorkspaceApi } from './workspace.ts'
+import type { WorktreeApi } from './worktree.ts'
 import type { AgentPresetsApi } from './agent-presets.ts'
 import type { SkillsApi } from './skills.ts'
 import type { SubagentsApi } from './subagents.ts'
@@ -34,6 +35,7 @@ export interface ApiProxy {
   /** LangFlow sidecar lifecycle for the Workflows tab embed (status, start, stop). */
   langflow: LangflowApi
   workspace: WorkspaceApi
+  worktree: WorktreeApi
   skills: SkillsApi
   agentPresets: AgentPresetsApi
   events: EventsApi
@@ -72,6 +74,9 @@ export type {
 } from './subagents.ts'
 export type { JobView, JobsApi } from './jobs.ts'
 export type { WorkspaceApi, WorkspaceId, WorkspaceView } from './workspace.ts'
+export type {
+  WorktreeApi, WorktreeId, WorktreeModePrefView, WorktreeStatusView, WorktreeView,
+} from './worktree.ts'
 export type { SkillsApi, SkillEntry } from './skills.ts'
 export type { AgentPresetsApi, AgentPresetEntry } from './agent-presets.ts'
 export type { EventsApi, MuxFrame, HostFrame, QueuedInboxItem, ToolCallView, ToolEventView, ToolResultView } from './events.ts'

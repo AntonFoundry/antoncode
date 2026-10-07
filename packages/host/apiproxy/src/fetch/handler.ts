@@ -64,6 +64,14 @@ import {
   workspaceListRequestSchema,
   workspaceRenameRequestSchema,
 } from '../api/workspace.schema.ts'
+import {
+  worktreeCreateRequestSchema,
+  worktreeListRequestSchema,
+  worktreePrefRequestSchema,
+  worktreeRemoveRequestSchema,
+  worktreeSetPrefRequestSchema,
+  worktreeStatusRequestSchema,
+} from '../api/worktree.schema.ts'
 import { skillListRequestSchema } from '../api/skills.schema.ts'
 import {
   agentPresetCopyRequestSchema, agentPresetListRequestSchema, agentPresetOpenDocumentRequestSchema,
@@ -161,6 +169,12 @@ const UNARY_ROUTES: UnaryRoutes = {
     schema: workspaceInsertSessionBeforeRequestSchema, invoke: (api, r) => api.workspace.insertSessionBefore(r),
   },
   'workspace.archiveSession': { schema: workspaceArchiveSessionRequestSchema, invoke: (api, r) => api.workspace.archiveSession(r) },
+  'worktree.list': { schema: worktreeListRequestSchema, invoke: (api, r) => api.worktree.list(r) },
+  'worktree.create': { schema: worktreeCreateRequestSchema, invoke: (api, r) => api.worktree.create(r) },
+  'worktree.status': { schema: worktreeStatusRequestSchema, invoke: (api, r) => api.worktree.status(r) },
+  'worktree.pref': { schema: worktreePrefRequestSchema, invoke: (api, r) => api.worktree.pref(r) },
+  'worktree.setPref': { schema: worktreeSetPrefRequestSchema, invoke: (api, r) => api.worktree.setPref(r) },
+  'worktree.remove': { schema: worktreeRemoveRequestSchema, invoke: (api, r) => api.worktree.remove(r) },
   'skill.list': { schema: skillListRequestSchema, invoke: (api, r) => api.skills.list(r) },
   'agentPreset.list': { schema: agentPresetListRequestSchema, invoke: (api, r) => api.agentPresets.list(r) },
   'agentPreset.select': { schema: agentPresetSelectRequestSchema, invoke: (api, r) => api.agentPresets.select(r) },
