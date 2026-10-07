@@ -16,6 +16,18 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
     }
   }
   return {
+    worktree: {
+      list: () => Promise.resolve({ rpcId: RpcId('worktree-list'), result: { ok: true as const, value: { items: [], prefs: {} } } }),
+      create: () => Promise.resolve({ rpcId: RpcId('worktree-create'), result: { ok: true as const, value: { worktree: {
+        worktreeId: 'wt-stub' as never, repoPath: '/stub', path: '/stub.worktrees/s', branch: 'agent/s', base: 'HEAD', createdAt: '',
+      } } } }),
+      status: () => Promise.resolve({ rpcId: RpcId('worktree-status'), result: { ok: true as const, value: {
+        path: '/stub', branch: 'main', head: 'stub', dirty: false, stashCount: 0, ahead: 0, behind: 0,
+      } } }),
+      pref: () => Promise.resolve({ rpcId: RpcId('worktree-pref'), result: { ok: true as const, value: { pref: null } } }),
+      setPref: () => Promise.resolve({ rpcId: RpcId('worktree-setpref'), result: { ok: true as const, value: { saved: true } } }),
+      remove: () => Promise.resolve({ rpcId: RpcId('worktree-remove'), result: { ok: true as const, value: { deleted: true } } }),
+    },
     sessions: {
       async list(request) {
         if (overrides.crashOn === 'session.list') throw new Error('impl crashed')

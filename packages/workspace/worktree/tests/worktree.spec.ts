@@ -75,7 +75,7 @@ async function harness(): Promise<Harness> {
   let nextWorkspaceId = 0
   ctx.provide('workspaceRegistry', {
     create: async (path: string, title?: string) => {
-      workspaceCreates.push({ path, title })
+      workspaceCreates.push({ path, ...(title === undefined ? {} : { title }) })
       return {
         id: WorkspaceIdBrand(`ws-${nextWorkspaceId += 1}`),
         path,
