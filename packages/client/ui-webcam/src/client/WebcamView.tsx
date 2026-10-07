@@ -77,10 +77,12 @@ export function WebcamView(props: WebcamViewProps) {
   const [fps, setFps] = useState(0)
   const [dims, setDims] = useState('')
   const [delegate, setDelegate] = useState<string | undefined>(undefined)
+  const [segIssue, setSegIssue] = useState<string | undefined>(undefined)
   const [backdropImage, setBackdropImage] = useState<ImageBitmap | undefined>(undefined)
   const fpsGuard = useRef(0)
   const dimsGuard = useRef('')
   const delegateGuard = useRef<string | undefined>(undefined)
+  const issueGuard = useRef<string | undefined>(undefined)
 
   const settings = props.useSettings(s => s)
   paramsRef.current = renderParams(settings)
@@ -118,6 +120,7 @@ export function WebcamView(props: WebcamViewProps) {
         const next = frame.video.videoWidth > 0 ? `${frame.video.videoWidth}×${frame.video.videoHeight}` : ''
         if (next !== dimsGuard.current) { dimsGuard.current = next; setDims(next) }
         if (frame.delegate !== delegateGuard.current) { delegateGuard.current = frame.delegate; setDelegate(frame.delegate) }
+        if (frame.segmenterIssue !== issueGuard.current) { issueGuard.current = frame.segmenterIssue; setSegIssue(frame.segmenterIssue) }
       })
       const canvas = canvasRef.current
       if (canvas !== null) compositorRef.current = createCompositor(canvas) ?? null
@@ -277,6 +280,7 @@ export function WebcamView(props: WebcamViewProps) {
             <span>{fps} fps</span>
             <span>{dims}</span>
             {delegate !== undefined && <span>{delegate === 'GPU' ? 'GPU' : 'CPU'}</span>}
+            {segIssue !== undefined && <span role="status">{segIssue}</span>}
           </div>
         </div>
       )}

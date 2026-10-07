@@ -58,6 +58,12 @@ export interface EngineFrame {
   fps: number
   /** The loaded segmenter's delegate, or undefined while unloaded/failed. */
   delegate: SegmenterDelegate | undefined
+  /**
+   * Human-readable segmentation-health issue while frames are being dropped
+   * (consecutive segment() throws with the last error), undefined when the
+   * mask pipeline is current or segmentation is inactive.
+   */
+  segmenterIssue: string | undefined
 }
 
 /** Per-view capture lease; `release` stops the camera when it is the last one. */
@@ -120,6 +126,8 @@ export class CameraEngine {
   #frameListeners = new Set<(frame: EngineFrame) => void>()
   #statusListeners = new Set<() => void>()
   #segmentationTokens = new Set<object>()
+  #segFailures = 0
+  #segLastError: string | undefined
   #timer: number | undefined
   #ts = 0
   #frameId = 0
@@ -178,6 +186,8 @@ export class CameraEngine {
   dispose(): void {
     this.#disposed = true
     this.#leases = 0
+    this.#segFailures = 0
+    this.#segLastError = undefined
     this.#stopCapture()
     this.#segmenter?.close()
     this.#segmenter = undefined
@@ -224,6 +234,8 @@ export class CameraEngine {
     this.#video = video
     this.#activeDeviceId = deviceId
     this.#stabilizer?.reset()
+    this.#segFailures = 0
+    this.#segLastError = undefined
     this.#lastFrameAt = 0
     this.#fps = 0
     const track = stream.getVideoTracks()[0]
@@ -263,6 +275,7 @@ export class CameraEngine {
     if (video === undefined || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return
     const now = performance.now()
     let mask: MaskCanvas | undefined
+    let segmenterIssue: string | undefined
     if (this.#segmentationTokens.size > 0 && this.#segmenter !== undefined) {
       // MediaPipe VIDEO mode requires strictly increasing timestamps.
       this.#ts = Math.max(this.#ts + 1, Math.round(now))
@@ -283,16 +296,37 @@ export class CameraEngine {
           this.#stabilizer ??= new MaskStabilizer()
           this.#stabilizer.push(personAlphaFromConfidence(person.getAsFloat32Array()))
           mask = this.#stabilizer.canvas
+          this.#segFailures = 0
+        } else {
+          this.#segFailures += 1
+          this.#segLastError = 'segmenter returned no confidence planes'
         }
         result.close()
-      } catch { /* one dropped frame keeps the last stabilized mask */ }
+      } catch (error) {
+        // A dropped frame keeps the last stabilized mask; consecutive drops
+        // surface on the frame so the view can show a failing pipeline
+        // instead of silently compositing without a person cutout.
+        this.#segFailures += 1
+        const message = error instanceof Error ? error.message : String(error)
+        this.#segLastError = message === this.#segLastError ? this.#segLastError : message
+      }
+      segmenterIssue = this.#segFailures > 0
+        ? `${this.#segFailures} dropped · ${this.#segLastError?.slice(0, 80) ?? 'unknown error'}`
+        : undefined
+    } else if (this.#segFailures > 0) {
+      // Segmentation switched off: retire the stale issue with the counters.
+      this.#segFailures = 0
+      this.#segLastError = undefined
     }
     if (this.#lastFrameAt > 0) {
       const instant = 1000 / Math.max(1, now - this.#lastFrameAt)
       this.#fps = Math.round(this.#fps * 0.85 + instant * 0.15)
     }
     this.#lastFrameAt = now
-    const frame: EngineFrame = { frameId: this.#frameId + 1, video, mask, fps: this.#fps, delegate: this.#segmenter?.delegate }
+    const frame: EngineFrame = {
+      frameId: this.#frameId + 1, video, mask, fps: this.#fps,
+      delegate: this.#segmenter?.delegate, segmenterIssue,
+    }
     this.#frameId = frame.frameId
     for (const cb of this.#frameListeners) cb(frame)
   }

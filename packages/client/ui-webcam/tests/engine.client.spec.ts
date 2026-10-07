@@ -171,6 +171,33 @@ describe('CameraEngine', () => {
     lease.release()
   })
 
+  it('surfaces consecutive segmentation failures on the frame instead of failing silently', async () => {
+    const { createSegmenter } = await import('../src/client/segmenter.js')
+    vi.mocked(createSegmenter).mockResolvedValueOnce({
+      delegate: 'CPU',
+      // Every frame throws — the engine must count and publish the issue,
+      // never composite silently without a person cutout.
+      segment: () => { throw new Error('Graph has errors: Calculator::Open() failed') },
+      close: vi.fn(),
+    })
+    const engine = new CameraEngine()
+    const lease = await engine.acquire(undefined)
+    const frames: EngineFrame[] = []
+    lease.onFrame((frame) => { frames.push(frame) })
+    const releaseSeg = lease.enableSegmentation()
+    await vi.advanceTimersByTimeAsync(50)
+    const failing = frames.filter(frame => frame.segmenterIssue !== undefined)
+    expect(failing.length).toBeGreaterThan(0)
+    expect(failing[0]!.segmenterIssue).toContain('dropped')
+    expect(failing[0]!.segmenterIssue).toContain('Calculator::Open()')
+    expect(failing[0]!.mask).toBeUndefined()
+    releaseSeg()
+    // Retired with the segmentation request: the issue clears for raw views.
+    await vi.advanceTimersByTimeAsync(20)
+    expect(frames.at(-1)!.segmenterIssue).toBeUndefined()
+    lease.release()
+  })
+
   it('maps permission denial to the denied phase and rethrows', async () => {
     getUserMedia.mockRejectedValue(new DOMException('denied', 'NotAllowedError'))
     const engine = new CameraEngine()

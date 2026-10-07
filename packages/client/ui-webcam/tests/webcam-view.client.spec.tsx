@@ -133,6 +133,33 @@ describe('WebcamView', () => {
     expect(screen.getByText('1280×720')).toBeDefined()
     expect(screen.getByText('GPU')).toBeDefined()
   })
+
+  it('shows the segmentation-health issue from frame events and clears it on recovery', async () => {
+    const { props, lease } = viewSetup()
+    render(<WebcamView {...props} />)
+    await waitFor(() => expect(acquireCalls(props)).toBe(1))
+    const video = document.createElement('video')
+    Object.defineProperty(video, 'videoWidth', { value: 640 })
+    Object.defineProperty(video, 'videoHeight', { value: 480 })
+    lease.emit({
+      frameId: 1,
+      video,
+      mask: undefined,
+      fps: 12,
+      delegate: 'CPU',
+      segmenterIssue: '12 dropped · Graph has errors',
+    })
+    await waitFor(() => expect(screen.getByText(/12 dropped/)).toBeDefined())
+    lease.emit({
+      frameId: 2,
+      video,
+      mask: undefined,
+      fps: 12,
+      delegate: 'CPU',
+      segmenterIssue: undefined,
+    })
+    await waitFor(() => expect(screen.queryByText(/12 dropped/)).toBeNull())
+  })
 })
 
 /** Acquire call count reader (the spy identity is per-setup). */
