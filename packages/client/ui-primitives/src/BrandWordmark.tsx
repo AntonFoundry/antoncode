@@ -1,6 +1,6 @@
 // Anton brand wordmark: the Anton mark tile (apps/web/public/anton-mark.png)
-// plus the "Anton" name. Ink rides currentColor; the tile is rounded so its
-// black plate reads as an app-icon chip in both themes.
+// plus the "Anton" name. Ink rides currentColor; the tile is rounded so the
+// mark's plate reads as an app-icon chip in both themes.
 
 import type { IconProps } from './icons/props.ts'
 

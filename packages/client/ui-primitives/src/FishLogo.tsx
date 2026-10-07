@@ -1,6 +1,7 @@
-// Anton mark (apps/web/public/anton-mark.png): the binary-face head tile.
-// Used standalone in the collapsed sidebar rail (24px) and the welcome hero
-// (34px). Rounded corners keep the black plate reading as an app-icon chip.
+// Anton mark (apps/web/public/anton-mark.png): the watercolor mask tile
+// derived from apps/anton-bridge/macos/AppIcon.png. Used standalone in the
+// collapsed sidebar rail (24px) and the welcome hero (288px). Rounded corners
+// keep the plate reading as an app-icon chip.
 
 import type { IconProps } from './icons/props.ts'
 
