@@ -163,14 +163,22 @@ function branchFromStatusHeader(headerLine: string): string {
 /**
  * Candidate base refs for a new worktree branch: every remote-tracking branch
  * in short form (`origin/main`), then `HEAD`, capped so a huge monorepo cannot
- * flood the picker. Remote refs sort alphabetically from `for-each-ref`.
+ * flood the picker. Remote HEAD symrefs are dropped, `origin/main` and
+ * `origin/master` sort first, and the rest sorts alphabetically.
  * @param repoPath - Repository (or worktree) root; refs resolve from the common root.
  * @returns the capped candidate list, `HEAD` always present.
  */
 export async function listBases(repoPath: string): Promise<string[]> {
-  const output = await runGit(repoPath, ['for-each-ref', '--format=%(refname:short)', 'refs/remotes'])
+  const output = await runGit(repoPath, ['for-each-ref', '--format=%(refname)', 'refs/remotes'])
     .catch(() => '')
-  const remotes = output === '' ? [] : output.split('\n').filter(line => line.trim() !== '')
+  const remotes = output === '' ? [] : output.split('\n')
+    .map(line => line.trim().replace(/^refs\/remotes\//, ''))
+    .filter(line => line !== '' && line.split('/').pop() !== 'HEAD')
+    .sort((a, b) => {
+      // The conventional defaults first, then alphabetical among the rest.
+      const rank = (ref: string): number => ref === 'origin/main' ? 0 : ref === 'origin/master' ? 1 : 2
+      return rank(a) - rank(b) || a.localeCompare(b)
+    })
   return [...remotes.slice(0, 11), 'HEAD']
 }
 

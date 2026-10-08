@@ -239,6 +239,13 @@ describe('worktree registry', () => {
     const bare = await makeRepo(root, 'bases-bare', false)
     const withoutRemote = await registry.status(bare.canonical)
     expect(withoutRemote.bases).toEqual(['HEAD'])
+    // An origin/HEAD symref does not surface as a bare `origin` candidate, and
+    // the conventional defaults sort ahead of the alphabetical tail.
+    await git(repo.path, ['update-ref', 'refs/remotes/origin/HEAD', 'HEAD'])
+    await git(repo.path, ['update-ref', 'refs/remotes/origin/zeta', 'HEAD'])
+    await git(repo.path, ['update-ref', 'refs/remotes/origin/master', 'HEAD'])
+    const sorted = await registry.status(repo.canonical)
+    expect(sorted.bases).toEqual(['origin/main', 'origin/master', 'origin/zeta', 'HEAD'])
   })
 
   it('round-trips a base ref stored with the mode preference', async () => {
