@@ -1,6 +1,6 @@
 /**
  * ComposerContextBar: the slim context bar under the composer
- * (conversation.input.dock, after the queue strip) — the repository branch
+ * (conversation.composer.dock, above the stats line) — the repository branch
  * chip on the left, the workspace-mode select beside it, and the base-ref
  * picker (`From origin/main`) on the right. The base is stored with the
  * per-repository mode preference and wins at worktree creation; without an

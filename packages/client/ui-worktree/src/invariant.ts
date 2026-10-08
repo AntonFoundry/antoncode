@@ -16,7 +16,7 @@ export const inject = ['invariants']
 
 /**
  * No runtime invariant: two slot registrations (the composer context bar in
- * the input dock and the session header's status chip) whose disposal is
+ * the composer dock and the session header's status chip) whose disposal is
  * proven by the HMR-safety spec — the plugin owns no store (state arrives
  * through the workspaces standard feed), emits no cordis events, and holds
  * no cross-plugin mutable state.
