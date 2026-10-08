@@ -238,7 +238,7 @@ export class WorkspaceRuntime implements IWorkspaces {
     const resolved = targetWorkspace === undefined ? undefined : this.resolvePref(targetWorkspace.path)
     const pref = resolved?.pref
     if (targetWorkspace !== undefined && pref?.mode === 'new') {
-      void this.createWorktree({ repoPath: targetWorkspace.path }).then(
+      void this.createWorktree({ repoPath: targetWorkspace.path, ...(pref?.base === undefined ? {} : { base: pref.base }) }).then(
         async ({ worktree, workspace: created }) => {
           const landingId = created?.workspaceId ?? worktree.workspaceId
           if (landingId === undefined) return this.connectWorkspace(target)

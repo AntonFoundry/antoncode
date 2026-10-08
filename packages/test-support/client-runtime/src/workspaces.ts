@@ -127,7 +127,7 @@ export class TestWorkspaces implements IWorkspaces {
     this.calls.push({ method: 'worktreeStatus', args: [path, signal] })
     const stub = this.stubs.get('worktreeStatus') as ((p: string, s?: AbortSignal) => Promise<WorktreeStatusView>) | undefined
     if (stub !== undefined) return stub(path, signal)
-    return { path, branch: 'main', head: 'test00', dirty: false, stashCount: 0, ahead: 0, behind: 0 }
+    return { path, branch: 'main', head: 'test00', dirty: false, stashCount: 0, ahead: 0, behind: 0, bases: ['origin/main', 'HEAD'] }
   }
 
   /**

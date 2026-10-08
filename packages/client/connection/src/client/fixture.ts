@@ -2854,6 +2854,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         head: 'fixture1',
         dirty: false,
         stashCount: 0,
+        bases: ['origin/main', 'HEAD'],
         ahead: 0,
         behind: 0,
       }),

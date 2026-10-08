@@ -2,7 +2,7 @@
 /**
  * ui-worktree browser half on a real cordis Context with fake slots/locale/
  * workspaces faces: the plugin registers the workspace-mode select at
- * conversation.input.left and the repo-status chip at
+ * conversation.input.dock and the repo-status chip at
  * conversation.session.header.actions, the inject faces delegate to the
  * workspaces domain, and registration disposal rides the plugin fiber (HMR
  * safety). The node half and the invariant companion are exercised over the
@@ -33,14 +33,14 @@ async function bench() {
     },
     worktreeStatus: async (path: string, signal?: AbortSignal) => {
       calls.push({ method: 'worktreeStatus', args: [path, signal] })
-      return { path, branch: 'main', head: 't', dirty: false, stashCount: 0, ahead: 0, behind: 0 }
+      return { path, branch: 'main', head: 't', dirty: false, stashCount: 0, ahead: 0, behind: 0, bases: ['HEAD'] }
     },
   }
   ctx.provide('workspaces', workspaces)
   await ctx.plugin(SlotRegistry).await()
   ctx.slots.register({
     name: 'root', children: {
-      'conversation.input.left': { kind: 'list', scope: 'session' },
+      'conversation.input.dock': { kind: 'list', scope: 'session' },
       'conversation.session.header.actions': { kind: 'list', scope: 'session' },
     },
   } as never, (() => null) as never)
@@ -51,7 +51,7 @@ async function bench() {
     ctx,
     fiber,
     calls,
-    selectEntry: () => ctx.slots.entries('conversation.input.left')[0],
+    selectEntry: () => ctx.slots.entries('conversation.input.dock').find(e => e.options.id === 'composer-context-bar'),
     chipEntry: () => ctx.slots.entries('conversation.session.header.actions')[0],
   }
 }
@@ -59,7 +59,7 @@ async function bench() {
 describe('ui-worktree browser plugin', () => {
   it('registers the mode select and the status chip with negative header order', async () => {
     const b = await bench()
-    expect(b.selectEntry()?.options).toMatchObject({ id: 'worktree-mode', order: 10 })
+    expect(b.selectEntry()?.options).toMatchObject({ id: 'composer-context-bar', order: 30 })
     expect(b.selectEntry()?.locale).toBe('worktree')
     expect(b.selectEntry()?.inject).toBeTypeOf('function')
     expect(b.chipEntry()?.options).toMatchObject({ id: 'repo-status', order: -20 })
@@ -102,12 +102,12 @@ describe('ui-worktree browser plugin', () => {
     ctx.provide('workspaces', workspaces)
     await ctx.plugin(SlotRegistry).await()
     ctx.slots.register({
-      name: 'root', children: { 'conversation.input.left': { kind: 'list', scope: 'session' } },
+      name: 'root', children: { 'conversation.input.dock': { kind: 'list', scope: 'session' } },
     } as never, (() => null) as never)
     ctx.provide('locale', new LocaleRuntime(ctx))
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    const selectActions = (ctx.slots.entries('conversation.input.left')[0]?.inject as () => { refresh: () => void })()
+    const selectActions = (ctx.slots.entries('conversation.input.dock')[0]?.inject as () => { refresh: () => void })()
     expect(() => { selectActions.refresh() }).not.toThrow()
     await new Promise((resolve) => { setTimeout(resolve, 10) })
     await fiber.dispose()

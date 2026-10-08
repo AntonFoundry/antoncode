@@ -10,6 +10,9 @@ export const zh = {
   'hint.new': '新工作树基于 origin/main 创建；未跟踪文件（如 .env）不会带入',
   'status.aria': '仓库状态：{branch}，储藏 {count}',
   'status.stash': '储藏 {count}',
+  'bar.base': '基于 {base}',
+  'bar.base.aria': '新工作树基准分支，当前：{base}',
+  'bar.repo.aria': '仓库分支：{branch}',
 } satisfies Record<string, string>
 
 /** The worktree namespace key union. */
@@ -25,4 +28,7 @@ export const en = {
   'hint.new': 'Created from origin/main; untracked files (e.g. .env) stay behind',
   'status.aria': 'Repo status: {branch}, {count} stashes',
   'status.stash': 'Stash {count}',
+  'bar.base': 'From {base}',
+  'bar.base.aria': 'Base branch for new worktrees, current: {base}',
+  'bar.repo.aria': 'Repository branch: {branch}',
 } satisfies Record<WorktreeKey, string>

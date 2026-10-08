@@ -1,0 +1,60 @@
+/* Composer context bar: a slim full-width strip under the composer card —
+   repository chip + mode select on the left, base picker on the right. */
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+}
+
+.left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.repoChip,
+.basePicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-text-secondary, var(--dsw-text-secondary, #9a9a9a));
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+  max-width: 240px;
+}
+
+.repoChip:hover,
+.basePicker:hover {
+  color: var(--dsw-text-primary, var(--dsw-text-primary, #e6e6e6));
+  background: var(--dsw-fill-subtle, rgba(255, 255, 255, 0.06));
+}
+
+.icon {
+  display: inline-flex;
+  flex: none;
+  opacity: 0.8;
+}
+
+.branch {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chevron {
+  display: inline-flex;
+  flex: none;
+  opacity: 0.7;
+}

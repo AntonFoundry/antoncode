@@ -89,15 +89,17 @@ describe('resolveRepo', () => {
 })
 
 describe('WorktreeModeSelect', () => {
-  it('renders nothing without a session cwd and without a governing repository', () => {
+  it('renders nothing without a session cwd, and the effective checkout default without a governing repository', () => {
     const noCwd = render(<WorktreeModeSelect {...props({ sessions: sessionsState({}) })} />)
     expect(noCwd.container.firstChild).toBeNull()
     cleanup()
 
+    // A repository with no stored preference still offers the menu: the
+    // effective default is checkout and choosing writes the first pref.
     const foreignCwd = render(<WorktreeModeSelect {...props({
       sessions: sessionsState({ s1: { cwd: '/elsewhere', running: false } as never }),
     })} />)
-    expect(foreignCwd.container.firstChild).toBeNull()
+    expect(foreignCwd.container.textContent).toContain('Current checkout')
   })
 
   it('refreshes the projection on mount', () => {

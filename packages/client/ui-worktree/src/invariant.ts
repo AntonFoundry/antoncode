@@ -15,11 +15,11 @@ export const name = 'client-ui-worktree-invariant'
 export const inject = ['invariants']
 
 /**
- * No runtime invariant: two slot registrations (the composer's workspace-mode
- * select and the session header's status chip) whose disposal is proven by
- * the HMR-safety spec — the plugin owns no store (state arrives through the
- * workspaces standard feed), emits no cordis events, and holds no
- * cross-plugin mutable state.
+ * No runtime invariant: two slot registrations (the composer context bar in
+ * the input dock and the session header's status chip) whose disposal is
+ * proven by the HMR-safety spec — the plugin owns no store (state arrives
+ * through the workspaces standard feed), emits no cordis events, and holds
+ * no cross-plugin mutable state.
  */
 const install: InvariantInstaller = () => {}
 

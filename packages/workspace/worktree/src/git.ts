@@ -160,6 +160,20 @@ function branchFromStatusHeader(headerLine: string): string {
  * @param path - Working directory to query (repository root or subdirectory).
  * @returns the status bundle.
  */
+/**
+ * Candidate base refs for a new worktree branch: every remote-tracking branch
+ * in short form (`origin/main`), then `HEAD`, capped so a huge monorepo cannot
+ * flood the picker. Remote refs sort alphabetically from `for-each-ref`.
+ * @param repoPath - Repository (or worktree) root; refs resolve from the common root.
+ * @returns the capped candidate list, `HEAD` always present.
+ */
+export async function listBases(repoPath: string): Promise<string[]> {
+  const output = await runGit(repoPath, ['for-each-ref', '--format=%(refname:short)', 'refs/remotes'])
+    .catch(() => '')
+  const remotes = output === '' ? [] : output.split('\n').filter(line => line.trim() !== '')
+  return [...remotes.slice(0, 11), 'HEAD']
+}
+
 export async function worktreeStatus(path: string): Promise<{
   branch: string
   head: string

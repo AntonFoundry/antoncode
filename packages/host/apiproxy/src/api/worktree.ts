@@ -51,6 +51,8 @@ export interface WorktreeStatusView {
   ahead: number
   /** Commits behind the upstream, 0 when no upstream is configured. */
   behind: number
+  /** Candidate base refs for a new worktree branch (remote-tracking short names, then `HEAD`). */
+  readonly bases: readonly string[]
 }
 
 /**
@@ -60,9 +62,9 @@ export interface WorktreeStatusView {
  * has no stored preference.
  */
 export type WorktreeModePrefView =
-  | { mode: 'checkout' }
-  | { mode: 'new' }
-  | { mode: 'reuse'; worktreeId: WorktreeId }
+  | { mode: 'checkout'; base?: string | undefined }
+  | { mode: 'new'; base?: string | undefined }
+  | { mode: 'reuse'; worktreeId: WorktreeId; base?: string | undefined }
 
 /** Worktree-domain unary methods (the map keys worktree.* of RpcMethodMap). */
 export interface WorktreeApi {

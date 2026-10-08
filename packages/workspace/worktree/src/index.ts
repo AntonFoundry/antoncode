@@ -21,6 +21,7 @@ import {
   worktreeAdd,
   worktreeRemove,
   worktreeStatus,
+  listBases,
 } from './git.ts'
 import { worktreeDomainSpec } from './spec.ts'
 import type { WorktreeDomainState, WorktreeModePref, WorktreeRecord } from './spec.ts'
@@ -215,7 +216,7 @@ export class WorktreeRegistry extends Service {
    */
   async status(path: string): Promise<WorktreeStatus> {
     const canonical = await realpathNormalize(path)
-    return { path: canonical, ...await worktreeStatus(canonical) }
+    return { path: canonical, ...await worktreeStatus(canonical), bases: await listBases(canonical) }
   }
 
   /**

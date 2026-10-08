@@ -36,13 +36,14 @@ export const worktreeStatusViewSchema = z.object({
   stashCount: z.number().int().nonnegative(),
   ahead: z.number().int().nonnegative(),
   behind: z.number().int().nonnegative(),
+  bases: z.array(z.string()),
 }) satisfies z.ZodType<Wire<WorktreeStatusView>>
 
 /** Per-repo default workspace mode (see {@link WorktreeModePrefView}). */
 export const worktreeModePrefSchema = z.discriminatedUnion('mode', [
-  z.object({ mode: z.literal('checkout') }),
-  z.object({ mode: z.literal('new') }),
-  z.object({ mode: z.literal('reuse'), worktreeId: worktreeIdSchema }),
+  z.object({ mode: z.literal('checkout'), base: z.string().optional() }),
+  z.object({ mode: z.literal('new'), base: z.string().optional() }),
+  z.object({ mode: z.literal('reuse'), worktreeId: worktreeIdSchema, base: z.string().optional() }),
 ]) satisfies z.ZodType<WorktreeModePrefView>
 
 /** worktree.list request payload (repoPath omitted = every repository). */

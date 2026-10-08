@@ -39,9 +39,9 @@ export type WorktreeRecord = z.infer<typeof worktreeRecord>
  * (`new`), or in the named existing worktree (`reuse`).
  */
 export const worktreeModePref = z.discriminatedUnion('mode', [
-  z.object({ mode: z.literal('checkout') }),
-  z.object({ mode: z.literal('new') }),
-  z.object({ mode: z.literal('reuse'), worktreeId }),
+  z.object({ mode: z.literal('checkout'), base: z.string().optional() }),
+  z.object({ mode: z.literal('new'), base: z.string().optional() }),
+  z.object({ mode: z.literal('reuse'), worktreeId, base: z.string().optional() }),
 ])
 
 /** Durable mode preference inferred from {@link worktreeModePref}. */

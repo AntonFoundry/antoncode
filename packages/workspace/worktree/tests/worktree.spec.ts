@@ -231,6 +231,25 @@ describe('worktree registry', () => {
     expect(stashed.stashCount).toBe(1)
   })
 
+  it('lists base candidates: remote-tracking refs then HEAD, or HEAD alone without a remote', async () => {
+    const repo = await makeRepo(root, 'bases') // withOriginMain default: refs/remotes/origin/main exists
+    const { registry } = await harness()
+    const withRemote = await registry.status(repo.canonical)
+    expect(withRemote.bases).toEqual(['origin/main', 'HEAD'])
+    const bare = await makeRepo(root, 'bases-bare', false)
+    const withoutRemote = await registry.status(bare.canonical)
+    expect(withoutRemote.bases).toEqual(['HEAD'])
+  })
+
+  it('round-trips a base ref stored with the mode preference', async () => {
+    const repo = await makeRepo(root, 'pref-base')
+    const { registry } = await harness()
+    await registry.setPref(repo.canonical, { mode: 'new', base: 'origin/develop' })
+    expect((await registry.prefs())[repo.canonical]).toEqual({ mode: 'new', base: 'origin/develop' })
+    await registry.setPref(repo.canonical, { mode: 'new' })
+    expect((await registry.prefs())[repo.canonical]).toEqual({ mode: 'new' })
+  })
+
   it('reports upstream divergence as zero when no upstream is configured', async () => {
     const repo = await makeRepo(root, 'no-upstream')
     const { registry } = await harness()

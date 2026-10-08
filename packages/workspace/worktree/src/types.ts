@@ -30,4 +30,6 @@ export interface WorktreeStatus {
   readonly ahead: number
   /** Commits behind the upstream, 0 when no upstream is configured. */
   readonly behind: number
+  /** Candidate base refs for a new worktree branch (remote-tracking short names, then `HEAD`). */
+  readonly bases: readonly string[]
 }

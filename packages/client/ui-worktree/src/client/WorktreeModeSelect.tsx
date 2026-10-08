@@ -1,6 +1,6 @@
 /**
- * WorktreeModeSelect: the composer tool-row control (conversation.input.left)
- * that picks the workspace mode applied to this workspace's NEXT new session —
+ * WorktreeModeSelect: the composer context bar's mode control that picks the
+ * workspace mode applied to this workspace's NEXT new session —
  * Current checkout, New worktree (fresh worktree per session), or one of the
  * repository's previous worktrees. The value is the per-repository default
  * mode the runtime's New Session flow honors; live state (the projection and
@@ -53,13 +53,13 @@ export function resolveRepo(
   return best
 }
 
-/** The trigger label for a mode; a reuse mode whose record vanished falls back to the generic label. */
+/** The trigger label for a mode; no stored preference shows the effective default, and a reuse mode whose record vanished falls back to the generic label. */
 function modeLabel(
-  pref: WorktreeModePrefView,
+  pref: WorktreeModePrefView | undefined,
   records: readonly { worktreeId: string; branch: string }[],
   t: PropsLocale<'worktree'>['t'],
 ): string {
-  if (pref.mode === 'checkout') return t('mode.checkout')
+  if (pref === undefined || pref.mode === 'checkout') return t('mode.checkout')
   if (pref.mode === 'new') return t('mode.new')
   const reused = records.find(record => record.worktreeId === pref.worktreeId)
   return reused === undefined ? t('mode.reuse') : t('mode.reuseNamed', { branch: reused.branch })
@@ -83,8 +83,10 @@ export function WorktreeModeSelect(
   // mount covers records created elsewhere (another tab, the CLI) since then.
   useEffect(() => { refresh() }, [refresh])
 
+  // A repository with no stored preference still renders (key = cwd): the
+  // effective default is checkout, and choosing a mode writes the first pref.
   const repo = useMemo(
-    () => (cwd === undefined ? undefined : resolveRepo(cwd, prefs)),
+    () => (cwd === undefined ? undefined : (resolveRepo(cwd, prefs) ?? { key: cwd, pref: undefined })),
     [cwd, prefs],
   )
   if (cwd === undefined || repo === undefined) return null
@@ -122,9 +124,11 @@ export function WorktreeModeSelect(
     <Menu
       open={open}
       items={items}
-      selectedId={repo.pref.mode === 'reuse'
-        ? `reuse:${repo.pref.worktreeId}`
-        : repo.pref.mode}
+      selectedId={repo.pref === undefined
+        ? 'checkout'
+        : repo.pref.mode === 'reuse'
+          ? `reuse:${repo.pref.worktreeId}`
+          : repo.pref.mode}
       onSelect={choose}
       onClose={() => { setOpen(false) }}
       side="top"
@@ -133,7 +137,7 @@ export function WorktreeModeSelect(
           type="button"
           className={css.trigger}
           aria-label={t('mode.aria', { name: label })}
-          title={repo.pref.mode === 'new' ? t('hint.new') : undefined}
+          title={repo.pref?.mode === 'new' ? t('hint.new') : undefined}
           disabled={pending}
           onClick={() => { setOpen(!open) }}
         >

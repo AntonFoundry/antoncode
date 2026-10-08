@@ -202,6 +202,30 @@ describe('startSession worktree interception', () => {
     expect(api.callsOf('worktree.create')).toEqual([{ repoPath: '/w/repo' }])
   })
 
+  it('passes the preferred base ref to the worktree create call', async () => {
+    const record = worktree({ worktreeId: 'wt-based', workspaceId: 'ws-wt-based' })
+    const { api, runtime } = await booted({
+      prefs: { '/w/repo': { mode: 'new', base: 'origin/develop' } as never },
+    })
+    api.onWorktreeCreate = () => {
+      runtime.handleHostEnvelope({
+        rpcId: 'wt-ws-based' as never,
+        payload: {
+          type: 'host/workspace-changed',
+          workspace: { ...workspace('ws-wt-based'), path: record.path, title: record.branch },
+        },
+      } as never)
+      return Promise.resolve(ok({ worktree: record as never }))
+    }
+    runtime.startSession()
+    await vi.waitFor(() => {
+      expect(api.callsOf('session.create')).toEqual([
+        expect.objectContaining({ workspaceId: 'ws-wt-based' }),
+      ])
+    })
+    expect(api.callsOf('worktree.create')).toEqual([{ repoPath: '/w/repo', base: 'origin/develop' }])
+  })
+
   it('reattaches the preferred worktree under pref reuse and resets a stale preference', async () => {
     const { api, runtime } = await booted({
       worktreeItems: [worktree({ worktreeId: 'wt-old', workspaceId: 'ws-old' })],
