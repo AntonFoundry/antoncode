@@ -79,9 +79,9 @@ describe('ComposerContextBar', () => {
     await waitFor(() => { expect(failing.container.querySelector('[data-composer-context-bar]')).toBeTruthy() })
     const trigger = failing.getByLabelText('Workspace mode, current: Current checkout') as HTMLButtonElement
     expect(trigger.disabled).toBe(false)
-    expect(trigger.title).toBe('Not a git repository — worktree isolation applies to git repositories')
+    expect(trigger.title).toBe('"repo" is not a git repository — worktree isolation applies to git repositories')
     fireEvent.click(trigger)
-    expect(failing.container.textContent).toContain('Not a git repository')
+    expect(failing.container.textContent).toContain('is not a git repository')
     expect(failing.container.textContent).toContain('New worktree')
     expect(failing.container.textContent).not.toContain('From ')
     expect(failing.container.textContent).not.toContain('agent/slug')

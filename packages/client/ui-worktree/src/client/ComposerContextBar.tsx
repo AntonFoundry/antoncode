@@ -116,7 +116,7 @@ export function ComposerContextBar(
           setMode={setMode}
           refresh={refresh}
           locked={repoStatus === null}
-          lockedTitle={t('bar.notRepo')}
+          lockedTitle={t('bar.notRepo', { folder: cwd.split('/').pop() ?? cwd })}
           t={t}
         />
         {repoStatus !== null && (
