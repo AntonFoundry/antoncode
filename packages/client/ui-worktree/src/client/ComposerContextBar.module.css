@@ -1,22 +1,11 @@
-/* Composer context bar: a slim full-width strip under the composer card —
-   repository chip + mode select on the left, base picker on the right. */
+/* Composer context bar: an inline cluster in the composer's tool row —
+   repository chip, mode select, and base picker beside the access select. */
 
 .bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 10px;
-}
-
-.left {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 4px;
   min-width: 0;
-}
-
-.spacer {
-  flex: 1;
 }
 
 .repoChip,
@@ -32,7 +21,7 @@
   font-size: 12px;
   line-height: 16px;
   cursor: pointer;
-  max-width: 240px;
+  max-width: 200px;
 }
 
 .repoChip:hover,

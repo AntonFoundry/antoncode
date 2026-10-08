@@ -1,7 +1,7 @@
 /**
  * Worktree surface plugin, browser half: the composer context bar
- * (conversation.composer.dock — repository chip, workspace-mode select, base-ref
- * picker) and the session header's repo-status chip
+ * (the composer tool row beside the access select — repository chip,
+ * workspace-mode select, base-ref picker) and the session header's repo-status chip
  * (conversation.session.header.actions). Live state arrives through the
  * standard workspaces/sessions feeds; the inject faces carry the mode-write
  * verb and the status query from `ctx.workspaces`.
@@ -43,12 +43,12 @@ export function apply(ctx: ClientContext): void {
 
   const workspaces = ctx.workspaces
 
-  ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
-    name: 'conversation.composer.dock',
+  ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
+    name: 'conversation.input.left',
     id: 'composer-context-bar',
-    // Above the stats line (order 0): the bar sits directly under the card,
-    // inside the composer's width column; the stats band renders below it.
-    order: -10,
+    // The composer's tool row renders leftItems right after the access
+    // select: the worktree controls sit inside the input box next to it.
+    order: 10,
     locale: NS,
     inject: () => ({
       setMode: (repoPath, pref) => workspaces.setWorktreePref(repoPath, pref),

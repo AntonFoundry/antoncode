@@ -1,8 +1,8 @@
 /**
- * ComposerContextBar: the slim context bar under the composer
- * (conversation.composer.dock, above the stats line) — the repository branch
- * chip on the left, the workspace-mode select beside it, and the base-ref
- * picker (`From origin/main`) on the right. The base is stored with the
+ * ComposerContextBar: the composer tool-row cluster inside the input box
+ * (conversation.input.left, right after the access select) — the repository
+ * branch chip, the workspace-mode select, and the base-ref picker
+ * (`From origin/main`) in one row. The base is stored with the
  * per-repository mode preference and wins at worktree creation; without an
  * explicit base the host falls back to origin/main, then HEAD. Queried on
  * mount and whenever the session goes idle; the branch chip re-queries on
@@ -97,7 +97,6 @@ export function ComposerContextBar(
 
   return (
     <div className={css.bar} data-composer-context-bar>
-      <div className={css.left}>
         {repoStatus !== null && (
           <button
             type="button"
@@ -120,9 +119,7 @@ export function ComposerContextBar(
           disabledTitle={t('bar.notRepo')}
           t={t}
         />
-      </div>
-      <div className={css.spacer} />
-      {repoStatus !== null && (
+        {repoStatus !== null && (
         <Menu
           open={baseOpen}
           items={baseItems}
