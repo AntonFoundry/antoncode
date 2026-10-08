@@ -13,6 +13,7 @@ export const zh = {
   'bar.base': '基于 {base}',
   'bar.base.aria': '新工作树基准分支，当前：{base}',
   'bar.repo.aria': '仓库分支：{branch}',
+  'bar.notRepo': '不是 git 仓库——工作树隔离仅适用于 git 仓库',
 } satisfies Record<string, string>
 
 /** The worktree namespace key union. */
@@ -31,4 +32,5 @@ export const en = {
   'bar.base': 'From {base}',
   'bar.base.aria': 'Base branch for new worktrees, current: {base}',
   'bar.repo.aria': 'Repository branch: {branch}',
+  'bar.notRepo': 'Not a git repository — worktree isolation applies to git repositories',
 } satisfies Record<WorktreeKey, string>

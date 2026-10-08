@@ -25,6 +25,10 @@ export interface WorktreeModeSelectProps extends WorktreeSelectActions {
   useSessions: <S>(selector: (state: SessionListState) => S) => S
   /** The standard workspaces feed (worktree projection). */
   useWorkspaces: <S>(selector: (state: WorkspaceListState) => S) => S
+  /** Render the trigger disabled (the directory is not a git repository). */
+  disabled?: boolean
+  /** Tooltip explaining a disabled trigger. */
+  disabledTitle?: string
 }
 
 /**
@@ -71,7 +75,8 @@ function modeLabel(
  * @returns the select element, or null.
  */
 export function WorktreeModeSelect(
-  { sessionId, useSessions, useWorkspaces, setMode, refresh, t }: WorktreeModeSelectProps & PropsLocale<'worktree'>,
+  { sessionId, useSessions, useWorkspaces, setMode, refresh, disabled, disabledTitle, t }:
+    WorktreeModeSelectProps & PropsLocale<'worktree'>,
 ) {
   const cwd = useSessions(state => state.byId[sessionId]?.cwd)
   const prefs = useWorkspaces(state => state.worktrees.prefs)
@@ -89,6 +94,7 @@ export function WorktreeModeSelect(
     () => (cwd === undefined ? undefined : (resolveRepo(cwd, prefs) ?? { key: cwd, pref: undefined })),
     [cwd, prefs],
   )
+  // repo is defined exactly when cwd is (the memo falls back to the cwd key).
   if (cwd === undefined || repo === undefined) return null
 
   const records = byRepo[repo.key] ?? []
@@ -137,8 +143,8 @@ export function WorktreeModeSelect(
           type="button"
           className={css.trigger}
           aria-label={t('mode.aria', { name: label })}
-          title={repo.pref?.mode === 'new' ? t('hint.new') : undefined}
-          disabled={pending}
+          title={disabled === true ? disabledTitle : repo.pref?.mode === 'new' ? t('hint.new') : undefined}
+          disabled={pending || disabled === true}
           onClick={() => { setOpen(!open) }}
         >
           <span className={css.triggerIcon} aria-hidden><IconBranchOutline16 size={16} /></span>

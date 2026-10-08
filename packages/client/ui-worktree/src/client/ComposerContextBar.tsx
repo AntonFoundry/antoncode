@@ -6,8 +6,9 @@
  * per-repository mode preference and wins at worktree creation; without an
  * explicit base the host falls back to origin/main, then HEAD. Queried on
  * mount and whenever the session goes idle; the branch chip re-queries on
- * click. Without a session cwd, or when the query reports the directory is
- * not a repository, the bar renders nothing.
+ * click. Without a session cwd the bar renders nothing; a cwd outside any
+ * git repository keeps the bar visible with the mode select disabled and an
+ * explanatory tooltip (chip and picker stay repo-only).
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -68,12 +69,17 @@ export function ComposerContextBar(
     [cwd, prefs],
   )
 
-  if (cwd === undefined || statusView === null || repo === undefined) return null
+  // The bar stays visible for every session: a cwd outside any git repository
+  // renders the mode select disabled with an explanation instead of hiding the
+  // feature (discoverability), while chip and picker stay repo-only.
+  const isRepo = statusView !== null && repo !== undefined
+  if (cwd === undefined) return null
 
   // The effective base: the stored preference wins, then origin/main when the
   // repository has that remote, then the first candidate (HEAD alone at worst).
-  const bases = statusView.bases.length > 0 ? statusView.bases : ['HEAD']
-  const effectiveBase = repo.pref?.base
+  const repoStatus = isRepo ? (statusView as WorktreeStatusView) : null
+  const bases = repoStatus === null ? [] : repoStatus.bases.length > 0 ? repoStatus.bases : ['HEAD']
+  const effectiveBase = repo?.pref?.base
     ?? (bases.includes('origin/main') ? 'origin/main' : bases[0] as string)
 
   const baseItems: MenuEntry[] = bases.map(base => ({
@@ -83,6 +89,8 @@ export function ComposerContextBar(
   }))
   const chooseBase = (id: string): void => {
     setBaseOpen(false)
+    /* v8 ignore next -- the picker mounts only for repositories, so a non-repo choose cannot arrive. */
+    if (repo === undefined) return
     const next = { ...(repo.pref ?? { mode: 'checkout' as const }), base: id }
     void setMode(repo.key, next).catch(() => {})
   }
@@ -90,48 +98,54 @@ export function ComposerContextBar(
   return (
     <div className={css.bar} data-composer-context-bar>
       <div className={css.left}>
-        <button
-          type="button"
-          className={css.repoChip}
-          aria-label={t('bar.repo.aria', { branch: statusView.branch })}
-          title={statusView.branch}
-          onClick={requery}
-        >
-          <span className={css.icon} aria-hidden><IconBranchOutline16 size={14} /></span>
-          <span className={css.branch}>{statusView.branch}</span>
-        </button>
+        {repoStatus !== null && (
+          <button
+            type="button"
+            className={css.repoChip}
+            aria-label={t('bar.repo.aria', { branch: repoStatus.branch })}
+            title={repoStatus.branch}
+            onClick={requery}
+          >
+            <span className={css.icon} aria-hidden><IconBranchOutline16 size={14} /></span>
+            <span className={css.branch}>{repoStatus.branch}</span>
+          </button>
+        )}
         <WorktreeModeSelect
           sessionId={sessionId}
           useSessions={useSessions}
           useWorkspaces={useWorkspaces}
           setMode={setMode}
           refresh={refresh}
+          disabled={repoStatus === null}
+          disabledTitle={t('bar.notRepo')}
           t={t}
         />
       </div>
       <div className={css.spacer} />
-      <Menu
-        open={baseOpen}
-        items={baseItems}
-        selectedId={effectiveBase}
-        onSelect={chooseBase}
-        onClose={() => { setBaseOpen(false) }}
-        side="top"
-        align="end"
-        anchor={
-          <button
-            type="button"
-            className={css.basePicker}
-            aria-label={t('bar.base.aria', { base: effectiveBase })}
-            title={t('bar.base.aria', { base: effectiveBase })}
-            onClick={() => { setBaseOpen(!baseOpen) }}
-          >
-            <span className={css.icon} aria-hidden><IconBranchOutline16 size={14} /></span>
-            <span className={css.branch}>{t('bar.base', { base: effectiveBase })}</span>
-            <span className={css.chevron} aria-hidden><IconChevronDownOutline14 /></span>
-          </button>
-        }
-      />
+      {repoStatus !== null && (
+        <Menu
+          open={baseOpen}
+          items={baseItems}
+          selectedId={effectiveBase}
+          onSelect={chooseBase}
+          onClose={() => { setBaseOpen(false) }}
+          side="top"
+          align="end"
+          anchor={
+            <button
+              type="button"
+              className={css.basePicker}
+              aria-label={t('bar.base.aria', { base: effectiveBase })}
+              title={t('bar.base.aria', { base: effectiveBase })}
+              onClick={() => { setBaseOpen(!baseOpen) }}
+            >
+              <span className={css.icon} aria-hidden><IconBranchOutline16 size={14} /></span>
+              <span className={css.branch}>{t('bar.base', { base: effectiveBase })}</span>
+              <span className={css.chevron} aria-hidden><IconChevronDownOutline14 /></span>
+            </button>
+          }
+        />
+      )}
     </div>
   )
 }
