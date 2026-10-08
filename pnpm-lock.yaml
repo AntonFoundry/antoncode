@@ -5487,6 +5487,9 @@ importers:
 
   packages/host/plugin-inventory:
     dependencies:
+      '@deepseek-ai/dsh-app-boot':
+        specifier: workspace:^
+        version: link:../../boot/app-boot
       zod:
         specifier: ^4.4.3
         version: 4.4.3

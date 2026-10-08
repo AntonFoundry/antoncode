@@ -2,6 +2,7 @@
 
 import type { Context, FiberState } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
+import { updatePluginEntry } from '@deepseek-ai/dsh-app-boot'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 // Typert-generated ./typert and ./remote artifacts import Zod at runtime.
 import type {} from 'zod'
@@ -104,11 +105,19 @@ export class PluginInventoryGateway extends TypertRemoteService {
     }
     // Update entry in-memory directly to avoid Loader tree.write() mutations on base bundle files
     await entry.update({ disabled: !enabled })
+    // Durable half: the disabled set lands in `$DSH_HOME/plugin-state.json`,
+    // which profile boot applies as the highest automatic patch layer — so
+    // the state survives restarts, rebuilds, and full reinstalls (a fresh
+    // bundle row the user disabled before stays disabled).
+    updatePluginEntry(entryId, { disabled: !enabled })
   }
 
   /**
    * Merge scalar config values into a Loader entry's config and reload it.
-   * Runtime-scoped like `toggle`: the profile patch remains the durable source.
+   * The merged full config is persisted durably next to the disabled set; a
+   * config carrying non-JSON nodes (e.g. `!!js` results) cannot be stored
+   * without clobbering them at boot, so that edit stays runtime-scoped and
+   * the warning names it.
    * @param entryId Loader entry to reconfigure.
    * @param patch Scalar config values to merge over the current config.
    */
@@ -120,6 +129,12 @@ export class PluginInventoryGateway extends TypertRemoteService {
     }
     const current = configScalars(entry.options.config) ?? {}
     await entry.update({ config: { ...current, ...patch } })
+    const persisted = updatePluginEntry(entryId, { config: entry.options.config })
+    if (!persisted.configPersisted) {
+      this.ctx.get('logger')?.warn(
+        `plugin-state: config edit for "${entryId}" stays runtime-scoped — the live config carries non-JSON values that durable storage would drop`,
+      )
+    }
   }
 }
 

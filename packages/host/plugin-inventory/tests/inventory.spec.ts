@@ -1,12 +1,19 @@
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context, type Plugin } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
+import { pluginStatePath, pluginStatePatches } from '@deepseek-ai/dsh-app-boot'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import PluginInventoryGateway from '../src/index.ts'
 
 const contexts: Context[] = []
+const previousHome = process.env.DSH_HOME
 
 afterEach(async () => {
+  if (previousHome === undefined) delete process.env.DSH_HOME
+  else process.env.DSH_HOME = previousHome
   await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
 })
 
@@ -23,6 +30,8 @@ async function harness(): Promise<{
 }> {
   const ctx = new Context()
   contexts.push(ctx)
+  // The durable state lands in the harness home; each test gets its own.
+  process.env.DSH_HOME = mkdtempSync(join(tmpdir(), 'dsh-plugin-inventory-home-'))
   await ctx.plugin(Loader)
   ctx.loader.builtins.active = activePlugin
   ctx.loader.builtins.configurable = configurablePlugin
@@ -102,9 +111,13 @@ describe('PluginInventoryGateway', () => {
 
     await inventory.toggle(activeId as never, false)
     expect(inventory.list().entries.find(e => e.entryId === activeId)?.enabled).toBe(false)
+    // The toggle persists: the state file stores the disabled flag and boot
+    // converts it into the id-targeted patch row that survives reinstalls.
+    expect(pluginStatePatches(pluginStatePath())).toEqual([{ id: activeId, disabled: true }])
 
     await inventory.toggle(activeId as never, true)
     expect(inventory.list().entries.find(e => e.entryId === activeId)?.enabled).toBe(true)
+    expect(pluginStatePatches(pluginStatePath())).toEqual([{ id: activeId, disabled: false }])
 
     // Protected plugin should throw
     ctx.loader.builtins.include = () => {}
@@ -124,6 +137,13 @@ describe('PluginInventoryGateway', () => {
       endpoint: 'http://127.0.0.1:9000',
       apiKey: 'ctx_new',
     })
+    // The durable store mirrors the live entry after the scalar merge (the
+    // established configure semantics): boot re-applies exactly what the
+    // runtime shows.
+    expect(pluginStatePatches(pluginStatePath())).toEqual([{
+      id: entryId,
+      config: { endpoint: 'http://127.0.0.1:9000', apiKey: 'ctx_new' },
+    }])
 
     // Protected plugin should throw
     ctx.loader.builtins.include = () => {}

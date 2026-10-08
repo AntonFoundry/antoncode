@@ -754,6 +754,8 @@ export async function assertEntriesActivated(ctx: Context, binName: string): Pro
  * preparation failed` when `prepare` threw before any config-tree entry
  * mounted, `plugin tree failed to load` afterwards.
  */
+export * from './plugin-state.ts'
+
 export async function boot(
   binName: string,
   absoluteConfigPath: string,

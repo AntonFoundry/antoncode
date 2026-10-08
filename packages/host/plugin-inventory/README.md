@@ -19,4 +19,5 @@ None; this package never assembles model input.
 ## Known Limitations and Deferred Work
 
 - **Point-in-time state only** — the result contains no durable failure history or subscription; a missing root Fiber is reported as `null`, regardless of why no live root exists.
+- **Durable toggles and config** — `toggle` and `configure` write through to the harness home's `plugin-state.json` (see [`dsh-app-boot`](../../boot/app-boot/README.md)), which profile boot re-applies as the highest automatic patch layer; a disabled plugin stays disabled across restarts, rebuilds, and full reinstalls, and a config edit whose live values carry non-JSON nodes stays runtime-scoped with a warning
 - **No provenance or mutation** — the service does not identify which bundle, profile, or override introduced an entry, and it cannot enable, disable, add, or remove plugins.

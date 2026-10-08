@@ -1,9 +1,10 @@
 /**
  * Shared profile boot for every `dsh` surface: resolve the profile, stack its
  * patch layers (bundle layers in `dsh.profile.bundles` order, the profile's
- * own `cordis.patch.yml`, `--patch` overlays, the telemetry switch), mount the
- * tree over the profile's empty root config, keep the profile patch layer
- * live, and wire fail-loud plus bounded shutdown.
+ * own `cordis.patch.yml`, the home-level user patch, the durable plugin-state
+ * layer, `--patch` overlays, the telemetry switch), mount the tree over the
+ * profile's empty root config, keep the profile patch layer live, and wire
+ * fail-loud plus bounded shutdown.
  *
  * App flags are not the launcher's business: the invocation's inner arguments
  * are provided to the tree through `ctx.cmdlineArgs`, where any injected app
@@ -25,6 +26,7 @@ import {
   loadOptionalPatches,
   loadOverlayPatches,
   loadProfile,
+  pluginStatePatches,
   PROFILE_PATCH_FILENAME,
   watchUserPatches,
   type Profile,
@@ -109,11 +111,18 @@ interface ComposedProfile {
   bundlePatches: PatchOptions[]
   /** The home-level user layer (`$DSH_HOME/cordis.patch.yml`), applied after the profile's own. */
   homePatches: PatchOptions[]
+  /**
+   * The durable plugin-state layer (`$DSH_HOME/plugin-state.json`), applied
+   * after the home patch: a user's disabled set and durable plugin config
+   * edits outrank every bundle and hand-editable patch layer, so a restart,
+   * rebuild, or full reinstall cannot re-enable what the user turned off.
+   */
+  statePatches: PatchOptions[]
   /** Layers above the user layers on a live reload: `--patch` overlays and the telemetry switch. */
   overlays: PatchOptions[]
   /**
-   * id → row of the composed tree (bundles + user layers + overlays), for the
-   * launcher's own row checks.
+   * id → row of the composed tree (bundles + user layers + state + overlays),
+   * for the launcher's own row checks.
    */
   rows: ReadonlyMap<string, EntryOptions>
 }
@@ -124,6 +133,7 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
     ...composed.bundlePatches,
     ...composed.profile.patches,
     ...composed.homePatches,
+    ...composed.statePatches,
     ...composed.overlays,
   ]
 }
@@ -133,8 +143,11 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
  * `dsh.profile.bundles` order (the base bundle gates the shell stacks by
  * platform on its own rows), the profile's user layer, the home-level user
  * layer (`$DSH_HOME/cordis.patch.yml` — machine-local preferences that apply
- * to every profile, so it outranks the per-profile layer), `--patch` overlays,
- * then the telemetry switch.
+ * to every profile, so it outranks the per-profile layer), the durable
+ * plugin-state layer (`$DSH_HOME/plugin-state.json` — the user's disabled set
+ * and durable plugin config edits, so no restart, rebuild, or reinstall
+ * re-enables what they turned off), `--patch` overlays, then the telemetry
+ * switch.
  * @param name - the profile name.
  * @param patchFiles - `--patch` overlay paths, in argv order.
  * @returns the profile, its patch layers, and the composed row index.
@@ -145,10 +158,11 @@ function composeProfile(
 ): ComposedProfile {
   const profile = prepareProfile(name)
   const homePatches = loadOptionalPatches(NAME, homePatchPath()) ?? []
+  const statePatches = pluginStatePatches()
   const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
   const bundlePatches = profile.layers.flatMap(layer => layer.patches)
   const rows = new Map<string, EntryOptions>()
-  for (const row of composeEntries([bundlePatches, profile.patches, homePatches, overlays])) {
+  for (const row of composeEntries([bundlePatches, profile.patches, homePatches, statePatches, overlays])) {
     if (typeof row.id === 'string') rows.set(row.id, row)
   }
   const composedOverlays = [...overlays]
@@ -167,7 +181,7 @@ function composeProfile(
   }
   const telemetryPatch = resolveTelemetryPatch(process.env.DSH_TELEMETRY_DISABLED, rows.has(TELEMETRY_ROW_ID))
   if (telemetryPatch !== undefined) composedOverlays.push(telemetryPatch)
-  return { profile, bundlePatches, homePatches, overlays: composedOverlays, rows }
+  return { profile, bundlePatches, homePatches, statePatches, overlays: composedOverlays, rows }
 }
 
 /** Options for {@link runProfile}. */
@@ -258,7 +272,9 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   // recomposition. BOTH
   // user files are re-read per generation (the HMR watcher hands us only the
   // changed file's patches, which one of the reads duplicates — fresh reads
-  // keep the two watchers from stitching in each other's stale copy).
+  // keep the two watchers from stitching in each other's stale copy), and the
+  // plugin-state layer is re-read with them so a toggle that landed since
+  // boot joins the next recomposition.
   // Fresh clones per generation: the include pushes `insert` rows into the
   // mounted tree BY REFERENCE and later id-targeted patches mutate those
   // objects in place. Reusing one parsed patch object across applications
@@ -268,6 +284,9 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     ...composed.bundlePatches,
     ...loadOptionalPatches(NAME, composed.profile.patchPath) ?? [],
     ...loadOptionalPatches(NAME, homePatchPath()) ?? [],
+    // Fresh read per generation: a toggle that landed since boot joins the
+    // next recomposition like any other user layer.
+    ...pluginStatePatches(),
     ...composed.overlays,
   ])
   // Cloned for the same insert-aliasing reason as composeLive: the boot
