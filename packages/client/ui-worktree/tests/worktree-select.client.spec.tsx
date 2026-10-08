@@ -58,6 +58,8 @@ function props(over: {
   workspaces?: WorkspaceListState
   setMode?: (repoPath: string, pref: { mode: 'checkout' } | { mode: 'new' } | { mode: 'reuse'; worktreeId: string }) => Promise<void>
   refresh?: () => void
+  locked?: boolean
+  lockedTitle?: string
 } = {}): SelectProps {
   return {
     sessionId: sid('s1'),
@@ -68,6 +70,8 @@ function props(over: {
     })),
     setMode: over.setMode ?? vi.fn(async () => {}),
     refresh: over.refresh ?? vi.fn(),
+    locked: over.locked,
+    lockedTitle: over.lockedTitle,
     t,
   } as unknown as SelectProps
 }
@@ -100,6 +104,22 @@ describe('WorktreeModeSelect', () => {
       sessions: sessionsState({ s1: { cwd: '/elsewhere', running: false } as never }),
     })} />)
     expect(foreignCwd.container.textContent).toContain('Current checkout')
+  })
+
+  it('opens the menu while locked with the reason heading and greyed rows instead of a dead trigger', () => {
+    const view = render(<WorktreeModeSelect {...props({
+      sessions: sessionsState({ s1: { cwd: '/elsewhere', running: false } as never }),
+      locked: true,
+      lockedTitle: 'Not a git repository — worktree isolation applies to git repositories',
+    })} />)
+    const trigger = view.getByLabelText('Workspace mode, current: Current checkout') as HTMLButtonElement
+    expect(trigger.disabled).toBe(false)
+    fireEvent.click(trigger)
+    // The reason heads the menu and the worktree rows are visible but greyed.
+    expect(view.container.textContent).toContain('Not a git repository')
+    expect(view.container.textContent).toContain('New worktree')
+    const newRow = view.getByText('New worktree').closest('[disabled], button')
+    expect(newRow).not.toBeNull()
   })
 
   it('refreshes the projection on mount', () => {

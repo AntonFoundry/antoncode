@@ -115,8 +115,8 @@ export function ComposerContextBar(
           useWorkspaces={useWorkspaces}
           setMode={setMode}
           refresh={refresh}
-          disabled={repoStatus === null}
-          disabledTitle={t('bar.notRepo')}
+          locked={repoStatus === null}
+          lockedTitle={t('bar.notRepo')}
           t={t}
         />
         {repoStatus !== null && (

@@ -67,19 +67,22 @@ function props(over: {
 }
 
 describe('ComposerContextBar', () => {
-  it('renders nothing without a cwd, and the disabled bar with an explanation on a non-repository query', async () => {
+  it('renders nothing without a cwd, and an enabled trigger with the locked explanation on a non-repository query', async () => {
     const noCwd = render(<ComposerContextBar {...props({ summary: {} })} />)
     await waitFor(() => { expect(noCwd.container.firstChild).toBeNull() })
     cleanup()
 
-    // A cwd outside any git repository keeps the bar visible: the mode select
-    // renders disabled with the not-a-repository tooltip; chip and picker stay
-    // hidden (discoverability without pretending worktrees apply).
+    // A cwd outside any git repository keeps the cluster visible and the
+    // trigger clickable: the menu opens with the reason heading and greyed
+    // rows; chip and picker stay hidden.
     const failing = render(<ComposerContextBar {...props({ status: async () => { throw new Error('not a repo') } })} />)
     await waitFor(() => { expect(failing.container.querySelector('[data-composer-context-bar]')).toBeTruthy() })
     const trigger = failing.getByLabelText('Workspace mode, current: Current checkout') as HTMLButtonElement
-    expect(trigger.disabled).toBe(true)
+    expect(trigger.disabled).toBe(false)
     expect(trigger.title).toBe('Not a git repository — worktree isolation applies to git repositories')
+    fireEvent.click(trigger)
+    expect(failing.container.textContent).toContain('Not a git repository')
+    expect(failing.container.textContent).toContain('New worktree')
     expect(failing.container.textContent).not.toContain('From ')
     expect(failing.container.textContent).not.toContain('agent/slug')
   })

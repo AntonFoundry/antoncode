@@ -13,7 +13,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionListState, WorktreeModePrefView, WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
 import { IconBranchOutline16, IconChevronDownOutline14, IconFolderClose16, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { MenuEntry, MenuItem } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { WorktreeSelectActions } from './slots.ts'
 import css from './WorktreeModeSelect.module.css'
@@ -25,10 +25,10 @@ export interface WorktreeModeSelectProps extends WorktreeSelectActions {
   useSessions: <S>(selector: (state: SessionListState) => S) => S
   /** The standard workspaces feed (worktree projection). */
   useWorkspaces: <S>(selector: (state: WorkspaceListState) => S) => S
-  /** Render the trigger disabled (the directory is not a git repository). */
-  disabled?: boolean
-  /** Tooltip explaining a disabled trigger. */
-  disabledTitle?: string
+  /** The directory is not a git repository: the menu opens but every row is greyed out with a reason heading. */
+  locked?: boolean
+  /** The reason shown as the menu heading and the trigger tooltip while locked. */
+  lockedTitle?: string
 }
 
 /**
@@ -75,7 +75,7 @@ function modeLabel(
  * @returns the select element, or null.
  */
 export function WorktreeModeSelect(
-  { sessionId, useSessions, useWorkspaces, setMode, refresh, disabled, disabledTitle, t }:
+  { sessionId, useSessions, useWorkspaces, setMode, refresh, locked, lockedTitle, t }:
     WorktreeModeSelectProps & PropsLocale<'worktree'>,
 ) {
   const cwd = useSessions(state => state.byId[sessionId]?.cwd)
@@ -98,7 +98,7 @@ export function WorktreeModeSelect(
   if (cwd === undefined || repo === undefined) return null
 
   const records = byRepo[repo.key] ?? []
-  const items: MenuEntry[] = [
+  const rows: MenuItem[] = [
     { id: 'checkout', label: t('mode.checkout'), icon: <IconFolderClose16 size={16} /> },
     { id: 'new', label: t('mode.new'), icon: <IconBranchOutline16 size={16} /> },
     ...records.map(record => ({
@@ -107,11 +107,20 @@ export function WorktreeModeSelect(
       icon: <IconBranchOutline16 size={16} />,
     })),
   ]
+  // A non-repository keeps the menu explorable: the reason heads the list and
+  // every row is greyed out, so pressing always shows what exists and why
+  // worktree isolation cannot apply here.
+  const items: MenuEntry[] = locked === true
+    ? [
+        { type: 'label', id: 'locked-reason', text: lockedTitle ?? '' },
+        ...rows.map(row => ({ ...row, disabled: true })),
+      ]
+    : rows
 
   const choose = (id: string): void => {
     setOpen(false)
     /* v8 ignore next -- the trigger is disabled while a write is pending, so a second choose cannot arrive. */
-    if (pending) return
+    if (pending || locked === true) return
     const next: WorktreeModePrefView | undefined = id === 'checkout'
       ? { mode: 'checkout' }
       : id === 'new'
@@ -143,8 +152,8 @@ export function WorktreeModeSelect(
           type="button"
           className={css.trigger}
           aria-label={t('mode.aria', { name: label })}
-          title={disabled === true ? disabledTitle : repo.pref?.mode === 'new' ? t('hint.new') : undefined}
-          disabled={pending || disabled === true}
+          title={locked === true ? lockedTitle : repo.pref?.mode === 'new' ? t('hint.new') : undefined}
+          disabled={pending}
           onClick={() => { setOpen(!open) }}
         >
           <span className={css.triggerIcon} aria-hidden><IconBranchOutline16 size={16} /></span>
