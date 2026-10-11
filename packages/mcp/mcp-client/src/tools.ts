@@ -312,11 +312,11 @@ function createExecutor(
     if (taskRequired) {
       throw new Error(`Tool "${rawName}" requires task-based execution, which this bridge does not support`)
     }
-    // The agent loop passes `JSON.parse(model_arguments)` which is usually an
-    // object, but can be any JSON value if the model misbehaves (outputs a bare
-    // string/number/null). Fallback to {} lets the MCP server produce a
-    // specific "missing required param" error the model can learn from.
-    const argsObj = (typeof args === 'object' && args !== null ? args : {}) as Record<string, unknown>
+    // The registry validates dispatch arguments against the declared
+    // parameters before any policy stage, so `args` is always the object the
+    // tool's inputSchema declared — a degenerate model emission fails at the
+    // registry with schema violations and never reaches this executor.
+    const argsObj = args as Record<string, unknown>
     const result = await callToolUncached(client, rawName, argsObj, exec, opts)
 
     // The SDK may return a legacy `toolResult` shape; normalize to content array.
