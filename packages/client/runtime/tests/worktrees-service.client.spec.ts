@@ -200,6 +200,8 @@ describe('startSession worktree interception', () => {
       ])
     })
     expect(api.callsOf('worktree.create')).toEqual([{ repoPath: '/w/repo' }])
+    // A stored preference decides without a repo status query.
+    expect(api.callsOf('worktree.status')).toEqual([])
   })
 
   it('passes the preferred base ref to the worktree create call', async () => {
@@ -272,13 +274,55 @@ describe('startSession worktree interception', () => {
     }, { timeout: 3000 })
   })
 
-  it('keeps the plain checkout flow when no preference governs the workspace', async () => {
+  it('defaults a repository with no stored preference to a fresh worktree', async () => {
+    const record = worktree({ worktreeId: 'wt-default', workspaceId: 'ws-wt-default' })
     const { api, runtime } = await booted()
+    api.onWorktreeCreate = () => {
+      runtime.handleHostEnvelope({
+        rpcId: 'wt-ws-default' as never,
+        payload: {
+          type: 'host/workspace-changed',
+          workspace: { ...workspace('ws-wt-default'), path: record.path, title: record.branch },
+        },
+      } as never)
+      return Promise.resolve(ok({ worktree: record as never }))
+    }
+    runtime.startSession()
+    await vi.waitFor(() => {
+      expect(api.callsOf('session.create')).toEqual([
+        expect.objectContaining({ workspaceId: 'ws-wt-default' }),
+      ])
+    })
+    // The effective-default repo check ran once; the create carried no base.
+    expect(api.callsOf('worktree.status')).toEqual([{ path: '/w/repo' }])
+    expect(api.callsOf('worktree.create')).toEqual([{ repoPath: '/w/repo' }])
+  })
+
+  it('keeps the plain checkout flow outside any git repository', async () => {
+    const { api, runtime } = await booted()
+    api.onWorktreeStatus = () => Promise.resolve(
+      err({ code: 'worktree-not-a-repository', message: 'no repo', details: { path: '/w/repo' } }),
+    )
     runtime.startSession()
     await vi.waitFor(() => {
       expect(api.callsOf('session.create')).toEqual([expect.objectContaining({ workspaceId: 'repo' })])
     })
     expect(api.callsOf('worktree.create')).toEqual([])
+  })
+
+  it('lands the checkout session when the worktree create fails', async () => {
+    const { api, runtime } = await booted({
+      prefs: { '/w/repo': { mode: 'new' } as never },
+    })
+    api.onWorktreeCreate = () => Promise.resolve(err({
+      code: 'worktree-git-error', message: 'git failed', details: { repoPath: '/w/repo' },
+    }))
+    runtime.startSession()
+    // A failing worktree step never loses the user's New Session gesture:
+    // the checkout workspace receives the session instead.
+    await vi.waitFor(() => {
+      expect(api.callsOf('session.create')).toEqual([expect.objectContaining({ workspaceId: 'repo' })])
+    })
   })
 })
 

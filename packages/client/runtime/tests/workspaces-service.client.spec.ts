@@ -419,21 +419,23 @@ describe('WorkspaceRuntime', () => {
     await Promise.all([workspaces.refresh(), sessions.refresh()])
     await Promise.resolve()
     sessions.open(sid('current'))
+    // The target-resolution contract under test is the checkout path: keep the
+    // effective-default repo check out of it with a non-repository answer.
+    api.onWorktreeStatus = () => Promise.resolve(
+      err({ code: 'worktree-not-a-repository', message: 'no repo', details: { path: '/x' } }),
+    )
     const unresolved = new Promise<SessionId>(() => {})
     const connect = vi.spyOn(workspaces, 'connectWorkspace').mockReturnValue(unresolved)
 
     workspaces.startSession(wid('recent-home'))
-    await Promise.resolve()
-    expect(connect).toHaveBeenLastCalledWith(wid('recent-home'))
+    await vi.waitFor(() => { expect(connect).toHaveBeenLastCalledWith(wid('recent-home')) })
 
     workspaces.startSession()
-    await Promise.resolve()
-    expect(connect).toHaveBeenLastCalledWith(wid('current-home'))
+    await vi.waitFor(() => { expect(connect).toHaveBeenLastCalledWith(wid('current-home')) })
 
     sessions.clear()
     workspaces.startSession()
-    await Promise.resolve()
-    expect(connect).toHaveBeenLastCalledWith(wid('recent-home'))
+    await vi.waitFor(() => { expect(connect).toHaveBeenLastCalledWith(wid('recent-home')) })
 
     const emptyCtx = new Context()
     const emptyApi = new FakeApiClient()

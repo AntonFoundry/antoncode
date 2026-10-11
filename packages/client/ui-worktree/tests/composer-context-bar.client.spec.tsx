@@ -32,10 +32,22 @@ function sessionsState(summary: { cwd?: string; running?: boolean } | undefined)
   } as never
 }
 
-function workspacesState(prefs: WorkspaceListState['worktrees']['prefs']): WorkspaceListState {
+const worktreeRecord = {
+  worktreeId: 'wt-1' as never,
+  repoPath: '/repo',
+  path: '/repo.worktrees/slug',
+  branch: 'agent/slug',
+  base: 'origin/main',
+  createdAt: '2026-01-02T00:00:00.000Z',
+}
+
+function workspacesState(
+  prefs: WorkspaceListState['worktrees']['prefs'],
+  byRepo: WorkspaceListState['worktrees']['byRepo'] = {},
+): WorkspaceListState {
   return {
     items: [], byId: {}, recentWorkspaceId: undefined, defaultTarget: undefined, phase: 'ready',
-    worktrees: { byRepo: {}, prefs, namesByWorkspaceId: {}, baselinesReady: true },
+    worktrees: { byRepo, prefs, namesByWorkspaceId: {}, baselinesReady: true },
   } as never
 }
 
@@ -52,13 +64,14 @@ const status = (over: Partial<WorktreeStatusView> = {}): WorktreeStatusView => (
 function props(over: {
   summary?: { cwd?: string; running?: boolean }
   prefs?: WorkspaceListState['worktrees']['prefs']
+  byRepo?: WorkspaceListState['worktrees']['byRepo']
   status?: (path: string, signal?: AbortSignal) => Promise<WorktreeStatusView>
   setMode?: (repoPath: string, pref: { mode: string; base?: string; worktreeId?: string }) => Promise<void>
 } = {}): BarProps {
   return {
     sessionId: sid('s1'),
     useSessions: hook(sessionsState(over.summary ?? { cwd: '/repo' })),
-    useWorkspaces: hook(workspacesState(over.prefs ?? {})),
+    useWorkspaces: hook(workspacesState(over.prefs ?? {}, over.byRepo)),
     setMode: over.setMode ?? (async () => {}),
     refresh: () => {},
     status: over.status ?? (async path => status({ path })),
@@ -90,10 +103,22 @@ describe('ComposerContextBar', () => {
   it('shows the branch, the mode select, and the origin/main base default', async () => {
     const view = render(<ComposerContextBar {...props()} />)
     await waitFor(() => { expect(view.getByText('agent/slug')).toBeTruthy() })
-    // The mode select rides the bar (its effective default label), and the
-    // base picker reflects the origin/main fallback.
-    expect(view.container.textContent).toContain('Current checkout')
+    // The mode select rides the bar with the effective default label (a fresh
+    // worktree per session — no stored preference), and the base picker
+    // reflects the origin/main fallback.
+    expect(view.container.textContent).toContain('New worktree')
     expect(view.container.textContent).toContain('From origin/main')
+  })
+
+  it('names the chip after the worktree when the session cwd is a registered worktree', async () => {
+    const view = render(<ComposerContextBar {...props({
+      summary: { cwd: '/repo.worktrees/slug' },
+      byRepo: { '/repo': [worktreeRecord] },
+    })} />)
+    await waitFor(() => { expect(view.getByText('slug')).toBeTruthy() })
+    expect(view.queryByText('agent/slug')).toBeNull()
+    expect((view.getByRole('button', { name: 'Worktree slug, branch agent/slug' }) as HTMLElement).title)
+      .toBe('Worktree slug, branch agent/slug')
   })
 
   it('prefers the stored base over the origin/main fallback', async () => {
@@ -127,6 +152,19 @@ describe('ComposerContextBar', () => {
     fireEvent.click(view.getByLabelText('Base branch for new worktrees, current: origin/main'))
     fireEvent.click(view.getByText('origin/develop'))
     await waitFor(() => {
+      expect(setMode).toHaveBeenCalledWith('/repo', { mode: 'new', base: 'origin/develop' })
+    })
+  })
+
+  it('keeps the effective default mode when a base is chosen with no stored preference', async () => {
+    const setMode = vi.fn(async () => {})
+    const view = render(<ComposerContextBar {...props({ setMode })} />)
+    await waitFor(() => { expect(view.getByText('From origin/main')).toBeTruthy() })
+    fireEvent.click(view.getByLabelText('Base branch for new worktrees, current: origin/main'))
+    fireEvent.click(view.getByText('origin/develop'))
+    await waitFor(() => {
+      // Storing a base alone never downgrades the effective fresh-worktree
+      // default to an explicit checkout.
       expect(setMode).toHaveBeenCalledWith('/repo', { mode: 'new', base: 'origin/develop' })
     })
   })

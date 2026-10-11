@@ -1,9 +1,10 @@
 /**
  * ComposerContextBar: the composer tool-row cluster inside the input box
  * (conversation.input.left, right after the access select) — the repository
- * branch chip, the workspace-mode select, and the base-ref picker
- * (`From origin/main`) in one row. The base is stored with the
- * per-repository mode preference and wins at worktree creation; without an
+ * chip (branch, or the worktree name when the session runs in one), the
+ * workspace-mode select, and the base-ref picker (`From origin/main`) in one
+ * row. The base is stored with the per-repository mode preference and wins at
+ * worktree creation — storing a base alone never changes the mode; without an
  * explicit base the host falls back to origin/main, then HEAD. Queried on
  * mount and whenever the session goes idle; the branch chip re-queries on
  * click. Without a session cwd the bar renders nothing; a cwd outside any
@@ -17,7 +18,7 @@ import type { SessionListState, WorktreeStatusView, WorkspaceListState } from '@
 import { IconBranchOutline16, IconChevronDownOutline14, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import { WorktreeModeSelect, resolveRepo } from './WorktreeModeSelect.tsx'
+import { WorktreeModeSelect, resolveRepo, worktreeName } from './WorktreeModeSelect.tsx'
 import type { WorktreeBarActions } from './slots.ts'
 import css from './ComposerContextBar.module.css'
 
@@ -42,6 +43,7 @@ export function ComposerContextBar(
   const cwd = useSessions(state => state.byId[sessionId]?.cwd)
   const running = useSessions(state => state.byId[sessionId]?.running)
   const prefs = useWorkspaces(state => state.worktrees.prefs)
+  const byRepo = useWorkspaces(state => state.worktrees.byRepo)
   const [statusView, setStatusView] = useState<WorktreeStatusView | null>(null)
   const [tick, setTick] = useState(0)
   const [baseOpen, setBaseOpen] = useState(false)
@@ -68,6 +70,13 @@ export function ComposerContextBar(
     () => (cwd === undefined ? undefined : (resolveRepo(cwd, prefs) ?? { key: cwd, pref: undefined })),
     [cwd, prefs],
   )
+  // The worktree record this session's cwd runs in, when any: it labels the
+  // chip as worktree-vs-main so the current session's own workspace is never
+  // confused with the next-session mode preference beside it.
+  const worktreeRecord = useMemo(
+    () => (cwd === undefined ? undefined : Object.values(byRepo).flat().find(record => record.path === cwd)),
+    [byRepo, cwd],
+  )
 
   // The bar stays visible for every session: a cwd outside any git repository
   // renders the mode select disabled with an explanation instead of hiding the
@@ -91,35 +100,44 @@ export function ComposerContextBar(
     setBaseOpen(false)
     /* v8 ignore next -- the picker mounts only for repositories, so a non-repo choose cannot arrive. */
     if (repo === undefined) return
-    const next = { ...(repo.pref ?? { mode: 'checkout' as const }), base: id }
+    // Storing a base never changes the mode: a stored preference is kept as-is,
+    // and an unstored one keeps the effective default (fresh worktree per
+    // session) instead of writing an explicit checkout as a side effect.
+    const next = { ...(repo.pref ?? { mode: 'new' as const }), base: id }
     void setMode(repo.key, next).catch(() => {})
   }
 
   return (
     <div className={css.bar} data-composer-context-bar>
-        {repoStatus !== null && (
-          <button
-            type="button"
-            className={css.repoChip}
-            aria-label={t('bar.repo.aria', { branch: repoStatus.branch })}
-            title={repoStatus.branch}
-            onClick={requery}
-          >
-            <span className={css.icon} aria-hidden><IconBranchOutline16 size={14} /></span>
-            <span className={css.branch}>{repoStatus.branch}</span>
-          </button>
-        )}
-        <WorktreeModeSelect
-          sessionId={sessionId}
-          useSessions={useSessions}
-          useWorkspaces={useWorkspaces}
-          setMode={setMode}
-          refresh={refresh}
-          locked={repoStatus === null}
-          lockedTitle={t('bar.notRepo', { folder: cwd.split('/').pop() ?? cwd })}
-          t={t}
-        />
-        {repoStatus !== null && (
+      {repoStatus !== null && (
+        <button
+          type="button"
+          className={css.repoChip}
+          aria-label={worktreeRecord === undefined
+            ? t('bar.repo.aria', { branch: repoStatus.branch })
+            : t('bar.repo.worktree.aria', { name: worktreeName(worktreeRecord.path), branch: repoStatus.branch })}
+          title={worktreeRecord === undefined
+            ? repoStatus.branch
+            : t('bar.repo.worktree.aria', { name: worktreeName(worktreeRecord.path), branch: repoStatus.branch })}
+          onClick={requery}
+        >
+          <span className={css.icon} aria-hidden><IconBranchOutline16 size={14} /></span>
+          <span className={css.branch}>
+            {worktreeRecord === undefined ? repoStatus.branch : worktreeName(worktreeRecord.path)}
+          </span>
+        </button>
+      )}
+      <WorktreeModeSelect
+        sessionId={sessionId}
+        useSessions={useSessions}
+        useWorkspaces={useWorkspaces}
+        setMode={setMode}
+        refresh={refresh}
+        locked={repoStatus === null}
+        lockedTitle={t('bar.notRepo', { folder: cwd.split('/').pop() ?? cwd })}
+        t={t}
+      />
+      {repoStatus !== null && (
         <Menu
           open={baseOpen}
           items={baseItems}

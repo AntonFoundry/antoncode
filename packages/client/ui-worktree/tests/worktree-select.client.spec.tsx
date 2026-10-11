@@ -93,17 +93,28 @@ describe('resolveRepo', () => {
 })
 
 describe('WorktreeModeSelect', () => {
-  it('renders nothing without a session cwd, and the effective checkout default without a governing repository', () => {
+  it('renders nothing without a session cwd; the effective default is a new worktree unlocked and the checkout locked', () => {
     const noCwd = render(<WorktreeModeSelect {...props({ sessions: sessionsState({}) })} />)
     expect(noCwd.container.firstChild).toBeNull()
     cleanup()
 
     // A repository with no stored preference still offers the menu: the
-    // effective default is checkout and choosing writes the first pref.
+    // effective default is a fresh worktree per session, the menu heading
+    // names the preference's meaning, and choosing writes the first pref.
     const foreignCwd = render(<WorktreeModeSelect {...props({
       sessions: sessionsState({ s1: { cwd: '/elsewhere', running: false } as never }),
     })} />)
-    expect(foreignCwd.container.textContent).toContain('Current checkout')
+    expect(foreignCwd.container.textContent).toContain('New worktree')
+    fireEvent.click(foreignCwd.getByRole('button'))
+    expect(foreignCwd.container.textContent).toContain('Default for new sessions in elsewhere')
+    cleanup()
+
+    // Outside any git repository (locked) the effective default is the checkout.
+    const lockedCwd = render(<WorktreeModeSelect {...props({
+      sessions: sessionsState({ s1: { cwd: '/elsewhere', running: false } as never }),
+      locked: true,
+    })} />)
+    expect(lockedCwd.container.textContent).toContain('Current checkout')
   })
 
   it('opens the menu while locked with the reason heading and greyed rows instead of a dead trigger', () => {
@@ -138,7 +149,17 @@ describe('WorktreeModeSelect', () => {
     })} />)
     expect(fresh.getByText('New worktree')).toBeTruthy()
     expect((fresh.getByRole('button') as HTMLElement).title)
-      .toBe('Created from origin/main; untracked files (e.g. .env) stay behind')
+      .toBe('Default workspace for NEW sessions — never changes the current session Created from origin/main; untracked files (e.g. .env) stay behind')
+    cleanup()
+
+    // An unstored preference in a repository shows the effective default
+    // (fresh worktree per session) with the semantics tooltip.
+    const effective = render(<WorktreeModeSelect {...props({
+      workspaces: workspacesState({ prefs: {}, byRepo: {} }),
+    })} />)
+    expect(effective.getByText('New worktree')).toBeTruthy()
+    expect((effective.getByRole('button') as HTMLElement).title)
+      .toBe('Default workspace for NEW sessions — never changes the current session Created from origin/main; untracked files (e.g. .env) stay behind')
     cleanup()
 
     const reused = render(<WorktreeModeSelect {...props({

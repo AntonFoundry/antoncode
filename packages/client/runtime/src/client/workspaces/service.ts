@@ -215,15 +215,44 @@ export class WorkspaceRuntime implements IWorkspaces {
    * then the current Session's Workspace, then the recent-Workspace
    * projection — connect its blank session and navigate there; with no
    * Workspace at all, clear the selection into the New Session view state.
-   * The target workspace's per-repository default mode intercepts first: `new`
-   * materializes a fresh worktree (and its workspace) before connecting,
-   * `reuse` connects the named worktree's workspace; both fall back to the
-   * checkout when the worktree step fails or the reused record is gone.
+   * The target workspace's effective mode intercepts first: a stored `new`
+   * preference, or a git repository with no stored preference, materializes
+   * a fresh worktree (and its workspace) before connecting; `reuse` connects
+   * the named worktree's workspace; anything else (an explicit checkout, a
+   * failed worktree step, a vanished reuse record) connects the checkout.
    * Connect failures are non-fatal (console diagnostics; the current view
    * stays usable).
    * @param workspaceId - explicit target Workspace for scoped actions.
    */
   startSession(workspaceId?: WorkspaceId): void {
+    void this.startSessionIn(workspaceId).catch((reason: unknown) => {
+      console.warn('start session failed:', reason)
+    })
+  }
+
+  /**
+   * True when the directory is inside a git repository: one bounded
+   * `worktree.status` query; the host answers `worktree-not-a-repository`
+   * for everything else. Only the effective-default path pays for this —
+   * a stored preference decides without a query.
+   */
+  private async isGitRepository(path: string): Promise<boolean> {
+    try {
+      await this.worktreeStatus(path)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /** Connect a workspace's blank session and navigate to it (the one landing rule). */
+  private async openInWorkspace(workspaceId: WorkspaceId): Promise<void> {
+    const sessionId = await this.connectWorkspace(workspaceId)
+    this.sessions.open(sessionId)
+  }
+
+  /** Async body of {@link startSession}; see it for the contract. */
+  private async startSessionIn(workspaceId?: WorkspaceId): Promise<void> {
     const workspace = this.list.getSnapshot()
     const current = this.sessions.list.getSnapshot().current
     const currentWorkspaceId = current === undefined
@@ -237,42 +266,38 @@ export class WorkspaceRuntime implements IWorkspaces {
     const targetWorkspace = workspace.items.find(item => item.workspaceId === target)
     const resolved = targetWorkspace === undefined ? undefined : this.resolvePref(targetWorkspace.path)
     const pref = resolved?.pref
-    if (targetWorkspace !== undefined && pref?.mode === 'new') {
-      void this.createWorktree({ repoPath: targetWorkspace.path, ...(pref?.base === undefined ? {} : { base: pref.base }) }).then(
-        async ({ worktree, workspace: created }) => {
-          const landingId = created?.workspaceId ?? worktree.workspaceId
-          if (landingId === undefined) return this.connectWorkspace(target)
-          // The workspace row travels the host stream; the fresh record is
-          // already in the projection, so a bounded wait resolves the row
-          // without a silent checkout fallback.
-          const landing = await this.waitForWorkspace(landingId)
-          return this.connectWorkspace(landing === undefined ? target : landing.workspaceId)
-        },
-      ).then(
-        (sessionId) => { this.sessions.open(sessionId) },
-        (reason: unknown) => { console.warn('new worktree session failed:', reason) },
-      )
-      return
+    if (targetWorkspace !== undefined
+      && (pref?.mode === 'new' || (pref === undefined && await this.isGitRepository(targetWorkspace.path)))) {
+      try {
+        const { worktree, workspace: created } = await this.createWorktree({
+          repoPath: targetWorkspace.path, ...(pref?.base === undefined ? {} : { base: pref.base }),
+        })
+        const landingId = created?.workspaceId ?? worktree.workspaceId
+        if (landingId === undefined) return await this.openInWorkspace(target)
+        // The workspace row travels the host stream; the fresh record is
+        // already in the projection, so a bounded wait resolves the row
+        // without a silent checkout fallback.
+        const landing = await this.waitForWorkspace(landingId)
+        return await this.openInWorkspace(landing === undefined ? target : landing.workspaceId)
+      } catch (reason: unknown) {
+        // A failing worktree step (git error, registration failure) lands the
+        // session in the checkout instead of leaving the user with nothing.
+        console.warn('new worktree session failed; connecting the checkout instead:', reason)
+        return await this.openInWorkspace(target)
+      }
     }
     if (targetWorkspace !== undefined && pref?.mode === 'reuse') {
       const reused = Object.values(workspace.worktrees.byRepo).flat()
         .find(record => record.worktreeId === pref.worktreeId && record.workspaceId !== undefined)
       if (reused?.workspaceId !== undefined) {
-        void this.connectWorkspace(reused.workspaceId).then(
-          (sessionId) => { this.sessions.open(sessionId) },
-          (reason: unknown) => { console.warn('worktree reattach failed:', reason) },
-        )
-        return
+        return await this.openInWorkspace(reused.workspaceId)
       }
       // The preferred worktree is gone (removed or its registration failed at
       // create): the stored preference can never resolve again, so clear it —
       // keyed by the canonical repository, not the workspace path.
       void this.setWorktreePref(resolved?.repoKey ?? targetWorkspace.path, { mode: 'checkout' }).catch(() => {})
     }
-    void this.connectWorkspace(target).then(
-      (sessionId) => { this.sessions.open(sessionId) },
-      (reason: unknown) => { console.warn('new session failed:', reason) },
-    )
+    await this.openInWorkspace(target)
   }
 
   /**

@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 /**
- * RepoStatusChip: null arms (no cwd, failing query), the branch + stash badge
- * render, the click refresh, and the running-to-idle re-query edge.
+ * RepoStatusChip: null arms (no cwd, failing query), the worktree-name and
+ * branch renders (with the stash badge), the click refresh, and the
+ * running-to-idle re-query edge.
  */
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SessionId, SessionListState, WorktreeStatusView } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId, SessionListState, WorktreeStatusView, WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
 import { en } from '../src/client/locales.ts'
 import type { WorktreeKey } from '../src/client/locales.ts'
 import { RepoStatusChip } from '../src/client/RepoStatusChip.tsx'
@@ -34,13 +35,32 @@ function hook<T>(snapshot: T) {
   return function select<S>(selector: (state: T) => S): S { return selector(snapshot) }
 }
 
+const worktreeRecord = {
+  worktreeId: 'wt-1' as never,
+  repoPath: '/repo',
+  path: '/repo.worktrees/slug',
+  branch: 'agent/slug',
+  base: 'origin/main',
+  createdAt: '2026-01-02T00:00:00.000Z',
+}
+
+function workspacesState(byRepo: WorkspaceListState['worktrees']['byRepo']): WorkspaceListState {
+  return {
+    items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+    baselinesReady: true, recentWorkspaceId: undefined,
+    worktrees: { byRepo, prefs: {}, namesByWorkspaceId: {} },
+  }
+}
+
 function props(over: {
   summary?: { cwd?: string; running?: boolean }
   status?: (path: string, signal?: AbortSignal) => Promise<WorktreeStatusView>
+  byRepo?: WorkspaceListState['worktrees']['byRepo']
 }): ChipProps {
   return {
     sessionId: sid('s1'),
     useSessions: hook(sessionsState(over.summary ?? { cwd: '/repo' })),
+    useWorkspaces: hook(workspacesState(over.byRepo ?? {})),
     status: over.status ?? (async path => ({
       path, branch: 'agent/slug', head: 'abc1234', dirty: false, stashCount: 1, ahead: 0, behind: 0,
     })),
@@ -67,11 +87,25 @@ describe('RepoStatusChip', () => {
     const stashed = render(<RepoStatusChip {...props({ status: async () => status({ stashCount: 2 }) })} />)
     await waitFor(() => { expect(stashed.getByText('agent/slug')).toBeTruthy() })
     expect(stashed.getByText('Stash 2')).toBeTruthy()
+    expect((stashed.getByRole('button') as HTMLElement).title)
+      .toBe('Repo status: agent/slug, 2 stashes')
     cleanup()
 
     const clean = render(<RepoStatusChip {...props({ status: async () => status({ stashCount: 0 }) })} />)
     await waitFor(() => { expect(clean.getByText('agent/slug')).toBeTruthy() })
     expect(clean.queryByText('Stash 0')).toBeNull()
+  })
+
+  it('names a session running in a registered worktree after the worktree, with the branch in the tooltip', async () => {
+    const view = render(<RepoStatusChip {...props({
+      summary: { cwd: '/repo.worktrees/slug' },
+      status: async path => status({ path, branch: 'agent/slug' }),
+      byRepo: { '/repo': [worktreeRecord] },
+    })} />)
+    await waitFor(() => { expect(view.getByText('slug')).toBeTruthy() })
+    expect(view.queryByText('agent/slug')).toBeNull()
+    expect((view.getByRole('button') as HTMLElement).title)
+      .toBe('Worktree slug, branch agent/slug, 0 stashes')
   })
 
   it('re-queries on click', async () => {
@@ -96,6 +130,7 @@ describe('RepoStatusChip', () => {
     view.rerender(<RepoStatusChip {...({
       sessionId: sid('s1'),
       useSessions: hook(sessionsState({ cwd: '/repo', running: false })),
+      useWorkspaces: hook(workspacesState({})),
       status: statusFn,
       t,
     } as unknown as ChipProps)} />)
@@ -104,6 +139,7 @@ describe('RepoStatusChip', () => {
     view.rerender(<RepoStatusChip {...({
       sessionId: sid('s1'),
       useSessions: hook(sessionsState({ cwd: '/repo', running: false })),
+      useWorkspaces: hook(workspacesState({})),
       status: statusFn,
       t,
     } as unknown as ChipProps)} />)

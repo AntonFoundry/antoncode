@@ -3,7 +3,10 @@
  * workspace mode applied to this workspace's NEXT new session —
  * Current checkout, New worktree (fresh worktree per session), or one of the
  * repository's previous worktrees. The value is the per-repository default
- * mode the runtime's New Session flow honors; live state (the projection and
+ * mode the runtime's New Session flow honors; a git repository with no stored
+ * preference shows and applies the effective default (a fresh worktree per
+ * session), and the menu heading names that meaning so the control is never
+ * mistaken for a property of the open session. Live state (the projection and
  * the session's cwd) arrives through the standard kit, the write verb through
  * inject. Without a session cwd or any governing repository the entry renders
  * nothing.
@@ -17,6 +20,11 @@ import type { MenuEntry, MenuItem } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { WorktreeSelectActions } from './slots.ts'
 import css from './WorktreeModeSelect.module.css'
+
+/** The worktree directory basename — the name the sidebar prefixes sessions with. */
+export function worktreeName(path: string): string {
+  return path.split('/').filter(Boolean).at(-1) ?? path
+}
 
 export interface WorktreeModeSelectProps extends WorktreeSelectActions {
   /** The owning session id (its summary carries the cwd). */
@@ -57,13 +65,20 @@ export function resolveRepo(
   return best
 }
 
-/** The trigger label for a mode; no stored preference shows the effective default, and a reuse mode whose record vanished falls back to the generic label. */
+/**
+ * The trigger label for a mode. The effective default of a repository with no
+ * stored preference is a fresh worktree per session (the checkout outside any
+ * git repository); a reuse mode whose record vanished falls back to the
+ * generic label.
+ */
 function modeLabel(
   pref: WorktreeModePrefView | undefined,
   records: readonly { worktreeId: string; branch: string }[],
+  locked: boolean,
   t: PropsLocale<'worktree'>['t'],
 ): string {
-  if (pref === undefined || pref.mode === 'checkout') return t('mode.checkout')
+  if (pref === undefined) return locked ? t('mode.checkout') : t('mode.new')
+  if (pref.mode === 'checkout') return t('mode.checkout')
   if (pref.mode === 'new') return t('mode.new')
   const reused = records.find(record => record.worktreeId === pref.worktreeId)
   return reused === undefined ? t('mode.reuse') : t('mode.reuseNamed', { branch: reused.branch })
@@ -109,13 +124,18 @@ export function WorktreeModeSelect(
   ]
   // A non-repository keeps the menu explorable: the reason heads the list and
   // every row is greyed out, so pressing always shows what exists and why
-  // worktree isolation cannot apply here.
+  // worktree isolation cannot apply here. A repository heads the list with
+  // the preference's meaning: it is the default for NEW sessions of this
+  // repository — picking a row never changes the open session.
   const items: MenuEntry[] = locked === true
     ? [
-        { type: 'label', id: 'locked-reason', text: lockedTitle ?? '' },
-        ...rows.map(row => ({ ...row, disabled: true })),
-      ]
-    : rows
+      { type: 'label', id: 'locked-reason', text: lockedTitle ?? '' },
+      ...rows.map(row => ({ ...row, disabled: true })),
+    ]
+    : [
+      { type: 'label', id: 'pref-heading', text: t('mode.heading', { repo: worktreeName(repo.key) }) },
+      ...rows,
+    ]
 
   const choose = (id: string): void => {
     setOpen(false)
@@ -134,16 +154,17 @@ export function WorktreeModeSelect(
     void setMode(repo.key, next).catch(() => {}).finally(() => { setPending(false) })
   }
 
-  const label = modeLabel(repo.pref, records, t)
+  const label = modeLabel(repo.pref, records, locked === true, t)
+  const selectedId = repo.pref === undefined
+    ? (locked === true ? 'checkout' : 'new')
+    : repo.pref.mode === 'reuse'
+      ? `reuse:${repo.pref.worktreeId}`
+      : repo.pref.mode
   return (
     <Menu
       open={open}
       items={items}
-      selectedId={repo.pref === undefined
-        ? 'checkout'
-        : repo.pref.mode === 'reuse'
-          ? `reuse:${repo.pref.worktreeId}`
-          : repo.pref.mode}
+      selectedId={selectedId}
       onSelect={choose}
       onClose={() => { setOpen(false) }}
       side="top"
@@ -152,7 +173,11 @@ export function WorktreeModeSelect(
           type="button"
           className={css.trigger}
           aria-label={t('mode.aria', { name: label })}
-          title={locked === true ? lockedTitle : repo.pref?.mode === 'new' ? t('hint.new') : undefined}
+          title={locked === true
+            ? lockedTitle
+            : repo.pref?.mode === 'new' || repo.pref === undefined
+              ? `${t('hint.mode')} ${t('hint.new')}`
+              : t('hint.mode')}
           disabled={pending}
           onClick={() => { setOpen(!open) }}
         >
