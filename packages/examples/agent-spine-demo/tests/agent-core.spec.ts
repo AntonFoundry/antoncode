@@ -723,8 +723,13 @@ describe('dsh-agent-spine-demo bundle', () => {
     expect(ctx.tools.schemas()).toEqual([])
     ctx.systemPrompt.context({ name: 'policy', order: 0, text: 'hidden policy' })
     expect((await ctx.systemPrompt.assemble()).contexts).toEqual([])
-    expect(renderPrompt(await ctx.systemPrompt.assemble()))
-      .toBe('You are a helpful software engineer assistant.')
+    // Identity opts out; the harness-owned standing discipline stays on (the
+    // system-prompt contract pins the section texts), so the persona lands
+    // after the discipline block and the identity opener is gone.
+    const rendered = renderPrompt(await ctx.systemPrompt.assemble())
+    expect(rendered.startsWith('Commit discipline:')).toBe(true)
+    expect(rendered).toContain('You are a helpful software engineer assistant.')
+    expect(rendered).not.toContain('You are an AI agent powered by Anton Code')
 
     await ctx.fiber.dispose()
   })
@@ -788,7 +793,7 @@ describe('dsh-agent-spine-demo bundle', () => {
       ctx.get('tools')!.register({
         name,
         description: name,
-        parameters: {},
+        parameters: { type: 'object', additionalProperties: false, properties: {} },
         output: { schema: { type: 'null' }, render: () => [] },
         execute: async () => null,
       })

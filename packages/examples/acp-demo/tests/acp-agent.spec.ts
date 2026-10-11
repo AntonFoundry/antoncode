@@ -241,7 +241,7 @@ describe('dsh-acp-demo composition', () => {
       ctx.get('tools')!.register({
         name,
         description: name,
-        parameters: {},
+        parameters: { type: 'object', additionalProperties: false, properties: {} },
         output: { schema: { type: 'null' }, render: () => [] },
         execute: async () => null,
       })
