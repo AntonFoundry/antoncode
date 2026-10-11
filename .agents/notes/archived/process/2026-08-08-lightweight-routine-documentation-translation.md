@@ -1,6 +1,7 @@
 # Agent Note: Lightweight routine documentation translation
 
 Status: implemented
+Archived: 2026-10-12
 
 English
 

@@ -1,6 +1,7 @@
 # Agent Note: Automatically compose translation pairing records
 
 Status: implemented
+Archived: 2026-10-12
 
 English
 

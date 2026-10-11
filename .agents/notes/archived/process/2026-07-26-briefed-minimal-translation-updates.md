@@ -1,6 +1,7 @@
 # Agent Note: Briefed minimal translation updates
 
 Status: implemented
+Archived: 2026-10-12
 
 English
 

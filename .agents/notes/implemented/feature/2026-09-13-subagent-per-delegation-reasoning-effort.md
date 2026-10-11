@@ -6,7 +6,7 @@ English
 
 ## Problem
 
-The swarm's model routing gave a parent fine-grained control over **which model** each child ran ([swarm defaults](../../../packages/subagent/tool-subagent/README.md#child-model-routing-swarm-defaults)) but none over **how hard** it thought. `AgentOptions` carried `provider`, `model`, and `maxTokens` only; `reasoningEffort` existed solely on `LlmCallConfig`, seeded from a session's persisted `request/header` or injected through `agent/request`. A fresh child therefore always ran at its model's adapter default: a parent delegating a needle-in-a-haystack grep to a cheap model and a design decision to a strong one could tune neither, and the Settings subagent card had no effort surface to compensate. The gap compounded with the routing feature — a `provider/model` route could land a child on a model whose default effort was wrong for the task with no way to correct it.
+The swarm's model routing gave a parent fine-grained control over **which model** each child ran ([swarm defaults](../../../../packages/subagent/tool-subagent/README.md)) but none over **how hard** it thought. `AgentOptions` carried `provider`, `model`, and `maxTokens` only; `reasoningEffort` existed solely on `LlmCallConfig`, seeded from a session's persisted `request/header` or injected through `agent/request`. A fresh child therefore always ran at its model's adapter default: a parent delegating a needle-in-a-haystack grep to a cheap model and a design decision to a strong one could tune neither, and the Settings subagent card had no effort surface to compensate. The gap compounded with the routing feature — a `provider/model` route could land a child on a model whose default effort was wrong for the task with no way to correct it.
 
 ## Decision
 
