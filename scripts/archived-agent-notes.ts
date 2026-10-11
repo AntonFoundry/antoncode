@@ -93,7 +93,6 @@ function validateHeader(path: string, content: Buffer, sourceBase: string): stri
   return errors
 }
 
-/** Validate the closed kind tree, implemented/archive headers, and complete bilingual triplets. */
 /** Validate the closed kind tree and implemented/archive headers. Archives are English-only. */
 export function validateArchiveArtifacts(artifacts: ReadonlyMap<string, Buffer>): string[] {
   const errors: string[] = []
