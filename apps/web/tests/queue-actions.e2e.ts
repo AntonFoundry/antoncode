@@ -133,11 +133,15 @@ describe('web e2e: queue row actions', () => {
     }, { timeout: 10_000 }).toBe(true)
     await page.setViewportSize({ width: 1680, height: 1000 })
 
-    // The viewport round-trip remounts the WM pane and the queue strip's
-    // expansion is component state: re-expand before editing rows.
+    // The viewport round-trip may or may not remount the WM pane; the queue
+    // strip's expansion is component-local state, so after a remount it resets
+    // to collapsed and after a mountless transition it stays expanded. Either
+    // way, re-expand before editing the rows.
     const reexpanded = page.getByRole('button', { name: '2 queued messages' })
-    await expect.poll(() => reexpanded.getAttribute('aria-expanded'), { timeout: 10_000 }).toBe('false')
-    await reexpanded.click()
+    await expect.poll(async () => {
+      if (await reexpanded.getAttribute('aria-expanded') === 'false') await reexpanded.click()
+      return reexpanded.getAttribute('aria-expanded')
+    }, { timeout: 10_000 }).toBe('true')
     const editRow = page.getByText(EDIT, { exact: true }).locator('..')
     await editRow.getByRole('button', { name: 'Edit queued message' }).click()
     const editor = page.getByRole('textbox', { name: 'Edit queued message' })
