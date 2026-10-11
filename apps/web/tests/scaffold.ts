@@ -512,6 +512,13 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     ...mode === 'record' || options.deepSeekMissingCredential === true
       ? []
       : [{ id: 'llm-deepseek', disabled: true }],
+    // The first-run lane needs a deployment with NO usable provider, but the
+    // base patch ships the keyless `opencode-free` route live (the gateway's
+    // literal `public` key), which ends onboarding as provider-ready. Disable
+    // the zero-config adapter family there too.
+    ...(options.deepSeekMissingCredential === true
+      ? [{ id: 'llm-models-dev', disabled: true }, { id: 'llm-opencode', disabled: true }]
+      : []),
   ]
 
   // Sessions inherit the gateway's process.cwd() default; run the boot from
@@ -824,6 +831,12 @@ function normalizeAria(snapshot: string, workspaceCwd: string): string {
       /~\d+(?:y(?: \d+mo)?|mo(?: \d+d)?)|\b(?:\d+d(?: \d+h(?: \d+m \d+s)?)?|\d+h \d+m \d+s|\d+m ?\d+s|\d+(?:\.\d+)?s|\d+(?:\.\d+)?ms)\b/g,
       duration => duration.startsWith('~') ? duration : '{{duration}}',
     )
+    // Sidebar session rows trail a compact relative-time bucket (`now`,
+    // `1min`, `3h`); the bucket moves with wall-clock test pacing, so it
+    // collapses like every other duration. `now` needs no rule — it is
+    // already a stable literal, and a bare `\d+min`/`\d+h` appears nowhere
+    // else in captured surfaces.
+    .replace(/\b\d+min\b|\b\d+h\b/g, '{{duration}}')
     .replace(
       /约\d+(?:年(?:\d+个月)?|个月(?:\d+天)?)|\d+(?:天(?:\d+小时(?:\d+分\d+秒)?)?|小时\d+分\d+秒|分\d+秒|(?:\.\d+)?秒)/g,
       duration => duration.startsWith('约') ? duration : '{{duration}}',
