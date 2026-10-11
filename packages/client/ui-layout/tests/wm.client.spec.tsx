@@ -325,6 +325,16 @@ describe('wm store', () => {
     const second = createWmStore().create()
     expect(leafIds(second.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
   })
+
+  it('persists the sidebarBootDropped marker with the tree and rehydrates it', () => {
+    const instance = createWmStore().create()
+    act(() => { instance.actions.setSidebarBootDropped(true) })
+    expect(instance.getSnapshot().sidebarBootDropped).toBe(true)
+    const second = createWmStore().create()
+    expect(second.getSnapshot().sidebarBootDropped).toBe(true)
+    act(() => { second.actions.setSidebarBootDropped(false) })
+    expect(createWmStore().create().getSnapshot().sidebarBootDropped).toBe(false)
+  })
 })
 
 describe('LayoutController wm paths', () => {
@@ -347,8 +357,11 @@ describe('LayoutController wm paths', () => {
     const { service, panels, wm } = wired()
     service.toggleSidebar()
     expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION])
+    // Deliberate close leaves the boot-drop marker untouched.
+    expect(wm.getSnapshot().sidebarBootDropped).toBe(false)
     service.toggleSidebar()
     expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
+    expect(wm.getSnapshot().sidebarBootDropped).toBe(false)
     expect(firstLeafId(wm.getSnapshot().tree)).toBe(WM_LEAF_SIDEBAR)
     // The wm path never forwards to the panel actions.
     expect(panels.toggleSidebar).not.toHaveBeenCalled()
@@ -464,6 +477,7 @@ function mountFrame(initialTree?: WmNode, workspaces?: { id: string; title: stri
       useWm={hookOf(wm)}
       useScratch={hookOf(scratch)}
       setTree={(tree) => { act(() => { wm.actions.setTree(tree) }) }}
+      setSidebarBootDropped={(closed) => { act(() => { wm.actions.setSidebarBootDropped(closed) }) }}
       setFocus={(id) => { act(() => { wm.actions.setFocus(id) }) }}
       setBuffers={(buffers) => { act(() => { wm.actions.setBuffers(buffers) }) }}
       setSidebarWidth={(px) => { act(() => { layout.actions.setSidebar(px) }) }}
@@ -1009,17 +1023,63 @@ describe('WmFrame narrow viewport', () => {
     frameWidth = 800
     const { wm } = mountFrame()
     expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION])
+    // The drop marks the persisted baseline as boot-dropped.
+    expect(wm.getSnapshot().sidebarBootDropped).toBe(true)
     frameWidth = 1920
     window.innerWidth = frameWidth
     act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
     expect(firstLeafId(wm.getSnapshot().tree)).toBe(WM_LEAF_SIDEBAR)
   })
 
-  it('a tree persisted without the sidebar stays closed on widen', () => {
+  it('reloads under a narrow viewport, then widening restores the sidebar (boot-drop heal)', () => {
+    // First page life: boot narrow, the auto-drop persists the sidebar-less tree.
+    frameWidth = 800
+    const firstLife = mountFrame()
+    expect(leafIds(firstLife.wm.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION])
+    firstLife.unmount()
+    // Reload (fresh store rehydrating the persisted dropped tree), still narrow.
+    frameWidth = 800
+    const secondLife = mountFrame()
+    expect(leafIds(secondLife.wm.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION])
+    // The transient narrowness ends: the boot-dropped sidebar heals.
+    frameWidth = 1920
+    window.innerWidth = frameWidth
+    act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
+    expect(firstLeafId(secondLife.wm.getSnapshot().tree)).toBe(WM_LEAF_SIDEBAR)
+    expect(leafIds(secondLife.wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
+    // The heal clears the boot-drop marker.
+    expect(secondLife.wm.getSnapshot().sidebarBootDropped).toBe(false)
+  })
+
+  it('a persisted tree without the sidebar and no boot-drop marker stays closed on widen', () => {
+    // Deliberate user close (or pre-marker layout): the absence is the
+    // arrangement, not a boot drop.
     const noSidebar = removeLeaf(defaultTree(), WM_LEAF_SIDEBAR)
     frameWidth = 1920
     const { wm } = mountFrame(noSidebar)
     expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION])
+    frameWidth = 800
+    window.innerWidth = frameWidth
+    act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
+    frameWidth = 1920
+    window.innerWidth = frameWidth
+    act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION])
+  })
+
+  it('a boot-dropped marker rehydrating on a wide viewport re-attaches immediately', () => {
+    const noSidebar = removeLeaf(defaultTree(), WM_LEAF_SIDEBAR)
+    frameWidth = 800
+    const firstLife = mountFrame(noSidebar)
+    act(() => { firstLife.wm.actions.setSidebarBootDropped(true) })
+    expect(leafIds(firstLife.wm.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION])
+    firstLife.unmount()
+    // Reload wide: the persisted boot drop heals at once.
+    frameWidth = 1920
+    window.innerWidth = frameWidth
+    const secondLife = mountFrame()
+    expect(firstLeafId(secondLife.wm.getSnapshot().tree)).toBe(WM_LEAF_SIDEBAR)
+    expect(secondLife.wm.getSnapshot().sidebarBootDropped).toBe(false)
   })
 })
 

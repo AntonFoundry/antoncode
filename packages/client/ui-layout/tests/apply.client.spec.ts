@@ -85,7 +85,7 @@ describe('ui-layout client apply', () => {
     // and the workspace/host resolvers.
     expect(Object.keys(injected).sort()).toEqual([
       'disposeTerminalSession', 'fetchSessionModel', 'fetchSessionTail', 'hooks', 'interruptSession', 'listDirectory', 'loadTheme', 'mediaUrl', 'openPath', 'openSession', 'openWorkspace', 'previewTheme', 'promptSession', 'readTextFile',
-      'rebindPane', 'reconcileBuffers', 'setBuffers', 'setFocus', 'setMode', 'setSidebarWidth', 'setTree', 'syncStagedSessions', 'themeList', 'writeScratch',
+      'rebindPane', 'reconcileBuffers', 'setBuffers', 'setFocus', 'setMode', 'setSidebarBootDropped', 'setSidebarWidth', 'setTree', 'syncStagedSessions', 'themeList', 'writeScratch',
     ])
     expect((injected as { hooks: { wm: unknown; scratch: unknown } }).hooks.wm).toHaveProperty('getSnapshot')
     expect((injected as { hooks: { scratch: unknown } }).hooks.scratch).toHaveProperty('getSnapshot')
@@ -167,6 +167,27 @@ describe('ui-layout client apply', () => {
     const theme = ctx.get('theme') as ThemeRuntime
     theme.setTheme('dark')
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBeNull()
+  })
+
+  it('a persisted built-in preference wins the Aqua boot default restored before the section loads', async () => {
+    // Boot race: the shell restores Aqua while the durable read is in flight;
+    // when the loaded section names dark, the boot default yields and the
+    // presenter applies it — splash dark must not decay into a light app.
+    const { ctx, host } = await bench()
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    expect(document.body.getAttribute('data-ds-theme')).toBe('macos')
+    host.publish({
+      status: 'ready',
+      value: { preference: 'dark', monoFont: 'monaco', monoSize: 15, uiFamily: 'system', uiSize: 14, chatSize: 16, termSize: 13 },
+      revision: 1,
+      writable: true,
+    })
+    const theme = ctx.get('theme') as ThemeRuntime
+    expect(theme.getTheme().preference).toBe('dark')
+    expect(document.body.getAttribute('data-ds-theme')).toBe('dark')
+    expect(document.body.hasAttribute('data-ds-dark-theme')).toBe(true)
+    await fiber.dispose()
   })
 
   it('teardown unwinds the service, the root registration, and the child declarations', async () => {

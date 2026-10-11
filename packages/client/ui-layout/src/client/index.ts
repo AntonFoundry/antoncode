@@ -261,6 +261,7 @@ export function apply(ctx: ClientContext): void {
         return {
           hooks: { wm, scratch },
           setTree: (tree: Parameters<typeof wm.actions.setTree>[0]) => { wm.actions.setTree(tree) },
+          setSidebarBootDropped: (dropped: boolean) => { wm.actions.setSidebarBootDropped(dropped) },
           setFocus: (leafId: string | undefined) => { wm.actions.setFocus(leafId) },
           setBuffers: (buffers: Parameters<typeof wm.actions.setBuffers>[0]) => { wm.actions.setBuffers(buffers) },
           setMode: (mode: Parameters<typeof actions.setMode>[0]) => { actions.setMode(mode) },

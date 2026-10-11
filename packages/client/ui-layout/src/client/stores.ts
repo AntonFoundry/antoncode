@@ -120,6 +120,15 @@ export type WmState = {
   buffers: WmBuffer[]
   /** The pre-expand tree, present while a pane is expanded to full (restore target). */
   preExpandTree: WmNode | undefined
+  /**
+   * Whether the sidebar leaf's current absence was caused by the
+   * narrow-viewport boot auto-drop. The whole tree persists on every write,
+   * so the drop's removal persists too and a reload boots from a
+   * sidebar-less tree; only the drop sets this (deliberate user closes never
+   * do), and every sidebar attach clears it — WmFrame re-attaches on widen
+   * when this is true.
+   */
+  sidebarBootDropped: boolean
 }
 
 /**
@@ -135,6 +144,8 @@ export type WmActions = {
   beginExpand: (draft: WmState, expanded: WmNode) => void
   /** Leave expanded mode: hand back the stashed pre-expand tree. */
   endExpand: (draft: WmState) => void
+  /** Record whether the sidebar leaf's absence is a deliberate user close. */
+  setSidebarBootDropped: (draft: WmState, dropped: boolean) => void
 }
 
 /**
@@ -150,7 +161,8 @@ export function createWmStore(): EngineStoreHandle<WmState, WmActions> {
     // focusedLeafId is a runtime cursor: undefined seeds "first leaf of the
     // loaded tree" (WmFrame normalizes), and stale persisted values are
     // normalized away the same way.
-    init: (): WmState => ({ tree: defaultTree(), focusedLeafId: undefined, buffers: [...SINGLETONS], preExpandTree: undefined }),
+    init: (): WmState => ({ tree: defaultTree(), focusedLeafId: undefined, buffers: [...SINGLETONS],
+      preExpandTree: undefined, sidebarBootDropped: false }),
     actions: {
       setTree: (d, tree: WmNode) => { d.tree = tree },
       setFocus: (d, leafId: string | undefined) => { d.focusedLeafId = leafId },
@@ -167,6 +179,7 @@ export function createWmStore(): EngineStoreHandle<WmState, WmActions> {
         if (d.preExpandTree !== undefined) { d.tree = d.preExpandTree; d.preExpandTree = undefined }
         d.focusedLeafId = undefined
       },
+      setSidebarBootDropped: (d, dropped: boolean) => { d.sidebarBootDropped = dropped },
     },
     persist: 'dsh.layout.wm',
   })

@@ -22,7 +22,9 @@ function fakePanels(): PanelActions {
 }
 
 /** A mutable in-memory wm store fake: snapshots read the same object. */
-function fakeWm(): WmTreeSource & { state: { tree: WmNode; buffers: WmBuffer[]; focusedLeafId: string | undefined } } {
+function fakeWm(): WmTreeSource & {
+  state: { tree: WmNode; buffers: WmBuffer[]; focusedLeafId: string | undefined; sidebarBootDropped?: boolean }
+} {
   const state = {
     tree: { kind: 'leaf', id: 'conversation', buffer: 'buffer:session' } as WmNode,
     buffers: [{ id: 'buffer:session', kind: 'session' }] as WmBuffer[],
@@ -35,6 +37,7 @@ function fakeWm(): WmTreeSource & { state: { tree: WmNode; buffers: WmBuffer[]; 
       setTree: (tree) => { state.tree = tree },
       setBuffers: (buffers) => { state.buffers = [...buffers] },
       setFocus: (leafId) => { state.focusedLeafId = leafId },
+      setSidebarBootDropped: (closed) => { state.sidebarBootDropped = closed },
     },
   }
 }
@@ -106,6 +109,17 @@ describe('LayoutController', () => {
     const before = { ...wm.state }
 
     expect(service.openFile('asset.pdf')).toBe(false)
+    expect(wm.state).toEqual(before)
+  })
+
+  it('openFile reports unhandled for directory-ish paths so they fall through to the Host open', () => {
+    const service = new LayoutController()
+    const wm = fakeWm()
+    service.attachWm(wm)
+    const before = { ...wm.state }
+
+    expect(service.openFile('.')).toBe(false)
+    expect(service.openFile('src/')).toBe(false)
     expect(wm.state).toEqual(before)
   })
 

@@ -90,6 +90,8 @@ export interface WmFrameInjected {
   useScratch: SnapshotSelectorHook<ScratchState>
   /** Write a transformed tree. */
   setTree: (tree: WmNode) => void
+  /** Record whether the sidebar leaf's absence came from the narrow auto-drop (persisted with the tree). */
+  setSidebarBootDropped: (dropped: boolean) => void
   /** Move the focus cursor (undefined = first leaf). */
   setFocus: (leafId: string | undefined) => void
   /** Write the buffer registry. */
@@ -796,6 +798,7 @@ export function WmFrame({
   useWm,
   useScratch,
   setTree,
+  setSidebarBootDropped,
   setFocus,
   setSidebarWidth,
   themeList,
@@ -974,36 +977,44 @@ export function WmFrame({
   }, [detailsSession, writeTree])
 
   // Narrow viewports drop the sidebar leaf entirely (simplified port of the
-  // AppFrame auto-collapse); re-widening restores it ONLY when the tree this
-  // page loaded with had it — a persisted tree without the sidebar stays
-  // closed (the user closed it).
+  // AppFrame auto-collapse). The drop persists with the tree (whole-state
+  // persistence), so a reload under a transient narrow viewport boots from a
+  // sidebar-less tree. The persisted sidebarBootDropped marker marks that
+  // boot drop — only the drop sets it, every attach clears it — so
+  // re-widening re-attaches a boot-dropped (or mount-present) sidebar while
+  // a deliberate user close stays closed.
+  const sidebarBootDropped = wmSnapshot.sidebarBootDropped === true
   const first = useRef<{ hadSidebar: boolean } | null>(null)
   useLayoutEffect(() => {
     // Heal a loaded tree: renormalize drifted weights. Nothing else — the
     // persisted tree IS the layout (windows are views; a buffer shown in
     // several windows is legitimate and reloads as arranged). An effect, not
     // a render-body write: the store update must land after paint commitment.
+    // Once per mount: the loaded tree is the heal subject.
     const healed = normalizeTree(treeRef.current)
     if (healed !== treeRef.current) setTree(healed)
     first.current = { hadSidebar: findLeaf(treeRef.current, WM_LEAF_SIDEBAR) !== undefined }
-    // Once per mount: the loaded tree is the heal subject.
   }, [])
   useEffect(() => {
     const t = treeRef.current
-    const mounted = first.current
     const has = findLeaf(t, WM_LEAF_SIDEBAR) !== undefined
     if (viewport < SIDEBAR_NARROW && has) {
+      // The drop is the one sidebar removal that poisons the persisted
+      // baseline: mark it so a reload can still heal.
       writeTree(removeLeaf(t, WM_LEAF_SIDEBAR))
-    } else if (viewport >= SIDEBAR_NARROW && !has && mounted?.hadSidebar === true) {
+      setSidebarBootDropped(true)
+    } else if (viewport >= SIDEBAR_NARROW && !has && (sidebarBootDropped || first.current?.hadSidebar === true)) {
       const anchor = firstLeafId(t)
       if (anchor !== undefined) {
         // The re-attached sidebar takes its preferred share, not half the
         // anchor (normalizeTree guarantees the sum).
         writeTree(splitLeaf(t, anchor, 'row', 'sidebar', WM_LEAF_SIDEBAR, 'before', [SIDEBAR_REATTACH_WEIGHT, 1 - SIDEBAR_REATTACH_WEIGHT]))
+        setSidebarBootDropped(false)
       }
     }
-    // Runs on viewport transitions; tree is read through the mirror.
-  }, [viewport, writeTree])
+    // Runs on viewport transitions and boot-drop marker changes; the tree is
+    // read through the mirror.
+  }, [viewport, writeTree, sidebarBootDropped, setSidebarBootDropped])
 
   // Track the frame's own box (not the window): rAF-throttled ResizeObserver.
   useEffect(() => {
@@ -1224,12 +1235,17 @@ export function WmFrame({
   const onBrandToggle = useCallback(() => {
     const t = treeRef.current
     if (findLeaf(t, WM_LEAF_SIDEBAR) !== undefined) {
+      // Deliberate close: leaves the boot-drop marker untouched (a close
+      // must stay closed on widen).
       writeTree(removeLeaf(t, WM_LEAF_SIDEBAR))
       return
     }
     const anchor = firstLeafId(t)
-    if (anchor !== undefined) writeTree(splitLeaf(t, anchor, 'row', 'sidebar', WM_LEAF_SIDEBAR, 'before'))
-  }, [writeTree])
+    if (anchor !== undefined) {
+      writeTree(splitLeaf(t, anchor, 'row', 'sidebar', WM_LEAF_SIDEBAR, 'before'))
+      setSidebarBootDropped(false)
+    }
+  }, [writeTree, setSidebarBootDropped])
 
   // Sidebar selection = switch-to-buffer in the FOCUSED window (Emacs
   // semantics): when the global current session changes, the focused chat

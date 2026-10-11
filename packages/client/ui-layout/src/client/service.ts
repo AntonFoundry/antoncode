@@ -38,6 +38,8 @@ export interface WmTreeSource {
     setTree: (tree: WmNode) => void
     setBuffers: (buffers: WmBuffer[]) => void
     setFocus: (leafId: string) => void
+    /** Record whether the sidebar leaf's absence came from the narrow auto-drop (persisted). */
+    setSidebarBootDropped: (dropped: boolean) => void
   }
 }
 
@@ -116,12 +118,16 @@ export class LayoutController implements ILayout {
     if (this.#wm !== undefined) {
       const { tree } = this.#wm.getSnapshot()
       if (findLeaf(tree, WM_LEAF_SIDEBAR) !== undefined) {
+        // Deliberate close: leaves the boot-drop marker untouched (a close
+        // must stay closed on widen; the narrow auto-drop is the only writer
+        // of the marker's true state).
         this.#write(t => removeLeaf(t, WM_LEAF_SIDEBAR))
       } else {
         const anchor = firstLeafId(tree)
         // The re-attached sidebar takes its preferred share, not half the anchor.
         if (anchor !== undefined) {
           this.#write(t => splitLeaf(t, anchor, 'row', 'sidebar', WM_LEAF_SIDEBAR, 'before', [SIDEBAR_REATTACH_WEIGHT, 1 - SIDEBAR_REATTACH_WEIGHT]))
+          this.#wm.actions.setSidebarBootDropped(false)
         }
       }
       return
