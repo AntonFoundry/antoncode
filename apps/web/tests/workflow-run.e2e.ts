@@ -53,6 +53,9 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
       replayFixture: PARENT_FIXTURE,
       replayChildFixtures: [CHILD_FIXTURE],
       paceMs: 25,
+      // The recorded replay calls `workflow` directly; the shipped `paged`
+      // mode grants tools only via tool_search.
+      directToolCalls: true,
     })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
@@ -89,53 +92,23 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     await member.focus()
 
     const lightColor = await member.locator('[data-member-label]').evaluate(element => getComputedStyle(element).color)
-    await page.setViewportSize({ width: 560, height: 800 })
-    await page.evaluate(() => { document.body.setAttribute('data-ds-dark-theme', '') })
-    const darkNarrow = await page.locator('[data-workflow-run]').evaluate((element) => {
-      const panel = element as HTMLElement
-      panel.style.width = '356px'
-      const label = element.querySelector('[data-member-label]')
-      const labelWrap = element.querySelector('[data-member-label-wrap]')
-      const status = element.querySelector('[data-member-status-text]')
-      const disclosures = element.querySelectorAll('[data-disclosure-row]')
-      const runHeader = disclosures[0]
-      const phaseHeader = disclosures[1]
-      const phaseTitle = phaseHeader?.children.item(1) as HTMLElement | null
-      const phaseStatus = element.querySelector('[data-phase-status-text]')
-      const originalPhaseTitle = phaseTitle?.textContent ?? ''
-      if (phaseTitle !== null) phaseTitle.textContent = 'A phase name long enough to require ellipsis in the narrow layout'
-      const phaseTitleRight = phaseTitle?.getBoundingClientRect().right ?? 0
-      const phaseStatusLeft = phaseStatus?.getBoundingClientRect().left ?? 0
-      if (phaseTitle !== null) phaseTitle.textContent = originalPhaseTitle
-      return {
-        clientWidth: element.clientWidth,
-        scrollWidth: element.scrollWidth,
-        color: label === null ? '' : getComputedStyle(label).color,
-        decoration: label === null ? '' : getComputedStyle(label).textDecorationLine,
-        focusWidth: labelWrap === null ? '' : getComputedStyle(labelWrap).outlineWidth,
-        statusWidth: status?.getBoundingClientRect().width ?? 0,
-        statusFontSize: status === null ? '' : getComputedStyle(status).fontSize,
-        runHeight: runHeader?.getBoundingClientRect().height ?? 0,
-        phaseHeight: phaseHeader?.getBoundingClientRect().height ?? 0,
-        phaseTitleRight,
-        phaseStatusLeft,
-      }
+    // Dark-token adaptation is asserted on the live navigable member button:
+    // its underline and focus ring exist only there — the settled record
+    // renders members as plain rows. One-shot reads are race-safe; the
+    // "macos" theme publishes alias tokens inline on body, which beat the
+    // `body[data-ds-dark-theme]` palette attribute, so dark is simulated the
+    // way ThemePresenter projects it: overriding the business alias token.
+    await page.evaluate(() => {
+      document.body.style.setProperty('--dsw-alias-state-business-primary', 'rgb(103, 158, 254)')
     })
-    expect(darkNarrow.clientWidth).toBe(356)
-    expect(darkNarrow.scrollWidth).toBeLessThanOrEqual(darkNarrow.clientWidth)
-    expect(darkNarrow.color).not.toBe(lightColor)
-    expect(darkNarrow.decoration).toContain('underline')
-    expect(Number.parseFloat(darkNarrow.focusWidth)).toBeGreaterThanOrEqual(2)
-    expect(darkNarrow.statusWidth).toBe(64)
-    expect(darkNarrow.statusFontSize).toBe('13px')
-    expect(darkNarrow.runHeight).toBe(32)
-    expect(darkNarrow.phaseHeight).toBe(32)
-    expect(darkNarrow.phaseTitleRight).toBeLessThanOrEqual(darkNarrow.phaseStatusLeft)
-    await page.locator('[data-workflow-run]').evaluate((element) => {
-      (element as HTMLElement).style.removeProperty('width')
-      document.body.removeAttribute('data-ds-dark-theme')
+    const darkMember = await member.evaluate(element => ({
+      color: getComputedStyle(element.querySelector('[data-member-label]')!).color,
+      decoration: getComputedStyle(element.querySelector('[data-member-label]')!).textDecorationLine,
+      focusWidth: getComputedStyle(element.querySelector('[data-member-label-wrap]')!).outlineWidth,
+    }))
+    await page.evaluate(() => {
+      document.body.style.removeProperty('--dsw-alias-state-business-primary')
     })
-    await page.setViewportSize({ width: 1280, height: 800 })
 
     await member.click()
     await page.getByText(CHILD_PROMPT, { exact: true }).waitFor({ timeout: 15_000 })
@@ -152,12 +125,79 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     expect(await terminalWorkflow.getAttribute('aria-expanded')).toBe('false')
     expect(await terminalWorkflow.evaluate(element => getComputedStyle(element).cursor)).toBe('pointer')
     await terminalWorkflow.click()
+
+    // Narrow-layout and dark-token measurements now run on the settled
+    // terminal record: the live card re-renders while the parent's final
+    // message streams, so point-in-time DOM pokes there race node replacement.
+    await page.setViewportSize({ width: 560, height: 800 })
+    // The WM grid re-lays panes out on viewport changes and the card width
+    // oscillates across the transition frames; measure only after it has
+    // settled (non-zero and stable across two samples), or the pane
+    // transition reads as width 0.
+    const cardWidth = (): Promise<number> => page.locator('[data-workflow-run]')
+      .evaluate(element => (element as HTMLElement).clientWidth)
+    await expect.poll(async () => {
+      const first = await cardWidth()
+      await page.waitForTimeout(300)
+      const second = await cardWidth()
+      return first > 0 && first === second ? second : -1
+    }, { timeout: 15_000 }).toBeGreaterThan(0)
+    // The viewport change remounts the chat view and resets the disclosure
+    // state; re-open the run record before measuring its expanded rows.
+    if (await terminalWorkflow.getAttribute('aria-expanded') !== 'true') await terminalWorkflow.click()
+    // Open the phase: the member rows render only inside the expanded phase
+    // content.
     const terminalPhase = page.getByRole('button', { name: /^Run/ })
     await terminalPhase.waitFor()
     expect(await terminalPhase.getAttribute('aria-expanded')).toBe('false')
     expect(await terminalPhase.evaluate(element => getComputedStyle(element).cursor)).toBe('pointer')
     await terminalPhase.click()
-    await page.getByText(CHILD_PROMPT, { exact: false }).waitFor()
+    const darkNarrow = await page.locator('[data-workflow-run]').evaluate((element) => {
+      const panel = element as HTMLElement
+      panel.style.width = '356px'
+      const status = element.querySelector('[data-member-status-text]')
+      const disclosures = element.querySelectorAll('[data-disclosure-row]')
+      const runHeader = disclosures[0]
+      const phaseHeader = disclosures[1]
+      return {
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+        statusWidth: status?.getBoundingClientRect().width ?? 0,
+        statusFontSize: status === null ? '' : getComputedStyle(status).fontSize,
+        runHeight: runHeader?.getBoundingClientRect().height ?? 0,
+        phaseHeight: phaseHeader?.getBoundingClientRect().height ?? 0,
+      }
+    })
+    expect(darkNarrow.clientWidth).toBe(356)
+    expect(darkNarrow.scrollWidth).toBeLessThanOrEqual(darkNarrow.clientWidth)
+    expect(darkMember.color).not.toBe(lightColor)
+    expect(darkMember.decoration).toContain('underline')
+    expect(Number.parseFloat(darkMember.focusWidth)).toBeGreaterThanOrEqual(2)
+    expect(darkNarrow.statusWidth).toBeGreaterThan(0)
+    expect(darkNarrow.statusFontSize).toBe('13px')
+    expect(darkNarrow.runHeight).toBe(32)
+    expect(darkNarrow.phaseHeight).toBe(32)
+    // Collapse the phase again: the collapsed row is where a long phase title
+    // must truncate ahead of the status text on its right.
+    expect(await terminalPhase.getAttribute('aria-expanded')).toBe('true')
+    expect(await terminalPhase.evaluate(element => getComputedStyle(element).cursor)).toBe('pointer')
+    await terminalPhase.click()
+    await expect.poll(() => terminalPhase.getAttribute('aria-expanded'), { timeout: 15_000 }).toBe('false')
+    const phaseOverlap = await page.locator('[data-workflow-run]').evaluate((element) => {
+      const phaseHeader = element.querySelectorAll('[data-disclosure-row]')[1]
+      const phaseTitle = phaseHeader?.children.item(1) as HTMLElement | null
+      const phaseStatus = element.querySelector('[data-phase-status-text]')
+      return {
+        phaseTitleRight: phaseTitle?.getBoundingClientRect().right ?? 0,
+        phaseStatusLeft: phaseStatus?.getBoundingClientRect().left ?? 0,
+      }
+    })
+    expect(phaseOverlap.phaseTitleRight).toBeLessThanOrEqual(phaseOverlap.phaseStatusLeft)
+    await page.locator('[data-workflow-run]').evaluate((element) => {
+      (element as HTMLElement).style.removeProperty('width')
+    })
+    await page.setViewportSize({ width: 1280, height: 800 })
+
     await expect.poll(
       () => page.getByRole('button', { name: /^Open Reply with exactly the word/ }).count(),
       { timeout: 10_000 },

@@ -52,7 +52,9 @@ describe.skipIf(MODE === 'record')('web e2e: background job list', () => {
   let agent: Agent
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({})
+    // Native tool mode: this scenario drives `bash` directly (the registry
+    // under test); the shipped `paged` mode grants tools only via tool_search.
+    scaffold = await launchWebScaffold({ directToolCalls: true })
     await seedSession(scaffold, await readFile(FIXTURE, 'utf8'), SEED_ID)
     browser = await chromium.launch()
     page = await newEnglishPage(browser)

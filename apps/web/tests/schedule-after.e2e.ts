@@ -213,7 +213,9 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
   const everyAdapter = new EveryReminderAdapter()
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAY })
+    // Native tool mode: the harness calls `schedule_create` directly; the
+    // shipped `paged` mode grants tools only via tool_search.
+    scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAY, directToolCalls: true })
     scaffold.ctx.effect(
       () => scaffold.ctx.llm.registerAdapter([AFTER_PROVIDER], afterAdapter),
       'Schedule Web After adapter',

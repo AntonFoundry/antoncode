@@ -1,3 +1,14 @@
+- text: Chat · event-sourcing researcher
+- button "Split below"
+- button "Split right"
+- button "Tidy panes"
+- button "Move pane left"
+- button "Move pane right"
+- button "Move pane up"
+- button "Move pane down"
+- button "Expand pane"
+- button "Close":
+  - img
 - banner:
   - navigation "Session hierarchy":
     - button "Ask a research subagent to"
@@ -8,11 +19,16 @@
   - button "Session log":
     - text: Session log
     - img
+  - button "展开全部工具卡片"
   - tablist:
     - tab "Chat" [selected]
+    - tab "Orchestrator"
+    - tab "Workflows"
     - tab "Trajectory"
 - text: Explain event sourcing in one sentence. {{clock}}
 - button "Copy":
+  - img
+- button "More actions":
   - img
 - button "Context injection @deepseek-ai/dsh-system-prompt":
   - img
@@ -24,5 +40,6 @@
 - button "Commands" [disabled]:
   - img
 - 'button "Access mode, current: Custom" [disabled]': Custom
+- 'button "Workspace mode, current: Current checkout"': Current checkout
 - button "Stop generating"
 - button "Send message" [disabled]

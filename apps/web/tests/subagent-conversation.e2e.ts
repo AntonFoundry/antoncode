@@ -375,7 +375,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
 
   it('matches the settled addressed-conversation aria golden and stays clean', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-subagent-aria'))
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(AVAILABLE_CHILD_EXPECTED, snapshot, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
@@ -418,7 +418,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     expect(scaffold.ctx.agents.get(grandchildId)).toBeUndefined()
     await compareOrRefreshGolden(
       UNAVAILABLE_GRANDCHILD_EXPECTED,
-      await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd),
+      await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd),
       MODE,
     )
   })

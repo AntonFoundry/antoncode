@@ -72,8 +72,10 @@ describe('web e2e: mid-turn steering lands durably and visibly', () => {
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold(MODE === 'record'
-      ? {}
-      : { replayFixture: FIXTURE, paceMs: REPLAY_PACE_MS })
+      ? { directToolCalls: true }
+      // Native tool mode: the replay calls `ask_user_question` directly; the
+      // shipped `paged` mode grants tools only via tool_search.
+      : { replayFixture: FIXTURE, paceMs: REPLAY_PACE_MS, directToolCalls: true })
     scaffold.ctx.on('session/event', (_session, event) => { sessionEvents.push(event) })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
@@ -126,7 +128,7 @@ describe('web e2e: mid-turn steering lands durably and visibly', () => {
       expect(await page.getByText(STEER, { exact: true }).count()).toBe(1)
       expect(await pendingSteering.count()).toBe(1)
       expect(await page.getByRole('button', { name: 'Edit queued message' }).count()).toBe(0)
-      const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+      const snapshot = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
       await compareOrRefreshGolden(MID_EXPECTED, snapshot, MODE)
     }
 
@@ -164,7 +166,7 @@ describe('web e2e: mid-turn steering lands durably and visibly', () => {
     expect(await page.locator('[data-question-key]').count()).toBe(0)
     // Settled golden: steer text between the question round trip and the
     // obeying reply, composer takeover gone.
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(SETTLED_EXPECTED, snapshot, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
@@ -183,7 +185,13 @@ describe('web e2e: composer shortcut steers directly', () => {
   const sessionEvents: SessionEvent[] = []
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ replayFixture: FIXTURE, paceMs: REPLAY_PACE_MS })
+    scaffold = await launchWebScaffold({
+      replayFixture: FIXTURE,
+      paceMs: REPLAY_PACE_MS,
+      // The replay calls `ask_user_question` directly; the shipped `paged`
+      // mode grants tools only via tool_search.
+      directToolCalls: true,
+    })
     scaffold.ctx.on('session/event', (_session, event) => { sessionEvents.push(event) })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
@@ -240,7 +248,13 @@ describe('web e2e: composer shortcut follows the swapped busy behavior', () => {
   const sessionEvents: SessionEvent[] = []
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ replayFixture: FIXTURE, paceMs: REPLAY_PACE_MS })
+    scaffold = await launchWebScaffold({
+      replayFixture: FIXTURE,
+      paceMs: REPLAY_PACE_MS,
+      // The replay calls `ask_user_question` directly; the shipped `paged`
+      // mode grants tools only via tool_search.
+      directToolCalls: true,
+    })
     scaffold.ctx.on('session/event', (_session, event) => { sessionEvents.push(event) })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
@@ -306,6 +320,9 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
       replayFixture: STEER_ALL_FIXTURE,
       replayOverride: STEER_ALL_OVERRIDE,
       paceMs: REPLAY_PACE_MS,
+      // The override script calls `ask_user_question` directly; the shipped
+      // `paged` mode grants tools only via tool_search.
+      directToolCalls: true,
     })
     scaffold.ctx.on('session/event', (_session, event) => { sessionEvents.push(event) })
     browser = await chromium.launch()
@@ -358,7 +375,7 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
     // for the block to settle so the mid snapshot does not race its transient
     // visually-hidden Running label while the question keeps the turn open.
     await page.locator('[data-variant="think"][data-state="ok"]').first().waitFor({ timeout: 10_000 })
-    const mid = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const mid = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(STEER_ALL_MID, mid, MODE)
 
     // Answer the question; the step closes, the loop drains both steerings
@@ -378,7 +395,7 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
     await expect.poll(() => page.getByText(STEER_ONE, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
     await expect.poll(() => page.getByText(STEER_TWO, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
     expect(await page.locator('[data-pending-steering]').count()).toBe(0)
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(STEER_ALL_SETTLED, snapshot, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])

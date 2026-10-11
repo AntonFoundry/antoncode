@@ -212,7 +212,7 @@ describe.skipIf(MODE === 'record')('web e2e: composer interrupt for a running co
       expect(await send.isDisabled()).toBe(true)
       await compareOrRefreshGolden(
         OFFLINE_COMPOSER_EXPECTED,
-        await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd),
+        await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd),
         MODE,
       )
 
