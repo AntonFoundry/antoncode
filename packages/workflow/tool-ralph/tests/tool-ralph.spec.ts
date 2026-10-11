@@ -231,11 +231,12 @@ describe('dsh-tool-ralph', () => {
     expect((firstResult.content[0] as { text: string }).text).toContain('No previous handoff was available.')
 
     const later = execute(ctx, { objective: 'Ship it.', maxRounds: 2 }, { agent: parent })
-    const laterResult = await settleCompleted(engine, later, {
-      status: 'round-failed',
-      roundsStarted: 2,
-      lastReport: CONTINUE,
-    })
+    // Wait for THIS run's registration: the stub's settle resolver points at
+    // the newest start, so a settle based on the >0 predicate would re-resolve
+    // the already-settled first run and hang the second.
+    await vi.waitFor(() => { expect(engine.requests).toHaveLength(2) })
+    engine.settle({ value: { status: 'round-failed', roundsStarted: 2, lastReport: CONTINUE }, stopReason: 'completed', agentsStarted: 1 })
+    const laterResult = await later
     expect(laterResult.isError).toBe(true)
     expect((laterResult.content[0] as { text: string }).text).toContain('Ralph round 2 child failed')
     expect((laterResult.content[0] as { text: string }).text).toContain('Implemented the first slice.')
