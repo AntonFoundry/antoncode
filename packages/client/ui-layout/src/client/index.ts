@@ -391,8 +391,12 @@ export function apply(ctx: ClientContext): void {
       // Light/Dark selection persists through the theme service and suppresses
       // this on later boots; System returns to the Aqua default. Not persisted
       // here — an explicit load-theme choice remains the only sticky palette.
+      // Restored as the boot default, not a user choice: the durable read is
+      // usually still in flight at this point, and a persisted dark/light
+      // preference must win the race instead of being blocked behind the
+      // palette for the session.
       const aqua = ctx.theme.getTheme().active.colorScheme === 'dark' ? 'macos-dark' : 'macos'
-      try { ctx.theme.setTheme(aqua) } catch { /* a race with registration is not user-facing */ }
+      try { ctx.theme.restoreBootDefault(aqua) } catch { /* a race with registration is not user-facing */ }
     }
     presenter.apply(ctx.theme.getTheme())
     const off = ctx.on('theme/change', (snapshot) => {

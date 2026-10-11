@@ -162,10 +162,18 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
     let response: Awaited<ReturnType<SettingsFace['settings']['describe']>>
     try {
       response = await this.api.settings.describe({})
-    } catch (_settingsReadFailure) {
+    } catch (error) {
+      // Loud: a describe failure leaves the scope unready and every durable
+      // preference unadopted (splash-vs-app divergence is the visible
+      // symptom). The connection/reset retry is the only recovery path.
+      console.error(`[ui-settings] settings describe failed; "${this.spec.namespace}" stays unready until the next invalidation`, error)
       return
     }
-    if (!response.result.ok || this.disposed) return
+    if (this.disposed) return
+    if (!response.result.ok) {
+      console.error(`[ui-settings] settings describe rejected: ${response.result.error.code}: ${response.result.error.message}`)
+      return
+    }
     const { namespaces, writable } = response.result.value
     const view = namespaces.find(candidate => candidate.ns === this.spec.namespace)
     const publish = generation === this.readGeneration
@@ -202,10 +210,15 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
     let failure: string | undefined
     try {
       failure = validateDraft(rehydrateSchema(view.schema), view.value)
-    } catch (_malformedSchemaEnvelope) {
+    } catch (error) {
       // A schema envelope this client cannot rehydrate vouches for no section;
-      // the value is treated exactly like a schema-invalid one.
+      // the value is treated exactly like a schema-invalid one — loudly, so a
+      // wire/envelope regression is diagnosable instead of a dead preference.
+      console.error(`[ui-settings] schema envelope for "${this.spec.namespace}" failed to rehydrate; section treated as invalid`, error)
       return undefined
+    }
+    if (failure !== undefined) {
+      console.error(`[ui-settings] section "${this.spec.namespace}" failed schema validation: ${failure}`)
     }
     return failure === undefined ? view.value as T : undefined
   }

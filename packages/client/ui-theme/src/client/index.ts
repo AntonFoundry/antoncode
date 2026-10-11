@@ -189,6 +189,8 @@ export class ThemeRuntime {
   /** Override layers by source; seq (monotonic) is the stacking order. */
   private readonly overrides = new Map<string, { seq: number; tokens: ThemeTokenOverrides }>()
   private overrideSeq = 0
+  /** Whether the active palette is the presentation boot default (see {@link restoreBootDefault}). */
+  private bootDefault = false
 
   /**
    * @param ctx - owning context (change events are emitted on it; the
@@ -247,17 +249,41 @@ export class ThemeRuntime {
   /**
    * Switch the theme preference — the only user preference write entry.
    * Built-in preferences are written through the settings scope and every
-   * accepted value emits `theme/change`.
+   * accepted value emits `theme/change`. Clears the boot-default marker: an
+   * explicit choice is a user palette, protected from scope adoption.
    * @param id - a registered theme id or `system`; unknown ids throw.
    */
   setTheme(id: string): void {
+    this.bootDefault = false
+    if (!this.activate(id)) return
+    if (isThemePreference(id)) void this.host.set(THEME_PREFERENCE_FIELD, id)
+  }
+
+  /**
+   * Apply a registered theme as the boot default palette: the presentation
+   * fallback (the Aqua look) applied while the durable preference read was
+   * still in flight. Unlike a {@link setTheme} palette it yields to the first
+   * durable light/dark choice the scope publishes, so a Host-backed selection
+   * wins the boot race instead of being blocked for the whole session.
+   * @param id - a registered theme id; unknown ids throw.
+   */
+  restoreBootDefault(id: string): void {
+    this.bootDefault = true
+    this.activate(id)
+  }
+
+  /**
+   * Shared validation and publish path for both preference write entries.
+   * @returns whether the preference actually changed (same-value calls are no-ops).
+   */
+  private activate(id: string): boolean {
     if (id !== 'system' && !this.themes.some(t => t.id === id)) {
       throw new Error(`theme "${id}" is not registered`)
     }
-    if (this.preference === id) return
+    if (this.preference === id) return false
     this.preference = id as ThemePreference
-    if (isThemePreference(id)) void this.host.set(THEME_PREFERENCE_FIELD, id)
     this.publish()
+    return true
   }
 
   /**
@@ -265,12 +291,21 @@ export class ThemeRuntime {
    * The durable section models only the built-in preferences, so it never
    * demotes an active registered palette (an explicit load-theme choice that
    * rides over the stored built-in until released by an explicit built-in
-   * setTheme or by the palette's registration disposer).
+   * setTheme or by the palette's registration disposer). The one exception is
+   * the presentation boot default: a palette applied by the shell while the
+   * durable read was still in flight yields to an explicit durable
+   * light/dark choice, so the persisted preference wins the boot race; a
+   * durable `system` agrees with the boot default's follow-the-OS role and
+   * keeps the palette.
    */
   private adopt(): void {
-    if (!isThemePreference(this.preference)) return
     const section = this.host.getSnapshot().value
     if (section === undefined || this.preference === section.preference) return
+    if (!isThemePreference(this.preference)) {
+      if (!this.bootDefault) return
+      if (section.preference === 'system') return
+      this.bootDefault = false
+    }
     this.preference = section.preference
     this.publish()
   }

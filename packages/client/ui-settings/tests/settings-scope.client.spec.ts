@@ -99,7 +99,8 @@ describe('SettingsScopeController', () => {
     expect(good).toEqual([undefined, { preference: 'dark' }])
   })
 
-  it('treats a schema envelope it cannot rehydrate as vouching for no section', async () => {
+  it('treats a schema envelope it cannot rehydrate as vouching for no section, loudly', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const broken = { ...view({ preference: 'dark' }, 2), schema: null }
     const describeCall = vi.fn()
       .mockResolvedValueOnce(ok({ writable: true, hasDocument: true, namespaces: [broken] }))
@@ -109,6 +110,41 @@ describe('SettingsScopeController', () => {
     )
     await scope.load()
     expect(scope.getSnapshot()).toMatchObject({ status: 'loading', value: undefined, revision: 2 })
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('failed to rehydrate'), expect.anything())
+    errorSpy.mockRestore()
+  })
+
+  it('fails loud on a describe transport failure and recovers on the next load', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const describeCall = vi.fn()
+      .mockRejectedValueOnce(new Error('transport not ready'))
+      .mockResolvedValueOnce(described({ preference: 'dark' }, 2))
+    const scope = new SettingsScopeController<UiTestSettings>(
+      { settings: { describe: describeCall } } as never,
+      { namespace: 'ui-test' },
+    )
+    await scope.load()
+    // The scope stays honestly unready — a silent dead read is what left
+    // durable preferences unadopted on boot.
+    expect(scope.getSnapshot()).toMatchObject({ status: 'loading', value: undefined })
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"ui-test" stays unready'), expect.any(Error))
+    await scope.load()
+    expect(scope.getSnapshot()).toMatchObject({ status: 'ready', value: { preference: 'dark' } })
+    errorSpy.mockRestore()
+  })
+
+  it('fails loud on a rejected describe result', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const describeCall = vi.fn().mockResolvedValueOnce(rejected())
+    const scope = new SettingsScopeController<UiTestSettings>(
+      { settings: { describe: describeCall } } as never,
+      { namespace: 'ui-test' },
+    )
+    await scope.load()
+    expect(scope.getSnapshot()).toMatchObject({ status: 'loading', value: undefined })
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('settings-rejected'))
+    errorSpy.mockRestore()
   })
 
   it('suppresses a superseded read of an unexposed namespace', async () => {

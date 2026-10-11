@@ -19,3 +19,7 @@ The ui-layout comment describing the wipe-on-built-in rule already assumed "the 
 **Stop deleting the stored key in ui-layout's listener.** That would keep a stale palette id across an explicit Light/Dark/System choice, resurrecting the palette on the next boot — the opposite of the wipe rule's intent. The listener is correct once no spurious built-in publish reaches it.
 
 **Persist palette ids through the Host settings schema.** The schema deliberately carries only the three built-in preferences; palette registries are per-composition client state, and widening the wire contract for a localStorage key would couple the Host document to client-side registrations.
+
+## Partial supersession (2026-10-12)
+
+The unqualified guard blocked legitimate boot adoption: ui-layout's Aqua fallback applied a registered id through `setTheme` before the first section published, and the durable dark/light choice then could never adopt (splash dark, app light, no cube pressed). The refinement introduces `ThemeRuntime.restoreBootDefault` — the one palette kind a durable light/dark section may replace; an explicit `setTheme` palette keeps the protection this note decided. See [theme boot adoption vs the Aqua default](2026-10-12-theme-boot-adoption-vs-aqua-default.md).
