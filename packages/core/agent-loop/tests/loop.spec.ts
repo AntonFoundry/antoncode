@@ -3,11 +3,23 @@ import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, { createUserMessage, CallId, LlmError, StreamChunk  } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId, TurnEndReason } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { PLUGIN_DISCIPLINE, TOKEN_EFFICIENCY, TODO_TREE_DISCIPLINE, defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { MockAdapter, maxTokensResponse, textResponse, toolCallResponse } from './mock-adapter.ts'
+
+/**
+ * The harness-owned prompt skeleton the assembled system prompt follows: the
+ * identity opener and the standing commit-discipline section (system-prompt),
+ * then the persona slot, then the standing discipline sections the tools
+ * package registers. Composed from the exported constants so a discipline
+ * edit updates the expectation here instead of drifting four hand-copied
+ * strings.
+ */
+const COMMIT_DISCIPLINE = 'Commit discipline: when a feature or bug fix passes its narrow checks, commit it immediately with a deliberate conventional message — never wait to be asked. Do not end a turn with finished, verified work left uncommitted; survey the working tree and group unrelated pending changes into logical feature commits when found. Keep each commit atomic: one concern per commit.'
+const IDENTITY_PREFIX = `You are an AI agent powered by Anton Code.\n\n${COMMIT_DISCIPLINE}\n\n${COMMIT_DISCIPLINE}`
+const TOOL_DISCIPLINES = [TODO_TREE_DISCIPLINE, TOKEN_EFFICIENCY, PLUGIN_DISCIPLINE].join('\n\n')
 
 function driverDone(agent: Agent): Promise<void> {
   return (agent as Agent & { done: Promise<void> }).done
@@ -252,7 +264,7 @@ describe('agent loop', () => {
     await waitForIdle(ctx, agent)
 
     const request = adapter.requests[0]
-    expect(request!.system).toBe('You are an AI agent powered by DeepSeek Harness.\n\nCommit discipline: when a feature or bug fix passes its narrow checks, commit it immediately with a deliberate conventional message — never wait to be asked. Do not end a turn with finished, verified work left uncommitted; survey the working tree and group unrelated pending changes into logical feature commits when found. Keep each commit atomic: one concern per commit.\n\nYou are a test agent on mock.\n\nUse the noop tool wisely.')
+    expect(request!.system).toBe(`${IDENTITY_PREFIX}\n\nYou are a test agent on mock.\n\n${TOOL_DISCIPLINES}\n\nUse the noop tool wisely.`)
     expect(request!.tools?.map(t => t.name)).toEqual(['noop'])
   })
 
@@ -269,7 +281,7 @@ describe('agent loop', () => {
     send(agent, 'hi')
     await waitForIdle(ctx, agent)
 
-    expect(adapter.requests[0]!.system).toBe('You are an AI agent powered by DeepSeek Harness.\n\nCommit discipline: when a feature or bug fix passes its narrow checks, commit it immediately with a deliberate conventional message — never wait to be asked. Do not end a turn with finished, verified work left uncommitted; survey the working tree and group unrelated pending changes into logical feature commits when found. Keep each commit atomic: one concern per commit.\n\nWorking in /work/space.')
+    expect(adapter.requests[0]!.system).toBe(`${IDENTITY_PREFIX}\n\nWorking in /work/space.\n\n${TOOL_DISCIPLINES}`)
   })
 
   it('contains a strict-variable render failure: the turn errors, the loop keeps serving turns', async () => {
@@ -305,7 +317,7 @@ describe('agent loop', () => {
     await waitForIdle(ctx, agent)
 
     expect(adapter.requests).toHaveLength(1)
-    expect(adapter.requests[0]!.system).toBe('You are an AI agent powered by DeepSeek Harness.\n\nCommit discipline: when a feature or bug fix passes its narrow checks, commit it immediately with a deliberate conventional message — never wait to be asked. Do not end a turn with finished, verified work left uncommitted; survey the working tree and group unrelated pending changes into logical feature commits when found. Keep each commit atomic: one concern per commit.\n\nIn /rescued.')
+    expect(adapter.requests[0]!.system).toBe(`${IDENTITY_PREFIX}\n\nIn /rescued.\n\n${TOOL_DISCIPLINES}`)
     const turnEnds = agent.session.events.filter(e => e.type === 'turn/end')
     expect(turnEnds).toHaveLength(2)
     expect(turnEnds[1]?.type === 'turn/end' && turnEnds[1].data.reason.kind).toBe('completed')
@@ -335,7 +347,7 @@ describe('agent loop', () => {
 
     expect(adapter.requests).toHaveLength(1)
     expect(adapter.requests[0]!.model).toBe('mock')
-    expect(adapter.requests[0]!.system).toBe('You are an AI agent powered by DeepSeek Harness.\n\nCommit discipline: when a feature or bug fix passes its narrow checks, commit it immediately with a deliberate conventional message — never wait to be asked. Do not end a turn with finished, verified work left uncommitted; survey the working tree and group unrelated pending changes into logical feature commits when found. Keep each commit atomic: one concern per commit.\n\nYou run on mock.')
+    expect(adapter.requests[0]!.system).toBe(`${IDENTITY_PREFIX}\n\nYou run on mock.\n\n${TOOL_DISCIPLINES}`)
   })
 
   it('omits the system field when system-prompt/assemble short-circuits with an empty assembly', async () => {
