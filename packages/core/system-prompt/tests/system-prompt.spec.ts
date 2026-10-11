@@ -10,7 +10,7 @@ import SystemPrompt, { AssembleContext, PromptAssembly, renderContextSnapshot, r
  * the built-ins' behavior is pinned by its own describe.
  */
 const BUILT_IN = ['harness:identity', 'harness:commit-discipline', 'deployment:persona']
-const IDENTITY = 'You are an AI agent powered by DeepSeek Harness.\n\nCommit discipline: when a feature or bug fix passes its narrow checks, commit it immediately with a deliberate conventional message — never wait to be asked. Do not end a turn with finished, verified work left uncommitted; survey the working tree and group unrelated pending changes into logical feature commits when found. Keep each commit atomic: one concern per commit.'
+const IDENTITY = 'You are an AI agent powered by Anton Code.\n\nCommit discipline: when a feature or bug fix passes its narrow checks, commit it immediately with a deliberate conventional message — never wait to be asked. Do not end a turn with finished, verified work left uncommitted; survey the working tree and group unrelated pending changes into logical feature commits when found. Keep each commit atomic: one concern per commit.'
 // Pin verbatim: the discipline is a standing model-visible instruction whose
 // exact wording is the shipped behavior.
 const COMMIT_DISCIPLINE = 'Commit discipline: when a feature or bug fix passes its narrow checks, commit it immediately with a deliberate conventional message — never wait to be asked. Do not end a turn with finished, verified work left uncommitted; survey the working tree and group unrelated pending changes into logical feature commits when found. Keep each commit atomic: one concern per commit.'

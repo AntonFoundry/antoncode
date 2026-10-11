@@ -783,7 +783,7 @@ describe('boot', () => {
 
 describe('addHarnessSourceSection', () => {
   const SOURCE_ROOT = `${sep}opt${sep}harness-src`
-  const EXPECTED = `The DeepSeek Harness implementation checkout is at ${SOURCE_ROOT}. The checkout location and current working directory are separate values and may differ; never infer the working directory from this path. Use pwd to determine the current working directory. Use this checkout only to inspect or extend DSH itself.`
+  const EXPECTED = `The Anton Code implementation checkout is at ${SOURCE_ROOT}. The checkout location and current working directory are separate values and may differ; never infer the working directory from this path. Use pwd to determine the current working directory. Use this checkout only to inspect or extend Anton Code itself.`
 
   it('distinguishes the source path from the current workdir between identity and persona', async () => {
     const ctx = new Context()
@@ -796,7 +796,7 @@ describe('addHarnessSourceSection', () => {
       expect(rendered).toContain(EXPECTED)
       // Harness-owned opener (-100) → source (-99) → persona (0). The >= 0 guards
       // keep a drifted opener/persona string from a false pass through `-1 < n`.
-      const identityAt = rendered.indexOf('You are an AI agent powered by DeepSeek Harness.\n\nCommit discipline: when a feature or bug fix passes its narrow checks, commit it immediately with a deliberate conventional message — never wait to be asked. Do not end a turn with finished, verified work left uncommitted; survey the working tree and group unrelated pending changes into logical feature commits when found. Keep each commit atomic: one concern per commit.')
+      const identityAt = rendered.indexOf('You are an AI agent powered by Anton Code.\n\nCommit discipline: when a feature or bug fix passes its narrow checks, commit it immediately with a deliberate conventional message — never wait to be asked. Do not end a turn with finished, verified work left uncommitted; survey the working tree and group unrelated pending changes into logical feature commits when found. Keep each commit atomic: one concern per commit.')
       const sourceAt = rendered.indexOf(EXPECTED)
       const personaAt = rendered.indexOf('You are a coding agent.')
       expect(identityAt).toBeGreaterThanOrEqual(0)
