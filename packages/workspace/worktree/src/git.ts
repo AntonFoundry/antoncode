@@ -51,9 +51,11 @@ export async function runGit(repoPath: string, args: readonly string[]): Promise
     return stdout.trim()
   } catch (error: unknown) {
     const reason = error as { code?: number; stderr?: string; message?: string }
-    // Exit code 128 with "not a git repository" on rev-parse probes is the
-    // typed not-a-repository case; every other failure keeps git's words.
-    if (reason.code === 128 && args[0] === 'rev-parse' && (reason.stderr ?? '').includes('not a git repository')) {
+    // Exit code 128 with "not a git repository" is the typed
+    // not-a-repository case whatever the subcommand (rev-parse probes, and
+    // `status` polled against a plain directory); every other failure keeps
+    // git's words.
+    if (reason.code === 128 && (reason.stderr ?? '').includes('not a git repository')) {
       throw new GitNotARepositoryError(repoPath)
     }
     throw new GitCommandError(repoPath, args, reason.stderr ?? reason.message ?? String(error))

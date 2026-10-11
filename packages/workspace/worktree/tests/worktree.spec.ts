@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { worktreeStatus } from '../src/git.ts'
 import { execFile } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -199,6 +200,15 @@ describe('worktree registry', () => {
     const bare = join(root, 'not-a-repo')
     await mkdir(bare)
     await expect(registry.create(bare)).rejects.toThrow(GitNotARepositoryError)
+  })
+
+  it('types the not-a-repository failure of any probed subcommand, including the status poll', async () => {
+    const bare = join(root, 'status-not-a-repo')
+    await mkdir(bare)
+    // The worktree-status poll runs `status --porcelain --branch`, not a
+    // rev-parse probe; the typed error is what maps to the API's business
+    // error instead of a handler 500.
+    await expect(worktreeStatus(bare)).rejects.toThrow(GitNotARepositoryError)
   })
 
   it('filters list() by repository and sorts newest first across repos', async () => {
