@@ -318,17 +318,22 @@ export class PiAiAdapter extends LlmAdapter {
       const messages = stripImages
         ? options.messages.map(message => ({ ...message, content: withoutImageBlocks(message.content) }))
         : options.messages
-      const containsImage = messages.some(message => contentHasImage(message.content))
-      if (containsImage && !model.input.includes('image')) {
-        stripImages = true
-        continue
-      }
-      const attachments = containsImage ? this.config.resolveAttachments?.() : undefined
-      if (containsImage && attachments === undefined) {
-        stripImages = true
-        continue
-      }
+      // The capability scan reads message content, which can throw (lazy or
+      // hostile content getters); it runs inside the attempt's try so a
+      // pre-dispatch failure keeps the abort/failure classification contract
+      // instead of escaping the generator raw.
+      let containsImage = false
       try {
+        containsImage = messages.some(message => contentHasImage(message.content))
+        if (containsImage && !model.input.includes('image')) {
+          stripImages = true
+          continue
+        }
+        const attachments = containsImage ? this.config.resolveAttachments?.() : undefined
+        if (containsImage && attachments === undefined) {
+          stripImages = true
+          continue
+        }
         const onReplayDegrade = (reason: string): void => {
           this.config.onReplayDegrade?.({ provider: options.provider, model: options.model, reason })
         }
@@ -346,7 +351,7 @@ export class PiAiAdapter extends LlmAdapter {
           // Harness-owned and therefore win collisions.
           headers: requestHeaders(profile.headers),
         })
-        const iterator = toStreamChunks(events, model.contextWindow)[Symbol.asyncIterator]()
+        const iterator = toStreamChunks(events, model.contextWindow, options.signal)[Symbol.asyncIterator]()
         let exhausted = false
         try {
           while (true) {

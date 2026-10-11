@@ -62,15 +62,30 @@ function classifyPiAiError(message: string): string {
 }
 
 /**
- * Map a terminal pi-ai event to the harness finish reason.
+ * Map a terminal pi-ai event to the harness finish reason, honoring the
+ * caller's abort: pi-ai reports a caller abort as an error terminal whose
+ * message is the caller's own abort reason (arbitrary text, unmatchable by
+ * classification), so an aborted caller signal is the contract-level
+ * discriminator — an aborted caller is an aborted call, whatever the SDK
+ * called it.
  * @param message - the assistant message carried by the `done` or `error` event.
  * @param contextWindow - resolved catalog capacity for usage-based overflow detection.
+ * @param callerSignal - the caller's abort signal, for abort reclassification.
  * @returns the mapped harness reason. Recognized error text, `stop` usage above
  *   `contextWindow`, and zero-output `length` usage that fills the window map
  *   to `CONTEXT_WINDOW_EXCEEDED`; a `stop` with no content blocks maps to an
  *   `EMPTY_RESPONSE` error.
  */
-export function mapStopReason(message: AssistantMessage, contextWindow?: number): FinishReason {
+export function mapStopReason(message: AssistantMessage, contextWindow?: number, callerSignal?: AbortSignal): FinishReason {
+  const reason = mapPiAiStopReason(message, contextWindow)
+  if (reason.kind === 'error' && callerSignal?.aborted === true) {
+    return { kind: 'aborted', failure: { ...reason.failure, code: 'ABORTED' } }
+  }
+  return reason
+}
+
+/** The SDK-shaped mapping before caller-abort reclassification (see {@link mapStopReason}). */
+function mapPiAiStopReason(message: AssistantMessage, contextWindow?: number): FinishReason {
   const piAiOverflow = isContextOverflow(message, contextWindow)
   const harnessOverflow = message.stopReason === 'error'
     && message.errorMessage !== undefined
@@ -129,6 +144,7 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
 export async function* toStreamChunks(
   events: AsyncIterable<AssistantMessageEvent>,
   contextWindow?: number,
+  callerSignal?: AbortSignal,
 ): AsyncGenerator<StreamChunk> {
   // pi-ai contentIndex ↔ our block index map 1:1 (both count blocks from 0
   // in stream order), but we track ids per index for tool calls.
@@ -194,7 +210,7 @@ export async function* toStreamChunks(
         yield { type: 'usage', usage: mapUsage(event.message.usage) }
         yield {
           type: 'finish',
-          reason: mapStopReason(event.message, contextWindow),
+          reason: mapStopReason(event.message, contextWindow, callerSignal),
           replayState: toPiReplayState(event.message),
         }
         return
@@ -202,7 +218,7 @@ export async function* toStreamChunks(
         // In-stream error delivery (pi-ai's style) → error finish chunk
         // (the harness's other sanctioned error path besides throwing).
         yield { type: 'usage', usage: mapUsage(event.error.usage) }
-        yield { type: 'finish', reason: mapStopReason(event.error, contextWindow) }
+        yield { type: 'finish', reason: mapStopReason(event.error, contextWindow, callerSignal) }
         return
       // no default: AssistantMessageEvent is pi-ai's closed union; a new
       // event type should fail compilation here via tsc's exhaustiveness
