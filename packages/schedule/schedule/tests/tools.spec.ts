@@ -433,9 +433,11 @@ describe('Schedule persistence failure boundaries', () => {
     releaseOwner()
     await owner
 
+    // A cancellation in the registry FIFO wait precedes every policy stage,
+    // so the dispatch layer classifies it as its own pre-dispatch code.
     await expect(creating).resolves.toMatchObject({
       isError: true,
-      error: { info: { name: 'AbortError', code: 'ABORTED' } },
+      error: { info: { name: 'AbortError', code: 'ABORTED_BEFORE_DISPATCH' } },
     })
     expect(test.flushes.count).toBe(0)
     expect(test.agent.session.events.filter(event => event.type === 'schedule/change')).toEqual([])
