@@ -644,7 +644,9 @@ describe('installLlmReplay (through the real LlmRuntime)', () => {
     })
     expect(ctx.llm.providerRetryPolicy('empty')).toMatchObject({
       mode: 'normal',
-      maxRetries: 2,
+      // No configured policy: the default retries transient failures without
+      // a hard cap (d057775ed4).
+      maxRetries: Number.MAX_SAFE_INTEGER,
       initialDelayMs: 500,
       maxDelayMs: 10_000,
       jitterRatio: 0.1,
