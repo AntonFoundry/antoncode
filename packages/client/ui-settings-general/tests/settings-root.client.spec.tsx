@@ -26,10 +26,10 @@ const SEAT_CONTENT: Record<string, string> = {
 const unusedHook = (() => { throw new Error('unused by the settings shells') }) as never
 
 describe('SettingsRoot trigger', () => {
-  function mount({ wide = true, onboardingActive = true, steps = [
+  function mount({ wide = true, onboardingActive = true, settingsOpen = false, steps = [
     { id: 'welcome', order: -100 },
     { id: 'credential', order: 0 },
-  ] }: { wide?: boolean; onboardingActive?: boolean; steps?: Step[] } = {}) {
+  ] }: { wide?: boolean; onboardingActive?: boolean; settingsOpen?: boolean; steps?: Step[] } = {}) {
     const renderSlot = vi.fn(
       ((key: string) => SEAT_CONTENT[key] ?? null) as SettingsRootComponentProps['renderSlot'],
     )
@@ -49,6 +49,7 @@ describe('SettingsRoot trigger', () => {
       openWindow,
       openSection,
       useOnboardingSteps: select => select(steps),
+      useSettingsOpen: select => select(settingsOpen),
       renderSlot,
     }
     const view = render(<SettingsRoot {...props} />)
@@ -60,10 +61,16 @@ describe('SettingsRoot trigger', () => {
     const trigger = screen.getByRole('button', { name: 'Settings' })
     expect(trigger.hasAttribute('aria-label')).toBe(false)
     expect(renderSlot).toHaveBeenCalledWith('settings.trigger', { wide: true })
-    // The window's open state is the layout's, not the trigger's.
-    expect(trigger.hasAttribute('aria-expanded')).toBe(false)
+    // The trigger mirrors the layout-owned window state for assistive tech.
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(trigger)
     expect(openWindow).toHaveBeenCalledOnce()
+  })
+
+  it('exposes the settings-window open state through aria-expanded', () => {
+    const { view } = mount({ settingsOpen: true })
+    const trigger = (view.getByRole('button', { name: 'Settings' }) as HTMLElement)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
   })
 
   it('hands the rail state to the trigger seat', () => {
@@ -139,6 +146,7 @@ describe('SettingsWindow body', () => {
     const props: SettingsWindowComponentProps = {
       useSessions: unusedHook,
       useWorkspaces: unusedHook,
+      t: ((key: string) => (key === 'title' ? '设置' : key)) as never,
       useSections: (select) => {
         const [, force] = useState(0)
         listeners.add(() => { force(n => n + 1) })
@@ -163,9 +171,12 @@ describe('SettingsWindow body', () => {
     return { view, renderSlot, closeWindow, setActiveSection, setRows }
   }
 
-  it('names nothing as a dialog: the WM pane owns the window chrome', () => {
+  it('carries non-modal dialog semantics named from the settings copy', () => {
     mount()
-    expect(screen.queryByRole('dialog')).toBeNull()
+    const dialog = screen.getByRole('dialog', { name: '设置' })
+    // Window semantics, not modal behavior: assistive tech may leave the
+    // surface, and the attribute says so explicitly.
+    expect(dialog.getAttribute('aria-modal')).toBe('false')
   })
 
   it('projects rows, marks the first active, and renders only that section', () => {

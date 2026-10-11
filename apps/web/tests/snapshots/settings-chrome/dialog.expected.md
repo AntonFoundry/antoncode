@@ -14,9 +14,6 @@
       - img
       - text: Agent 预设
   - button "打开配置文件"
-  - button "关闭":
-    - img
-    - text: 关闭
   - text: Agent 预设 对此后新建的会话生效。运行中的会话保持它开始时的预设。
   - button "标准模式":
     - text: 标准模式
@@ -36,9 +33,37 @@
   - button "深色":
     - img
     - text: 深色
-  - button "跟随系统" [pressed]:
+  - button "跟随系统":
     - img
     - text: 跟随系统
+  - text: 字体 界面 设置、侧边栏与窗口边框 Settings & Sidebar
+  - button "系统":
+    - text: 系统
+    - img
+  - group "字号":
+    - button "−"
+    - text: 14px
+    - button "+"
+  - text: 对话 对话消息与输入框
+  - group "字号":
+    - button "−"
+    - text: 16px
+    - button "+"
+  - text: "代码 fn main() { println!(\"ok\") }"
+  - button "Monaco":
+    - text: Monaco
+    - img
+  - group "字号":
+    - button "−"
+    - text: 15px
+    - button "+"
+  - text: 终端 $ cargo build --release
+  - group "字号":
+    - button "−"
+    - text: 13px
+    - button "+"
+  - text: 效率规训 在系统提示中加入工作经济性规则（便宜工具优先与精炼输出）
+  - switch "效率规训" [checked]
   - text: 繁忙时 Enter 键行为 仅在智能体运行时生效；Cmd/Ctrl+Enter 使用另一行为
   - button "排队发送":
     - text: 排队发送

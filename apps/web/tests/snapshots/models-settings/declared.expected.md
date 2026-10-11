@@ -14,19 +14,30 @@
       - img
       - text: Agent 预设
   - button "打开配置文件"
-  - button "关闭":
-    - img
-    - text: 关闭
   - heading "模型" [level=2]
   - paragraph: 填入各提供方的 API 密钥即可使用其模型。
   - list:
     - listitem:
+      - text: OpenCode Free
+      - switch "在模型选择器中停用 OpenCode Free (opencode-free)" [checked]
+      - button "编辑 OpenCode Free (opencode-free)": 编辑
+    - listitem:
+      - text: OpenRouter Free
+      - switch "在模型选择器中停用 OpenRouter Free (openrouter-free)" [checked]
+      - button "编辑 OpenRouter Free (openrouter-free)": 编辑
+    - listitem:
+      - text: OpenCode Server
+      - switch "在模型选择器中停用 OpenCode Server (opencode-server)" [checked]
+      - button "编辑 OpenCode Server (opencode-server)": 编辑
+    - listitem:
       - text: minimax-cn
       - img "API 密钥已配置"
+      - switch "在模型选择器中停用 minimax-cn" [checked]
       - button "编辑 minimax-cn": 编辑
       - button "删除 minimax-cn": 删除
     - listitem:
       - text: Acme Gateway 自定义
+      - switch "在模型选择器中停用 Acme Gateway (acme-gateway)" [checked]
       - button "编辑 Acme Gateway (acme-gateway)": 编辑
       - button "删除 Acme Gateway (acme-gateway)": 删除
   - button "添加提供方":

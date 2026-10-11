@@ -112,6 +112,10 @@ export function apply(ctx: ClientContext): void {
       layout.openSettings()
     },
     hooks: {
+      settingsOpen: {
+        getSnapshot: () => layout.settingsOpen(),
+        subscribe: listener => layout.onSettingsOpenChange(listener),
+      },
       onboardingSteps: {
         getSnapshot: () => {
           const version = ctx.slots.getVersion('settings.onboarding')
@@ -182,6 +186,7 @@ export function apply(ctx: ClientContext): void {
 
   ctx.slots.inject('settings.view', () => ctx.slots.register({
     name: 'settings.view',
+    locale: NS,
     children: {
       'settings.header': { kind: 'single', scope: 'root' },
       'settings.action': { kind: 'list', scope: 'root' },

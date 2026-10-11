@@ -31,6 +31,8 @@ export interface WmTreeSource {
     buffers: WmBuffer[]
     focusedLeafId: string | undefined
   }
+  /** Subscribe to wm state changes; returns the disposer. */
+  subscribe(fn: () => void): () => void
   /** Write a transformed tree, replace the buffer registry, or move the focus. */
   actions: {
     setTree: (tree: WmNode) => void
@@ -60,6 +62,14 @@ export interface ILayout {
   closeSettings(): void
   /** Toggle the settings window (closed ⟷ open). */
   toggleSettings(): void
+  /** Whether the settings window leaf currently exists in the wm tree (false before a wm store attaches). */
+  settingsOpen(): boolean
+  /**
+   * Subscribe to settings-window open-state changes; returns the disposer.
+   * Forwards the attached wm store's notifications; before attachment the
+   * listener never fires and the disposer is a no-op.
+   */
+  onSettingsOpenChange(listener: () => void): () => void
   /**
    * Open one file path inline: split the focused leaf row-wise into a
    * `buffer:file:<path>` buffer and focus it — the same flow the frame's
@@ -191,6 +201,20 @@ export class LayoutController implements ILayout {
     const { tree } = this.#wm.getSnapshot()
     if (findLeaf(tree, WM_LEAF_SETTINGS) !== undefined) this.closeSettings()
     else this.openSettings()
+  }
+
+  /** Whether the settings window leaf currently exists (see {@link ILayout.settingsOpen}). */
+  settingsOpen(): boolean {
+    const wm = this.#wm
+    if (wm === undefined) return false
+    return findLeaf(wm.getSnapshot().tree, WM_LEAF_SETTINGS) !== undefined
+  }
+
+  /** Forward wm notifications (see {@link ILayout.onSettingsOpenChange}). */
+  onSettingsOpenChange(listener: () => void): () => void {
+    const wm = this.#wm
+    if (wm === undefined) return () => {}
+    return wm.subscribe(listener)
   }
 
   /**

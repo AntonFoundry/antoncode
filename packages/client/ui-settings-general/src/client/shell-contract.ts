@@ -7,7 +7,7 @@
  * reference graph closes a cycle through ui-sidebar → ui-layout → ui-theme.
  * The settings SLOT types (what registrants contribute) stay in ui-settings.
  */
-import type { HostObservable, InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls ui-sidebar's SlotMap merge (the 'sidebar.settings' entry)
 // into every program that sees this contract.
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
@@ -32,9 +32,9 @@ export interface SettingsOnboardingStep {
 
 /**
  * Registrant-private injected share of the trigger root (assembled in apply):
- * the onboarding ledger projection plus the window open action over
- * ctx.layout. The root reads no locale state and subscribes through the
- * bound hook.
+ * the onboarding ledger projection, the settings-window open state (the
+ * trigger's `aria-expanded`), plus the window open action over ctx.layout.
+ * The root reads no locale state and subscribes through the bound hooks.
  */
 export type SettingsRootInjected = {
   /** Ask the layout to open (or focus) the settings window. */
@@ -44,6 +44,8 @@ export type SettingsRootInjected = {
   hooks: {
     /** settings.onboarding ledger projected into coordinator order. */
     onboardingSteps: HostObservable<readonly SettingsOnboardingStep[]>
+    /** Whether the settings window leaf currently exists in the wm tree. */
+    settingsOpen: HostObservable<boolean>
   }
 }
 
@@ -78,10 +80,12 @@ export type SettingsWindowInjected = {
 
 /**
  * Full component props of the settings window body: the frame owner share
- * (empty) plus the declared render shares and the injected face. The window
- * chrome (title, close gesture) is the WM pane's own mode line.
+ * (empty) plus the declared render shares, the injected face, and the locale
+ * seat for the window's own accessible name. The window chrome (title, close
+ * gesture) is the WM pane's own mode line.
  */
 export type SettingsWindowComponentProps =
   PropsRuntime<'settings.view'>
   & PropsRenderSlots<'settings.header' | 'settings.action' | 'settings.section'>
+  & PropsLocale<'settings'>
   & InjectFace<SettingsWindowInjected>

@@ -32,6 +32,8 @@ async function bench() {
     openSettings,
     closeSettings,
     toggleSettings: () => {},
+    settingsOpen: () => false,
+    onSettingsOpenChange: () => () => {},
   } as never)
   return { ctx, slots: ctx.get('slots') as SlotRegistry, openSettings, closeSettings }
 }

@@ -55,6 +55,8 @@ async function bench(isLoopback = true) {
     openSettings: () => {},
     closeSettings: () => {},
     toggleSettings: () => {},
+    settingsOpen: () => false,
+    onSettingsOpenChange: () => () => {},
   } as never)
   return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, settingsDescribe, settingsOpenDocument }
 }
