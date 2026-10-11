@@ -65,8 +65,9 @@
   - img
 - tooltip "Commands"
 - 'button "Access mode, current: Workspace Write"': Workspace Write
-- button "Select model, current DeepSeek-V4-Flash":
-  - text: DeepSeek-V4-Flash
+- 'button "Workspace mode, current: Current checkout"': Current checkout
+- button "Select model":
+  - text: Select model
   - img
 - button "Send message" [disabled]
 - text: (Chat · workspace) Chat · workspace · 2 windows

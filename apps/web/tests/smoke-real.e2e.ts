@@ -277,11 +277,13 @@ describe('dsh web keyless CLI smoke', () => {
           "role": "user",
         }
       `)
+      // The shipped paged tool mode grants tools only via `tool_search`, so
+      // the first request carries the catalog gate instead of inline web tools.
       expect(captured.tools?.map(tool => tool.function?.name)
-        .filter(name => name === 'web_search' || name === 'web_fetch'))
+        .filter(name => name === 'tool_search' || name === 'web_search' || name === 'web_fetch'))
         .toMatchInlineSnapshot(`
           [
-            "web_search",
+            "tool_search",
           ]
         `)
     } finally {
@@ -372,7 +374,8 @@ describe('dsh web keyless CLI smoke', () => {
         turn: 1,
         step: 1,
         retry: 1,
-        maxRetries: 2,
+        // Unbounded by default for retryable codes (retry-policy contract).
+        maxRetries: Number.MAX_SAFE_INTEGER,
         failure: { code: 'TRANSPORT' },
       })
       expect(JSON.stringify(page.events)).toContain('WEB_RETRY_DISCARDED')

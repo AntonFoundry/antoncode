@@ -43,6 +43,9 @@ describe('web e2e: fresh round trip through the real assembly', () => {
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({
+      // The drive prompt calls `bash` directly; the shipped `paged` tool mode
+      // grants tools only via tool_search, so opt into native direct calls.
+      directToolCalls: true,
       ...(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 15 }),
     })
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { sessionEvents.push(event) })
@@ -145,7 +148,7 @@ describe('web e2e: fresh round trip through the real assembly', () => {
     await page.getByRole('button', {
       name: 'Select model, current DeepSeek-V4-Flash',
     }).waitFor({ timeout: 10_000 })
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-chat-flow]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
   })
 

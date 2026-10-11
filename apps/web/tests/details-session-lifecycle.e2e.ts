@@ -131,7 +131,10 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
     // untouched share default, NOT the dragged preference.
     await expect.poll(() => sidebarTrack(page), { timeout: 5_000 }).toBe(sidebarBefore)
 
-    await page.getByRole('button', { name: /^(?:New session|新.*会话)$/ }).last().click()
+    // New session now rides the workspace row's + affordance ("New session in
+    // {name}"); the row actions surface on hover only.
+    await page.locator('[role="treeitem"]').filter({ hasText: 'workspace' }).first().hover()
+    await page.getByRole('button', { name: /^New session in / }).last().click()
     await page.getByText('Into the Unknown', { exact: false }).waitFor({ timeout: 15_000 })
     await expect.poll(() => detailsTrack(page), { timeout: 5_000 }).toBe(0)
     expect(await page.getByText('Details', { exact: true }).isVisible()).toBe(false)

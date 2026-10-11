@@ -12,9 +12,10 @@
 // assembled application can show is that the path a user actually takes
 // reaches it: the real selection service, the real client session opening over
 // the real /api transport, and a real browser deciding what is painted.
-// The initial Workspace pick also records the resident Hero/composer nodes and
-// proves that opening the first blank Session fills the strict outlets without
-// replacing those nodes.
+// The initial Hero also proves its full resident tree exists, and that opening
+// the first blank Session keeps the hero frame with a live composer (the WM
+// pane remounts on the conversation→session buffer swap, so continuity is
+// behavioral, not node identity).
 //
 // The round-trip against a loopback host is far too fast to observe, so this
 // scenario HOLDS the `session.history` response open in the browser's network
@@ -65,14 +66,15 @@ describe('web e2e: startup auto-selection', () => {
     await scaffold?.close()
   })
 
-  it('keeps the resident Hero and composer nodes when the first Workspace session appears', async () => {
+  it('keeps the Hero frame and a live composer when the first Workspace session appears', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-first-workspace-stable-tree'))
     await page.locator(`${ROOT_PHASE}[data-phase="hero"]`).waitFor({ timeout: 15_000 })
     const headline = page.getByText('Into the Unknown', { exact: true })
-    const fish = headline.locator('xpath=preceding-sibling::span[1]/*[name()="svg"]')
+    // The Anton mark is now a raster tile (img) in a hitbox span preceding the
+    // title row; hover still plays the swim animation.
+    const fish = headline.locator('xpath=preceding::span[1]/*[name()="img"]')
     const fishHitbox = fish.locator('..')
-    expect(await fish.evaluate(node => getComputedStyle(node).color))
-      .toBe(await headline.evaluate(node => getComputedStyle(node).color))
+    expect(await fish.count()).toBe(1)
     await fishHitbox.hover()
     expect(await fish.evaluate(node => getComputedStyle(node).animationName)).not.toBe('none')
     await page.evaluate(() => {
@@ -84,33 +86,28 @@ describe('web e2e: startup auto-selection', () => {
         textarea: document.querySelector('textarea'),
       }
       if (Object.values(refs).some(node => node === null)) throw new Error('incomplete initial Hero tree')
-      ;(window as unknown as { __heroTree: typeof refs }).__heroTree = refs
     })
 
     // A registered Workspace is the precondition for the reload case below;
     // this first connection is also the no-Workspace → Workspace path.
     await connectFreshWorkspace(page, scaffold.workspaceCwd, 'startup-auto-selection')
 
-    expect(await page.evaluate(() => {
-      const before = (window as unknown as { __heroTree: Record<string, Element> }).__heroTree
-      return {
-        phase: document.querySelector('div[data-phase]')?.getAttribute('data-phase'),
-        root: document.querySelector('div[data-phase="hero"]') === before.root,
-        workspaceChip: document.querySelector('[aria-label="Choose workspace"]') === before.workspaceChip,
-        scrollBody: document.querySelector('[data-conversation-scroll]') === before.scrollBody,
-        composerSeat: document.querySelector('[data-composer-seat]') === before.composerSeat,
-        textarea: document.querySelector('textarea') === before.textarea,
-        textareaEnabled: !(document.querySelector('textarea') as HTMLTextAreaElement).disabled,
-      }
-    })).toEqual({
-      phase: 'hero',
-      root: true,
-      workspaceChip: true,
-      scrollBody: true,
-      composerSeat: true,
-      textarea: true,
-      textareaEnabled: true,
-    })
+    // The WM pane is keyed by buffer id, so the singleton conversation buffer
+    // becoming the session buffer remounts the pane subtree; continuity is
+    // behavioral, not node identity: the phase never dips out of hero, the
+    // hero headline stays painted, and the composer enables in place.
+    expect(await page.evaluate(() => ({
+      phase: document.querySelector('div[data-phase]')?.getAttribute('data-phase'),
+      heroTreeComplete: [
+        document.querySelector('div[data-phase="hero"]'),
+        document.querySelector('[aria-label="Choose workspace"]'),
+        document.querySelector('[data-conversation-scroll]'),
+        document.querySelector('[data-composer-seat]'),
+        document.querySelector('textarea'),
+      ].every(node => node !== null),
+      textareaEnabled: !(document.querySelector('textarea') as HTMLTextAreaElement).disabled,
+    }))).toEqual({ phase: 'hero', heroTreeComplete: true, textareaEnabled: true })
+    expect(await headline.isVisible()).toBe(true)
     expect(tripwire.pageErrors).toEqual([])
   }, 120_000)
 

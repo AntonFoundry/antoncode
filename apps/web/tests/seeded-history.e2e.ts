@@ -326,7 +326,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
     // the routed id and the seat resolves it against an advertised row.
     await page.getByRole('button', { name: /^Select model, current/ })
       .waitFor({ timeout: 10_000 })
-    const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
+    const snapshot = (await captureStableAria(page, '[data-chat-flow]', scaffold.workspaceCwd))
       .split(SEED_ID).join('{{seededId}}')
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
   })
@@ -374,9 +374,11 @@ describe('web e2e: seeded history renders through cold resume', () => {
       }
     })
     expect(style).toEqual({
-      backgroundColor: 'rgb(249, 250, 251)',
+      // Palette tokens drifted with the shipped theme refresh (alias neutral
+      // scale), so the disclosure chrome follows the tokens.
+      backgroundColor: 'rgb(246, 246, 248)',
       borderRadius: '8px',
-      color: 'rgb(129, 133, 140)',
+      color: 'rgb(142, 142, 147)',
       fontSize: '11px',
       lineHeight: '16px',
       padding: ['10px', '16px', '12px', '12px'],
@@ -394,10 +396,11 @@ describe('web e2e: seeded history renders through cold resume', () => {
     // capture; still zero model calls.
     const fileLink = page.locator('[data-variant="read"] button').first()
     await fileLink.waitFor({ timeout: 10_000 })
-    const frame = page.locator('[style*="grid-template-columns"]').first()
-    expect(await frame.getAttribute('data-details-collapsed')).toBe('true')
+    // Details is a WM window now: details-inert means no details pane opens.
+    const detailsWindow = page.locator('[data-buffer="details"]')
+    expect(await detailsWindow.count()).toBe(0)
     await fileLink.click()
-    await expect.poll(() => frame.getAttribute('data-details-collapsed'), { timeout: 5_000 }).toBe('true')
+    await expect.poll(() => detailsWindow.count(), { timeout: 5_000 }).toBe(0)
     // Path label survives from the recorded args (a.txt).
     await expect.poll(() => page.getByText('a.txt', { exact: false }).count(), { timeout: 5_000 }).toBeGreaterThan(0)
   })
@@ -435,7 +438,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
     await expect.poll(() => row.count(), { timeout: 10_000 }).toBe(1)
     expect(await row.getByText('permission', { exact: true }).count()).toBe(1)
     expect(await row.getByText('/permission read-only', { exact: true }).count()).toBe(0)
-    const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
+    const snapshot = (await captureStableAria(page, '[data-chat-flow]', scaffold.workspaceCwd))
       .split(SEED_ID).join('{{seededId}}')
     await compareOrRefreshGolden(COMMAND_ROW_EXPECTED, snapshot, MODE)
   }, 60_000)
@@ -468,7 +471,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
       const userId = userLine?.match(/^Anonymous user: ([0-9a-f-]+)/i)?.[1]
       if (userId === undefined) throw new Error('feedback command omitted the user id')
 
-      const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
+      const snapshot = (await captureStableAria(page, '[data-chat-flow]', scaffold.workspaceCwd))
         .split(SEED_ID).join('{{seededId}}')
         .split(userId).join('{{userId}}')
       await compareOrRefreshGolden(FEEDBACK_ROW_EXPECTED, snapshot, MODE)

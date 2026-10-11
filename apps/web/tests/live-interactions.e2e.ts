@@ -138,7 +138,7 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
       () => page.getByRole('status').filter({ hasText: 'Deep diving...' }).isVisible(),
       { timeout: 10_000 },
     ).toBe(true)
-    const loadingSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
+    const loadingSnapshot = await captureStableAria(page, '[data-chat-flow]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(LOADING_EXPECTED, loadingSnapshot, MODE)
     await page.getByRole('button', { name: 'Stop generating' }).click()
     await settled
@@ -150,7 +150,7 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     await expect.poll(() => page.locator('[data-streaming="true"]').count(), { timeout: 10_000 }).toBe(0)
     // Golden of the aborted end-state: the prompt bubble plus the frozen
     // partial ('partial' is the hang entry's replayed prefix) and no more.
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-chat-flow]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(CANCEL_EXPECTED, snapshot, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
@@ -173,7 +173,7 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     expect(await errorStatus.textContent()).toContain('API key is invalid')
     expect(await errorStatus.textContent()).toContain('AUTH')
     expect(await page.locator('body').textContent()).not.toContain('sk-preview-secret')
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-chat-flow]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(ERROR_EXPECTED, snapshot, MODE)
     await page.getByRole('tab', { name: 'Trajectory' }).click()
     const requestMarker = page.locator('tr[data-request-only="true"]').last()
@@ -233,7 +233,7 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     await expect.poll(() => page.getByText('event sourcing', { exact: false }).count(), { timeout: 10_000 }).toBeGreaterThan(0)
     // Golden of the recovered end-state: the discarded partial stays absent,
     // while the settled retry row remains as durable recovery context.
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-chat-flow]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(RETRY_EXPECTED, snapshot, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
