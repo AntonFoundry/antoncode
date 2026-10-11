@@ -244,10 +244,11 @@ describe('web e2e: agent-preset selection', () => {
     await expect.poll(() => menuOptions(page), { timeout: 15_000 })
       .not.toEqual(expect.arrayContaining([expect.stringContaining(SKILL_NAME)]))
     const onMinimal = await menuOptions(page)
-    expect(onMinimal.some(option => option.startsWith('compact'))).toBe(false)
     expect(onMinimal.some(option => option.startsWith('plan'))).toBe(false)
-    // The host-plane commands and the client's own contribution are the
-    // floor: they belong to no preset and never move.
+    // The host-plane commands, the deployment's always-on `/compact` special
+    // command, and the client's own contribution are the floor: they belong
+    // to no preset and never move.
+    expect(onMinimal.some(option => option.startsWith('compact'))).toBe(true)
     expect(onMinimal.some(option => option.startsWith('goal'))).toBe(true)
     expect(onMinimal.some(option => option.startsWith('model'))).toBe(true)
     await composer.fill('')

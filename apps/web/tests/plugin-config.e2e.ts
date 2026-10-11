@@ -49,8 +49,9 @@ describe('web e2e: plugin configuration section', () => {
    * swallow the trigger click.
    */
   async function openPlugins() {
+    // The settings window closes through the WM frame's own Close control.
     if (await page.getByRole('dialog', { name: '设置' }).count() > 0) {
-      await page.keyboard.press('Escape')
+      await page.locator('[data-buffer="settings"]').getByRole('button', { name: 'Close', exact: true }).click()
       await expect.poll(() => page.getByRole('dialog', { name: '设置' }).count(), { timeout: 5_000 }).toBe(0)
     }
     await page.getByRole('button', { name: '设置', exact: true }).click()

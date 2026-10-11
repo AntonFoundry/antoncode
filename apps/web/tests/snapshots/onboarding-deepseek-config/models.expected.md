@@ -14,15 +14,13 @@
       - img
       - text: Agent 预设
   - button "打开配置文件"
-  - button "关闭":
-    - img
-    - text: 关闭
   - heading "模型" [level=2]
   - paragraph: 填入各提供方的 API 密钥即可使用其模型。
   - list:
     - listitem:
       - text: DeepSeek
       - img "API 密钥已配置"
+      - switch "在模型选择器中停用 DeepSeek (deepseek-official)" [checked]
       - button "编辑 DeepSeek (deepseek-official)": 编辑
       - text: DeepSeek deepseek-official API 密钥
       - textbox "API 密钥":
@@ -36,30 +34,40 @@
           - button "恢复默认模型"
           - textbox "模型 ID 1":
             - /placeholder: 模型 ID
-            - text: deepseek-v4-pro
+            - text: deepseek-flash
           - textbox "显示名称 1":
             - /placeholder: 显示名称
-            - text: DeepSeek-V4-Pro
+            - text: DeepSeek-V4.1-Flash
           - button "容量 1":
             - img
           - button "删除模型 1":
             - img
           - textbox "模型 ID 2":
             - /placeholder: 模型 ID
-            - text: private-preview
+            - text: deepseek-v4-pro
           - textbox "显示名称 2":
             - /placeholder: 显示名称
-            - text: Private Preview
-          - button "容量 2" [expanded]:
+            - text: DeepSeek-V4-Pro
+          - button "容量 2":
             - img
           - button "删除模型 2":
             - img
+          - textbox "模型 ID 3":
+            - /placeholder: 模型 ID
+            - text: private-preview
+          - textbox "显示名称 3":
+            - /placeholder: 显示名称
+            - text: Private Preview
+          - button "容量 3" [expanded]:
+            - img
+          - button "删除模型 3":
+            - img
           - text: 上下文窗口
-          - textbox "上下文窗口 2":
+          - textbox "上下文窗口 3":
             - /placeholder: 1M
             - text: "131072"
           - text: 最大输出 token 数
-          - textbox "最大输出 token 数 2":
+          - textbox "最大输出 token 数 3":
             - /placeholder: 256K
             - text: 64K
           - button "添加模型":

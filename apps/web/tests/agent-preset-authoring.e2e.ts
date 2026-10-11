@@ -245,7 +245,10 @@ describe('web e2e: agent-preset authoring is a host-side copy', () => {
     // Without a workspace the flow only stages (there is no session to land
     // in until one is connected); connect first so the gesture carries all
     // the way to a composed host session.
-    await settingsDialog().getByRole('button', { name: '关闭' }).last().click()
+    // The settings window closes through the WM frame's own Close control
+    // (scoped to the settings pane — every window frame has a Close button).
+    await page.locator('[data-buffer="settings"]').getByRole('button', { name: 'Close', exact: true }).click()
+    await settingsDialog().waitFor({ state: 'detached', timeout: 10_000 })
     await connectFreshWorkspaceZh(page, scaffold.workspaceCwd)
     await page.getByRole('button', { name: '设置', exact: true }).click()
     const dialog = settingsDialog()

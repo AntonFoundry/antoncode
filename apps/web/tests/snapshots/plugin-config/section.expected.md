@@ -14,9 +14,6 @@
       - img
       - text: Agent 预设
   - button "打开配置文件"
-  - button "关闭":
-    - img
-    - text: 关闭
   - heading "插件" [level=2]
   - paragraph: 配置和查看本部署已安装的插件。
   - tablist "插件视图":
@@ -35,4 +32,8 @@
       - listitem:
         - 'button "展开设置: 网页搜索"':
           - text: 网页搜索 DeepSeek 搜索提供方。
+          - img
+      - listitem:
+        - 'button "展开设置: 门控策略"':
+          - text: 门控策略 计划优先门控与危险操作清单。
           - img

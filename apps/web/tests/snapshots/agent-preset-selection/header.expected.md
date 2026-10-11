@@ -8,3 +8,4 @@
 - button "Session log":
   - text: Session log
   - img
+- button "展开全部工具卡片"

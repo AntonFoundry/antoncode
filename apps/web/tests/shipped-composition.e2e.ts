@@ -33,20 +33,33 @@ const FILE_REFERENCE_PROMPT = fileURLToPath(new URL(
  * rationale and its sources.
  */
 const EXPECTED_TOOLS = [
+  'anton_restart',
+  'anton_start',
+  'anton_status',
+  'anton_stop',
   'ask_user_question',
   'bash',
   'create_goal',
   'edit',
   'exit_plan_mode',
+  'flow_block_save',
+  'flow_get',
+  'flow_library_search',
+  'flow_list',
+  'flow_run',
+  'flow_run_status',
+  'flow_save',
   'get_goal',
   'interrupt_agent',
   'job_kill',
   'job_list',
   'job_output',
   'list_agents',
+  'plan_write',
   'ralph',
   'read',
   'read_image',
+  'run_code',
   'send_message',
   'skill',
   'subagent',
@@ -81,11 +94,23 @@ it('assembles the shipped Web catalog, file-reference guidance, and confined acc
   // layer holds nothing and a caller must name the agent to see anything. This
   // composes from the deployment default — what a session that names no preset
   // gets — which is the shape this test has always been about.
-  expect(ctx.tools.schemas().map(schema => schema.name)).toEqual([])
+  // Paged Mode hosts `tool_search` at the global layer; every model-facing
+  // domain tool lives in the preset mounted per session below.
+  expect(ctx.tools.schemas().map(schema => schema.name)).toEqual(['tool_search'])
+  // The shipped presentation default is `paged`: a fresh agent's wire set is
+  // the reserved `tool_search` transport alone, and the domain catalog rides
+  // the search/grant flow. Pin that default, then present `both` on the same
+  // agent so the composition assertions below still see the whole catalog.
+  let sawPagedDefault = false
   const handle = await ctx.agents.create({
     sessionId: SessionId('shipped-composition'),
-    setup: agentCtx => ctx.agentPresets.mount(agentCtx).then(() => undefined),
+    setup: agentCtx => ctx.agentPresets.mount(agentCtx).then(() => {
+      sawPagedDefault = ctx.tools.schemas().length === 1
+        && ctx.tools.schemas()[0]?.name === 'tool_search'
+      agentCtx.tools.presentAs('both')
+    }),
   })
+  expect(sawPagedDefault).toBe(true)
   try {
     const names = ctx.tools.schemas(handle.agent).map(schema => schema.name).sort()
     expect(names.filter(name => !RIPGREP_TOOLS.includes(name))).toEqual(EXPECTED_TOOLS)
@@ -136,6 +161,34 @@ it('lets a preset producer reach the background-job registry', async () => {
   })
   try {
     const signal = new AbortController().signal
+    // The shipped presentation default is `paged`: grant `bash` through the
+    // `tool_search` transport before calling it directly — the same flow the
+    // model drives.
+    const search = await ctx.tools.execute({
+      signal,
+      callId: CallId('shipped-tool-search'),
+      name: 'tool_search',
+      arguments: { intent: 'run a bash command in the background' },
+      agent: handle.agent,
+    })
+    expect(JSON.stringify(search.content)).toContain('bash')
+    // The job controls ride the same grant flow before the controller calls them.
+    await ctx.tools.execute({
+      signal,
+      callId: CallId('shipped-tool-search-jobs'),
+      name: 'tool_search',
+      arguments: { intent: 'list and collect background job output and kill jobs' },
+      agent: handle.agent,
+    })
+    // The todo-plan gate denies execution tools until the session records a
+    // todo plan; `todo_write` itself is never gated.
+    await ctx.tools.execute({
+      signal,
+      callId: CallId('shipped-todo-plan'),
+      name: 'todo_write',
+      arguments: { todos: [{ content: 'probe the background-job registry', status: 'in_progress' }] },
+      agent: handle.agent,
+    })
     // `tool-bash` is a preset row and `tasks` is a host registry; the producer
     // resolves it with `ctx.get`, so a registry hidden behind a preset realm
     // fails here — with every task control still listed in the catalog above.

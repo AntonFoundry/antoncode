@@ -14,22 +14,25 @@
       - img
       - text: Agent 预设
   - button "打开配置文件"
-  - button "关闭":
-    - img
-    - text: 关闭
   - heading "模型" [level=2]
   - paragraph: 填入各提供方的 API 密钥即可使用其模型。
   - list:
     - listitem:
       - text: DeepSeek
       - img "API 密钥缺失"
+      - switch "在模型选择器中停用 DeepSeek (deepseek-official)" [checked]
       - button "编辑 DeepSeek (deepseek-official)": 编辑
   - text: 提供方
   - combobox "提供方":
+    - option "Google Antigravity"
+    - option "OpenAI"
+    - option "OpenAI Compatible"
+    - option "OpenAI Codex"
     - option "amazon-bedrock"
     - option "ant-ling"
     - option "anthropic"
     - option "azure-openai-responses"
+    - option "baseten"
     - option "cerebras"
     - option "cloudflare-ai-gateway"
     - option "cloudflare-workers-ai"
@@ -40,18 +43,19 @@
     - option "google-vertex"
     - option "groq"
     - option "huggingface"
-    - option "kimi-coding"
+    - option "Kimi Coding"
     - option "minimax"
     - option "minimax-cn" [selected]
     - option "mistral"
     - option "moonshotai"
     - option "moonshotai-cn"
-    - option "nvidia"
+    - option "NVIDIA"
     - option "opencode"
     - option "opencode-go"
     - option "openrouter"
-    - option "qwen-token-plan"
+    - option "Qwen Token Plan"
     - option "qwen-token-plan-cn"
+    - option "Qwen Token Plan Individual"
     - option "together"
     - option "vercel-ai-gateway"
     - option "xai"
@@ -59,11 +63,8 @@
     - option "xiaomi-token-plan-ams"
     - option "xiaomi-token-plan-cn"
     - option "xiaomi-token-plan-sgp"
-    - option "zai"
+    - option "Z.ai"
     - option "zai-coding-cn"
-    - option "OpenAI"
-    - option "OpenAI Compatible"
-    - option "OpenAI Codex"
   - text: API 密钥
   - textbox "API 密钥":
     - /placeholder: 输入 API 密钥，或留空使用环境认证
