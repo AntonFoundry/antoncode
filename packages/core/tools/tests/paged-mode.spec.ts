@@ -240,6 +240,27 @@ describe('grant loop', () => {
     expect(ctx.tools.get('read')).toBeUndefined()
   })
 
+  it('keeps getPresentable grant-blind: a never-granted tool still presents', async () => {
+    const { ctx } = await setup()
+    registerCatalog(ctx)
+    const { agent } = await mintAgentScope(ctx)
+    ctx.tools.register(defineTool({
+      name: 'presenter',
+      description: 'has a presenter',
+      parameters: { value: { type: 'string', required: true } },
+      output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
+      execute: args => Promise.resolve(`presenter:${args.value}`),
+      presentCall: args => ({ card: 'terminal', title: (args as { value: string }).value }),
+      presentResult: () => ({ card: 'terminal', output: 'done' }),
+    }))
+
+    // The model-facing view pages the tool out until a grant lands…
+    expect(ctx.tools.get('presenter', agent)).toBeUndefined()
+    // …but a presenter is pure display, so transcript replay resolves it.
+    const definition = ctx.tools.getPresentable('presenter', agent)
+    expect(definition?.presentCall?.({ value: 'ls' })).toEqual({ card: 'terminal', title: 'ls' })
+  })
+
   it('denies a model-direct call naming an ungranted tool as UNKNOWN_TOOL before policy', async () => {
     const { ctx } = await setup()
     const calls = registerCatalog(ctx)

@@ -71,6 +71,27 @@ async function harness(): Promise<{ ctx: Context }> {
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(UserQuestionService)
   await ctx.plugin(AgentRegistry)
+  registerPresenterTools(ctx)
+  return { ctx }
+}
+
+/**
+ * A `paged` harness: a tool grant is one agent's session-lifetime state, so an
+ * attached agent that never minted a grant must still serve transcript views.
+ */
+async function pagedHarness(): Promise<{ ctx: Context }> {
+  const ctx = new Context()
+  await ctx.plugin(SessionStore)
+  await ctx.plugin(SystemPrompt, { persona: '' })
+  await ctx.plugin(ToolRuntime, { mode: 'paged' })
+  await ctx.plugin(UserQuestionService)
+  await ctx.plugin(AgentRegistry)
+  registerPresenterTools(ctx)
+  return { ctx }
+}
+
+/** The presenter-bearing fixtures every view harness registers. */
+function registerPresenterTools(ctx: Context): void {
   ctx.tools.register(tool('gen', {
     presentCall: () => ({ card: 'generic', title: 'gen call' }),
     presentResult: (_args, result) => ({ card: 'generic', title: result.isError ? 'gen failed' : 'gen done' }),
@@ -89,7 +110,6 @@ async function harness(): Promise<{ ctx: Context }> {
   ctx.tools.register(tool('boom', {
     presentCall: () => { throw new Error('presenter exploded') },
   }))
-  return { ctx }
 }
 
 /** Drain frames from an open mux stream until `count` session/event frames arrived. */
@@ -234,6 +254,49 @@ describe('mux live view computation', () => {
     expect('view' in (byKey.get('tool/result:h-orphan') ?? {})).toBe(false)
     expect('view' in (byKey.get('tool/result:h-bad') ?? {})).toBe(false)
     expect('view' in (byKey.get('tool/result:h-plain') ?? {})).toBe(false)
+  })
+
+  it('serves paged-mode history views without a grant on the reading scope', async () => {
+    const { ctx } = await pagedHarness()
+    const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    const session = ctx.sessions.create()
+    // The reading scope is the live agent; it never minted a `tool_search`
+    // grant, so the model-facing `get` hides every tool from it. Presenters
+    // are pure display and must not follow the grant filter.
+    ctx.agents.register({ id: session.id, session, status: 'idle', ctx } as Agent)
+    session.append('turn/start', { turn: 1 })
+    session.append('tool/call', { turn: 1, step: 1, callId: CallId('p-term'), name: 'term', arguments: '{"cmd":"ls"}' })
+    session.append('tool/result', {
+      turn: 1, step: 1,
+      message: createToolResultMessage({
+        callId: CallId('p-term'),
+        content: [{ type: 'text', text: 'ok' }],
+        isError: false,
+      }),
+    }, { surfaceOp: 'append' })
+    // The same grant-blindness must cover every presenter, not just the
+    // terminal card: a seeded write/edit row (the produced-files surface)
+    // lost its diff view the same way.
+    session.append('tool/call', { turn: 1, step: 1, callId: CallId('p-diff'), name: 'diffy', arguments: '{}' })
+    expect(ctx.tools.get('term', { agent: 'never-granted' } as never)).toBeUndefined()
+
+    const response = await api.sessions.history({ rpcId: RpcId('t-hist-paged'), payload: { sessionId: session.id } })
+    expect(response.result.ok).toBe(true)
+    if (!response.result.ok) throw new Error('unreachable')
+    const byKey = new Map(response.result.value.events
+      .filter(entry => entry.event.type === 'tool/call' || entry.event.type === 'tool/result')
+      .map(entry => [
+        `${entry.event.type}:${entry.event.type === 'tool/call'
+          ? entry.event.data.callId
+          : (entry.event.data as SessionEvent<'tool/result'>['data']).message.source.callId}`,
+        entry,
+      ]))
+    expect(byKey.get('tool/call:p-term')?.view).toEqual({ for: 'call', view: { card: 'terminal', title: 'ls' } })
+    expect(byKey.get('tool/result:p-term')?.view).toEqual({ for: 'result', view: { card: 'terminal', output: 'done' } })
+    expect(byKey.get('tool/call:p-diff')?.view).toEqual({
+      for: 'call',
+      view: { card: 'diff', title: 'Write f.txt', diffs: [{ path: 'f.txt', oldText: null, newText: 'x' }] },
+    })
   })
 
   it('counts only append-origin messages toward maxMessages and keeps each compaction summary with its replacement', async () => {

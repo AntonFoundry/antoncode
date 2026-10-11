@@ -1535,6 +1535,21 @@ export class ToolRuntime extends Service {
   }
 
   /**
+   * Look up a tool for PRESENTATION only (event render intent, transcript
+   * replay): the pre-paging capability view. A `paged` grant is one agent's
+   * session-lifetime state, so the model-facing {@link get} hides a granted
+   * tool from every cold reader — a history page or replayed session would
+   * lose its presenter views for exactly the calls it records. Restrictions
+   * and scoped shadowing still apply; only the grant filter does not.
+   * @param name - the tool name as registered.
+   * @param scope - the viewing scope (the agent); omitted = the global view.
+   * @returns the definition the scope resolves for rendering, or undefined when none exists.
+   */
+  getPresentable(name: string, scope?: ScopeKey): ToolDefinition | undefined {
+    return this.capabilityView(scope).visible.get(name)
+  }
+
+  /**
    * Resolve the definition that MAY EXECUTE for a call, applying the mode
    * collapse at the operation boundary that owns it. The registry view
    * (`get`) is presentation-agnostic; here a MODEL-DIRECT call under `code`
