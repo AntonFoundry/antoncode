@@ -112,7 +112,7 @@ describe('LayoutController', () => {
     expect(wm.state).toEqual(before)
   })
 
-  it('openFile reports unhandled for directory-ish paths so they fall through to the Host open', () => {
+  it('openFile reports unhandled for directory-ish paths without writing the wm', () => {
     const service = new LayoutController()
     const wm = fakeWm()
     service.attachWm(wm)

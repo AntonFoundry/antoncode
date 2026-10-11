@@ -92,10 +92,14 @@ const OS_OPEN_EXTENSIONS: readonly string[] = [
 /**
  * Whether the opener face opens this path inline (a viewer key or the text
  * fallback) rather than handing it to the host OS default application.
+ * Directory-ish paths (the workspace itself, `.`/`..` segments, trailing
+ * separators) never render in a file buffer — they hand off to the Host so
+ * gestures like "Show in folder" reach the OS.
  * @param path - absolute file path.
  * @returns true when the path renders inside the app.
  */
 export function opensInline(path: string): boolean {
+  if (path.endsWith('/') || /(^|\/)\.{1,2}$/.test(path)) return false
   const dot = path.lastIndexOf('.')
   const ext = dot === -1 ? '' : path.slice(dot + 1).toLowerCase()
   return !OS_OPEN_EXTENSIONS.includes(ext)

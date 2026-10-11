@@ -32,6 +32,18 @@ describe('opensInline', () => {
     expect(opensInline('/w/backup.tiff')).toBe(false)
     expect(opensInline('/w/clip.mp3')).toBe(false)
   })
+
+  it('directory-ish paths hand off to the Host open instead of claiming an inline buffer', () => {
+    expect(opensInline('.')).toBe(false)
+    expect(opensInline('..')).toBe(false)
+    expect(opensInline('/w/src/')).toBe(false)
+    expect(opensInline('/w/dir/.')).toBe(false)
+    expect(opensInline('/w/dir/..')).toBe(false)
+    expect(opensInline('src')).toBe(true)
+    expect(opensInline('/w/Makefile')).toBe(true)
+    expect(opensInline('/w/no-extension')).toBe(true)
+    expect(opensInline('/w/.gitignore')).toBe(true)
+  })
 })
 
 describe('viewerLanguageFor', () => {
