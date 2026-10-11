@@ -310,6 +310,26 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Root interface of the unified API. New client-request domain = one new file pair + one field here + one map row.',
     methods: [
       {
+        signature: 'orchestrator: OrchestratorApi',
+        description: 'Orchestrator board snapshot + run actions (one read composing workspace.list + session.list projections).',
+        parameters: [],
+      },
+      {
+        signature: 'langflow: LangflowApi',
+        description: 'LangFlow sidecar lifecycle for the Workflows tab embed (status, start, stop).',
+        parameters: [],
+      },
+      {
+        signature: 'term: TermApi',
+        description: 'Interactive PTY sessions for the GUI terminal (login bash on a node-pty).',
+        parameters: [],
+      },
+      {
+        signature: 'jobs: JobsApi',
+        description: 'Background-job mutations; the read side is the `session/jobs` mux frame.',
+        parameters: [],
+      },
+      {
         signature: 'downloads: DownloadsApi',
         description: 'Host-only download surfaces (GET, no wire envelope); absent from IApiClient.',
         parameters: [],
@@ -569,6 +589,82 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'flowBuilder',
+    summary: 'Flowbuilder store contract.',
+    description: 'Flowbuilder store contract. Every read is synchronous over the opened domain\'s in-memory state; every write validates at the durable boundary, lands atomically on the domain\'s per-table write chain, and emits the matching `flowbuilder/*` event only after durability.',
+    methods: [
+      {
+        signature: 'listFlows(): FlowDefinitionRecord[]',
+        description: 'Snapshot every stored workflow definition (domain order: insertion).',
+        parameters: [],
+        returns: 'the stored definitions.',
+      },
+      {
+        signature: 'getFlow(flowId: string): FlowDefinitionRecord | undefined',
+        description: 'Read one stored workflow definition.',
+        parameters: [{ name: 'flowId', description: 'the definition id.' }],
+        returns: 'the record, or `undefined` when absent.',
+      },
+      {
+        signature: 'async saveFlow(request: FlowSaveRequest): Promise<FlowDefinitionRecord>',
+        description: 'Validate and upsert one workflow definition. Absent `id`, a new definition is minted; present `id`, the stored record is replaced whole (creation time preserved, update time bumped). The graph must be structurally valid and acyclic — see `validateFlowStructure`.',
+        parameters: [{ name: 'request', description: 'the save request (id optional).' }],
+        returns: 'the exact record stored.',
+      },
+      {
+        signature: 'async deleteFlow(flowId: string): Promise<FlowDefinitionRecord>',
+        description: 'Delete one stored workflow definition.',
+        parameters: [{ name: 'flowId', description: 'the definition id.' }],
+        returns: 'the record as it was removed.',
+        throws: ['{@link FlowUnknownError} when the id names no stored definition.'],
+      },
+      {
+        signature: 'listBlocks(query?: string): BlockLibraryEntryRecord[]',
+        description: 'Snapshot the block library, optionally filtered by a case-insensitive substring over name and description.',
+        parameters: [{ name: 'query', description: 'the filter substring (omit for everything).' }],
+        returns: 'the matching entries.',
+      },
+      {
+        signature: 'getBlock(blockId: string): BlockLibraryEntryRecord | undefined',
+        description: 'Read one stored library block.',
+        parameters: [{ name: 'blockId', description: 'the entry id.' }],
+        returns: 'the entry, or `undefined` when absent.',
+      },
+      {
+        signature: 'async saveBlock(request: BlockSaveRequest): Promise<BlockLibraryEntryRecord>',
+        description: 'Validate and upsert one library block. Absent `id`, a block with the same display name (case-sensitive) is replaced whole — authoring by name is the model\'s iterate path — otherwise a new entry is minted.',
+        parameters: [{ name: 'request', description: 'the save request (id optional).' }],
+        returns: 'the exact entry stored.',
+      },
+      {
+        signature: 'async deleteBlock(blockId: string): Promise<BlockLibraryEntryRecord>',
+        description: 'Delete one stored library block.',
+        parameters: [{ name: 'blockId', description: 'the entry id.' }],
+        returns: 'the entry as it was removed.',
+        throws: ['{@link BlockUnknownError} when the id names no stored entry.'],
+      },
+      {
+        signature: 'async runFlow(flowId: string, options: { signal?: AbortSignal } = {}): Promise<FlowRunId>',
+        description: 'Start one run of a saved definition. The record is durable and `flowbuilder/run-start` has fired when this resolves; execution continues asynchronously and settles through `flowbuilder/run-end`.',
+        parameters: [{ name: 'flowId', description: 'the definition id.' }, { name: 'options', description: '`signal` cancels the run.' }],
+        returns: 'the run id.',
+        throws: ['{@link FlowUnknownError} when the id names no stored definition.', '{@link FlowGraphInvalidError} when the stored graph is invalid.'],
+      },
+      {
+        signature: 'getRun(runId: string): FlowRunRecordRecord | undefined',
+        description: 'Read one run record.',
+        parameters: [{ name: 'runId', description: 'the run id.' }],
+        returns: 'the record, or `undefined` when absent.',
+      },
+      {
+        signature: 'listRuns(flowId?: string): FlowRunRecordRecord[]',
+        description: 'Snapshot run records, newest first, optionally scoped to one flow.',
+        parameters: [{ name: 'flowId', description: 'the definition id to scope to (omit for every run).' }],
+        returns: 'the matching run records.',
+      },
+    ],
+  },
+  {
     key: 'fs',
     summary: 'Abstract filesystem provider.',
     description: 'Abstract filesystem provider. Targets must preserve identity across aliases; reads expose regular UTF-8 text or typed errors, listings are stable and content-free, and mutations are atomic. Optional guards add stale protection without changing the unguarded provider contract.',
@@ -790,6 +886,31 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'langflow',
+    summary: 'Supervise the embedded LangFlow subprocess: start it for the Workflows tab, report readiness by polling `/health`, and tear it down on dispose.',
+    description: 'Supervise the embedded LangFlow subprocess: start it for the Workflows tab, report readiness by polling `/health`, and tear it down on dispose.',
+    methods: [
+      {
+        signature: 'status(): LangflowStatus',
+        description: 'Snapshot the current lifecycle state.',
+        parameters: [],
+        returns: 'the status the Workflows tab renders.',
+      },
+      {
+        signature: 'start(): Promise<LangflowStatus>',
+        description: 'Spawn the child and poll until its HTTP server answers. Idempotent and single-flight: concurrent starts share one attempt, and a start while running returns the current status.',
+        parameters: [],
+        returns: 'the post-start status (`running`, or `error` with the reason).',
+      },
+      {
+        signature: 'async stop(): Promise<void>',
+        description: 'Terminate the child (SIGTERM → grace → SIGKILL through the subprocess seam) and drop back to `stopped`. Idempotent.',
+        parameters: [],
+        returns: 'when the whole process tree has exited.',
+      },
+    ],
+  },
+  {
     key: 'llm',
     summary: 'The abstract `llm` service: an adapter registry plus a streaming model-call API, interceptable via the `llm/stream` waterfall.',
     description: 'The abstract `llm` service: an adapter registry plus a streaming model-call API, interceptable via the `llm/stream` waterfall.',
@@ -909,6 +1030,45 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Delete one feedback item. Absence is successful regardless of the supplied version; an existing item requires an exact version match.',
         parameters: [{ name: 'request', description: 'Session, message, and observed item version.' }],
         returns: 'the stable absent postcondition, or an explicit failure.',
+      },
+    ],
+  },
+  {
+    key: 'modelIntel',
+    summary: 'The weekly model-intel service: datasheet, resolver, and research scheduler.',
+    description: 'The weekly model-intel service: datasheet, resolver, and research scheduler.',
+    methods: [
+      {
+        signature: 'current: ModelIntelDatasheet = { fetchedAt: \'\', entries: [] }',
+        description: 'Current datasheet snapshot; test-visible via injectDatasheet.',
+        parameters: [],
+      },
+      {
+        signature: 'async start(): Promise<void>',
+        description: 'Load the datasheet on mount and start the (cheap) schedule check.',
+        parameters: [],
+      },
+      {
+        signature: 'getDatasheet(): ModelIntelDatasheet',
+        description: 'The current datasheet (cached; re-read when the file changes under us).',
+        parameters: [],
+        returns: 'the current in-memory datasheet snapshot.',
+      },
+      {
+        signature: 'injectDatasheet(datasheet: ModelIntelDatasheet): void',
+        description: 'Replace the in-memory datasheet wholesale. Test and invariant seam: the scheduler owns the file, so tests seed the snapshot through this instead of fighting the persisted document.',
+        parameters: [{ name: 'datasheet', description: 'the snapshot to install as the current datasheet.' }],
+      },
+      {
+        signature: 'async resolveAutoRoute(taskText: string): Promise<AgentOptions | undefined>',
+        description: 'Resolve the `auto` child-model route for one delegation task: the best datasheet entry among providers whose credential resolves, scored against the task text. `undefined` = no eligible researched route (caller falls back to parent inheritance).',
+        parameters: [{ name: 'taskText', description: 'the delegation task text scored against datasheet entries.' }],
+        returns: 'the child provider/model options, or `undefined` when no researched route is eligible.',
+      },
+      {
+        signature: 'async researchNow(trigger: string): Promise<void>',
+        description: 'Run one research pass now (no-op while one is in flight). Exposed for the scheduled check and for manual triggers.',
+        parameters: [{ name: 'trigger', description: 'short label for the pass\'s cause, carried in the log line.' }],
       },
     ],
   },
@@ -2172,6 +2332,61 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
     ],
   },
+  {
+    key: 'worktreeRegistry',
+    summary: 'Durable worktree registry.',
+    description: 'Durable worktree registry. The `worktrees` table IS the registry — display order derives from record timestamps, so one row write is the whole mutation and no order/global divergence is possible; the global singleton holds only the per-repository mode preferences. Git worktree adds run before any durable write: a failed git step leaves nothing registered, and a failed durable write rolls the git side back.',
+    methods: [
+      {
+        signature: 'async create(repoPath: string, opts: { name?: string; base?: string } = {}): Promise<WorktreeRecord>',
+        description: 'Materialize a git worktree for a repository and register it durably. The branch is `<branchPrefix><slug>`; an already-existing branch is checked out as-is (stale-branch reattachment). The worktree directory is also registered as a workspace (title = branch) so sessions group there; workspace-registration failure degrades to an ungrouped worktree with a warning and never fails the create.',
+        parameters: [{ name: 'repoPath', description: 'Any directory inside the target repository.' }, { name: 'opts', description: 'Optional caller-chosen name (slug source) and base ref (verified; default `origin/main` when locally resolvable, else HEAD).' }],
+        returns: 'the durable record.',
+      },
+      {
+        signature: 'async list(repoPath?: string): Promise<WorktreeRecord[]>',
+        description: 'Ordered worktree records, newest first.',
+        parameters: [{ name: 'repoPath', description: 'When given, only worktrees of the repository owning that directory are returned.' }],
+        returns: 'a fresh ordered array of records.',
+      },
+      {
+        signature: 'get(id: WorktreeId): WorktreeRecord | undefined',
+        description: 'Look up one worktree record by id.',
+        parameters: [{ name: 'id', description: 'Worktree id.' }],
+        returns: 'the record, or `undefined` when unknown.',
+      },
+      {
+        signature: 'async status(path: string): Promise<WorktreeStatus>',
+        description: 'The live git projection of one working directory: branch, head, dirty flag, repo-global stash count, and upstream divergence. Not a registry query — any git working directory (including a plain checkout) reports.',
+        parameters: [{ name: 'path', description: 'Working directory to query.' }],
+        returns: 'the status bundle.',
+      },
+      {
+        signature: 'prefs(): Record<string, WorktreeModePref>',
+        description: 'The full per-repository preference map, keyed by canonical repository path. One read for clients projecting every workspace\'s default mode.',
+        parameters: [],
+        returns: 'a fresh copy of the durable preferences.',
+      },
+      {
+        signature: 'async pref(repoPath: string): Promise<WorktreeModePref | undefined>',
+        description: 'Read the per-repository default workspace mode for new sessions.',
+        parameters: [{ name: 'repoPath', description: 'Any directory inside the repository.' }],
+        returns: 'the stored preference, or `undefined` when the repo has none.',
+      },
+      {
+        signature: 'async setPref(repoPath: string, pref: WorktreeModePref): Promise<void>',
+        description: 'Write the per-repository default workspace mode for new sessions.',
+        parameters: [{ name: 'repoPath', description: 'Any directory inside the repository.' }, { name: 'pref', description: 'The preference: the checkout, a fresh worktree per session, or a named existing worktree.' }],
+        returns: 'resolution after durability.',
+      },
+      {
+        signature: 'async remove(id: WorktreeId, opts: { force?: boolean } = {}): Promise<void>',
+        description: 'Remove one worktree: `git worktree remove` (refuses a dirty tree unless forced) plus the durable record deletion. The branch is never deleted — merge-back keeps it. A git removal of an already-missing worktree directory is accepted so the record can still be cleared.',
+        parameters: [{ name: 'id', description: 'Worktree record to remove.' }, { name: 'opts', description: '`force: true` removes even a dirty worktree.' }],
+        returns: 'resolution after durability.',
+      },
+    ],
+  },
 ]
 
 /** Every harness event, sorted by name. */
@@ -2367,6 +2582,46 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'A domain record or the global singleton changed, emitted once per write strictly after the backend acknowledged durability.',
     description: 'A domain record or the global singleton changed, emitted once per write strictly after the backend acknowledged durability. Events of one domain arrive in its write-chain order.',
     parameters: [{ name: 'change', description: 'domain, table (`\'\'` for global), key (`\'\'` for global), operation discriminant, and on `put` the new snapshot.' }],
+  },
+  {
+    name: 'flowbuilder/flow-changed',
+    mode: 'emit',
+    signature: '\'flowbuilder/flow-changed\'(action: \'saved\' | \'deleted\', flow: FlowDefinitionRecord): void',
+    summary: 'A workflow definition was saved or deleted.',
+    description: 'A workflow definition was saved or deleted. Paired per write; `flow` is the exact stored record (for `deleted`, the record as it was removed).',
+    parameters: [{ name: 'action', description: 'which write happened.' }, { name: 'flow', description: 'the affected definition record.' }],
+  },
+  {
+    name: 'flowbuilder/library-changed',
+    mode: 'emit',
+    signature: '\'flowbuilder/library-changed\'(action: \'saved\' | \'deleted\', block: BlockLibraryEntryRecord): void',
+    summary: 'A block library entry was saved or deleted.',
+    description: 'A block library entry was saved or deleted. Paired per write; `block` is the exact stored record (for `deleted`, the record as it was removed).',
+    parameters: [{ name: 'action', description: 'which write happened.' }, { name: 'block', description: 'the affected library entry.' }],
+  },
+  {
+    name: 'flowbuilder/run-end',
+    mode: 'emit',
+    signature: '\'flowbuilder/run-end\'(record: FlowRunRecordRecord): void',
+    summary: 'A run reached its terminal record (emitted exactly once per run).',
+    description: 'A run reached its terminal record (emitted exactly once per run).',
+    parameters: [{ name: 'record', description: 'the terminal record as stored.' }],
+  },
+  {
+    name: 'flowbuilder/run-node',
+    mode: 'emit',
+    signature: '\'flowbuilder/run-node\'(runId: FlowRunId, nodeId: string, state: FlowNodeRunState): void',
+    summary: 'One node settled into a new state, after that state is durable.',
+    description: 'One node settled into a new state, after that state is durable.',
+    parameters: [{ name: 'runId', description: 'the owning run.' }, { name: 'nodeId', description: 'the node that transitioned.' }, { name: 'state', description: 'the node\'s new state.' }],
+  },
+  {
+    name: 'flowbuilder/run-start',
+    mode: 'emit',
+    signature: '\'flowbuilder/run-start\'(record: FlowRunRecordRecord): void',
+    summary: 'A run started: the durable `running` record as stored.',
+    description: 'A run started: the durable `running` record as stored.',
+    parameters: [{ name: 'record', description: 'the run record at start.' }],
   },
   {
     name: 'fs/edit-intent',
@@ -2650,7 +2905,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AgentOptions',
-    declaration: 'export interface AgentOptions {\n    provider?: string;\n    model?: string;\n    maxTokens?: number;\n}',
+    declaration: 'export interface AgentOptions {\n    provider?: string;\n    model?: string;\n    maxTokens?: number;\n    reasoningEffort?: string;\n}',
   },
   {
     name: 'AgentPreset',
@@ -2678,7 +2933,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ApprovalRequest',
-    declaration: 'export interface ApprovalRequest {\n    readonly agent: Agent;\n    readonly toolName: string;\n    readonly callId?: CallId;\n    readonly reason?: string;\n    readonly signal?: AbortSignal;\n}',
+    declaration: 'export interface ApprovalRequest {\n    readonly agent: Agent;\n    readonly toolName: string;\n    readonly callId?: CallId;\n    readonly reason?: string;\n    readonly signal?: AbortSignal;\n    readonly bypassPolicy?: boolean;\n}',
   },
   {
     name: 'ApprovalService',
@@ -2718,7 +2973,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AssembledSection',
-    declaration: 'export interface AssembledSection {\n    name: string;\n    text: string;\n}',
+    declaration: 'export interface AssembledSection {\n    name: string;\n    text: string;\n    interpolate?: boolean;\n}',
   },
   {
     name: 'AssistantMessage',
@@ -2747,6 +3002,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BashEnvVariableInfo',
     declaration: 'export interface BashEnvVariableInfo extends BashEnvVariable {\n    contributor: string;\n    key: DshEnvironmentKey;\n}',
+  },
+  {
+    name: 'BlockLibraryEntryRecord',
+    declaration: 'export type BlockLibraryEntryRecord = z.infer<typeof blockLibraryEntrySchema>;',
+  },
+  {
+    name: 'BlockSaveRequest',
+    declaration: 'export type BlockSaveRequest = z.input<typeof blockSaveRequestSchema>;',
   },
   {
     name: 'Branded',
@@ -2949,8 +3212,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface DiffResultView {\n    card: \'diff\';\n    title?: string;\n    diffs: FileDiff[];\n}',
   },
   {
+    name: 'DirectoryListOptions',
+    declaration: 'export interface DirectoryListOptions {\n    includeFiles?: boolean;\n}',
+  },
+  {
     name: 'DirectoryPickerBrowseCapability',
-    declaration: 'export interface DirectoryPickerBrowseCapability {\n    kind: \'browse\';\n    list(path?: string, signal?: AbortSignal): Promise<DirectoryListing>;\n    createDirectory(path: string, name: string): Promise<string>;\n}',
+    declaration: 'export interface DirectoryPickerBrowseCapability {\n    kind: \'browse\';\n    list(path?: string, opts?: DirectoryListOptions, signal?: AbortSignal): Promise<DirectoryListing>;\n    createDirectory(path: string, name: string): Promise<string>;\n}',
   },
   {
     name: 'DirectoryPickerCapabilities',
@@ -3014,7 +3281,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'DownloadsApi',
-    declaration: 'export interface DownloadsApi {\n    sessionLog(request: {\n        sessionId: SessionId;\n        includeDescendants?: boolean;\n    }, signal: AbortSignal): Promise<Response>;\n}',
+    declaration: 'export interface DownloadsApi {\n    sessionLog(request: {\n        sessionId: SessionId;\n        includeDescendants?: boolean;\n    }, signal: AbortSignal): Promise<Response>;\n    media(request: MediaDownloadRequest, signal: AbortSignal): Promise<Response>;\n}',
   },
   {
     name: 'DshEnvironment',
@@ -3063,6 +3330,30 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FinishReasonMap',
     declaration: 'export interface FinishReasonMap {\n    \'stop\': {\n        kind: \'stop\';\n    };\n    \'tool-calls\': {\n        kind: \'tool-calls\';\n    };\n    \'max-tokens\': {\n        kind: \'max-tokens\';\n    };\n    \'aborted\': {\n        kind: \'aborted\';\n        failure: LlmFailure;\n    };\n    \'error\': {\n        kind: \'error\';\n        failure: LlmFailure;\n    };\n}',
+  },
+  {
+    name: 'FlowDefinitionRecord',
+    declaration: 'export type FlowDefinitionRecord = z.infer<typeof flowDefinitionSchema>;',
+  },
+  {
+    name: 'FlowNodeRunState',
+    declaration: 'export interface FlowNodeRunState {\n    status: FlowNodeRunStatus;\n    output?: unknown | undefined;\n    error?: string | undefined;\n}',
+  },
+  {
+    name: 'FlowNodeRunStatus',
+    declaration: 'export type FlowNodeRunStatus = \'pending\' | \'running\' | \'completed\' | \'error\' | \'skipped\';',
+  },
+  {
+    name: 'FlowRunId',
+    declaration: 'export type FlowRunId = Branded<\'FlowRunId\'>;',
+  },
+  {
+    name: 'FlowRunRecordRecord',
+    declaration: 'export type FlowRunRecordRecord = z.infer<typeof flowRunRecordSchema>;',
+  },
+  {
+    name: 'FlowSaveRequest',
+    declaration: 'export type FlowSaveRequest = z.input<typeof flowSaveRequestSchema>;',
   },
   {
     name: 'FsDirEntry',
@@ -3229,6 +3520,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface JobRead {\n    text: string;\n    snapshot: JobSnapshot;\n}',
   },
   {
+    name: 'JobsApi',
+    declaration: 'export interface JobsApi {\n    kill(request: RpcRequest<{\n        jobId: JobId;\n    }>): Promise<RpcResponse<{\n        killed: \'requested\' | \'already-finished\';\n    }>>;\n}',
+  },
+  {
     name: 'JobsChangedListener',
     declaration: 'export type JobsChangedListener = (owner: Agent | undefined) => void;',
   },
@@ -3281,6 +3576,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface KvUnitDescriptor {\n    readonly name: string;\n    readonly version: number;\n    readonly tables: readonly string[];\n    readonly hasGlobal: boolean;\n}',
   },
   {
+    name: 'LangflowApi',
+    declaration: 'export interface LangflowApi {\n    status(request: RpcRequest<{}>): Promise<RpcResponse<{\n        status: LangflowStatus;\n    }>>;\n    start(request: RpcRequest<{}>): Promise<RpcResponse<{\n        status: LangflowStatus;\n    }>>;\n    stop(request: RpcRequest<{}>): Promise<RpcResponse<{\n        status: LangflowStatus;\n    }>>;\n}',
+  },
+  {
+    name: 'LangflowState',
+    declaration: 'export type LangflowState = \'stopped\' | \'starting\' | \'running\' | \'error\';',
+  },
+  {
+    name: 'LangflowStatus',
+    declaration: 'export interface LangflowStatus {\n    state: LangflowState;\n    url?: string | undefined;\n    pid?: number | undefined;\n    error?: string | undefined;\n}',
+  },
+  {
     name: 'LlmAdapter',
     declaration: 'export abstract class LlmAdapter {\n    providerInfo(provider: string): LlmProviderInfo;\n    providerRetryPolicy(_provider: string): ResolvedRetryPolicy | undefined;\n    listModels(_provider: string): Promise<readonly LlmModelInfo[]>;\n    resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    abstract stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
   },
@@ -3310,7 +3617,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmModelDiscoveryRequest',
-    declaration: 'export interface LlmModelDiscoveryRequest {\n    provider?: string;\n    baseURL?: string;\n    api?: string;\n    apiKey?: string;\n    signal?: AbortSignal;\n}',
+    declaration: 'export interface LlmModelDiscoveryRequest {\n    provider?: string;\n    baseURL?: string;\n    api?: string;\n    apiKey?: string;\n    signal?: AbortSignal;\n    forceNetwork?: boolean;\n}',
   },
   {
     name: 'LlmModelInfo',
@@ -3379,6 +3686,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ManualCompactAgentContext',
     declaration: 'export interface ManualCompactAgentContext extends CompactionAgentContext {\n    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;\n}',
+  },
+  {
+    name: 'MediaDownloadRequest',
+    declaration: 'export interface MediaDownloadRequest {\n    path: string;\n    range?: string;\n    remux?: boolean;\n}',
   },
   {
     name: 'Message',
@@ -3473,6 +3784,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface MessageSourceMap {\n    user: {\n        kind: \'user\';\n    };\n    plugin: {\n        kind: \'plugin\';\n        plugin: string;\n    } & ContextFormed;\n    model: ModelMessageSource;\n    tool: ToolMessageSource;\n}',
   },
   {
+    name: 'ModelIntelDatasheet',
+    declaration: 'export interface ModelIntelDatasheet {\n    fetchedAt: string;\n    entries: ModelIntelEntry[];\n}',
+  },
+  {
+    name: 'ModelIntelEntry',
+    declaration: 'export interface ModelIntelEntry {\n    provider: string;\n    model: string;\n    reasoning?: number;\n    coding?: number;\n    agentic?: number;\n    speed?: number;\n    contextWindow?: number;\n    notes?: string;\n}',
+  },
+  {
     name: 'ModelMessageSource',
     declaration: 'export interface ModelMessageSource extends AssistantProvenance {\n    kind: \'model\';\n}',
   },
@@ -3491,6 +3810,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'OneShotSubagentDescriptorData',
     declaration: 'export interface OneShotSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: \'one-shot\';\n    readonly label?: string;\n}',
+  },
+  {
+    name: 'OrchestratorApi',
+    declaration: 'export interface OrchestratorApi {\n    board(request: RpcRequest<{}>): Promise<RpcResponse<{\n        items: WorkspaceView[];\n        archivedSessionIds: SessionId[];\n        sessions: SessionSummary[];\n    }>>;\n    act(request: RpcRequest<{\n        sessionId: SessionId;\n        action: \'kill\';\n    }>): Promise<RpcResponse<{\n        accepted: true;\n    }>>;\n}',
   },
   {
     name: 'PermissionSelect',
@@ -3562,7 +3885,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PromptSection',
-    declaration: 'export interface PromptSection {\n    readonly name: string;\n    readonly order: number;\n    readonly text: string | ((context: AssembleContext) => string);\n    readonly complete?: boolean;\n}',
+    declaration: 'export interface PromptSection {\n    readonly name: string;\n    readonly order: number;\n    readonly text: string | ((context: AssembleContext) => string);\n    readonly complete?: boolean;\n    readonly interpolate?: boolean;\n}',
   },
   {
     name: 'ProviderRequestId',
@@ -3658,7 +3981,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RpcErrorDetailsMap',
-    declaration: 'export interface RpcErrorDetailsMap {\n    \'bad-request\': {\n        issues: ZodIssue[];\n    };\n    \'cancelled\': {};\n    \'session-not-found\': {\n        sessionId: SessionId;\n    };\n    \'model-unavailable\': {\n        provider: string;\n        model: string;\n    };\n    \'session-conflict\': {\n        sessionId: SessionId;\n        requestedCwd: string;\n        existingCwd?: string;\n    };\n    \'invalid-time-zone\': {\n        value: string;\n    };\n    \'workspace-attach-failed\': {\n        sessionId: SessionId;\n        workspaceId: string;\n    };\n    \'workspace-not-found\': {\n        workspaceId: string;\n    };\n    \'workspace-invalid-path\': {\n        path: string;\n    };\n    \'workspace-name-conflict\': {\n        name: string;\n    };\n    \'workspace-move-invalid\': {\n        workspaceId: string;\n        sessionId: SessionId;\n        beforeSessionId?: SessionId;\n    };\n    \'directory-unreadable\': {\n        path: string;\n    };\n    \'directory-exists\': {\n        path: string;\n    };\n    \'directory-create-failed\': {\n        path: string;\n    };\n    \'directory-picker-unavailable\': {\n        capability: string;\n    };\n    \'agent-preset-read-only\': {\n        agentPreset: string;\n        reason: string;\n    };\n    \'agent-preset-locked\': {\n        sessionId: SessionId;\n        agentPreset: string;\n    };\n    \'agent-preset-conflict\': {\n        sessionId: SessionId;\n        requestedPreset: string;\n        existingPreset?: string;\n    };\n    \'agent-preset-not-found\': {\n        agentPreset: string;\n      /* …truncated — full shape in source */',
+    declaration: 'export interface RpcErrorDetailsMap {\n    \'bad-request\': {\n        issues: ZodIssue[];\n    };\n    \'cancelled\': {};\n    \'session-not-found\': {\n        sessionId: SessionId;\n    };\n    \'model-unavailable\': {\n        provider: string;\n        model: string;\n    };\n    \'session-conflict\': {\n        sessionId: SessionId;\n        requestedCwd: string;\n        existingCwd?: string;\n    };\n    \'invalid-time-zone\': {\n        value: string;\n    };\n    \'workspace-attach-failed\': {\n        sessionId: SessionId;\n        workspaceId: string;\n    };\n    \'workspace-not-found\': {\n        workspaceId: string;\n    };\n    \'workspace-invalid-path\': {\n        path: string;\n    };\n    \'flow-not-found\': {\n        flowId: string;\n    };\n    \'block-not-found\': {\n        blockId: string;\n    };\n    \'run-not-found\': {\n        runId: string;\n    };\n    \'flow-graph-invalid\': {};\n    \'workspace-name-conflict\': {\n        name: string;\n    };\n    \'workspace-move-invalid\': {\n        workspaceId: string;\n        sessionId: SessionId;\n        beforeSessionId?: SessionId;\n    };\n    \'worktree-not-found\': {\n        worktreeId: string;\n    };\n    \'worktree-not-a-repository\': {\n        path: string;\n    };\n    \'worktree-git-error\': {\n        repoPath: string;\n    };\n    \'directory-unreadable\': {\n        path: string;\n    };\n    \'directory-exists\': {\n        path: string;\n    };\n    \'directory-create-failed\': {\n        path: string;\n    };\n    \'directory-picker-unavailable\': {\n        capability: string;\n    };\n     /* …truncated — full shape in source */',
   },
   {
     name: 'RpcId',
@@ -3667,6 +3990,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RpcReceipt',
     declaration: 'export type RpcReceipt = {\n    accepted: true;\n} | {\n    accepted: false;\n    reason: \'not-pending\' | \'bad-response\';\n};',
+  },
+  {
+    name: 'RpcRequest',
+    declaration: 'export interface RpcRequest<P> {\n    rpcId: RpcId;\n    payload: P;\n}',
+  },
+  {
+    name: 'RpcResponse',
+    declaration: 'export interface RpcResponse<T> {\n    rpcId: RpcId;\n    result: RpcResult<T>;\n}',
   },
   {
     name: 'RpcResult',
@@ -4265,6 +4596,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type TableValueOf<S extends DomainSpec, N extends keyof S[\'tables\']> = S[\'tables\'][N] extends DomainTableSpec<string, infer V> ? V : never;',
   },
   {
+    name: 'TermApi',
+    declaration: 'export interface TermApi {\n    spawn(request: RpcRequest<{\n        cols?: number;\n        rows?: number;\n        cwd?: string;\n    }>): Promise<RpcResponse<{\n        sessionId: string;\n    }>>;\n    read(request: RpcRequest<{\n        sessionId: string;\n        since: number;\n    }>): Promise<RpcResponse<{\n        data: string;\n        next: number;\n        exited: boolean;\n    }>>;\n    input(request: RpcRequest<{\n        sessionId: string;\n        data: string;\n    }>): Promise<RpcResponse<{\n        wrote: true;\n    }>>;\n    resize(request: RpcRequest<{\n        sessionId: string;\n        cols: number;\n        rows: number;\n    }>): Promise<RpcResponse<{\n        resized: true;\n    }>>;\n    dispose(request: RpcRequest<{\n        sessionId: string;\n    }>): Promise<RpcResponse<{\n        disposed: true;\n    }>>;\n}',
+  },
+  {
     name: 'TerminalBackend',
     declaration: 'export interface TerminalBackend {\n    readonly type: string;\n    spawn(spec: TerminalBackendSpawnSpec): Promise<TerminalBackendSession>;\n}',
   },
@@ -4418,7 +4753,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolGuard',
-    declaration: 'export type ToolGuard = (execution: Readonly<ToolExecution>) => string | undefined;',
+    declaration: 'export type ToolGuard = (execution: Readonly<ToolExecution>) => string | undefined | Promise<string | undefined>;',
   },
   {
     name: 'ToolMessageSource',
@@ -4667,6 +5002,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkflowStopReason',
     declaration: 'export type WorkflowStopReason = \'completed\' | \'cancelled\' | \'error\';',
+  },
+  {
+    name: 'WorkspaceView',
+    declaration: 'export interface WorkspaceView {\n    workspaceId: WorkspaceId;\n    path: string;\n    title: string;\n    sessionIds: SessionId[];\n    createdAt: string;\n    updatedAt: string;\n}',
+  },
+  {
+    name: 'WorktreeModePref',
+    declaration: 'export type WorktreeModePref = z.infer<typeof worktreeModePref>;',
+  },
+  {
+    name: 'WorktreeRecord',
+    declaration: 'export type WorktreeRecord = z.infer<typeof worktreeRecord>;',
+  },
+  {
+    name: 'WorktreeStatus',
+    declaration: 'export interface WorktreeStatus {\n    readonly path: string;\n    readonly branch: string;\n    readonly head: string;\n    readonly dirty: boolean;\n    readonly stashCount: number;\n    readonly ahead: number;\n    readonly behind: number;\n    readonly bases: readonly string[];\n}',
   },
 ]
 

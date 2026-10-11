@@ -49,6 +49,10 @@ const TAIL_BYTES = 262144
 /** Terminate escalation grace period handed to the subprocess seam. */
 const GRACE_MS = 8000
 
+/**
+ * Supervise the embedded LangFlow subprocess: start it for the Workflows tab,
+ * report readiness by polling `/health`, and tear it down on dispose.
+ */
 export class LangflowSidecar {
   private state: LangflowState = 'stopped'
   private error: string | undefined

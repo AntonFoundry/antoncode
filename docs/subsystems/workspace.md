@@ -147,7 +147,7 @@ Abstract directory-picking service. Subclass, implement `capability()`, and load
 abstract capability(): DirectoryPickerCapability
 ```
 
-Source: [`packages/host/directory-picker/src/index.ts:131`](../../packages/host/directory-picker/src/index.ts)
+Source: [`packages/host/directory-picker/src/index.ts:146`](../../packages/host/directory-picker/src/index.ts)
 
 <a id="ctxworkspaceregistry--workspaceregistry"></a>
 
@@ -225,4 +225,86 @@ async resolveByPath(path: string): Promise<Workspace | undefined>
 Types: [SessionId](core.md)
 
 Source: [`packages/workspace/workspace/src/index.ts:92`](../../packages/workspace/workspace/src/index.ts)
+
+<a id="ctxworktreeregistry--worktreeregistry"></a>
+
+### `ctx.worktreeRegistry` — `WorktreeRegistry`
+
+Durable worktree registry. The `worktrees` table IS the registry — display order derives from record timestamps, so one row write is the whole mutation and no order/global divergence is possible; the global singleton holds only the per-repository mode preferences. Git worktree adds run before any durable write: a failed git step leaves nothing registered, and a failed durable write rolls the git side back.
+
+```ts cordis-catalog
+/**
+ * Materialize a git worktree for a repository and register it durably. The
+ * branch is `<branchPrefix><slug>`; an already-existing branch is checked
+ * out as-is (stale-branch reattachment). The worktree directory is also
+ * registered as a workspace (title = branch) so sessions group there;
+ * workspace-registration failure degrades to an ungrouped worktree with a
+ * warning and never fails the create.
+ * @param repoPath - Any directory inside the target repository.
+ * @param opts - Optional caller-chosen name (slug source) and base ref
+ *   (verified; default `origin/main` when locally resolvable, else HEAD).
+ * @returns the durable record.
+ */
+async create(repoPath: string, opts: { name?: string; base?: string } = {}): Promise<WorktreeRecord>
+
+/**
+ * Ordered worktree records, newest first.
+ * @param repoPath - When given, only worktrees of the repository owning
+ *   that directory are returned.
+ * @returns a fresh ordered array of records.
+ */
+async list(repoPath?: string): Promise<WorktreeRecord[]>
+
+/**
+ * Look up one worktree record by id.
+ * @param id - Worktree id.
+ * @returns the record, or `undefined` when unknown.
+ */
+get(id: WorktreeId): WorktreeRecord | undefined
+
+/**
+ * The live git projection of one working directory: branch, head, dirty
+ * flag, repo-global stash count, and upstream divergence. Not a registry
+ * query — any git working directory (including a plain checkout) reports.
+ * @param path - Working directory to query.
+ * @returns the status bundle.
+ */
+async status(path: string): Promise<WorktreeStatus>
+
+/**
+ * The full per-repository preference map, keyed by canonical repository
+ * path. One read for clients projecting every workspace's default mode.
+ * @returns a fresh copy of the durable preferences.
+ */
+prefs(): Record<string, WorktreeModePref>
+
+/**
+ * Read the per-repository default workspace mode for new sessions.
+ * @param repoPath - Any directory inside the repository.
+ * @returns the stored preference, or `undefined` when the repo has none.
+ */
+async pref(repoPath: string): Promise<WorktreeModePref | undefined>
+
+/**
+ * Write the per-repository default workspace mode for new sessions.
+ * @param repoPath - Any directory inside the repository.
+ * @param pref - The preference: the checkout, a fresh worktree per
+ *   session, or a named existing worktree.
+ * @returns resolution after durability.
+ */
+async setPref(repoPath: string, pref: WorktreeModePref): Promise<void>
+
+/**
+ * Remove one worktree: `git worktree remove` (refuses a dirty tree unless
+ * forced) plus the durable record deletion. The branch is never deleted —
+ * merge-back keeps it. A git removal of an already-missing worktree
+ * directory is accepted so the record can still be cleared.
+ * @param id - Worktree record to remove.
+ * @param opts - `force: true` removes even a dirty worktree.
+ * @returns resolution after durability.
+ */
+async remove(id: WorktreeId, opts: { force?: boolean } = {}): Promise<void>
+```
+
+Source: [`packages/workspace/worktree/src/index.ts:83`](../../packages/workspace/worktree/src/index.ts)
 <!-- END GENERATED cordis-surface -->

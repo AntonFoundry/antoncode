@@ -562,6 +562,16 @@ export const docsPages: DocsPage[] = [
     sourceAliases: [],
   },
   {
+    source: 'docs/subsystems/flowbuilder.md',
+    route: 'reference/subsystems/flowbuilder.md',
+    label: 'Flowbuilder',
+    sidebar: 'reference',
+    section: 'Execution and tools',
+    order: 12,
+    outline: [2,3],
+    sourceAliases: [],
+  },
+  {
     source: 'docs/subsystems/approval.md',
     route: 'reference/subsystems/approval.md',
     label: 'Approvals',
