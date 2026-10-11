@@ -107,10 +107,12 @@ describe('gen-tool-catalog collectToolCatalog', () => {
     // `todo-todo` writes `enum: [...STATUSES]` — a source AST would see the
     // spread, not the values. Booting yields the shipped enum literals. The
     // tolerant items union wraps the object variant in oneOf.
-    const items = ((todo?.parameters as unknown as JsonSchema).properties?.todos)?.items as unknown as JsonSchema
-    const variant = (items.oneOf as unknown as JsonSchema[])?.find(candidate => candidate.type === 'object')
-    const status = variant?.properties?.status
-    expect(status?.enum).toEqual(['pending', 'in_progress', 'completed', 'cancelled'])
+    interface ItemsUnion {
+      oneOf?: Array<{ type?: string; properties?: { status?: { enum?: string[] } } }>
+    }
+    const items = ((todo?.parameters as unknown as JsonSchema).properties?.todos)?.items as unknown as ItemsUnion
+    const variant = items.oneOf?.find(candidate => candidate.type === 'object')
+    expect(variant?.properties?.status?.enum).toEqual(['pending', 'in_progress', 'completed', 'cancelled'])
   })
 
   it('attributes each harvested tool with its registering plugin source', async () => {
