@@ -1,3 +1,14 @@
+- text: Chat · Use web_search to search exactly
+- button "Split below"
+- button "Split right"
+- button "Tidy panes"
+- button "Move pane left"
+- button "Move pane right"
+- button "Move pane up"
+- button "Move pane down"
+- button "Expand pane"
+- button "Close":
+  - img
 - banner:
   - navigation "Session hierarchy":
     - button "Use web_search to search exactly" [disabled]
@@ -6,11 +17,16 @@
   - button "Session log":
     - text: Session log
     - img
+  - button "展开全部工具卡片"
   - tablist:
     - tab "Chat" [selected]
+    - tab "Orchestrator"
+    - tab "Workflows"
     - tab "Trajectory"
 - text: Use web_search to search exactly "DeepSeek Harness snapshot search". Then reply exactly SEARCH_DONE and stop. {{clock}}
 - button "Copy":
+  - img
+- button "More actions":
   - img
 - button "Context injection @deepseek-ai/dsh-system-prompt":
   - img
@@ -29,13 +45,16 @@
   - img
 - button "Branch into a new conversation":
   - img
+- button "More actions":
+  - img
 - text: {{clock}} Ran for {{duration}} TTFT {{duration}} {{throughput}} tok/s
 - textbox "Message the agent"
 - button "Commands":
   - img
 - 'button "Access mode, current: Workspace Write"': Workspace Write
-- button "Select model, current DeepSeek-V4-Flash":
-  - text: DeepSeek-V4-Flash
+- 'button "Workspace mode, current: Current checkout"': Current checkout
+- button "Select model":
+  - text: Select model
   - img
 - button "0% of context used"
 - button "Send message" [disabled]

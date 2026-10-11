@@ -40,6 +40,10 @@ describe('web e2e: Code Mode round renders nested sub-calls', () => {
   beforeAll(async () => {
     scaffold = await launchWebScaffold({
       toolsMode: 'code',
+      // The shipped todo-plan gate denies the program's direct bash/read
+      // sub-dispatches (gate coverage lives in its own spec); the recorded
+      // round needs them to execute. toolsMode above still wins the tools row.
+      directToolCalls: true,
       ...(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 15 }),
     })
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { sessionEvents.push(event) })
@@ -118,19 +122,19 @@ describe('web e2e: Code Mode round renders nested sub-calls', () => {
     expect(await nest.locator('[data-state="error"]').count()).toBeGreaterThanOrEqual(1)
   }, 60_000)
 
-  it.skipIf(MODE === 'record')('a bash sub-row click leaves the default details panel closed', async () => {
+  it.skipIf(MODE === 'record')('a bash sub-row click opens no extra window', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-code-mode-details'))
     const nest = page.locator('[data-subcalls]').first()
-    const frame = page.locator('[style*="grid-template-columns"]').first()
-    expect(await frame.getAttribute('data-details-collapsed')).toBe('true')
+    // The window-manager frame owns layout now; the row click must only
+    // toggle the row itself, never add or remove a WM pane.
+    const panesBefore = await page.locator('[data-pane]').count()
     await nest.locator('[data-sample="bash"]').first().click()
-    // Tool rows do not drive layout geometry; the Session's default panel stays closed.
-    await expect.poll(() => frame.getAttribute('data-details-collapsed'), { timeout: 5_000 }).toBe('true')
+    await expect.poll(() => page.locator('[data-pane]').count(), { timeout: 5_000 }).toBe(panesBefore)
   })
 
   it.skipIf(MODE === 'record')('matches the conversation aria golden with stable anchors', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-code-mode-aria'))
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
   })
 

@@ -46,7 +46,12 @@ describe('web e2e: plan review takeover round trip', () => {
   const sessionEvents: SessionEvent[] = []
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 15 })
+    // The recorded turn calls exit_plan_mode directly; the shipped paged
+    // catalog would deny it before the plan-review block under test.
+    scaffold = await launchWebScaffold({
+      directToolCalls: true,
+      ...(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 15 }),
+    })
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { sessionEvents.push(event) })
     browser = await chromium.launch()
     // English page: the decision copy is the surface under test, and the
@@ -109,7 +114,7 @@ describe('web e2e: plan review takeover round trip', () => {
     expect(await page.locator('[data-plan-review-key]').count()).toBe(0)
     expect(await selectedRow.locator('[data-state="warning"]').count()).toBe(0)
     await expect.poll(() => page.locator('textarea').first().isEnabled(), { timeout: 10_000 }).toBe(true)
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(APPROVED_EXPECTED, snapshot, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])

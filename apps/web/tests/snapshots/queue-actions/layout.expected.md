@@ -1,3 +1,14 @@
+- text: Chat · workspace
+- button "Split below"
+- button "Split right"
+- button "Tidy panes"
+- button "Move pane left"
+- button "Move pane right"
+- button "Move pane up"
+- button "Move pane down"
+- button "Expand pane"
+- button "Close":
+  - img
 - banner:
   - navigation "Session hierarchy":
     - button "workspace" [disabled]
@@ -6,8 +17,11 @@
   - button "Session log":
     - text: Session log
     - img
+  - button "展开全部工具卡片"
   - tablist:
     - tab "Chat" [selected]
+    - tab "Orchestrator"
+    - tab "Workflows"
     - tab "Trajectory"
 - group "Command input": /goal Keep the composer context panels aligned
 - 'button "goal Goal created Status: active Objective: Keep the composer context panels aligned Rounds: 0/256 Activation: armed Commands: /goal edit <objective>, /goal pause, /goal clear"':
@@ -24,8 +38,6 @@
   - text: Context injection @deepseek-ai/dsh-system-prompt
 - paragraph: partial
 - status: Deep diving...
-- region "To-dos":
-  - button "To-dos 1 completed · 1 in progress"
 - img
 - text: Ongoing Goal Keep the composer context panels aligned
 - button "Pause goal":
@@ -39,7 +51,8 @@
 - button "Commands":
   - img
 - 'button "Access mode, current: Workspace Write"': Workspace Write
-- button "Select model, current DeepSeek-V4-Flash":
-  - text: DeepSeek-V4-Flash
+- 'button "Workspace mode, current: Current checkout"': Current checkout
+- button "Select model":
+  - text: Select model
   - img
 - button "Stop generating"

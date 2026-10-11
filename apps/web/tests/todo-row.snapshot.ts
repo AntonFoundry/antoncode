@@ -53,13 +53,10 @@ describe('assembled todo surfaces', () => {
       expect(found).not.toBeNull()
       return found!
     }, { timeout: 10_000 })
-    // The panel is the standing plan the turn's `todo/write` event feeds; it
-    // mounts above the composer, outside the row, and starts collapsed — its
-    // list only exists once expanded.
-    const panel = await screen.findByTestId('todo-panel', undefined, { timeout: 10_000 })
-    const toggle = panel.querySelector('button[aria-expanded]')
-    if (toggle === null) throw new Error('the plan strip must expose its expand toggle')
-    if (toggle.getAttribute('aria-expanded') === 'false') fireEvent.click(toggle)
+    // The panel is now the sidebar's Todo Tree seat: the standing plan the
+    // turn's `todo/write` event feeds renders there with its own progress
+    // header and per-status items.
+    const panel = await screen.findByTestId('todo-tree', undefined, { timeout: 10_000 })
 
     const shape = todoShape(row, panel)
     if (REFRESHING_GOLDEN) {

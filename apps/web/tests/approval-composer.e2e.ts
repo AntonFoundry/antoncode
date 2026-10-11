@@ -54,7 +54,12 @@ describe('web e2e: approval takeover keeps its actions reachable', () => {
   const sessionEvents: SessionEvent[] = []
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 15 })
+    // The recorded script calls `bash` directly; the shipped paged catalog
+    // would deny it before the sandbox approval the scenario tests.
+    scaffold = await launchWebScaffold({
+      directToolCalls: true,
+      ...(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 15 }),
+    })
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { sessionEvents.push(event) })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)

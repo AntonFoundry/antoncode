@@ -1,14 +1,30 @@
+- text: Chat
+- button "Split below"
+- button "Split right"
+- button "Tidy panes"
+- button "Move pane left"
+- button "Move pane right"
+- button "Move pane up"
+- button "Move pane down"
+- button "Expand pane"
+- button "Close":
+  - img
 - banner:
   - navigation "Session hierarchy":
     - 'button "Run two shell commands: wait" [disabled]'
   - button "Session log":
     - text: Session log
     - img
+  - button "展开全部工具卡片"
   - tablist:
     - tab "Chat" [selected]
+    - tab "Orchestrator"
+    - tab "Workflows"
     - tab "Trajectory"
 - text: "Run two shell commands: wait for cancellation, then write skipped.txt. {{date}} {{clock}}"
 - button "Copy":
+  - img
+- button "More actions":
   - img
 - button "Context injection @deepseek-ai/dsh-system-prompt":
   - img
@@ -19,15 +35,18 @@
   - text: "Failed Bash Error: tool call aborted"
 - text: "IN { \"command\": \"node -e \\\"require('node:fs').writeFileSync('started.txt', 'started'); setInterval(() => {}, 1000)\\\"\", \"description\": \"Wait until cancellation\" } OUT Error: tool call aborted"
 - button "Inspect"
-- 'button "Failed Bash Error: tool call aborted before dispatch"':
+- 'button "Failed Bash Error: tool call aborted before dispatch" [expanded]':
   - img
   - text: "Failed Bash Error: tool call aborted before dispatch"
+- text: "IN { \"command\": \"printf skipped > skipped.txt\", \"description\": \"Write skipped marker\" } OUT Error: tool call aborted before dispatch"
+- button "Inspect"
 - textbox "Message the agent"
 - button "Commands":
   - img
 - 'button "Access mode, current: Workspace Write"': Workspace Write
-- button "Select model, current DeepSeek-V4-Flash":
-  - text: DeepSeek-V4-Flash
+- 'button "Workspace mode, current: Current checkout"': Current checkout
+- button "Select model":
+  - text: Select model
   - img
 - button "Send message" [disabled]
 - text: 1 turns · 1 steps LLM {{duration}} · Tool call {{duration}} TTFT avg {{duration}} · {{throughput}} tok/s Cache hit 0% Input 10 tok · Output 10 tok

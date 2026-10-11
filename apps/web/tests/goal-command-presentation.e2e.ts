@@ -72,7 +72,8 @@ describe('web e2e: /goal human transcript presentation', () => {
         lineHeight: bubbleStyle.lineHeight,
       }
     })
-    expect(typography).toMatchObject({ fontSize: '14px', lineHeight: '22px' })
+    // The theme's --dsw-font-size-code token moved to 15px with the WM surface.
+    expect(typography).toMatchObject({ fontSize: '15px', lineHeight: '23px' })
     expect(typography.fontFamily).not.toBe(typography.parentFontFamily)
     const resultRow = page.locator('[data-variant="others"]').filter({ hasText: 'No goal is currently set.' })
     await expect.poll(() => resultRow.count(), { timeout: 10_000 }).toBe(1)
@@ -91,7 +92,7 @@ describe('web e2e: /goal human transcript presentation', () => {
     expect(events.some(event => event.type === 'step/start')).toBe(false)
     expect(events.some(event => event.type === 'request/header')).toBe(false)
 
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
   }, 60_000)
 

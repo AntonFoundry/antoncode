@@ -131,6 +131,9 @@ describe('web e2e: shipped default web search', () => {
         baseURL: search.baseURL,
         apiKeyEnv: SEARCH_CREDENTIAL_REF,
       },
+      // The recorded turn calls `web_search` directly; the shipped paged
+      // catalog would deny it before the provider round-trip under test.
+      directToolCalls: true,
       ...(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 15 }),
     })
     await scaffold.ctx.credentials.set(SEARCH_CREDENTIAL_REF, SEARCH_CREDENTIAL)
@@ -237,7 +240,7 @@ describe('web e2e: shipped default web search', () => {
     await expect.poll(() => page.getByText('SEARCH_DONE', { exact: true }).count(), { timeout: 15_000 })
       .toBeGreaterThanOrEqual(1)
     await page.locator('[data-tool="web_search"]').waitFor({ timeout: 10_000 })
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
   })
 

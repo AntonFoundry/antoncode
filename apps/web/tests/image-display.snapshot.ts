@@ -81,14 +81,11 @@ it('renders the history image pair through the authorized attachment route and o
 it('accepts pasted images into the composer rail in order and removes them', async () => {
   mountAssembledApp()
 
-  const tree = await screen.findByRole('tree', { name: 'Sessions' }, { timeout: 10_000 })
-  const start = tree.querySelector<HTMLButtonElement>('button[aria-label="New session in fixture"]')
-  if (start === null) throw new Error('fixture Workspace new-session action missing')
-  fireEvent.click(start)
-
-  // Image-only send arming is pinned at package level (input-bar.spec.tsx);
-  // this assembled lane pins the intake chain over the built graph.
-  const textarea = await screen.findByPlaceholderText('Describe what you want to build', {}, { timeout: 10_000 })
+  // Intake runs against a live SESSION composer; the fixture history session
+  // provides one deterministically (a fresh jsdom boot keeps the workspace
+  // home hero, which has no session machine to accept intake).
+  await openFixtureSession()
+  const textarea = await screen.findByPlaceholderText('Message the agent', {}, { timeout: 10_000 })
   const image = new File([new Uint8Array([137, 80, 78, 71])], 'pasted.png', { type: 'image/png' })
   fireEvent.paste(textarea, {
     clipboardData: {
@@ -96,7 +93,6 @@ it('accepts pasted images into the composer rail in order and removes them', asy
       getData: () => '',
     },
   })
-
   // The rail is an accessible group holding the draft thumbnail (queried via
   // DOM: jsdom's a11y-visibility computation hides the composer subtree).
   const rail = await waitFor(() => {
@@ -149,35 +145,42 @@ it('accepts pasted images into the composer rail in order and removes them', asy
   }, { timeout: 6_000 })
 })
 
-it('accepts a whole-page drop under the limits-labeled overlay and refuses an over-limit batch at intake', async () => {
+it('accepts a composer-pane drop under the limits-labeled overlay and refuses an over-limit batch at intake', async () => {
   mountAssembledApp()
 
-  const tree = await screen.findByRole('tree', { name: 'Sessions' }, { timeout: 10_000 })
-  const start = tree.querySelector<HTMLButtonElement>('button[aria-label="New session in fixture"]')
-  if (start === null) throw new Error('fixture Workspace new-session action missing')
-  fireEvent.click(start)
-  const textarea = await screen.findByPlaceholderText('Describe what you want to build', {}, { timeout: 10_000 })
+  await openFixtureSession()
+  const textarea = await screen.findByPlaceholderText('Message the agent', {}, { timeout: 10_000 })
 
-  // A file drag anywhere over the page raises the full-viewport overlay whose
-  // desc line carries the projected limits — copy that can only render after
-  // the imageLimits projection crossed the real fixture transport.
+  // The drop handlers live on the session composer's own root card now: each
+  // WM pane is its own drop target and no full-page mask stacks up.
+  const dropTarget = textarea.closest('[data-composer-card]')?.parentElement ?? null
+  if (dropTarget === null) throw new Error('composer drop target missing')
+
+  // A file drag over the pane raises the composer overlay whose desc line
+  // carries the projected limits — copy that can only render after the
+  // imageLimits projection crossed the real fixture transport.
   const image = new File([new Uint8Array([137, 80, 78, 71])], 'dropped.png', { type: 'image/png' })
   const dataTransfer = { types: ['Files'], files: [image], dropEffect: 'none' }
-  fireEvent.dragEnter(document.body, { dataTransfer })
-  const overlay = await screen.findByRole('status')
+  fireEvent.dragEnter(dropTarget, { dataTransfer })
+  const overlay = await waitFor(() => {
+    // data-variant scopes past the transcript's own status notices.
+    const el = document.querySelector('[role="status"][data-variant]')
+    if (el === null) throw new Error('drop overlay missing')
+    return el
+  })
   expect(overlay.textContent).toContain('Drag images here to add them')
   await waitFor(() => {
     expect(overlay.textContent).toContain('Up to 20 images, 5MB each')
   })
 
-  // Dropping on the transcript area (not the composer card) lands in the rail.
-  fireEvent.drop(document.body, { dataTransfer })
+  // Dropping on the pane lands in the rail.
+  fireEvent.drop(dropTarget, { dataTransfer })
   await waitFor(() => {
     const rail = document.querySelector('[role="group"][aria-label="Pending images"]')
     if (rail === null) throw new Error('attachment rail missing after page drop')
     expect([...rail.querySelectorAll('img')].map(img => img.getAttribute('alt'))).toEqual(['dropped.png'])
   }, { timeout: 5_000 })
-  expect(screen.queryByRole('status')).toBeNull()
+  expect(document.querySelector('[role="status"][data-variant]')).toBeNull()
 
   // An intake that would exceed the projected per-message count is refused as
   // a whole batch at add time: the banner names the limit and the rail keeps
@@ -190,8 +193,14 @@ it('accepts a whole-page drop under the limits-labeled overlay and refuses an ov
       getData: () => '',
     },
   })
-  const banner = await screen.findByRole('alert')
-  expect(banner.textContent).toContain('A message can include up to 20 images')
+  // The transcript's own error cards also wear role=alert; wait for the
+  // intake banner by its copy.
+  await waitFor(() => {
+    const el = [...document.querySelectorAll('[role="alert"]')]
+      .find(el => el.textContent?.includes('A message can include up to 20 images'))
+    if (el === null || el === undefined) throw new Error('over-limit banner missing')
+    return el
+  })
   const rail = document.querySelector('[role="group"][aria-label="Pending images"]')
   expect([...(rail?.querySelectorAll('img') ?? [])]).toHaveLength(1)
 })

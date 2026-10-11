@@ -63,9 +63,29 @@ describe('minimal agent preset', () => {
     expect(presetFileSystem?.sandboxMode).toBeUndefined()
     expect(scaffold.ctx.agentPresets.serviceFor(agentHandle.agent, 'compaction')).toBeUndefined()
 
+    const signal = new AbortController().signal
+    // The shipped base bundle gates direct tool calls behind a plan in the
+    // session log; the minimal preset carries no todo tool, so the fixture
+    // writes the plan event the gate reads.
+    agentHandle.agent.session.append('todo/write', {
+      todos: [{ content: 'Run the persistent-state round trip', status: 'in_progress' }],
+    })
+    // Paged tool presentation is the shipped default, so the preset scope
+    // starts with only the tool_search transport: grant the shell and editor
+    // the way a model does before the direct executes below.
+    const grant = await scaffold.ctx.tools.execute({
+      signal,
+      callId: CallId('minimal-tool-search-grant'),
+      name: 'tool_search',
+      arguments: { intent: 'bash shell commands and str_replace_editor file edits', limit: 10 },
+      agent: agentHandle.agent,
+    })
+    const granted = grant.content.filter(block => block.type === 'text').map(block => block.text).join('')
+    expect(granted).toContain('bash')
+    expect(granted).toContain('str_replace_editor')
+
     const stateDir = join(scaffold.workspaceCwd, 'persistent-state')
     await mkdir(stateDir)
-    const signal = new AbortController().signal
     await scaffold.ctx.tools.execute({
       signal,
       callId: CallId('minimal-bash-state-setup'),
@@ -110,13 +130,13 @@ describe('minimal agent preset', () => {
            2",
         "prompt": "You are a helpful software engineer assistant.",
         "tools": [
-          "bash",
-          "str_replace_editor",
+          "tool_search",
         ],
       }
     `)
-    expect(requestHeader.tools?.toSorted((left, right) => left.name.localeCompare(right.name)))
-      .toEqual(scaffold.ctx.tools.schemas(agentHandle.agent).toSorted((left, right) => left.name.localeCompare(right.name)))
+    // Paged presentation: the wire carries only the reserved tool_search
+    // transport, whatever the registry's full catalog holds.
+    expect(requestHeader.tools?.map(tool => tool.name)).toEqual(['tool_search'])
     await assertFixtureInventory(SNAPSHOT_DIR, ['session.jsonl'])
   })
 })
