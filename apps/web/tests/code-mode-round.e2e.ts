@@ -134,6 +134,9 @@ describe('web e2e: Code Mode round renders nested sub-calls', () => {
 
   it.skipIf(MODE === 'record')('matches the conversation aria golden with stable anchors', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-code-mode-aria'))
+    // Startup model auto-selection races the capture; the selected model
+    // chip is a capture barrier (unselected renders a different button).
+    await page.getByRole('button', { name: /^Select model, current/ }).waitFor({ timeout: 15_000 })
     const snapshot = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
   })

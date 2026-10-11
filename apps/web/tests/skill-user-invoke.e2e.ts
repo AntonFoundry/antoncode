@@ -138,7 +138,7 @@ describe.skipIf(MODE === 'record')('web e2e: user-explicit skill invocation thro
     await page.getByText('USER_INVOKE_REPLY', { exact: false }).first().waitFor({ timeout: 20_000 })
     await settled
 
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])

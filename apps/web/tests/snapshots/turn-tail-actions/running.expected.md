@@ -17,7 +17,7 @@
   - button "Session log":
     - text: Session log
     - img
-  - button "展开全部工具卡片"
+  - button "Expand all tool cards"
   - tablist:
     - tab "Chat" [selected]
     - tab "Orchestrator"

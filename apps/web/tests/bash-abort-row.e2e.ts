@@ -72,6 +72,9 @@ describe.skipIf(MODE === 'record')('web e2e: cancelled Bash row disclosure', () 
     await expect.poll(() => row.getAttribute('aria-expanded')).toBe('true')
     await expect.poll(() => call.getByText('Error: tool call aborted', { exact: true }).count()).toBe(2)
 
+    // Startup model auto-selection races the capture; the selected model
+    // chip is a capture barrier (unselected renders a different button).
+    await page.getByRole('button', { name: /^Select model, current/ }).waitFor({ timeout: 15_000 })
     const snapshot = (await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd))
       // The borrowed fixture's UTC date is still the previous day in PDT;
       // the disclosure golden must not depend on the runner timezone.
