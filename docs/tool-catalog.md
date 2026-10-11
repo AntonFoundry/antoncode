@@ -17,7 +17,7 @@ This table connects model-visible tool names to the plugin package and service s
 | --- | --- | --- | --- | --- | --- |
 | `@deepseek-ai/dsh-tool-ask-user` | `ask_user_question` | `ctx.tools`, `ctx.userQuestions` | `tool/call`, `tool/result after a UI/provider answers the question` | - | ask_user_question pauses the tool call until the active UI provider returns a human answer. |
 | `@deepseek-ai/dsh-tools` | `run_code` | `ctx.tools`, `ctx.codeRuntime (execution time)`, `ctx.systemPrompt` | `tool/call`, `one tool/code-dispatch-start + tool/code-dispatch pair per bridged sub-call`, `tool/result` | - | Owned by the tool registry as a reserved transport outside filterable capability layers under `mode: code` / `mode: both` (see the Code Mode Agent Note). Under `code` it is the registry's only wire contribution; the other visible capabilities are declared in a generated SDK section in the loaded runtime's language, and a program calls them through bindings scheduled under the native concurrency contract (submission-ordered starts and policy; concurrency-safe bodies overlap up to `maxParallelSubCalls`) that re-enter the complete guarded tool pipeline and link each nested execution to this outer result. |
-| `@deepseek-ai/dsh-plan-mode` | `exit_plan_mode` | `ctx.tools`, `ctx.systemPrompt`, `ctx.userQuestions (execution time, opportunistic)` | `tool/call`, `plan/mode inactive on an approved review`, `tool/result` | - | exit_plan_mode stays in the model-facing schema while planning is inactive so transitions add no tool-catalog churn on top of the plan-policy change. Its execute path rejects calls outside plan mode; in plan mode it presents the plan over the user-questions seam (approve / keep planning with feedback), and approval logs plan mode inactive at the step boundary. |
+| `@deepseek-ai/dsh-plan-mode` | `exit_plan_mode`, `plan_write` | `ctx.tools`, `ctx.systemPrompt`, `ctx.userQuestions (execution time, opportunistic)` | `tool/call`, `plan/mode inactive on an approved review`, `tool/result` | - | exit_plan_mode stays in the model-facing schema while planning is inactive so transitions add no tool-catalog churn on top of the plan-policy change. Its execute path rejects calls outside plan mode; in plan mode it presents the plan over the user-questions seam (approve / keep planning with feedback), and approval logs plan mode inactive at the step boundary. |
 | `@deepseek-ai/dsh-tool-bash` | `bash` | `ctx.tools`, `ctx.shell`, `ctx.systemPrompt`, `ctx.shellEnv`, `ctx.jobs at call time for run_in_background` | `tool/call`, `tool/result` | - | The bash tool is the model-facing consumer of the bash executor seam. A `run_in_background` run registers with the generic `ctx.jobs` runtime and is collected/stopped through the `job_*` tools from `@deepseek-ai/dsh-tool-jobs`; the `enableRunInBackground` config (default true) removes the parameter entirely when disabled. |
 | `@deepseek-ai/dsh-tool-pwsh` | `pwsh` | `ctx.tools`, `ctx.shell`, `ctx.systemPrompt`, `ctx.shellEnv`, `ctx.jobs at call time for run_in_background` | `tool/call`, `tool/result` | - | The pwsh tool is the PowerShell-dialect consumer of the bash executor seam for Windows compositions (a PowerShell executor such as `@deepseek-ai/dsh-pwsh-local` backs `ctx.shell`); it mirrors the bash tool call-for-call minus sandbox controls — `run_in_background` runs register with the generic `ctx.jobs` runtime and are collected/stopped through the `job_*` tools, and the managed `DSH_*` environment comes from `@deepseek-ai/dsh-shell-env`. Each call runs in a fresh process (no persistent PTY session), with native `C:\...` paths and `$env:NAME` variables. |
 | `@deepseek-ai/dsh-tool-cordis` | `cordis_define`, `cordis_inspect_list`, `cordis_inspect_query`, `cordis_inspect_self`, `cordis_run`, `cordis_stop`, `cordis_undefine` | `ctx.tools`, `ctx.dynamicCordisRunner` | `tool/call`, `tool/result`, `process-local dynamic package lifecycle` | - | Not in any shipped tree (a deliberate opt-in — dynamic package code reaches the real runtime, see .agents/notes/implemented/feature/2026-07-08-self-referential-cordis-toolset.md). The toolset injects `ctx.dynamicCordisRunner` from `@deepseek-ai/dsh-cordis-host-runner`, which owns the definition registry and the vm sandbox; a composition missing it never activates the tools. A running package may register ADDITIONAL model-visible tools until it is stopped, undefined, or DSH restarts; a full changed request header logs those tool-set changes. |
@@ -40,6 +40,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-anton-lifecycle` | `anton_restart`, `anton_start`, `anton_status`, `anton_stop` | `ctx.tools`, `a reachable Anton Bridge control endpoint` | `tool/call`, `tool/result` | - | The four lifecycle tools are thin round-trips to the out-of-process bridge supervisor; stop and restart terminate the calling process mid-call, so their results only render on refusal. The endpoint resolves from ANTON_BRIDGE_ENDPOINT or the configured default and fails loud at load when it is not HTTP(S). |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
+| `@deepseek-ai/dsh-tool-flowbuilder` | `flow_block_save`, `flow_get`, `flow_library_search`, `flow_list`, `flow_run`, `flow_run_status`, `flow_save` | `ctx.tools`, `ctx.flowBuilder`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | flow.* tools author, inspect, and search workflow definitions and the reusable block library behind ctx.flowBuilder. |
 
 <a id="deepseek-aidsh-tool-ask-user"></a>
 
@@ -162,6 +163,39 @@ Use only in plan mode. Present your plan for the user's review and, on approval,
     "plan": {
       "type": "string",
       "description": "The complete plan, as markdown, starting with a # heading that names it."
+    },
+    "path": {
+      "type": "string",
+      "description": "Optional workspace-relative path where the plan markdown is saved. Defaults to \"implementation_plan.md\"."
+    }
+  },
+  "required": [
+    "plan"
+  ]
+}
+```
+
+Source: [`packages/plan/plan-mode/src/index.ts`](../packages/plan/plan-mode/src/index.ts)
+
+### `plan_write`
+
+Record or update the standing implementation plan for the current work. Use this tool whenever an implementation plan has been produced (e.g. by a planning subagent) or updated. The plan persists across turns and is injected into every subsequent request as a standing guide for both the model and the user. Send the COMPLETE markdown plan, starting with a # heading.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "plan": {
+      "type": "string",
+      "description": "The complete implementation plan, as markdown, starting with a # heading that names it."
+    },
+    "title": {
+      "type": "string",
+      "description": "Optional short title for the plan."
+    },
+    "path": {
+      "type": "string",
+      "description": "Optional workspace-relative file path to save the plan markdown. Defaults to \"implementation_plan.md\"."
     }
   },
   "required": [
@@ -1475,7 +1509,7 @@ The five read-only tools hide provider cursors and authorize every result from t
 
 ### `subagent`
 
-Delegate a self-contained task to a subagent (a separate agent that works in its own context) to offload focused, independent work — research, a scoped implementation, an analysis — so it does not consume this conversation's context. The subagent returns its result, not its intermediate steps. Give it a complete, standalone prompt: it does not see this conversation. This call waits for the result by default. Set `run_in_background: true` to return a job id; collect with `job_output` and stop with `job_kill`.
+Delegate a self-contained task to a subagent (a separate agent that works in its own context) to offload focused, independent work — research, a scoped implementation, an analysis — so it does not consume this conversation's context. The subagent returns its result, not its intermediate steps. Give it a complete, standalone prompt: it does not see this conversation. Delegation is the DEFAULT for decomposable work: when a task splits into two or more independent pieces — separate files, surfaces, or concerns — fan them out to parallel subagent calls in one message instead of doing them inline; keep only single-step or strictly sequential actions inline. This call waits for the result by default. Set `run_in_background: true` to return a job id; collect with `job_output` and stop with `job_kill`.
 
 ```json
 {
@@ -1488,6 +1522,23 @@ Delegate a self-contained task to a subagent (a separate agent that works in its
     "prompt": {
       "type": "string",
       "description": "The complete, self-contained task for the subagent. It does not share this conversation's context, so include everything it needs."
+    },
+    "model": {
+      "type": "string",
+      "description": "Optional model route for this child: \"provider/model\" or a bare model id. Overrides the configured default for this delegation only."
+    },
+    "reasoningEffort": {
+      "type": "string",
+      "description": "Optional reasoning effort for this child's model calls. Omit to inherit the route default.",
+      "enum": [
+        "off",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
     },
     "run_in_background": {
       "type": "boolean",
@@ -1532,7 +1583,7 @@ Source: [`packages/subagent/tool-subagent-control/src/index.ts`](../packages/sub
 
 ### `list_agents`
 
-List your continuable background subagents by durable id and label. Use it to recall which ones you started, not to poll for completion — you are told when one finishes. Status comes from the live registry: running means the agent is working right now, idle means it is loaded but between turns (it may be waiting on agents it started), and ready means it exists only in storage — resumable, not terminal, and not a result waiting to be collected; a `send_message` starts a new turn on the same conversation, and a direct child remains a `send_message` candidate in every status. The snapshot is not a delivery promise — `send_message` performs the authoritative check and may still fail. Children that could not be read are reported as diagnostics instead of being silently dropped. Scope `descendants` walks the whole tree below you in stable pre-order, annotating each entry with its durable direct-parent session id and depth. You may use `send_message` only for depth-1 entries; deeper entries are candidates for `interrupt_agent` only.
+List your continuable background subagents by durable id and label. Use it to recall which ones you started, not to poll for completion — you are told when one finishes. Status comes from the live registry: running means the agent is working right now, idle means it is loaded but between turns (it may be waiting on agents it started), and ready means it exists only in storage — resumable, not terminal, and not a result waiting to be collected; a `send_message` starts a new turn on the same conversation, and a direct child remains a `send_message` candidate in every status. The snapshot is not a delivery promise — `send_message` performs the authoritative check and may still fail. Children that could not be read are reported as diagnostics instead of being silently dropped. A child entry may carry `tokens` — its cumulative provider usage, where hit is the cache-read share of its prompt tokens; a high hit means the conversation prefix is largely cached, so continuing it with `send_message` is cheaper than starting a fresh agent for related work. Scope `descendants` walks the whole tree below you in stable pre-order, annotating each entry with its durable direct-parent session id and depth. You may use `send_message` only for depth-1 entries; deeper entries are candidates for `interrupt_agent` only.
 
 ```json
 {
@@ -1686,17 +1737,28 @@ The kind-agnostic background-job controller: background bash commands, PTY sends
 
 ### `todo_write`
 
-Create and manage a structured task tree for the current work. Send the ENTIRE tree every call — it REPLACES the previous tree (there are no partial updates, no per-node edits). Use it to plan multi-step work and show progress.
+Create and manage a structured task tree for the current work. Send the ENTIRE tree every call — it REPLACES the previous tree (there are no partial updates, no per-node edits). Use it to plan multi-step work and show progress. Using this tool is the DEFAULT, not an opt-in: before executing any work with more than one step, plan first — recording the plan with plan_write first when the work is non-trivial (3 or more tasks, multi-phase, cross-package, or architectural) — then write the tree and execute against it; do not wait for the user to ask for a plan.
 Workflow: plan first, then encode the plan as a todo tree, then execute it one node at a time:
-1. Plan: analyze the request and form a step-by-step plan before taking any action.
+1. Plan: analyze the request and form a step-by-step plan before taking any action. For
+   non-trivial work (3 or more tasks, multi-phase, cross-package, or architectural), record
+   the plan with plan_write BEFORE calling this tool; if a delegating subagent fails or is
+   unavailable, author the plan from current knowledge and proceed inline — never stall on
+   a failed delegation.
 2. Write the tree: convert the plan into this tool's `todos` argument. Nest child tasks under a
    parent when they are its concrete phases or subtasks — up to three levels (task, child,
    grandchild); never deeper, and keep simple work flat rather than nesting for its own sake.
 3. Execute sequentially: keep exactly one branch of work `in_progress`, finish it, mark it
    `completed`, and move to the next. Update statuses in real time — mark a node completed the
    moment it is done, never batch completions.
+
+Persistence: the tree OUTLIVES the turn — the user sees it between and across messages, so it
+is the standing plan, not a per-turn scratchpad. At the start of any new user request that
+involves multi-step work, plan first (plan_write for non-trivial work), then write the tree
+(rewriting or extending the standing one) before any other tool call. When later phases or
+follow-ups remain, leave them `pending` on the tree rather than reporting everything
+completed; an all-settled tree is only correct when the whole request is genuinely finished.
 Delegation: every agent session owns its own tree. As the orchestrator, keep the top-level nodes here; when you delegate one node to a subagent, that node stays on your tree until its subtree reports back, and the subagent tracks its own finer-grained subtree in its own session rather than rewriting yours.
-Node fields: `status` is pending (not started) | in_progress (being worked on now) | completed (done) | cancelled (no longer needed); `priority` optionally ranks nodes (high | medium | low). Mark a parent completed only after all of its children are completed or cancelled. Skip the tree entirely for trivial single-step tasks.
+Node fields: `status` is pending (not started) | in_progress (being worked on now) | completed (done) | cancelled (no longer needed); `priority` optionally ranks nodes (high | medium | low). Mark a parent completed only after all of its children are completed or cancelled. Only a trivial single-step request (one obvious action, no phases) may skip the tree; when in doubt, write it.
 Parallelism: mark every node being actively worked `in_progress` — several at once when work genuinely runs concurrently (e.g. parallel subagents or background commands); while work remains, at least one task should be `in_progress`.
 
 ```json
@@ -1707,110 +1769,122 @@ Parallelism: mark every node being actively worked `in_progress` — several at 
       "type": "array",
       "description": "The COMPLETE task tree, replacing any previous tree. Up to three levels: a top-level task nests children, which may themselves nest grandchildren.",
       "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "content": {
-            "type": "string",
-            "description": "What the task is — a short imperative line."
-          },
-          "status": {
-            "type": "string",
-            "description": "pending (not started) | in_progress (now) | completed (done) | cancelled (dropped).",
-            "enum": [
-              "pending",
-              "in_progress",
-              "completed",
-              "cancelled"
-            ]
-          },
-          "priority": {
-            "type": "string",
-            "description": "Optional scheduling weight: high | medium | low.",
-            "enum": [
-              "high",
-              "medium",
-              "low"
-            ]
-          },
-          "children": {
-            "type": "array",
-            "description": "Subtasks of this node (level two). Each child may itself carry grandchildren (level three); nothing nests below that.",
-            "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "content": {
-                  "type": "string",
-                  "description": "What the task is — a short imperative line."
-                },
-                "status": {
-                  "type": "string",
-                  "description": "pending (not started) | in_progress (now) | completed (done) | cancelled (dropped).",
-                  "enum": [
-                    "pending",
-                    "in_progress",
-                    "completed",
-                    "cancelled"
-                  ]
-                },
-                "priority": {
-                  "type": "string",
-                  "description": "Optional scheduling weight: high | medium | low.",
-                  "enum": [
-                    "high",
-                    "medium",
-                    "low"
-                  ]
-                },
-                "children": {
-                  "type": "array",
-                  "description": "Grandchildren of this node (level three — the deepest). Leaf shapes: no further nesting.",
-                  "items": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "properties": {
-                      "content": {
-                        "type": "string",
-                        "description": "What the task is — a short imperative line."
-                      },
-                      "status": {
-                        "type": "string",
-                        "description": "pending (not started) | in_progress (now) | completed (done) | cancelled (dropped).",
-                        "enum": [
-                          "pending",
-                          "in_progress",
-                          "completed",
-                          "cancelled"
-                        ]
-                      },
-                      "priority": {
-                        "type": "string",
-                        "description": "Optional scheduling weight: high | medium | low.",
-                        "enum": [
-                          "high",
-                          "medium",
-                          "low"
-                        ]
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "content": {
+                "type": "string",
+                "description": "What the task is — a short imperative line."
+              },
+              "status": {
+                "type": "string",
+                "description": "pending (not started) | in_progress (now) | completed (done) | cancelled (dropped).",
+                "enum": [
+                  "pending",
+                  "in_progress",
+                  "completed",
+                  "cancelled"
+                ]
+              },
+              "priority": {
+                "type": "string",
+                "description": "Optional scheduling weight: high | medium | low.",
+                "enum": [
+                  "high",
+                  "medium",
+                  "low"
+                ]
+              },
+              "children": {
+                "type": "array",
+                "description": "Subtasks of this node (level two). Each child may itself nest grandchildren (level three); nothing nests below that.",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "content": {
+                          "type": "string",
+                          "description": "What the task is — a short imperative line."
+                        },
+                        "status": {
+                          "type": "string",
+                          "description": "pending (not started) | in_progress (now) | completed (done) | cancelled (dropped).",
+                          "enum": [
+                            "pending",
+                            "in_progress",
+                            "completed",
+                            "cancelled"
+                          ]
+                        },
+                        "priority": {
+                          "type": "string",
+                          "description": "Optional scheduling weight: high | medium | low.",
+                          "enum": [
+                            "high",
+                            "medium",
+                            "low"
+                          ]
+                        },
+                        "children": {
+                          "type": "array",
+                          "description": "Grandchildren of this node (level three — the deepest). Leaf shapes: no further nesting.",
+                          "items": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "additionalProperties": true,
+                                "properties": {
+                                  "content": {
+                                    "type": "string",
+                                    "description": "What the task is — a short imperative line."
+                                  },
+                                  "status": {
+                                    "type": "string",
+                                    "description": "pending (not started) | in_progress (now) | completed (done) | cancelled (dropped).",
+                                    "enum": [
+                                      "pending",
+                                      "in_progress",
+                                      "completed",
+                                      "cancelled"
+                                    ]
+                                  },
+                                  "priority": {
+                                    "type": "string",
+                                    "description": "Optional scheduling weight: high | medium | low.",
+                                    "enum": [
+                                      "high",
+                                      "medium",
+                                      "low"
+                                    ]
+                                  }
+                                }
+                              },
+                              {
+                                "type": "string",
+                                "description": "A bare task line; repaired into a pending node."
+                              }
+                            ]
+                          }
+                        }
                       }
                     },
-                    "required": [
-                      "content",
-                      "status"
-                    ]
-                  }
+                    {
+                      "type": "string",
+                      "description": "A bare task line; repaired into a pending node."
+                    }
+                  ]
                 }
-              },
-              "required": [
-                "content",
-                "status"
-              ]
+              }
             }
+          },
+          {
+            "type": "string",
+            "description": "A bare task line; repaired into a pending node."
           }
-        },
-        "required": [
-          "content",
-          "status"
         ]
       }
     }
@@ -2025,3 +2099,218 @@ Search the web for current information. Returns an optional summary answer and a
 Source: [`packages/web/tool-web/src/index.ts`](../packages/web/tool-web/src/index.ts)
 
 web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps.
+
+<a id="deepseek-aidsh-tool-flowbuilder"></a>
+
+## `@deepseek-ai/dsh-tool-flowbuilder`
+
+### `flow_block_save`
+
+Author or update one reusable library block. A save without id replaces the same-name block, so iterating on a block by name is the expected loop. kind=code blocks must carry their JavaScript in code. Declare typed ports (inputs/outputs: {name, type: any|string|number|json}) and params ({name, type: string|number|boolean|json, required?, default?}).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Existing block id to update; omit to save by name."
+    },
+    "name": {
+      "type": "string",
+      "description": "Block display name (the save-by-name identity)."
+    },
+    "kind": {
+      "type": "string",
+      "description": "How an instance executes: code|llm|agent|shell|http|condition|transform."
+    },
+    "description": {
+      "type": "string",
+      "description": "One-line description surfaced in search results and the palette."
+    },
+    "code": {
+      "type": "string",
+      "description": "The block JavaScript (required for kind=code)."
+    },
+    "inputs": {
+      "type": "array",
+      "description": "Declared input ports.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "description": "Declared output ports.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "params": {
+      "type": "array",
+      "description": "Declared parameters.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "sourceFlowId": {
+      "type": "string",
+      "description": "The workflow the block was extracted from, when it has one."
+    }
+  },
+  "required": [
+    "name",
+    "kind",
+    "description"
+  ]
+}
+```
+
+Source: [`packages/flowbuilder/tool-flowbuilder/src/index.ts`](../packages/flowbuilder/tool-flowbuilder/src/index.ts)
+
+### `flow_get`
+
+Read one stored workflow definition in full (nodes, edges, timestamps) by id.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "The workflow definition id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/flowbuilder/tool-flowbuilder/src/index.ts`](../packages/flowbuilder/tool-flowbuilder/src/index.ts)
+
+### `flow_library_search`
+
+Search the reusable block library by a case-insensitive substring over name and description (omit the query for everything).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "The filter substring; omit to list the whole library."
+    }
+  }
+}
+```
+
+Source: [`packages/flowbuilder/tool-flowbuilder/src/index.ts`](../packages/flowbuilder/tool-flowbuilder/src/index.ts)
+
+### `flow_list`
+
+List every stored workflow definition (id, name, description, node count, last update).
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/flowbuilder/tool-flowbuilder/src/index.ts`](../packages/flowbuilder/tool-flowbuilder/src/index.ts)
+
+### `flow_run`
+
+Start one run of a stored workflow definition. Returns the run id immediately; execution continues asynchronously — poll flow_run_status.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "flowId": {
+      "type": "string",
+      "description": "The workflow definition id to run."
+    }
+  },
+  "required": [
+    "flowId"
+  ]
+}
+```
+
+Source: [`packages/flowbuilder/tool-flowbuilder/src/index.ts`](../packages/flowbuilder/tool-flowbuilder/src/index.ts)
+
+### `flow_run_status`
+
+Read one run: its status, the per-node states (with error messages), and the collected result once terminal.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "runId": {
+      "type": "string",
+      "description": "The run id returned by flow_run."
+    }
+  },
+  "required": [
+    "runId"
+  ]
+}
+```
+
+Source: [`packages/flowbuilder/tool-flowbuilder/src/index.ts`](../packages/flowbuilder/tool-flowbuilder/src/index.ts)
+
+### `flow_save`
+
+Create or update one workflow definition (it appears on the Dag Flow canvas). Node fields: id (unique), kind (input|output|code|llm|agent|shell|http|condition|transform|library), title, blockId (required for kind=library), params (object, default {}; input nodes carry their literal under value), code (for code/condition: a return-body program reading the plain `inputs` and `params` objects), x, y (canvas position numbers, default 0). Edge fields: id (unique), from {nodeId, port}, to {nodeId, port} — each target port accepts at most one edge, and the graph must stay acyclic. The graph is validated before anything is written; a rejected save writes nothing.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Existing definition id to update; omit to create a new workflow."
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-facing workflow name."
+    },
+    "description": {
+      "type": "string",
+      "description": "One-line description of what the workflow does."
+    },
+    "nodes": {
+      "type": "array",
+      "description": "Node fields: id (unique), kind (input|output|code|llm|agent|shell|http|condition|transform|library), title, blockId (required for kind=library), params (object, default {}; input nodes carry their literal under value), code (for code/condition: a return-body program reading the plain `inputs` and `params` objects), x, y (canvas position numbers, default 0).",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "edges": {
+      "type": "array",
+      "description": "Edge fields: id (unique), from {nodeId, port}, to {nodeId, port} — each target port accepts at most one edge, and the graph must stay acyclic.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    }
+  },
+  "required": [
+    "name",
+    "description",
+    "nodes",
+    "edges"
+  ]
+}
+```
+
+Source: [`packages/flowbuilder/tool-flowbuilder/src/index.ts`](../packages/flowbuilder/tool-flowbuilder/src/index.ts)
+
+flow.* tools author, inspect, and search workflow definitions and the reusable block library behind ctx.flowBuilder.

@@ -43,6 +43,13 @@ describe('gen-tool-catalog collectToolCatalog', () => {
       'create_goal',
       'edit',
       'exit_plan_mode',
+      'flow_block_save',
+      'flow_get',
+      'flow_library_search',
+      'flow_list',
+      'flow_run',
+      'flow_run_status',
+      'flow_save',
       'get_goal',
       'glob',
       'grep',
@@ -98,8 +105,11 @@ describe('gen-tool-catalog collectToolCatalog', () => {
       .flatMap(entry => entry.schemas)
       .find(s => s.name === 'todo_write')
     // `todo-todo` writes `enum: [...STATUSES]` — a source AST would see the
-    // spread, not the values. Booting yields the shipped enum literals.
-    const status = (((todo?.parameters as unknown as JsonSchema).properties?.todos)?.items)?.properties?.status
+    // spread, not the values. Booting yields the shipped enum literals. The
+    // tolerant items union wraps the object variant in oneOf.
+    const items = ((todo?.parameters as unknown as JsonSchema).properties?.todos)?.items as unknown as JsonSchema
+    const variant = (items.oneOf as unknown as JsonSchema[])?.find(candidate => candidate.type === 'object')
+    const status = variant?.properties?.status
     expect(status?.enum).toEqual(['pending', 'in_progress', 'completed', 'cancelled'])
   })
 

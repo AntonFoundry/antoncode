@@ -6,8 +6,9 @@
  * `.agents/notes/implemented/process/2026-07-02-tool-schema-catalog.md`.
  */
 
-import { globSync, readFileSync, writeFileSync } from 'node:fs'
-import { basename, resolve } from 'node:path'
+import { globSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { basename, join, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
 import { Context } from '@deepseek-ai/cordis'
 import type { ToolSchema } from '@deepseek-ai/dsh-llm'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
@@ -61,6 +62,11 @@ import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
 import * as ToolAntonLifecycle from '@deepseek-ai/dsh-tool-anton-lifecycle'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
 import * as ToolWeb from '@deepseek-ai/dsh-tool-web'
+import * as ToolFlowbuilder from '@deepseek-ai/dsh-tool-flowbuilder'
+import FlowBuilderService from '@deepseek-ai/dsh-flowbuilder-service'
+import Storage from '@deepseek-ai/dsh-storage'
+import * as StorageJson from '@deepseek-ai/dsh-storage-json'
+import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import VmWorkflowEngine from '@deepseek-ai/dsh-workflow-worker-thread'
 import * as ToolRalph from '@deepseek-ai/dsh-tool-ralph'
 import * as ToolWorkflow from '@deepseek-ai/dsh-tool-workflow'
@@ -182,6 +188,9 @@ export interface ToolPackage {
  * `packages/`). Ordered by package name (the render order); the completeness
  * guard proves it is exhaustive against the on-disk glob.
  */
+/** Scratch storage roots the flowbuilder harvest mounts; removed after the catalog run. */
+const catalogRoots: string[] = []
+
 const TOOL_PACKAGES: ToolPackage[] = [
   {
     pkg: '@deepseek-ai/dsh-tool-ask-user',
@@ -564,6 +573,26 @@ const TOOL_PACKAGES: ToolPackage[] = [
     note:
       'web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps.',
   },
+  {
+    pkg: '@deepseek-ai/dsh-tool-flowbuilder',
+    dir: 'tool-flowbuilder',
+    source: 'packages/flowbuilder/tool-flowbuilder/src/index.ts',
+    requires: ['ctx.tools', 'ctx.flowBuilder', 'ctx.systemPrompt'],
+    writes: ['tool/call', 'tool/result'],
+    async mount(ctx) {
+      // The store service owns zod + DAG validation; its rejections are the
+      // model-facing errors, so the schemas harvest against the real store.
+      const root = mkdtempSync(join(tmpdir(), 'gen-tool-catalog-flowbuilder-'))
+      catalogRoots.push(root)
+      await ctx.plugin(Storage)
+      await ctx.plugin(StorageJson, { root })
+      await ctx.plugin(StorageDomain, { backend: 'json' })
+      await ctx.plugin(FlowBuilderService)
+      await ctx.plugin(ToolFlowbuilder)
+    },
+    note:
+      'flow.* tools author, inspect, and search workflow definitions and the reusable block library behind ctx.flowBuilder.',
+  },
 ]
 
 /** One package's contribution to the catalog: its schemas plus attribution. */
@@ -662,6 +691,8 @@ export async function collectToolCatalog(packages: ToolPackage[] = TOOL_PACKAGES
       await ctx.fiber.dispose()
     }
   }
+  // Remove the harvest's scratch storage roots only after every fiber stopped.
+  for (const root of catalogRoots.splice(0)) rmSync(root, { recursive: true, force: true })
   return catalog
 }
 
