@@ -136,7 +136,7 @@ describe('serializeRequest', () => {
     }])
   })
 
-  it('rejects image content with UNSUPPORTED_CONTENT', () => {
+  it('omits image content as the placeholder text instead of failing the step', () => {
     const message: Message = createUserMessage({
       content: [{
         type: 'image',
@@ -144,6 +144,10 @@ describe('serializeRequest', () => {
       }],
       source: { kind: 'plugin', plugin: 'test' },
     })
-    expect(() => serializeMessages([message])).toThrow(/image content/)
+    // This adapter cannot carry image content; the shared omission fallback
+    // degrades the block to placeholder text rather than killing the step.
+    expect(serializeMessages([message])).toEqual([
+      { role: 'user', content: '[image omitted: the selected model cannot accept image input]' },
+    ])
   })
 })

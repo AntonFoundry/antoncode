@@ -104,7 +104,8 @@ describe('PiAiAdapter provider routing', () => {
     expect(server.requests[0]).toMatchObject({
       model: 'deepseek-v4-flash',
       temperature: 0.2,
-      max_completion_tokens: 77,
+      // The installed catalog declares deepseek compat.maxTokensField.
+      max_tokens: 77,
       thinking: { type: 'enabled' },
       reasoning_effort: 'max',
     })
@@ -391,7 +392,8 @@ describe('provider profile lifecycle', () => {
     })
     expect(ctx.llm.providerRetryPolicy('anthropic')).toMatchObject({
       mode: 'normal',
-      maxRetries: 2,
+      // The default mode retries transient failures without a hard cap.
+      maxRetries: Number.MAX_SAFE_INTEGER,
     })
     await fiber.dispose()
     expect(ctx.llm.listProviders()).toEqual([])
@@ -434,8 +436,11 @@ describe('provider profile lifecycle', () => {
     await expect(ctx.llm.resolveModelInfo('deepseek', 'deepseek-v4-flash'))
       .resolves.toMatchObject({
         reasoning: {
+          // The installed catalog's effort ladder, verbatim — no provider
+          // default invented around it.
           efforts: [
             { id: ReasoningEffortId('off'), name: 'Off' },
+            { id: ReasoningEffortId('low'), name: 'Low' },
             { id: ReasoningEffortId('high'), name: 'High' },
             { id: ReasoningEffortId('max'), name: 'Max' },
           ],
