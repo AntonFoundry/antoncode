@@ -1,16 +1,32 @@
+- text: Chat
+- button "Split below"
+- button "Split right"
+- button "Tidy panes"
+- button "Move pane left"
+- button "Move pane right"
+- button "Move pane up"
+- button "Move pane down"
+- button "Expand pane"
+- button "Close":
+  - img
 - banner:
   - navigation "Session hierarchy":
     - button "Use the read tool twice" [disabled]
   - button "Session log":
     - text: Session log
     - img
+  - button "展开全部工具卡片"
   - tablist:
     - tab "Chat" [selected]
+    - tab "Orchestrator"
+    - tab "Workflows"
     - tab "Trajectory"
 - text: "Use the read tool twice in one assistant message: read a.txt and b.txt. Then reply with the single word DONE and stop. 7/25 {{clock}}"
 - button "Copy":
   - img
 - tooltip "Copy"
+- button "More actions":
+  - img
 - button "Think The user wants me to read a.txt and b.txt, then reply with \"DONE\". Let me do both reads in parallel.":
   - img
   - img
@@ -24,7 +40,10 @@
   - img
 - button "Branch into a new conversation" [disabled]:
   - img
-- text: Available only on the last message of a completed turn 7/25 {{clock}} Ran for {{duration}} TTFT {{duration}} {{throughput}} tok/s
+- text: Available only on the last message of a completed turn
+- button "More actions":
+  - img
+- text: 7/25 {{clock}} Ran for {{duration}} TTFT {{duration}} {{throughput}} tok/s
 - button "Read a.txt":
   - img
   - img
@@ -42,6 +61,8 @@
 - text: Stopped Now give the final answer. 7/25 {{clock}}
 - button "Copy":
   - img
+- button "More actions":
+  - img
 - paragraph: DONE
 - button "Copy":
   - img
@@ -51,11 +72,14 @@
   - img
 - button "Branch into a new conversation":
   - img
+- button "More actions":
+  - img
 - text: 7/25 {{clock}} Ran for {{duration}}
 - textbox "Message the agent"
 - button "Commands":
   - img
 - 'button "Access mode, current: Workspace Write"': Workspace Write
+- 'button "Workspace mode, current: Current checkout"': Current checkout
 - button "Select model, current DeepSeek-V4-Flash":
   - text: DeepSeek-V4-Flash
   - img

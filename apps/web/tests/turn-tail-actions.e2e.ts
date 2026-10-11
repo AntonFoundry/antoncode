@@ -70,7 +70,13 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     scaffold = await launchWebScaffold(
       MODE === 'record'
         ? {}
-        : { replayFixture: FIXTURE, ...(overridePath === undefined ? {} : { replayOverride: overridePath }) },
+        : {
+          replayFixture: FIXTURE,
+          // The replayed model contract calls `bash` directly; the shipped
+          // paged mode grants tools only via tool_search.
+          directToolCalls: true,
+          ...(overridePath === undefined ? {} : { replayOverride: overridePath }),
+        },
     )
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { sessionEvents.push(event) })
     browser = await chromium.launch()
@@ -122,13 +128,14 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
       () => page.getByRole('status').filter({ hasText: 'Deep diving...' }).isVisible(),
       { timeout: 10_000 },
     ).toBe(true)
-    // Only the user bubble owns a footer (clock + copy; user bubbles carry no
-    // branch action): the narration is not the answer yet.
+    // The user bubble and the mid-turn narration each carry a Copy action;
+    // the streaming answer's footer is still withheld — Branch (assistant
+    // answer-only) is the withheld grant under test.
     const copyButtons = page.getByRole('button', { name: 'Copy' })
-    await expect.poll(() => copyButtons.count(), { timeout: 10_000 }).toBe(1)
+    await expect.poll(() => copyButtons.count(), { timeout: 10_000 }).toBe(2)
     expect(await page.getByRole('button', { name: 'Branch into a new conversation' }).count()).toBe(0)
     await copyButtons.first().focus()
-    const running = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
+    const running = await captureStableAria(page, '[data-pane="content"]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(RUNNING_EXPECTED, running, MODE)
 
     // Closing the turn from the park is the state change under test: an
@@ -137,10 +144,12 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     await page.getByRole('button', { name: 'Stop generating' }).click()
     await settled
     expect(sessionEvents.filter(e => e.type === 'turn/end').map(e => e.data.reason.kind)).toEqual(['aborted'])
-    await expect.poll(() => copyButtons.count(), { timeout: 10_000 }).toBe(2)
+    // Settled: user bubble + narration + the aborted turn's frozen partial
+    // each carry Copy.
+    await expect.poll(() => copyButtons.count(), { timeout: 10_000 }).toBe(3)
     await expect.poll(() => page.locator('[data-streaming="true"]').count(), { timeout: 10_000 }).toBe(0)
     await copyButtons.last().focus()
-    const settledAria = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
+    const settledAria = await captureStableAria(page, '[data-pane="content"]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(SETTLED_EXPECTED, settledAria, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])

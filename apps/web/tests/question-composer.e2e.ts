@@ -43,7 +43,7 @@ describe('web e2e: resident question composer round trip', () => {
   const sessionEvents: SessionEvent[] = []
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 15 })
+    scaffold = await launchWebScaffold(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 15, directToolCalls: true })
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { sessionEvents.push(event) })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
@@ -166,7 +166,10 @@ describe('web e2e: resident question composer round trip', () => {
     await expect.poll(() => page.locator('textarea').first().isEnabled(), { timeout: 10_000 }).toBe(true)
     // Golden of the answered transcript: the ask_user_question round trip
     // rendered as history (question tool row + DONE), composer takeover gone.
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    // Startup model auto-selection races the round trip; the selected model
+    // chip is a capture barrier (unselected renders a different button).
+    await page.getByRole('button', { name: /^Select model, current/ }).waitFor({ timeout: 15_000 })
+    const snapshot = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(ANSWERED_EXPECTED, snapshot, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])

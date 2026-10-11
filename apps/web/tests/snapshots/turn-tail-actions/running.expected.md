@@ -1,3 +1,14 @@
+- text: Chat · Begin your reply with the
+- button "Split below"
+- button "Split right"
+- button "Tidy panes"
+- button "Move pane left"
+- button "Move pane right"
+- button "Move pane up"
+- button "Move pane down"
+- button "Expand pane"
+- button "Close":
+  - img
 - banner:
   - navigation "Session hierarchy":
     - button "Begin your reply with the" [disabled]
@@ -6,13 +17,18 @@
   - button "Session log":
     - text: Session log
     - img
+  - button "展开全部工具卡片"
   - tablist:
     - tab "Chat" [selected]
+    - tab "Orchestrator"
+    - tab "Workflows"
     - tab "Trajectory"
 - text: Begin your reply with the plain sentence "Reading the workspace now." as text, and in that same message call the bash tool with the command "echo alpha". After the tool result, reply with the single word DONE and stop. {{clock}}
 - button "Copy":
   - img
 - tooltip "Copy"
+- button "More actions":
+  - img
 - button "Context injection @deepseek-ai/dsh-system-prompt":
   - img
   - img
@@ -22,18 +38,22 @@
   - img
   - text: Think The user wants me to begin with "Reading the workspace now." and call bash with "echo alpha" in the same message. Then after the tool result, reply with the single word DONE and stop.
 - paragraph: Reading the workspace now.
-- button "Bash Print alpha to stdout":
-  - img
+- button "Bash Print alpha to stdout" [expanded]:
   - img
   - text: Bash Print alpha to stdout
+- text: Done workspace echo alpha
+- button "Copy"
+- text: alpha
+- button "Inspect"
 - paragraph: partial
 - status: Deep diving...
 - textbox "Message the agent"
 - button "Commands":
   - img
 - 'button "Access mode, current: Workspace Write"': Workspace Write
-- button "Select model, current DeepSeek-V4-Flash":
-  - text: DeepSeek-V4-Flash
+- 'button "Workspace mode, current: Current checkout"': Current checkout
+- button "Select model":
+  - text: Select model
   - img
 - button "6% of context used"
 - button "Stop generating"

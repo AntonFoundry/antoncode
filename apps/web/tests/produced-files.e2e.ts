@@ -110,7 +110,7 @@ describe('web e2e: a finished turn ends with the files it produced', () => {
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAY })
+    scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAY, directToolCalls: true })
     await seedSession(scaffold, producedFixture(), SEED_ID)
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
@@ -137,7 +137,7 @@ describe('web e2e: a finished turn ends with the files it produced', () => {
     await sessionRow.click()
 
     await expect.poll(() => page.getByText(DONE, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
-    await page.setViewportSize({ width: 780, height: 900 })
+    await page.setViewportSize({ width: 640, height: 900 })
     const row = page.locator('[data-produced-files-row]')
     await row.waitFor({ timeout: 15_000 })
     const chips = row.getByRole('button')

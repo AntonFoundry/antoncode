@@ -1,3 +1,14 @@
+- text: Chat · Use the ask_user_question tool to
+- button "Split below"
+- button "Split right"
+- button "Tidy panes"
+- button "Move pane left"
+- button "Move pane right"
+- button "Move pane up"
+- button "Move pane down"
+- button "Expand pane"
+- button "Close":
+  - img
 - banner:
   - navigation "Session hierarchy":
     - button "Use the ask_user_question tool to" [disabled]
@@ -6,11 +17,16 @@
   - button "Session log":
     - text: Session log
     - img
+  - button "展开全部工具卡片"
   - tablist:
     - tab "Chat" [selected]
+    - tab "Orchestrator"
+    - tab "Workflows"
     - tab "Trajectory"
 - text: "Use the ask_user_question tool to ask me exactly one multi-select question with id \"color\", question \"Which color do you prefer?\", header \"Pick one\", and two options: label \"Blue\" with description \"A cool recessive hue that reads as calm and trustworthy in long reading sessions and dense dashboards.\", and label \"Green\" with description \"A restful mid-spectrum hue with the highest perceived brightness, easiest on the eye over long sessions.\" Set multi_select to true. After I answer, reply with the single word DONE and stop. {{clock}}"
 - button "Copy":
+  - img
+- button "More actions":
   - img
 - button "Context injection @deepseek-ai/dsh-system-prompt":
   - img
@@ -37,11 +53,14 @@
   - img
 - button "Branch into a new conversation":
   - img
+- button "More actions":
+  - img
 - text: {{clock}} Ran for {{duration}} TTFT {{duration}} {{throughput}} tok/s
 - textbox "Message the agent"
 - button "Commands":
   - img
 - 'button "Access mode, current: Workspace Write"': Workspace Write
+- 'button "Workspace mode, current: Current checkout"': Current checkout
 - button "Select model, current DeepSeek-V4-Flash":
   - text: DeepSeek-V4-Flash
   - img

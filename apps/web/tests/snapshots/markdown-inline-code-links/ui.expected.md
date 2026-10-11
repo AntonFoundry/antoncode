@@ -1,14 +1,30 @@
+- text: Chat
+- button "Split below"
+- button "Split right"
+- button "Tidy panes"
+- button "Move pane left"
+- button "Move pane right"
+- button "Move pane up"
+- button "Move pane down"
+- button "Expand pane"
+- button "Close":
+  - img
 - banner:
   - navigation "Session hierarchy":
     - button "Inline code links" [disabled]
   - button "Session log":
     - text: Session log
     - img
+  - button "展开全部工具卡片"
   - tablist:
     - tab "Chat" [selected]
+    - tab "Orchestrator"
+    - tab "Workflows"
     - tab "Trajectory"
 - text: Show the local preview URL. {{clock}}
 - button "Copy":
+  - img
+- button "More actions":
   - img
 - heading "Inline code links" [level=2]
 - paragraph:
@@ -35,13 +51,16 @@
   - img
 - button "Branch into a new conversation":
   - img
+- button "More actions":
+  - img
 - text: {{clock}} Ran for {{duration}}
 - textbox "Message the agent"
 - button "Commands":
   - img
 - 'button "Access mode, current: Workspace Write"': Workspace Write
-- button "Select model, current DeepSeek-V4-Flash":
-  - text: DeepSeek-V4-Flash
+- 'button "Workspace mode, current: Current checkout"': Current checkout
+- button "Select model":
+  - text: Select model
   - img
 - button "Send message" [disabled]
 - text: 1 turns · 1 steps LLM {{duration}}

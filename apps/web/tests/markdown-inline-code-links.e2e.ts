@@ -131,7 +131,7 @@ describe('web e2e: Markdown inline-code links', () => {
 
     expect(await page.getByText(`curl ${linkUrl}`, { exact: true }).locator('a').count()).toBe(0)
     expect(await page.getByText('javascript:alert(1)', { exact: true }).locator('a').count()).toBe(0)
-    const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
+    const snapshot = (await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd))
       .split(SEED_ID).join('{{seededId}}')
       .split(linkUrl).join('{{linkUrl}}')
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)

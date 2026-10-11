@@ -122,7 +122,7 @@ describe('web e2e: inline-code mentions of produced files', () => {
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({})
+    scaffold = await launchWebScaffold({ directToolCalls: true })
     await seedSession(scaffold, mentionFixture(), SEED_ID)
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
