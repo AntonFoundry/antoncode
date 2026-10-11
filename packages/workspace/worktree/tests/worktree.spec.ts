@@ -16,6 +16,7 @@ import WorktreeRegistry, {
   WorktreeId,
   WorktreeUnknownError,
 } from '../src/index.ts'
+import { worktreeDomainState } from '../src/spec.ts'
 import * as WorktreeInvariant from '../src/invariant.ts'
 
 const exec = promisify(execFile)
@@ -341,6 +342,32 @@ describe('worktree registry', () => {
     expect(workspaceDeletes).toEqual(['ws-1'])
     await expect(stat(join(repo.worktreeParent, 'doomed'))).rejects.toThrow()
     expect(await registry.list(repo.path)).toEqual([])
+  })
+})
+
+describe('worktree registry guards', () => {
+  it('rejects reads and writes before the domain starts, with one message naming the lifecycle', async () => {
+    const registry = new WorktreeRegistry(new Context(), { branchPrefix: 'agent/', parentSuffix: '.worktrees' })
+    // prefs() is the one public read whose first statement is its guard.
+    expect(() => registry.prefs()).toThrow('worktree registry is not started yet')
+    const guards = registry as unknown as Record<'requireTable' | 'requireGlobal' | 'requireState', () => unknown>
+    expect(() => guards.requireTable()).toThrow('worktree registry is not started yet')
+    expect(() => guards.requireGlobal()).toThrow('worktree registry is not started yet')
+    expect(() => guards.requireState()).toThrow('worktree registry is not started yet')
+  })
+})
+
+describe('worktree durable schema', () => {
+  it('parses durable state and records through the boundary schema, branding ids on the way in', async () => {
+    const parsed = worktreeDomainState.parse({
+      initialized: true,
+      worktreeIds: ['wt-1'],
+      prefs: { '/repo': { mode: 'reuse', worktreeId: 'wt-1' } },
+    })
+    expect(parsed.worktreeIds[0]).toBe('wt-1')
+    expect(parsed.prefs['/repo']).toEqual({ mode: 'reuse', worktreeId: 'wt-1' })
+    // Defaults fill fields written before they existed.
+    expect(worktreeDomainState.parse({}).initialized).toBe(false)
   })
 })
 

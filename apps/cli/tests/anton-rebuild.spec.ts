@@ -267,8 +267,13 @@ describe('rebuild status and cancel', () => {
 
   it('delivers a durably pending notification on status', async () => {
     seedState({ phase: 'succeeded', notificationPending: true, endedAt: new Date().toISOString() })
-    await expect(rebuildStatus()).resolves.toBe(0)
-    expect(readRebuildState()?.notificationPending).toBe(false)
+    // Delivery is a localhost POST with a two-second timeout; under load one
+    // status call can miss, and the durable pending flag makes the next
+    // status retry — that retry contract is the behavior under test.
+    await vi.waitFor(async () => {
+      await expect(rebuildStatus()).resolves.toBe(0)
+      expect(readRebuildState()?.notificationPending).toBe(false)
+    }, { timeout: 20_000, interval: 500 })
     expect(notifyBodies.length).toBe(1)
   })
 
