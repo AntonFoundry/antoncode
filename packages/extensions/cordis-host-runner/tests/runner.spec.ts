@@ -61,6 +61,7 @@ describe('dynamic runner definitions', () => {
         agentId: AGENT_A.id,
         packages: [{
           packageId: mine.packageId, name: 'mine', purpose: 'ours', hasHostHalf: true, hasClientHalf: false,
+          capabilities: [],
         }],
       },
       {
@@ -68,6 +69,7 @@ describe('dynamic runner definitions', () => {
         agentId: AGENT_B.id,
         packages: [{
           packageId: theirs.packageId, name: 'theirs', purpose: 'not ours', hasHostHalf: false, hasClientHalf: true,
+          capabilities: [],
         }],
       },
     ])
@@ -104,10 +106,13 @@ describe('dynamic runner definitions', () => {
     expect(first).toEqual({
       pluginId: 'dyn-1', packageId: 'pkg-1', name: 'first', purpose: 'do a thing',
       hasHostHalf: true, hasClientHalf: false,
+      // Static capability detection runs over the recorded source.
+      capabilities: [],
     })
     expect(second).toEqual({
       pluginId: 'dyn-2', packageId: 'pkg-2', name: 'second', purpose: 'do another',
       hasHostHalf: false, hasClientHalf: true,
+      capabilities: [],
     })
     expect(running(runner, AGENT_A)).toEqual([{ id: 'dyn-1', running: false }, { id: 'dyn-2', running: false }])
   })
