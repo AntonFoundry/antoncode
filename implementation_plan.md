@@ -1,17 +1,12 @@
-# Worktree selector: default-new sessions, clear semantics, meaningful names
+# Drive the remaining local-main failures to green
 
 ## Goal
-Make the web client's workspace flow behave as the user described: every new chat starts in a fresh git worktree by default (opt-out via explicit "Current checkout"), the choice is labeled as what it is (the per-repo default for the NEXT session, not the current session's property), and the current session's workspace (worktree + name vs main checkout) is visible at a glance. Scope is the client surface (`packages/client/ui-worktree`, `ui-layout`, `runtime` workspaces service); the host-side intercept for CLI/ACP sessions is explicitly out of scope this pass.
+The fork's local `main` (131 unpushed commits, including a WIP checkpoint) carries ~57 failing tests across ~33 host suites plus three client-side behavior regressions. Fix or refresh each cluster to green, one root cause per commit, and leave the three standing gates (`test:gui`, `test:coverage`, targeted `test:web` replay) green. Machine load (OrbStack) stays out of scope: load-sensitive verdicts are taken from solo runs.
 
 ## Phases
-1. **Effective-mode resolution in the runtime (default `new`)** — one named resolution point in `workspaces/service.ts`: stored pref wins; no pref + git repository → `{mode:'new'}`; not a repo → checkout. `startSession` consumes it (with a `worktree.status` repo check only on the no-pref path, and a create-failure fallback to the checkout connect that matches the documented contract); `chooseBase` stops writing `mode:'checkout'` as a side effect (preserve effective mode when storing a base).
-2. **Selector semantics + indication (ui-worktree)** — `WorktreeModeSelect` mirrors the effective default and carries a "default for NEW sessions in this repo" label (menu heading + tooltip/aria); session chips get worktree-vs-main labeling by resolving the session cwd against the worktree projection (slug + repo), so the currently viewed session's own workspace is never confused with the pref again.
-3. **Meaningful worktree names** — thread an optional user-supplied name into the New Session flow (the create API already accepts `name`; today it is a `wt-<timestamp>` slug with no UI). Smallest seam: a name field at the point a `new`-mode session is started; timestamp slug stays the fallback.
-4. **Verification & docs** — component + runtime tests to the 100% client coverage gate, `pnpm run test:gui`, `DSH_SNAPSHOT=replay pnpm run test:web` if assembled output changes, README updates (`worktree`, `ui-worktree`), Agent Note, conventional commits.
-
-## Known context (from the completed analysis)
-- Pref is durable per-repo (`checkout|new|reuse`), written at pick time (`WorktreeModeSelect.tsx:120-135` → `worktree.setPref`), consumed only by client-side `startSession` (`service.ts:226-276`).
-- Selector display re-derives from the active session's cwd (`WorktreeModeSelect.tsx:81-95,137`) — the "flip" is correct behavior, unlabeled.
-- Worktree slug is auto `wt-YYYYMMDD-HHMMSS` (`worktree/src/index.ts:318-323`); `createWorktree` accepts `name` (`service.ts:318-320`), no UI passes it.
-- Sidebar already prefixes worktree-workspace sessions with the worktree name (`WorkspaceBrowser.tsx:838-841`).
-- c0ntext engine down — code-first.
+1. **Survey & classify** — DONE.
+2. **Fix host clusters** — DONE (14+ conventional commits per root cause).
+3. **Fix client regressions** — DONE (test:gui 4247 green; no reproducible JSDOM-lane regressions).
+4. **Gates** — `test:gui` green, `test:coverage` deterministic content green, docs gates green (AGENTS budgets pre-existing red, reported).
+5. **Web replay reconciliation** — the replay lane was pre-existing red (103 failures / 51 files) behind four intentional WIP surface changes: settings window shell (no 关闭, WM Close control), first-run onboarding modal (inert root), WM grid layout (retired `centerCol`), paged tool gating (`tool_search` grants). Five fixture clusters reconciled in parallel (46/51 files green solo). Four verified product bugs delegated to fix agents: theme boot adoption, history presenter-view re-derivation (terminal + write views), WM narrow-drop sidebar race, opensInline directory routing. Two fixes pre-staged in-tree: worktree runGit classification, tool-card toggle localization.
+6. **Final** — review all working-tree diffs, commit per concern (fixture clusters + each source fix), ONE rebuild, refresh English-page goldens pinned to the old hardcoded Chinese labels, re-verify the four bug tests (settings-chrome theme, navigation-panes terminal card + sidebar, produced-files Show in folder), then the full `pnpm run test:web` replay verdict and the closing report. permission-policy-context re-record stays BLOCKED (no DEEPSEEK_API_KEY on this machine).
