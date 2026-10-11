@@ -6,6 +6,7 @@ import { ToolCallTree } from './tool/ToolCallTree.tsx'
 import { dispatchCardMode, cardModeDefault, setCardModePersisted } from './card-mode.ts'
 import css from './tool/components/CardModeToggle.module.css'
 import { ToolDetails } from './tool/ToolDetails.tsx'
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { CONVERSATION_NS as NS } from './locale.ts'
 import { askQuestionToolview } from './tool/toolviews/ask-question-row.tsx'
 import { bashToolviewSample } from './tool/toolviews/bash-sample.tsx'
@@ -28,7 +29,7 @@ export const inject = ['slots']
  * card in the conversation. Dispatches the card-mode event (rows apply it)
  * and persists the choice for newly mounted rows.
  */
-function CardModeToggle() {
+function CardModeToggle({ t }: PropsLocale<typeof NS>) {
   const [expanded, setExpanded] = useState(cardModeDefault())
   const toggle = (): void => {
     const next = !expanded
@@ -41,8 +42,8 @@ function CardModeToggle() {
       type="button"
       className={css.toggle}
       data-active={expanded || undefined}
-      aria-label={expanded ? '收起全部工具卡片' : '展开全部工具卡片'}
-      title={expanded ? '收起全部工具卡片' : '展开全部工具卡片'}
+      aria-label={t(expanded ? 'toolCard.collapseAll' : 'toolCard.expandAll')}
+      title={t(expanded ? 'toolCard.collapseAll' : 'toolCard.expandAll')}
       onClick={toggle}
     >
       <svg width={14} height={14} viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -60,6 +61,7 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
     name: 'conversation.session.header.utilities',
     id: 'ui-tool-card-mode-toggle',
+    locale: NS,
   }, CardModeToggle))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node',
