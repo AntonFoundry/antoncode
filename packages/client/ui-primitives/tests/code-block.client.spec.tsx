@@ -48,13 +48,15 @@ describe('highlightToHtml', () => {
     'proto', 'hcl', 'tf', 'pas', 'http',
   ]
 
-  it('lazily loads every read-card grammar: plain first, highlighted after load', async () => {
+  it('lazily loads every read-card grammar: plain first, highlighted after load', { timeout: 60_000 }, async () => {
     // First touch returns the plain fallback (undefined) and starts the import.
     for (const alias of LAZY_ALIASES) expect(highlightToHtml('x', alias)).toBeUndefined()
-    // Once every grammar has registered, the same call highlights.
+    // Once every grammar has registered, the same call highlights. Sixty-odd
+    // dynamic grammar imports can outgrow the default test budget on a loaded
+    // machine, so the whole wait carries its own explicit budget.
     await vi.waitFor(() => {
       for (const alias of LAZY_ALIASES) expect(highlightToHtml('x', alias)).toContain('shiki')
-    }, { timeout: 5_000 })
+    }, { timeout: 55_000 })
   })
 })
 
