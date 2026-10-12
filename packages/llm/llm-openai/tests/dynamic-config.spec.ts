@@ -142,6 +142,23 @@ describe('resolveAdapterOptions', () => {
   })
 })
 
+describe('declaredDefaultEffort', () => {
+  it('declares the configured default exactly, and none without one', () => {
+    expect(LlmOpenAI.declaredDefaultEffort(undefined)).toBeUndefined()
+    expect(LlmOpenAI.declaredDefaultEffort('off')?.toString()).toContain('off')
+    expect(LlmOpenAI.declaredDefaultEffort('low')?.toString()).toContain('low')
+    expect(LlmOpenAI.declaredDefaultEffort('medium')?.toString()).toContain('medium')
+    expect(LlmOpenAI.declaredDefaultEffort('high')?.toString()).toContain('high')
+    // OpenAI has no max wire level; the harness effort maps onto high.
+    expect(LlmOpenAI.declaredDefaultEffort('max')?.toString()).toContain('high')
+  })
+
+  it('offers the full wire effort set including medium', () => {
+    expect(LlmOpenAI.OPENAI_REASONING_EFFORTS.map(effort => effort.id.toString()))
+      .toEqual(['off', 'low', 'medium', 'high'])
+  })
+})
+
 describe('request-level dynamic profiles', () => {
   it('mounts bare and dormant, with both declared routes addressed inside the providers dict', async () => {
     const dir = await home()

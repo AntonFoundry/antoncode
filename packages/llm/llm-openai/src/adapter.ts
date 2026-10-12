@@ -128,13 +128,48 @@ export const DEFAULT_MAX_TOKENS = 16_384
 const STREAM_IDLE_TIMEOUT_CODE = 'LLM_STREAM_IDLE_TIMEOUT'
 const OFF_REASONING_EFFORT = ReasoningEffortId('off')
 const LOW_REASONING_EFFORT = ReasoningEffortId('low')
+const MEDIUM_REASONING_EFFORT = ReasoningEffortId('medium')
 const HIGH_REASONING_EFFORT = ReasoningEffortId('high')
-/** OpenAI has no "max" harness effort; the wire serializer maps it to `high`. */
-const REASONING_EFFORTS = [
+/**
+ * The effort set the OpenAI wire route serves, offered for every model on
+ * this adapter: chat-completions and Responses both spell `low`, `medium`,
+ * and `high`, and `off` is the field's omission. OpenAI has no "max" harness
+ * effort; the wire serializer maps it to `high`.
+ */
+export const OPENAI_REASONING_EFFORTS = [
   { id: OFF_REASONING_EFFORT, name: 'Off' },
   { id: LOW_REASONING_EFFORT, name: 'Low' },
+  { id: MEDIUM_REASONING_EFFORT, name: 'Medium' },
   { id: HIGH_REASONING_EFFORT, name: 'High' },
 ] as const
+
+/**
+ * The effort a configured connection default declares for its models, spelled
+ * exactly as configured: a deployment that pinned `low` must not see `high`
+ * reported back. No configured default declares none, so a request carries an
+ * effort only when the caller or a deployment chose one — the provider's own
+ * default serves everything else, which is what keeps non-reasoning models
+ * (and gateways that reject an unexpected `reasoning_effort`) requestable.
+ * @param configured - the connection's configured default effort.
+ * @returns the declared default effort id, or undefined for the provider default.
+ */
+export function declaredDefaultEffort(
+  configured: RequestDefaults['reasoningEffort'],
+): ReasoningEffortId | undefined {
+  switch (configured) {
+    case 'off':
+      return OFF_REASONING_EFFORT
+    case 'low':
+      return LOW_REASONING_EFFORT
+    case 'medium':
+      return MEDIUM_REASONING_EFFORT
+    case 'high':
+    case 'max':
+      return HIGH_REASONING_EFFORT
+    default:
+      return undefined
+  }
+}
 
 function modelInfo(provider: string, model: OpenAICatalogModel): LlmModelInfo {
   return {
@@ -215,6 +250,7 @@ export class OpenAIAdapter extends LlmAdapter {
     const configured = connection.models.find(entry => entry.id === model)
     const contextWindow = configured?.contextWindow
       ?? connection.defaultContextWindow
+    const defaultEffort = declaredDefaultEffort(connection.defaults.reasoningEffort)
     return Promise.resolve({
       // The chat-completions wire route is text-only regardless of catalog
       // membership, so the uncatalogued fallback declares the same negative
@@ -226,10 +262,8 @@ export class OpenAIAdapter extends LlmAdapter {
       context: { contextWindow },
       defaultMaxTokens: configured?.maxTokens ?? connection.maxTokens,
       reasoning: {
-        efforts: REASONING_EFFORTS,
-        defaultEffort: connection.defaults.reasoningEffort === 'off'
-          ? OFF_REASONING_EFFORT
-          : HIGH_REASONING_EFFORT,
+        efforts: OPENAI_REASONING_EFFORTS,
+        ...defaultEffort === undefined ? {} : { defaultEffort },
       },
     })
   }

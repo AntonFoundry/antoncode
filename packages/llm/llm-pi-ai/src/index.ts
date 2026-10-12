@@ -277,6 +277,42 @@ export function apply(ctx: Context, config: Config): void {
           api: profile.api ?? 'openai-completions',
           forceNetwork: true,
         }, () => resolveApiKey(provider, profile))
+      /**
+       * NVIDIA's servable chat surface: the published LLM reference unioned
+       * with the account's own listing. Both raw sources are partial — the
+       * `/models` endpoint is a partial catalog, and the reference documents
+       * additional chat endpoints the account listing may omit — so the
+       * union is the membership truth. models.dev contributes only
+       * enrichment: its NVIDIA entry also lists embeddings, speech, image,
+       * and video endpoints that `/v1/chat/completions` does not serve, so
+       * membership from it would put unrequestable models in the pickers.
+       */
+      const nvidiaCatalog = async (): Promise<readonly PiAiLiveModel[]> => {
+        const [documented, listed] = await Promise.all([
+          fetchNvidiaLlmModels().catch(() => undefined),
+          gatewayListing().catch(() => undefined),
+        ])
+        const servable = documented !== undefined
+          ? mergeNvidiaLlmModels(documented, listed ?? [])
+          : listed
+        if (servable === undefined) {
+          throw new Error('the NVIDIA LLM API reference and the endpoint listing are both unavailable')
+        }
+        let capacities = new Map<string, PiAiLiveModel>()
+        try {
+          capacities = new Map(
+            (parseModelsDevLiveModels(await modelsDevDoc(), 'nvidia') ?? []).map(model => [model.id, model]),
+          )
+        } catch {
+          // Capacities are enrichment only: NVIDIA's reference and the
+          // account listing already answer membership, so an unreachable
+          // models.dev costs the route nothing but the fallback defaults.
+        }
+        return servable.map((model) => {
+          const entry = capacities.get(model.id)
+          return entry === undefined ? model : { ...model, ...entry }
+        })
+      }
       try {
         // An explicit liveModelDiscovery asks the endpoint's own listing,
         // whose answer is the most current thing the gateway serves. The
@@ -285,31 +321,11 @@ export function apply(ctx: Context, config: Config): void {
         // a dependency bump, and falls back to the endpoint listing when that
         // fetch fails for any reason; the models.dev error is subsumed by the
         // fallback attempt and, if that also fails, the diagnostic below.
+        if (provider === 'nvidia') {
+          adopt(await nvidiaCatalog())
+          return
+        }
         if (raw.liveModelDiscovery === true) {
-          if (provider === 'nvidia') {
-            // NVIDIA's `/models` endpoint is a partial catalog: its official
-            // LLM reference documents additional models served by the same
-            // `/v1/chat/completions` endpoint, including partner publishers.
-            // Read the reference at startup and union the account's live ids
-            // so new documented endpoints appear without dropping provider-
-            // specific models the key advertises.
-            const [documented, listed] = await Promise.allSettled([
-              fetchNvidiaLlmModels(),
-              gatewayListing(),
-            ])
-            if (documented.status === 'fulfilled') {
-              adopt(mergeNvidiaLlmModels(
-                documented.value,
-                listed.status === 'fulfilled' ? listed.value : [],
-              ))
-              return
-            }
-            if (listed.status === 'fulfilled') {
-              adopt(listed.value)
-              return
-            }
-            throw documented.reason
-          }
           adopt(await gatewayListing())
           return
         }

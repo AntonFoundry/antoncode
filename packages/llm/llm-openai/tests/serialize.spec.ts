@@ -82,6 +82,7 @@ describe('reasoningEffortWire', () => {
     expect(reasoningEffortWire(undefined)).toBeUndefined()
     expect(reasoningEffortWire('off')).toBeUndefined()
     expect(reasoningEffortWire('low')).toBe('low')
+    expect(reasoningEffortWire('medium')).toBe('medium')
     expect(reasoningEffortWire('high')).toBe('high')
     expect(reasoningEffortWire('max')).toBe('high')
   })

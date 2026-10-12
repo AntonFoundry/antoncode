@@ -10,7 +10,7 @@
  * @module dsh-llm-models-dev/adapter
  */
 
-import { OpenAIAdapter } from '@deepseek-ai/dsh-llm-openai'
+import { OPENAI_REASONING_EFFORTS, OpenAIAdapter } from '@deepseek-ai/dsh-llm-openai'
 import type { OpenAIAdapterOptions, OpenAIConnectionOptions } from '@deepseek-ai/dsh-llm-openai'
 import type { LlmModelInfo, LlmResolvedModelInfo } from '@deepseek-ai/dsh-llm'
 import type { CatalogModel, ModelsDevCatalog } from './catalog.ts'
@@ -75,14 +75,23 @@ export class ModelsDevAdapter extends OpenAIAdapter {
     const resolved = await super.resolveModel(provider, model, signal)
     const entry = this.#catalog.peekCached(this.#options(provider).catalogProvider)?.get(model)
     if (entry === undefined) return resolved
+    // The catalog is the free-tier route's only reasoning signal: the base
+    // class cannot know a model's capability and would offer efforts for
+    // every model. A reasoning entry declares the full wire set with no
+    // default — the gateway's own default serves when the caller picks
+    // nothing, so no effort is materialized into requests the caller did
+    // not choose. A non-reasoning entry strips the inherited declaration,
+    // which offers no effort control and sends no reasoning field.
+    const { reasoning: _inherited, ...known } = resolved
     return {
-      ...resolved,
+      ...known,
       name: entry.name ?? resolved.name,
       ...entry.description === undefined ? {} : { description: entry.description },
       inputModalities: entry.inputModalities,
       // The catalog advertises the gateway's real capacity; the configured
       // default only serves models the snapshot has not seen yet.
       ...(entry.contextWindow === undefined ? {} : { context: { contextWindow: entry.contextWindow } }),
+      ...(entry.reasoning ? { reasoning: { efforts: OPENAI_REASONING_EFFORTS } } : {}),
     }
   }
 }

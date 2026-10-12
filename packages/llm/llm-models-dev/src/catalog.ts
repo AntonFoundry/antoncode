@@ -5,10 +5,9 @@
  * bundled as a build-time snapshot in opencode): one JSON object mapping a
  * provider id to its advertised models, each carrying per-token `cost`
  * metadata, input modalities, a context limit, and an optional deprecation
- * status. A model counts as free exactly when its input and output costs are
- * both zero — mirroring OpenCode's `cost.input === 0` picker (which keeps
- * deprecated free models listed) — and non-chat entries (no text modality)
- * never qualify.
+ * status. A model counts as free exactly when its declared input and output
+ * costs are both zero — a missing cost block does not qualify — and
+ * non-chat entries (no text modality) never qualify.
  *
  * @module dsh-llm-models-dev/catalog
  */
@@ -21,6 +20,8 @@ export interface CatalogModel {
   readonly name?: string
   /** Optional user-facing distinction from otherwise similar models. */
   readonly description?: string
+  /** Whether the catalog marks the model as reasoning-capable. */
+  readonly reasoning: boolean
   /** Input modalities the catalog advertises, narrowed to the harness vocabulary. */
   readonly inputModalities: readonly ('text' | 'image')[]
   /** Positive combined request/response context capacity when advertised. */
@@ -44,6 +45,7 @@ interface WireModel {
   name?: unknown
   description?: unknown
   status?: unknown
+  reasoning?: unknown
   cost?: WireCost
   modalities?: { input?: unknown }
   limit?: { context?: unknown }
@@ -57,33 +59,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
-/** Missing cost means zero: the same defaulting opencode's `fromModelsDevModel` applies. */
-function wireInput(model: WireModel): number {
-  const input = model.cost?.input
-  return typeof input === 'number' && Number.isFinite(input) ? input : 0
-}
-
-function wireOutput(model: WireModel): number {
-  const output = model.cost?.output
-  return typeof output === 'number' && Number.isFinite(output) ? output : 0
-}
-
 /**
- * The freeness predicate, mirroring OpenCode's picker rule
- * (`provider === "opencode" && (!cost || cost.input === 0)`).
- * OpenCode keeps deprecated free models (e.g. kimi-k2.5-free, glm-4.7-free)
- * listed — 24 of its 31 free models are marked deprecated — so this predicate
- * does NOT filter by status. Deprecated entries are often retired upstream:
- * the gateway no longer advertises them or answers `not supported` /
- * `unavailable` per request. This listing is the picker-parity surface, not a
- * servability guarantee; a retired model fails at request time like any
- * other provider-side outage.
- * It keeps the harness tightened check on output cost as well so a
- * zero-input/paid-output entry never qualifies (no such entry exists
- * today, so the visible set stays identical to OpenCode's input-only rule).
+ * The freeness predicate: the entry must price both directions at exactly
+ * zero. A *missing* cost block does not qualify — OpenRouter publishes
+ * costless entries that are not free chat models (image and music
+ * generators, uncosted router models), and treating absence as zero put
+ * them in the picker. Every OpenCode Zen free entry declares explicit zero
+ * costs, so the visible `opencode-free` set is unchanged; only providers
+ * with undeclared costs lose entries.
  */
 function isFreeModel(model: WireModel): boolean {
-  return wireInput(model) === 0 && wireOutput(model) === 0
+  return model.cost?.input === 0 && model.cost?.output === 0
 }
 
 /** Narrow catalog modalities to the harness vocabulary; chat requires text. */
@@ -99,7 +85,10 @@ function wireModalities(model: WireModel): readonly ('text' | 'image')[] | undef
  *
  * Router meta-routes (ids under the provider's own namespace, such as
  * openrouter's `openrouter/auto` or `openrouter/free`) are excluded: they
- * delegate to other models rather than serve one themselves.
+ * delegate to other models rather than serve one themselves. Deprecated
+ * free entries stay listed — OpenCode's picker keeps them too, and this
+ * listing is the picker-parity surface, not a servability guarantee; a
+ * retired model fails at request time like any other provider-side outage.
  *
  * @param payload - the parsed `/api.json` document.
  * @param provider - the catalog provider id to extract, e.g. `opencode`.
@@ -131,6 +120,7 @@ export function parseFreeModels(payload: unknown, provider: string): Map<string,
       ...(typeof model.description === 'string' && model.description.length > 0
         ? { description: model.description }
         : {}),
+      reasoning: model.reasoning === true,
       inputModalities: modalities,
       ...contextWindow === undefined ? {} : { contextWindow },
       ...(model.provider?.npm === RESPONSES_PROVIDER_NPM ? { protocol: 'responses' as const } : {}),

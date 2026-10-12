@@ -42,7 +42,9 @@ export {
   DEFAULT_CONTEXT_WINDOW,
   DEFAULT_MAX_TOKENS,
   DEFAULT_STREAM_IDLE_TIMEOUT_MS,
+  OPENAI_REASONING_EFFORTS,
   OpenAIAdapter,
+  declaredDefaultEffort,
 } from './adapter.ts'
 export type { OpenAIAdapterOptions, OpenAICatalogModel, OpenAIConnectionOptions } from './adapter.ts'
 export type { RequestDefaults } from './serialize.ts'
@@ -111,8 +113,8 @@ export interface Config {
   apiKeyEnv?: string
   /** Shared endpoint base; falls back to $OPENAI_BASE_URL from a trusted environment layer, then the public API. */
   baseURL?: string
-  /** Default reasoning effort (`off`/`low`/`high`/`max`; `max` maps to the wire's highest level). */
-  reasoningEffort?: 'off' | 'low' | 'high' | 'max'
+  /** Default reasoning effort (`off`/`low`/`medium`/`high`/`max`; `max` maps to the wire's highest level). */
+  reasoningEffort?: 'off' | 'low' | 'medium' | 'high' | 'max'
   /** Default per-request output cap; a model's own cap and explicit request values win. */
   maxTokens?: number
   /** Positive context capacity used when the selected model has no exact value (default 128,000). */
@@ -148,7 +150,7 @@ const profile: z<OpenAIProviderProfile> = z.object({
 export const Config: z<Config> = z.object({
   apiKeyEnv: z.string().role('credential-ref'),
   baseURL: z.string(),
-  reasoningEffort: z.union(['off', 'low', 'high', 'max']),
+  reasoningEffort: z.union(['off', 'low', 'medium', 'high', 'max']),
   maxTokens: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(DEFAULT_MAX_TOKENS),
   defaultContextWindow: z.number().step(1).min(1).default(DEFAULT_CONTEXT_WINDOW),
   models: z.array(catalogModel).default(DEFAULT_MODELS),

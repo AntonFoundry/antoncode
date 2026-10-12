@@ -26,7 +26,7 @@ exactly like user-added providers.
 llm-openai:
   # Section fields are the shared defaults every route falls back to.
   baseURL: https://api.openai.com/v1   # or http://127.0.0.1:1234/v1 for a local install
-  reasoningEffort: high            # off | low | high | max (max maps to the wire's high)
+  reasoningEffort: high            # off | low | medium | high | max (max maps to the wire's high)
   maxTokens: 16384
   defaultContextWindow: 128000
   models:
@@ -55,8 +55,12 @@ environment-variable reference is.
 ## Wire behavior
 
 - **Reasoning effort** maps the harness vocabulary onto OpenAI's:
-  `off` → omitted, `low` → `low`, `high` → `high`, `max` → `high` (OpenAI has
-  no "max" level).
+  `off` → omitted, `low` → `low`, `medium` → `medium`, `high` → `high`,
+  `max` → `high` (OpenAI has no "max" level). Every model offers the full
+  set; a configured `reasoningEffort` default is declared back verbatim
+  (`max` as `high`), and with none configured no effort is materialized
+  into requests — the provider's own default serves, which keeps
+  non-reasoning models and strict gateways requestable.
 - **Output capping** uses `max_completion_tokens` for o-series/GPT-5 class
   models (which reject `max_tokens`) and `max_tokens` for everything else.
 - **Reasoning streaming**: official API responses carry no CoT; reasoning

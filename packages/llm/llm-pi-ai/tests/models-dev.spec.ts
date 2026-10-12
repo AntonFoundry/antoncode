@@ -237,6 +237,43 @@ describe('periodic models.dev refresh', () => {
 })
 
 describe('startup NVIDIA catalog refresh', () => {
+  it('serves only documented or listed chat ids, enriched with models.dev capacities', async () => {
+    // models.dev's NVIDIA entry mixes real chat models with embeddings,
+    // speech, and vision endpoints `/v1/chat/completions` does not serve;
+    // only the documented id may serve, carrying the models.dev capacity.
+    const nvidiaDocument = { nvidia: { models: {
+      'deepseek-ai/deepseek-v4-flash': { name: 'DeepSeek V4 Flash', limit: { context: 1_000_000, output: 131_072 } },
+      'baai/bge-m3': { name: 'BGE-M3', modalities: { input: ['text'] }, limit: { context: 8192 } },
+    } } }
+    const reference = [
+      '# LLM APIs',
+      '| Model | Endpoint |',
+      '| --- | --- |',
+      '| [deepseek-ai / deepseek-v4-flash](https://docs.api.nvidia.com/nim/reference/deepseek-ai-deepseek-v4-flash) | [Chat](https://docs.api.nvidia.com/nim/reference/deepseek-ai-deepseek-v4-flash-infer) |',
+    ].join('\n')
+    vi.stubGlobal('fetch', vi.fn(async (url: string | URL) => {
+      const target = url.toString()
+      if (target === NVIDIA_LLM_API_REFERENCE_URL) return new Response(reference, { status: 200 })
+      if (target === MODELS_DEV_API_URL) return new Response(JSON.stringify(nvidiaDocument), { status: 200 })
+      // The account listing fails (no credential for the unreachable
+      // endpoint); the documented reference alone answers membership.
+      if (target.startsWith('http://127.0.0.1:1/')) return new Response('down', { status: 500 })
+      throw new Error(`unexpected fetch of ${target}`)
+    }))
+    const ctx = await harness({ providers: {
+      nvidia: { apiKeyEnv: 'PI_NVIDIA_TEST_KEY', baseURL: 'http://127.0.0.1:1/v1' },
+    } })
+    await vi.waitFor(async () => {
+      const ids = (await ctx.llm.listModels('nvidia')).map(model => model.id)
+      // The documented chat id serves with its models.dev capacity; the
+      // non-chat models.dev entry (embeddings) never reaches the picker.
+      expect(ids).toContain('deepseek-ai/deepseek-v4-flash')
+      expect(ids).not.toContain('baai/bge-m3')
+    })
+    const info = await ctx.llm.resolveModelInfo('nvidia', 'deepseek-ai/deepseek-v4-flash')
+    expect(info.context?.contextWindow).toBe(1_000_000)
+  })
+
   it('unions the documented chat catalog with the account listing and configured model', async () => {
     const server = createServer((_request, response) => {
       const body = JSON.stringify({ data: [{ id: 'endpoint-only-model' }] })

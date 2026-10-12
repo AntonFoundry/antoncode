@@ -122,6 +122,22 @@ describe('parseFreeModels', () => {
     }), 'opencode')
     expect([...models!.keys()]).toEqual(['free-text'])
   })
+
+  it('requires a declared zero cost: a missing cost block is not free', () => {
+    const models = parseFreeModels(payload({
+      'explicit-free': FREE_MODEL,
+      uncosted: { name: 'Uncosted', modalities: { input: ['text'] } },
+    }), 'opencode')
+    expect([...models!.keys()]).toEqual(['explicit-free'])
+    expect(models!.get('explicit-free')?.reasoning).toBe(false)
+  })
+
+  it('carries the catalog reasoning flag', () => {
+    const models = parseFreeModels(payload({
+      thinker: { ...FREE_MODEL, reasoning: true },
+    }), 'opencode')
+    expect(models!.get('thinker')?.reasoning).toBe(true)
+  })
 })
 
 describe('llm-models-dev mount freshness', () => {
@@ -157,6 +173,40 @@ describe('llm-models-dev mount freshness', () => {
       const countAtDispose = fetchMock.mock.calls.length
       await sleep(80)
       expect(fetchMock).toHaveBeenCalledTimes(countAtDispose)
+    } finally {
+      if (!disposed) await ctx.fiber.dispose()
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('free-model reasoning metadata', () => {
+  it('declares efforts only for reasoning models, with the gateway default', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-models-dev-reasoning-'))
+    vi.stubEnv('DSH_HOME', home)
+    vi.stubGlobal('fetch', okFetchOf(() => payload({
+      'reason-free': { ...FREE_MODEL, reasoning: true },
+      'chat-only': FREE_MODEL,
+    })))
+    const ctx = new Context()
+    const disposed = false
+    try {
+      await ctx.plugin(LlmRuntime)
+      await ctx.plugin(LlmModelsDev, { providers: { 'opencode-free': {} } })
+
+      const reasoner = await ctx.llm.resolveModelInfo('opencode-free', 'reason-free')
+      expect(reasoner.reasoning?.efforts.map(effort => effort.id.toString()))
+        .toEqual(['off', 'low', 'medium', 'high'])
+      // No materialized default: an unselected effort leaves the wire field
+      // absent and the gateway's own default serves.
+      expect(reasoner.reasoning?.defaultEffort).toBeUndefined()
+      const call = await ctx.llm.resolveCallConfig({ provider: 'opencode-free', model: 'reason-free' })
+      expect(call.reasoningEffort).toBeUndefined()
+
+      const plain = await ctx.llm.resolveModelInfo('opencode-free', 'chat-only')
+      expect(plain.reasoning).toBeUndefined()
+      const plainCall = await ctx.llm.resolveCallConfig({ provider: 'opencode-free', model: 'chat-only' })
+      expect(plainCall.reasoningEffort).toBeUndefined()
     } finally {
       if (!disposed) await ctx.fiber.dispose()
       await rm(home, { recursive: true, force: true })

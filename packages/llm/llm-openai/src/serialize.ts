@@ -3,7 +3,7 @@
  * served by local OpenAI-compatible installations). User text is joined;
  * assistant text becomes `content`, tool calls become `tool_calls`, and tool
  * results become separate tool messages. Reasoning effort maps the harness
- * off/low/high/max vocabulary onto OpenAI's minimal/low/medium/high. Output
+ * off/low/medium/high/max vocabulary onto OpenAI's minimal/low/medium/high. Output
  * capping uses `max_completion_tokens` for o-series/gpt-5 (which reject
  * `max_tokens`) and `max_tokens` for everything else, keeping both the
  * official API and local servers happy. Core image blocks are rejected
@@ -19,7 +19,7 @@ import type { WireMessage, WireRequest, WireTool } from './types.ts'
 
 /** Adapter-level request defaults (from plugin config). */
 export interface RequestDefaults {
-  reasoningEffort?: 'off' | 'low' | 'high' | 'max' | undefined
+  reasoningEffort?: 'off' | 'low' | 'medium' | 'high' | 'max' | undefined
 }
 
 /** Reasoning-model classes that require `max_completion_tokens`. */
@@ -33,7 +33,7 @@ const REASONING_MODEL = /^(o\d|gpt-5)/i
  * @returns the wire effort, or undefined when no field should be sent.
  */
 export function reasoningEffortWire(
-  effort: GenerateOptions['reasoningEffort'] | 'off' | 'low' | 'high' | 'max' | undefined,
+  effort: GenerateOptions['reasoningEffort'] | 'off' | 'low' | 'medium' | 'high' | 'max' | undefined,
 ): 'minimal' | 'low' | 'medium' | 'high' | undefined {
   switch (effort) {
     case undefined:
@@ -41,6 +41,8 @@ export function reasoningEffortWire(
       return undefined
     case 'low':
       return 'low'
+    case 'medium':
+      return 'medium'
     case 'high':
       return 'high'
     case 'max':
