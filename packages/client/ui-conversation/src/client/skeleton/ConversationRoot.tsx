@@ -2,7 +2,7 @@
 // chain, AND the composer bar (session-maybe slot) stay mounted across
 // no-session/session transitions — the bar renders inert via owner props.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import type { WorkspaceId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConversationSlotProps, InputZone } from '../contract/slots.ts'
@@ -49,11 +49,17 @@ export function ConversationRoot(props: ConversationRootProps) {
     seatObserver.current.observe(seat)
   }, [])
 
-  const sessionWorkspace = sessionId === undefined
-    ? undefined
-    : workspaces.items.find(workspace => workspace.sessionIds.includes(sessionId))
-  const pendingWorkspace = workspaces.items.find(
-    workspace => workspace.workspaceId === pendingWorkspaceId,
+  // Memoized: these scans ran per render — which, with the whole-snapshot
+  // subscription below, was once per streaming frame.
+  const sessionWorkspace = useMemo(
+    () => (sessionId === undefined
+      ? undefined
+      : workspaces.items.find(workspace => workspace.sessionIds.includes(sessionId))),
+    [sessionId, workspaces],
+  )
+  const pendingWorkspace = useMemo(
+    () => workspaces.items.find(workspace => workspace.workspaceId === pendingWorkspaceId),
+    [workspaces, pendingWorkspaceId],
   )
 
   // Clear the pending pick once the session lands in it, or when the picked

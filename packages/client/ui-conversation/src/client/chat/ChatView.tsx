@@ -12,7 +12,7 @@
 // ChatNodeSeat subscribes to one Node key, so Assistant deltas and Tool
 // lifecycle updates replace only their own row without remounting it.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ConversationTimelineSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import { IconChevronDownOutline14, RiskConfirmation } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
@@ -143,9 +143,15 @@ function TurnStatus({ startTime, t }: {
 
 /**
  * The chat view slot entry: pure component over the composed props; each
- * ordered business Node crosses the keyed renderer seat.
+ * ordered business Node crosses the keyed renderer seat. Memoized: parent
+ * skeletons re-render per streaming frame and per keystroke, and every prop
+ * is stable across those (slot standard props are host-cached, owner
+ * callbacks stabilized), so the N-row body rebuilds only when its own
+ * subscribed data moves. The un-depensed layout effect below is safe under
+ * memo — every branch is guarded by refs that only move when subscribed
+ * data moved.
  */
-export function ChatView({
+export const ChatView = memo(function ChatView({
   useSession, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, loadImage, inspectCall, chatScroll, forkAt,
   deleteViaFork, fileMentions, t,
 }: ChatViewSlotProps) {
@@ -534,4 +540,4 @@ export function ChatView({
       />
     </div>
   )
-}
+})

@@ -37,10 +37,31 @@ export interface AssistantMarkdownProps {
 export const AssistantMarkdown = memo(function AssistantMarkdown({
   blocks, streaming, interrupted, loadImage, mentions, t,
 }: AssistantMarkdownProps) {
-  const imageLoader = loadImage ?? (() => Promise.reject(new Error(t('image.serviceUnavailable'))))
+  const imageLoader = useMemo(
+    () => loadImage ?? (() => Promise.reject(new Error(t('image.serviceUnavailable')))),
+    [loadImage, t],
+  )
   // Stable per locale revision (t identity changes on switch): a fresh object
   // per render would rebuild MarkdownText's component table every chunk.
   const codeLabels = useMemo(() => ({ copyLabel: t('copy'), copiedLabel: t('copied') }), [t])
+  // Same discipline as codeLabels: MarkdownText memoizes on mermaidLabels
+  // identity, so a fresh object per render would re-parse settled blocks on
+  // every parent re-render.
+  const mermaidLabels = useMemo(() => ({
+    rendering: t('mermaid.rendering'),
+    failed: t('mermaid.failed'),
+    copyImage: t('mermaid.copyImage'),
+    copied: t('mermaid.copied'),
+    copiedFailed: t('mermaid.copiedFailed'),
+    zoomIn: t('mermaid.zoomIn'),
+    zoomOut: t('mermaid.zoomOut'),
+    resetZoom: t('mermaid.resetZoom'),
+    copySource: t('mermaid.copySource'),
+    copiedSource: t('mermaid.copiedSource'),
+    fullscreen: t('mermaid.fullscreen'),
+    exitFullscreen: t('mermaid.exitFullscreen'),
+  }), [t])
+  const imageLabels = useMemo(() => messageImageLabels(t), [t])
   const last = blocks.length - 1
   // Tool-call heads render as tool rows in the chat view's grouping pass, so
   // a node that is only those heads (or empty) would paint an empty root
@@ -61,20 +82,7 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
             text={block.text}
             streaming={streaming}
             codeLabels={codeLabels}
-            mermaidLabels={{
-              rendering: t('mermaid.rendering'),
-              failed: t('mermaid.failed'),
-              copyImage: t('mermaid.copyImage'),
-              copied: t('mermaid.copied'),
-              copiedFailed: t('mermaid.copiedFailed'),
-              zoomIn: t('mermaid.zoomIn'),
-              zoomOut: t('mermaid.zoomOut'),
-              resetZoom: t('mermaid.resetZoom'),
-              copySource: t('mermaid.copySource'),
-              copiedSource: t('mermaid.copiedSource'),
-              fullscreen: t('mermaid.fullscreen'),
-              exitFullscreen: t('mermaid.exitFullscreen'),
-            }}
+            mermaidLabels={mermaidLabels}
             fileMentions={mentions}
           />,
         )
@@ -96,7 +104,7 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
           group.push(next)
           i += 1
         }
-        rendered.push(<ImageGallery key={start} images={group} load={imageLoader} align="start" labels={messageImageLabels(t)} />)
+        rendered.push(<ImageGallery key={start} images={group} load={imageLoader} align="start" labels={imageLabels} />)
         break
       }
       // Grouped into tool rows by ChatView; hasVisible above skips an empty shell.

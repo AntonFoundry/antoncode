@@ -1,6 +1,6 @@
 /** Strict per-session header/body content inserted into the resident conversation layout. */
 
-import { useEffect, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import clsx from 'clsx'
 import type { SessionId, SessionListState, SessionSummary } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
@@ -145,13 +145,17 @@ export function ConversationSession({
   const active = resolveActiveView(tabs, selectedId)
   const composerPhase = useSession(s => s.composerPhase)
   const blank = useSession(s => s.blank)
-  const inputState = useInput(s => s)
+  // Narrowed to the draft string: the whole-state selector re-rendered this
+  // skeleton per input change, rebuilding the view slot for a value only the
+  // mount-time seed effect reads.
+  const inputDraft = useInput(s => s.draft)
   const storedDraft = useStore(s => s.draft)
   // `?? null`: persisted snapshots from before the inspect field rehydrate without it.
   const inspect = useStore(s => s.inspect ?? null)
+  const onInspectDone = useCallback(() => { actions.setInspect(null) }, [actions])
 
   useEffect(() => {
-    if (inputState.draft === '' && storedDraft !== '') inputActions.setDraft(storedDraft)
+    if (inputDraft === '' && storedDraft !== '') inputActions.setDraft(storedDraft)
     const unmirror = bindDraftMirror(actions.setDraft)
     return () => { unmirror() }
     // Mount-only (deps pinned to inputActions): later store writes come from
@@ -167,7 +171,7 @@ export function ConversationSession({
     <div className={css.viewArea}>
       {active !== undefined && renderSlot('conversation.view', {
         inspect,
-        onInspectDone: () => { actions.setInspect(null) },
+        onInspectDone,
       }, { only: active.id })}
     </div>
   )
