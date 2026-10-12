@@ -234,7 +234,7 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     await expect.poll(() => page.locator('[role="treeitem"][aria-selected="true"]').count(), { timeout: 20_000 }).toBe(1)
     // Golden of the recovered conversation region: rebuilt from the log, it
     // must render the same settled transcript the live turn produced.
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-chat-flow]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(RELOADED_EXPECTED, snapshot, MODE)
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
@@ -257,7 +257,6 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
         }
       })
     await page.emulateMedia({ colorScheme: 'light' })
-    const light = await sample()
     const openGeneral = async () => {
       await page.getByRole('button', { name: 'Settings', exact: true }).click()
       const dialog = page.getByRole('dialog', { name: 'Settings' })
@@ -271,6 +270,14 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       await expect.poll(() => page.getByRole('dialog', { name: 'Settings' }).count(), { timeout: 5_000 }).toBe(0)
     }
     const dialog = await openGeneral()
+    // Anchor the light baseline on an explicit Light selection: the boot
+    // shows the presenter's Aqua boot-default palette, which a durable light
+    // section deliberately replaces with the built-in light theme.
+    await dialog.getByRole('button', { name: 'Light', exact: true }).click()
+    await expect.poll(() => dialog.getByRole('button', { name: 'Light', exact: true }).getAttribute('aria-pressed'), { timeout: 5_000 }).toBe('true')
+    await closeSettings()
+    const light = await sample()
+    await openGeneral()
     const darkCube = dialog.getByRole('button', { name: 'Dark', exact: true })
     await darkCube.click()
     await expect.poll(() => darkCube.getAttribute('aria-pressed'), { timeout: 5_000 }).toBe('true')
