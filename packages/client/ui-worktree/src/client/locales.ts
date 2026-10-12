@@ -4,8 +4,8 @@
 export const zh = {
   'mode.checkout': '当前检出',
   'mode.new': '新工作树',
-  'mode.reuse': '上一个工作树',
-  'mode.reuseNamed': '上一个工作树（{branch}）',
+  'mode.reuse': '已删除的工作树',
+  'mode.reuseNamed': '工作树 {name}',
   'mode.heading': '{repo} 新会话的默认工作区',
   'status.aria': '仓库状态：{branch}，储藏 {count}',
   'status.worktree.aria': '工作树 {name}，分支 {branch}，储藏 {count}',
@@ -25,8 +25,8 @@ export type WorktreeKey = keyof typeof zh
 export const en = {
   'mode.checkout': 'Current checkout',
   'mode.new': 'New worktree',
-  'mode.reuse': 'Previous worktree',
-  'mode.reuseNamed': 'Previous worktree ({branch})',
+  'mode.reuse': 'Removed worktree',
+  'mode.reuseNamed': 'Worktree {name}',
   'mode.heading': 'Default for new sessions in {repo}',
   'status.aria': 'Repo status: {branch}, {count} stashes',
   'status.worktree.aria': 'Worktree {name}, branch {branch}, {count} stashes',

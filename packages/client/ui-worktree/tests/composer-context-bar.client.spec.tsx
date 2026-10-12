@@ -155,7 +155,7 @@ describe('ComposerContextBar', () => {
     })} />)
     await waitFor(() => { expect(view.getByText('agent/slug')).toBeTruthy() })
     await openSelector(view, 'agent/slug')
-    expect(view.container.textContent).toContain('Previous worktree (agent/slug)')
+    expect(view.container.textContent).toContain('Worktree slug')
   })
 
   it('prefers the stored base over the origin/main fallback', async () => {

@@ -37,7 +37,7 @@ export interface ComposerContextBarProps extends WorktreeBarActions {
 
 /** The mode rows one repository offers, keyed for the preference write. */
 function modeRows(
-  records: readonly { worktreeId: string; branch: string }[],
+  records: readonly { worktreeId: string; branch: string; path: string }[],
   t: PropsLocale<'worktree'>['t'],
 ): MenuItem[] {
   return [
@@ -45,7 +45,7 @@ function modeRows(
     { id: 'new', label: t('mode.new'), icon: <IconBranchOutline16 size={16} /> },
     ...records.map(record => ({
       id: `reuse:${record.worktreeId}`,
-      label: t('mode.reuseNamed', { branch: record.branch }),
+      label: t('mode.reuseNamed', { name: worktreeName(record.path) }),
       icon: <IconBranchOutline16 size={16} />,
     })),
   ]
