@@ -1,15 +1,16 @@
 /**
  * ModelSelect: the composer's named model seat (`conversation.input.model`).
- * Two-level selection per figma 496:26454's MenuDropdown: the root menu is
- * the Model / Effort row pair (label + current value + a right chevron),
- * each drilling into its own list — the provider-grouped model list over
- * the shared directory, and the effort levels. The trigger (313:14108's
- * ToggleButton) shows both: model name + effort in the caption tone.
- * Data and submission ride the SAME per-session ModelDirectory as the
- * /model popup; exact-model reasoning metadata and the selected effort come
- * from the Host rather than a client-owned vocabulary. A rejected selection
- * announces through the shared transient Toast anchored to the composer
- * card; the in-menu strip with Retry remains the catalog-load surface.
+ * The trigger opens the provider-grouped model list directly — effort is not
+ * a menu row anymore. It moved to the sibling effort pill: a colored button
+ * showing the effective effort level (hue ladders with the level — neutral
+ * at off/provider default, cool→hot up to max), whose hover slider offers
+ * exactly the levels the model declares. The pill renders only for a model
+ * with reasoning metadata. Data and submission ride the SAME per-session
+ * ModelDirectory as the /model popup; exact-model reasoning metadata and the
+ * selected effort come from the Host rather than a client-owned vocabulary.
+ * A rejected selection announces through the shared transient Toast anchored
+ * to the composer card; the menu strip with Retry remains the catalog-load
+ * surface.
  */
 import {
   useEffect, useId, useMemo, useRef, useState, useSyncExternalStore,
@@ -18,17 +19,14 @@ import {
 import clsx from 'clsx'
 import type { ModelReasoningEffort, ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14,
+  IconCheckOutline16, IconChevronDownOutline14,
   IconWarningOutline16, ProviderLogo, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelSelectInjected } from './slots.ts'
 import css from './ModelSelect.module.css'
 
-/** Which pane the dropdown shows: the two-row root or one drilled-in list. */
-type Pane = 'root' | 'model' | 'effort'
-
-/** One dynamic effort row; undefined means preserve the provider default. */
+/** One dynamic effort stop; undefined means preserve the provider default. */
 interface EffortChoice {
   key: string
   effort: string | undefined
@@ -36,11 +34,20 @@ interface EffortChoice {
   description?: string
 }
 
+/** Pill hue class per declared effort id; unknown or absent ids stay neutral. */
+const EFFORT_LEVEL: Record<string, string> = {
+  low: 'levelLow',
+  medium: 'levelMedium',
+  high: 'levelHigh',
+  max: 'levelMax',
+}
+
 /**
- * Render the composer model seat.
+ * Render the composer model seat: the model trigger, and — for a model with
+ * reasoning metadata — the effort pill with its hover slider.
  * @param props - owner share (locked) + injected face (shared directory
  * store/verbs) + the standard locale seat.
- * @returns the trigger and, while open, the two-level menu.
+ * @returns the seat element.
  */
 export function ModelSelect(
   { locked, available, directory, load, select, t }:
@@ -51,7 +58,9 @@ export function ModelSelect(
     () => directory.getSnapshot(),
   )
   const [open, setOpen] = useState(false)
-  const [pane, setPane] = useState<Pane>('root')
+  // Hover reveals the slider; a click pins it so pointer-off and touch
+  // users keep it open until an outside click dismisses it.
+  const [sliderPinned, setSliderPinned] = useState(false)
   const [modelSearch, setModelSearch] = useState('')
   // The in-menu error strip serves catalog loads (its Retry re-runs the
   // load); a rejected SELECTION announces through the transient toast
@@ -111,6 +120,10 @@ export function ModelSelect(
         ...effort.description === undefined ? {} : { description: effort.description },
       })),
     ], [reasoning, t])
+  // The slider's thumb position: the active stop, clamped so an effort the
+  // list somehow lacks degrades to the first stop rather than an out-of-range
+  // value.
+  const activeEffortIndex = Math.max(0, effortChoices.findIndex(level => level.effort === effectiveEffort))
   const busy = state.status === 'selecting'
 
   const reload = (): void => {
@@ -128,38 +141,39 @@ export function ModelSelect(
   }, [available, load])
 
   useEffect(() => {
-    if (!open) return
+    if (!open && !sliderPinned) return
     const closeOutside = (event: MouseEvent): void => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false)
+        setSliderPinned(false)
+      }
     }
     document.addEventListener('mousedown', closeOutside)
     return () => { document.removeEventListener('mousedown', closeOutside) }
+  }, [open, sliderPinned])
+
+  useEffect(() => {
+    if (!open) return
+    searchRef.current?.focus()
   }, [open])
 
   useEffect(() => {
-    if (!open || pane !== 'model') return
-    searchRef.current?.focus()
-  }, [open, pane])
-
-  useEffect(() => {
-    if (!open || pane !== 'model') return
+    if (!open) return
     if (modelSearch.trim() === '') {
       groupsRef.current?.querySelector<HTMLElement>('[aria-checked="true"]')
         ?.scrollIntoView({ block: 'nearest' })
     }
-  }, [open, pane, modelSearch, state.current?.provider, state.current?.model, state.groups])
+  }, [open, modelSearch, state.current?.provider, state.current?.model, state.groups])
 
   if (!available) return null
 
   const show = (): void => {
     setModelSearch('')
-    setPane('root')
     setOpen(true)
   }
 
   const close = (restoreFocus = false): void => {
     setOpen(false)
-    setPane('root')
     setModelSearch('')
     if (restoreFocus) queueMicrotask(() => { triggerRef.current?.focus() })
   }
@@ -173,12 +187,10 @@ export function ModelSelect(
   }
 
   const onRootKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.key === 'Escape' && open) {
+    if (event.key === 'Escape' && (open || sliderPinned)) {
       event.preventDefault()
-      // Escape backs out of a drilled pane first, then closes.
-      if (pane !== 'root') setPane('root')
-      else close(true)
-      return
+      setSliderPinned(false)
+      close(true)
     }
     if (!open) return
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -194,7 +206,7 @@ export function ModelSelect(
 
   const settleSelection = (accepted: boolean): void => {
     if (accepted) {
-      if (rootRef.current !== null) close(true)
+      if (rootRef.current !== null && open) close(true)
       return
     }
     const message = directory.getSnapshot().error
@@ -214,11 +226,7 @@ export function ModelSelect(
   }
 
   const chooseEffort = (effort: string | undefined): void => {
-    if (state.current === null) return
-    if (effectiveEffort === effort) {
-      close(true)
-      return
-    }
+    if (state.current === null || effectiveEffort === effort) return
     const selection: ModelSelection = {
       provider: state.current.provider,
       model: state.current.model,
@@ -229,12 +237,6 @@ export function ModelSelect(
   }
 
   const modelLabel = currentChoice?.model.name ?? t('trigger.fallback')
-  const triggerLabel = effortLabel === undefined ? modelLabel : `${modelLabel} · ${effortLabel}`
-  const triggerAria = currentChoice === undefined
-    ? t('trigger.selectAria')
-    : effortLabel === undefined
-      ? t('trigger.aria', { model: modelLabel })
-      : t('trigger.ariaEffort', { model: modelLabel, effort: effortLabel })
   itemRefs.current = []
   let itemIndex = 0
   const itemRef = () => {
@@ -248,11 +250,11 @@ export function ModelSelect(
         ref={triggerRef}
         type="button"
         className={css.trigger}
-        aria-label={triggerAria}
+        aria-label={currentChoice === undefined ? t('trigger.selectAria') : t('trigger.aria', { model: modelLabel })}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? `${id}-menu` : undefined}
-        title={triggerLabel}
+        title={modelLabel}
         disabled={locked}
         onClick={() => {
           if (open) {
@@ -263,9 +265,52 @@ export function ModelSelect(
         }}
       >
         <span className={css.triggerLabel}>{modelLabel}</span>
-        {effortLabel !== undefined && <span className={css.triggerEffort}>{effortLabel}</span>}
         <IconChevronDownOutline14 className={clsx(css.chevron, open && css.chevronOpen)} />
       </button>
+
+      {currentChoice !== undefined && reasoning !== undefined && (
+        <div className={clsx(css.pillWrap, css[(effectiveEffort !== undefined ? EFFORT_LEVEL[effectiveEffort] : undefined) ?? 'levelNeutral'])}>
+          <button
+            type="button"
+            className={css.pill}
+            aria-label={t('pill.aria', { effort: effortLabel ?? '' })}
+            aria-expanded={sliderPinned}
+            title={effortLabel ?? ''}
+            disabled={locked || busy}
+            onClick={() => { setSliderPinned(value => !value) }}
+          >
+            <span className={css.pillLabel}>{effortLabel}</span>
+          </button>
+          <div className={clsx(css.sliderCard, sliderPinned && css.sliderPinned)}>
+            <input
+              className={css.slider}
+              type="range"
+              min={0}
+              max={Math.max(effortChoices.length - 1, 0)}
+              step={1}
+              value={activeEffortIndex}
+              aria-label={t('pill.sliderAria')}
+              aria-valuetext={effortChoices[activeEffortIndex]?.label}
+              disabled={locked || busy}
+              onChange={(event) => { chooseEffort(effortChoices[Number(event.currentTarget.value)]?.effort) }}
+            />
+            <div className={css.stops}>
+              {effortChoices.map((level, at) => (
+                <button
+                  key={level.key}
+                  type="button"
+                  className={clsx(css.stop, at === activeEffortIndex && css.stopActive)}
+                  title={level.description ?? level.label}
+                  disabled={locked || busy}
+                  onClick={() => { chooseEffort(level.effort) }}
+                >
+                  {level.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {open && (
         <div
@@ -275,131 +320,75 @@ export function ModelSelect(
           aria-label={t('menu.aria')}
           aria-busy={state.status === 'loading' || busy}
         >
-          {pane === 'root' && (
-            <>
-              <button ref={itemRef()} type="button" role="menuitem" className={css.cell} onClick={() => { setPane('model') }}>
-                <span className={css.cellLabel}>{t('menu.model')}</span>
-                <span className={css.cellValue}>{modelLabel}</span>
-                <IconChevronRightOutline14 className={css.cellChevron} />
-              </button>
-              {reasoning !== undefined && (
-                <button ref={itemRef()} type="button" role="menuitem" className={css.cell} onClick={() => { setPane('effort') }}>
-                  <span className={css.cellLabel}>{t('menu.effort')}</span>
-                  <span className={css.cellValue}>{effortLabel}</span>
-                  <IconChevronRightOutline14 className={css.cellChevron} />
-                </button>
-              )}
-            </>
+          <input
+            ref={searchRef}
+            className={css.search}
+            type="search"
+            role="searchbox"
+            aria-label={t('search.aria')}
+            placeholder={t('search.placeholder')}
+            value={modelSearch}
+            onChange={(event) => { setModelSearch(event.target.value) }}
+          />
+          {state.status === 'loading' && (
+            <div className={css.status}>{t('status.loading')}</div>
           )}
-
-          {pane === 'model' && (
-            <>
-              <input
-                ref={searchRef}
-                className={css.search}
-                type="search"
-                role="searchbox"
-                aria-label={t('search.aria')}
-                placeholder={t('search.placeholder')}
-                value={modelSearch}
-                onChange={(event) => { setModelSearch(event.target.value) }}
-              />
-              {state.status === 'loading' && (
-                <div className={css.status}>{t('status.loading')}</div>
-              )}
-              {state.error !== null && lastActionRef.current === 'load' && (
-                <div className={css.error}>
-                  <span>{t('error.action', { message: state.error })}</span>
-                  <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
-                </div>
-              )}
-              {state.failures.map(failure => (
-                <div className={css.warning} key={failure.id}>
-                  <span>{t('warning.groupLoad', { name: failure.name, message: failure.message })}</span>
-                  <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
-                </div>
-              ))}
-              <div ref={groupsRef} className={clsx(css.groups, 'scrollable')}>
-                {filteredGroups.map(({ group, models }) => {
-                  const headingId = `${id}-${group.id}`
-                  return (
-                    <section role="group" aria-labelledby={headingId} className={css.group} key={group.id}>
-                      <div className={css.groupTitle} id={headingId}>
-                        <ProviderLogo provider={group.id} name={group.name} size={18} />
-                        <span>{group.name}</span>
-                      </div>
-                      {models.map((model) => {
-                        const selected = state.current?.provider === group.id && state.current.model === model.id
-                        return (
-                          <button
-                            ref={itemRef()}
-                            type="button"
-                            role="menuitemradio"
-                            aria-checked={selected}
-                            className={clsx(css.option, selected && css.selected)}
-                            key={model.id}
-                            title={model.name}
-                            disabled={busy}
-                            onClick={() => { choose({ provider: group.id, model: model.id }) }}
-                          >
-                            <span className={css.optionCopy}>
-                              <span className={css.modelName}>{model.name}</span>
-                              {model.description !== undefined && (
-                                <span className={css.description}>{model.description}</span>
-                              )}
-                            </span>
-                            <span className={css.check}>
-                              {selected ? <IconCheckOutline16 /> : null}
-                            </span>
-                          </button>
-                        )
-                      })}
-                    </section>
-                  )
-                })}
-              </div>
-              {state.status === 'ready' && choices.length === 0 && (
-                <div className={css.empty}>{t('empty.models')}</div>
-              )}
-              {state.status === 'ready' && choices.length > 0 && visibleModels === 0 && (
-                <div className={css.empty}>{t('empty.search')}</div>
-              )}
-            </>
+          {state.error !== null && lastActionRef.current === 'load' && (
+            <div className={css.error}>
+              <span>{t('error.action', { message: state.error })}</span>
+              <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
+            </div>
           )}
-
-          {pane === 'effort' && (
-            <>
-              {state.error !== null && lastActionRef.current === 'load' && (
-                <div className={css.error}>
-                  <span>{t('error.action', { message: state.error })}</span>
-                  <button type="button" className={css.retry} onClick={reload}>{t('action.reload')}</button>
-                </div>
-              )}
-              {effortChoices.length === 0
-                ? <div className={css.empty}>{t('empty.efforts')}</div>
-                : effortChoices.map(level => (
-                  <button
-                    ref={itemRef()}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={effectiveEffort === level.effort}
-                    className={clsx(css.option, effectiveEffort === level.effort && css.selected)}
-                    key={level.key}
-                    disabled={busy}
-                    onClick={() => { chooseEffort(level.effort) }}
-                  >
-                    <span className={css.optionCopy}>
-                      <span className={css.modelName}>{level.label}</span>
-                      {level.description !== undefined && (
-                        <span className={css.description}>{level.description}</span>
-                      )}
-                    </span>
-                    <span className={css.check}>
-                      {effectiveEffort === level.effort ? <IconCheckOutline16 /> : null}
-                    </span>
-                  </button>
-                ))}
-            </>
+          {state.failures.map(failure => (
+            <div className={css.warning} key={failure.id}>
+              <span>{t('warning.groupLoad', { name: failure.name, message: failure.message })}</span>
+              <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
+            </div>
+          ))}
+          <div ref={groupsRef} className={clsx(css.groups, 'scrollable')}>
+            {filteredGroups.map(({ group, models }) => {
+              const headingId = `${id}-${group.id}`
+              return (
+                <section role="group" aria-labelledby={headingId} className={css.group} key={group.id}>
+                  <div className={css.groupTitle} id={headingId}>
+                    <ProviderLogo provider={group.id} name={group.name} size={18} />
+                    <span>{group.name}</span>
+                  </div>
+                  {models.map((model) => {
+                    const selected = state.current?.provider === group.id && state.current.model === model.id
+                    return (
+                      <button
+                        ref={itemRef()}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={selected}
+                        className={clsx(css.option, selected && css.selected)}
+                        key={model.id}
+                        title={model.name}
+                        disabled={busy}
+                        onClick={() => { choose({ provider: group.id, model: model.id }) }}
+                      >
+                        <span className={css.optionCopy}>
+                          <span className={css.modelName}>{model.name}</span>
+                          {model.description !== undefined && (
+                            <span className={css.description}>{model.description}</span>
+                          )}
+                        </span>
+                        <span className={css.check}>
+                          {selected ? <IconCheckOutline16 /> : null}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </section>
+              )
+            })}
+          </div>
+          {state.status === 'ready' && choices.length === 0 && (
+            <div className={css.empty}>{t('empty.models')}</div>
+          )}
+          {state.status === 'ready' && choices.length > 0 && visibleModels === 0 && (
+            <div className={css.empty}>{t('empty.search')}</div>
           )}
         </div>
       )}

@@ -75,12 +75,15 @@ describe('ModelSelect reasoning effort', () => {
     />)
 
     await waitFor(() => expect(load).toHaveBeenCalledTimes(1))
-    fireEvent.click(screen.getByRole('button', { name: /选择模型/ }))
-    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+    fireEvent.click(screen.getByRole('button', { name: '选择模型，当前 DeepSeek-V4-Flash' }))
+    // The menu is the model list directly — effort is not a menu row anymore.
+    expect(screen.getByRole('searchbox', { name: '搜索模型' })).toBeTruthy()
+    expect(screen.getByRole('menuitemradio', { name: 'DeepSeek-V4-Flash' })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: /推理等级/ })).toBeNull()
     expect(load).toHaveBeenCalledTimes(1)
   })
 
-  it('renders adapter metadata and submits the effort as part of the session selection', async () => {
+  it('shows the effort pill with the effective level and submits slider moves as selections', async () => {
     const directory = createSnapshotStore<ModelDirectoryState>(state())
     const select = vi.fn(async (selection: ModelSelection) => {
       directory.set(state({ current: selection }))
@@ -95,22 +98,25 @@ describe('ModelSelect reasoning effort', () => {
       t={t}
     />)
 
-    const trigger = screen.getByRole('button', {
-      name: '选择模型，当前 DeepSeek-V4-Flash，推理等级 High',
-    })
-    fireEvent.click(trigger)
-    fireEvent.click(screen.getByRole('menuitem', { name: /推理等级/ }))
-    expect(screen.getAllByRole('menuitemradio').map(item => item.textContent))
-      .toEqual(['Off', 'High', 'MaxLargest budget'])
+    // The pill shows the effective effort (the adapter default) beside the
+    // model trigger, and the trigger no longer carries the effort suffix.
+    expect(screen.getByRole('button', { name: '推理力度：High' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '选择模型，当前 DeepSeek-V4-Flash' })).toBeTruthy()
+    // The hover slider offers exactly the declared levels; the thumb sits on
+    // the active stop (Off=0, High=1, Max=2).
+    const slider = screen.getByRole('slider', { name: '调整推理等级' })
+    expect((slider as HTMLInputElement).value).toBe('1')
+    expect([...document.querySelectorAll('[class*="stops"] > button')].map(stop => stop.textContent))
+      .toEqual(['Off', 'High', 'Max'])
 
-    fireEvent.click(screen.getByRole('menuitemradio', { name: /Max/ }))
+    fireEvent.change(slider, { target: { value: '2' } })
     await waitFor(() => {
       expect(select).toHaveBeenCalledWith({
         provider: 'deepseek-official',
         model: 'deepseek-v4-flash',
         reasoningEffort: 'max',
       })
-      expect(trigger.getAttribute('aria-label')).toBe('选择模型，当前 DeepSeek-V4-Flash，推理等级 Max')
+      expect(screen.getByRole('button', { name: '推理力度：Max' })).toBeTruthy()
     })
   })
 
@@ -136,11 +142,8 @@ describe('ModelSelect reasoning effort', () => {
       t={t}
     />)
 
-    fireEvent.click(screen.getByRole('button', {
-      name: '选择模型，当前 Model，推理等级 Default',
-    }))
-    fireEvent.click(screen.getByRole('menuitem', { name: /推理等级/ }))
-    expect(screen.getAllByRole('menuitemradio').map(item => item.textContent))
+    expect(screen.getByRole('button', { name: '推理力度：Default' })).toBeTruthy()
+    expect([...document.querySelectorAll('[class*="stops"] > button')].map(stop => stop.textContent))
       .toEqual(['Default', 'Standard'])
   })
 
@@ -160,9 +163,9 @@ describe('ModelSelect reasoning effort', () => {
 
     const trigger = screen.getByRole('button', { name: '选择模型' })
     expect(trigger.textContent).toContain('选择模型')
+    // No current model means no reasoning metadata, so no effort pill.
+    expect(screen.queryByRole('button', { name: /推理力度/ })).toBeNull()
     fireEvent.click(trigger)
-    expect(screen.queryByRole('menuitem', { name: /推理等级/ })).toBeNull()
-    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
     expect(screen.queryByText('removed-model')).toBeNull()
     expect(screen.getByRole('menuitemradio', { name: 'DeepSeek-V4-Flash' })).toBeTruthy()
   })
@@ -186,7 +189,6 @@ describe('ModelSelect reasoning effort', () => {
       t={t}
     />)
     fireEvent.click(screen.getByRole('button', { name: '选择模型，当前 Model 15' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
 
     await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' }))
     expect(screen.getByRole('menuitemradio', { name: 'Model 15' }).getAttribute('aria-checked')).toBe('true')
@@ -216,7 +218,6 @@ describe('ModelSelect reasoning effort', () => {
     />)
 
     fireEvent.click(screen.getByRole('button', { name: /选择模型|当前/ }))
-    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
     fireEvent.click(screen.getByRole('menuitemradio', { name: /DeepSeek-V4-Pro/ }))
     const toast = await screen.findByRole('alert')
     expect(toast.textContent).toContain('模型操作失败：model-unavailable: session already contains images')
