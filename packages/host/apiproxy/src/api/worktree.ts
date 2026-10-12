@@ -31,6 +31,12 @@ export interface WorktreeView {
   base: string
   /** Workspace registered over `path` at create, when registration succeeded. */
   workspaceId?: WorkspaceId
+  /**
+   * Display name claimed from the first titled session inside the worktree,
+   * when one has titled it; absent means consumers derive the name from
+   * `path`'s basename.
+   */
+  alias?: string
   /** ISO-8601 creation instant. */
   createdAt: string
 }

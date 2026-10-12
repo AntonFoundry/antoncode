@@ -37,7 +37,7 @@ export interface ComposerContextBarProps extends WorktreeBarActions {
 
 /** The mode rows one repository offers, keyed for the preference write. */
 function modeRows(
-  records: readonly { worktreeId: string; branch: string; path: string }[],
+  records: readonly { worktreeId: string; branch: string; path: string; alias?: string }[],
   t: PropsLocale<'worktree'>['t'],
 ): MenuItem[] {
   return [
@@ -45,10 +45,18 @@ function modeRows(
     { id: 'new', label: t('mode.new'), icon: <IconBranchOutline16 size={16} /> },
     ...records.map(record => ({
       id: `reuse:${record.worktreeId}`,
-      label: t('mode.reuseNamed', { name: worktreeName(record.path) }),
+      label: t('mode.reuseNamed', { name: worktreeDisplayName(record) }),
       icon: <IconBranchOutline16 size={16} />,
     })),
   ]
+}
+
+/**
+ * The name a worktree reads as: the alias claimed from its titling session
+ * when one has claimed it, else the directory basename.
+ */
+function worktreeDisplayName(record: { path: string; alias?: string }): string {
+  return record.alias ?? worktreeName(record.path)
 }
 
 /** The preference id a stored (or effective-default) mode selects in the menu. */
@@ -112,6 +120,7 @@ export function ComposerContextBar(
     () => (cwd === undefined ? undefined : Object.values(byRepo).flat().find(record => record.path === cwd)),
     [byRepo, cwd],
   )
+  const worktreeLabel = worktreeRecord === undefined ? undefined : worktreeDisplayName(worktreeRecord)
 
   // The bar stays visible for every session: a cwd outside any git repository
   // renders the selector with an explanatory heading over greyed rows instead
@@ -142,19 +151,18 @@ export function ComposerContextBar(
     void setMode(repo.key, next).catch(() => {})
   }
 
-  // The trigger is the location fact: the worktree name when the session runs
-  // in one, else the checked-out branch, else the folder name for a non-repo.
+  // The trigger is the location fact: the worktree's display name (its
+  // claimed alias, or the directory basename) when the session runs in one,
+  // else the checked-out branch, else the folder name for a non-repo.
   const locked = repoStatus === null
   const folder = cwd.split('/').pop() ?? cwd
   const location = locked
     ? folder
-    : worktreeRecord !== undefined
-      ? worktreeName(worktreeRecord.path)
-      : (repoStatus?.branch ?? folder)
+    : worktreeLabel ?? (repoStatus?.branch ?? folder)
   const locationTitle = locked
     ? t('bar.notRepo', { folder })
-    : worktreeRecord !== undefined
-      ? t('bar.repo.worktree.aria', { name: worktreeName(worktreeRecord.path), branch: repoStatus?.branch ?? '' })
+    : worktreeLabel !== undefined
+      ? t('bar.repo.worktree.aria', { name: worktreeLabel, branch: repoStatus?.branch ?? '' })
       : t('bar.repo.aria', { branch: repoStatus?.branch ?? '' })
 
   const records = repo === undefined ? [] : (byRepo[repo.key] ?? [])

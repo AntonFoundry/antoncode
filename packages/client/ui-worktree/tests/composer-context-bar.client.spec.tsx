@@ -44,6 +44,12 @@ const worktreeRecord = {
   createdAt: '2026-01-02T00:00:00.000Z',
 }
 
+const namedWorktreeRecord = {
+  ...worktreeRecord,
+  worktreeId: 'wt-2' as never,
+  alias: 'fix-compiler-warnings',
+}
+
 function workspacesState(
   prefs: WorkspaceListState['worktrees']['prefs'],
   byRepo: WorkspaceListState['worktrees']['byRepo'] = {},
@@ -135,6 +141,15 @@ describe('ComposerContextBar', () => {
     expect(view.queryByText('agent/slug')).toBeNull()
     const trigger = view.getByRole('button', { name: 'Worktree slug, branch agent/slug' }) as HTMLElement
     expect(trigger.title).toBe('Worktree slug, branch agent/slug')
+  })
+
+  it('prefers the claimed alias as the worktree display name', async () => {
+    const view = render(<ComposerContextBar {...props({
+      summary: { cwd: '/repo.worktrees/slug' },
+      byRepo: { '/repo': [namedWorktreeRecord] },
+    })} />)
+    await waitFor(() => { expect(view.getByText('fix-compiler-warnings')).toBeTruthy() })
+    expect(view.queryByText('slug')).toBeNull()
   })
 
   it('writes the chosen mode as the per-repository next-session default', async () => {

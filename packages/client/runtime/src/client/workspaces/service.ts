@@ -315,7 +315,11 @@ export class WorkspaceRuntime implements IWorkspaces {
       for (const record of items) {
         (byRepo[record.repoPath] ??= []).push(record)
         if (record.workspaceId !== undefined) {
-          namesByWorkspaceId[record.workspaceId] = record.path.split('/').filter(Boolean).at(-1) ?? record.path
+          // The claimed alias (the titling session's slugified title) reads
+          // better than the timestamp default the directory was created with.
+          namesByWorkspaceId[record.workspaceId] = record.alias
+            ?? record.path.split('/').filter(Boolean).at(-1)
+            ?? record.path
         }
       }
       const previous = this.list.getSnapshot().worktrees.prefs

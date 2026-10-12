@@ -1208,6 +1208,7 @@ function worktreeView(record: RegistryWorktreeRecord): WorktreeView {
     branch: record.branch,
     base: record.base,
     ...(record.workspaceId === undefined ? {} : { workspaceId: record.workspaceId as WorkspaceId }),
+    ...(record.alias === undefined ? {} : { alias: record.alias }),
     createdAt: record.createdAt,
   }
 }
@@ -1480,6 +1481,24 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     const agent = ctx.agents.get(session.id)
     if (agent?.session !== session) return
     broadcast({ type: 'session/queue', sessionId: session.id, items: queueItems(agent, event.data) })
+  })
+
+  // A titled session names its worktree: the first title claimed inside a
+  // worktree becomes its display alias (refined by later titles from the
+  // same session), so a fresh `wt-<timestamp>` worktree reads as the task
+  // it was created for. Display-only — paths and branches never move.
+  ctx.on('session/event', (session, event) => {
+    if (event.type !== 'session/title') return
+    void ctx.worktreeRegistry.aliasFromTitle(
+      session.id,
+      session.header.cwd,
+      event.data.title,
+    ).catch((error: unknown) => {
+      // The event listener cannot fail the turn that logged the title; a
+      // failed alias write only costs the display name, so it degrades to a
+      // warning and the next title from the same session retries.
+      ctx.logger.warn(`worktree alias update failed for session ${session.id}: ${String(error)}`)
+    })
   })
 
   /** Remove a wait before settling it: synchronous deletion makes the first claimant win. */

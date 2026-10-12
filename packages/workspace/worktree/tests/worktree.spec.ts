@@ -131,6 +131,45 @@ describe('worktree registry', () => {
     expect(listed[0]?.path).toBe(record.path)
   })
 
+  it('claims the display alias from the first titled session inside the worktree', async () => {
+    const repo = await makeRepo(root, 'repo-alias')
+    const { registry } = await harness()
+    const record = await registry.create(repo.path, {})
+
+    // A session outside any registered worktree claims nothing.
+    await registry.aliasFromTitle('s0', join(root, 'elsewhere'), 'Elsewhere Title')
+    expect((await registry.list())[0]?.alias).toBeUndefined()
+
+    // The first titled session inside claims the alias; the slug follows the
+    // slugify rules (spaces → hyphens, lowercase, punctuation dropped).
+    await registry.aliasFromTitle('s1', record.path, 'Fix Compiler Warnings!')
+    expect((await registry.list())[0]?.alias).toBe('fix-compiler-warnings')
+    expect((await registry.list())[0]?.aliasSessionId).toBe('s1')
+
+    // The claiming session's later titles refine the alias (fallback →
+    // provider → user rename), and the slug cap keeps it bounded.
+    await registry.aliasFromTitle('s1', record.path, 'Review Compiler Correctness In The Janet Build')
+    expect((await registry.list())[0]?.alias).toBe('review-compiler-correctness-in-the-janet')
+
+    // Another session never renames it — a reused worktree keeps the name of
+    // the session that first titled it.
+    await registry.aliasFromTitle('s2', record.path, 'Hijack')
+    expect((await registry.list())[0]?.alias).toBe('review-compiler-correctness-in-the-janet')
+  })
+
+  it('ignores title events that claim nothing: empty slugs and no-op repeats', async () => {
+    const repo = await makeRepo(root, 'repo-alias-noop')
+    const { registry } = await harness()
+    const record = await registry.create(repo.path, {})
+
+    await registry.aliasFromTitle('s1', record.path, '!!!')
+    expect((await registry.list())[0]?.alias).toBeUndefined()
+
+    await registry.aliasFromTitle('s1', record.path, 'Real Name')
+    await registry.aliasFromTitle('s1', record.path, 'Real Name')
+    expect((await registry.list())[0]?.alias).toBe('real-name')
+  })
+
   it('falls back to HEAD when no origin/main exists locally', async () => {
     const repo = await makeRepo(root, 'no-origin', false)
     const { registry } = await harness()

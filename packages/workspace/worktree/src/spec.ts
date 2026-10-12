@@ -27,6 +27,10 @@ export const worktreeRecord = z.object({
   branch: z.string(),
   base: z.string(),
   workspaceId: z.string().optional(),
+  /** Display name claimed from the first titled session inside the worktree. */
+  alias: z.string().optional(),
+  /** Session whose titles own {@link alias}; other sessions never rename it. */
+  aliasSessionId: z.string().optional(),
   createdAt: z.string(),
 })
 

@@ -24,6 +24,7 @@ export const worktreeViewSchema = z.object({
   branch: z.string(),
   base: z.string(),
   workspaceId: workspaceIdSchema.optional(),
+  alias: z.string().optional(),
   createdAt: z.string(),
 }) satisfies z.ZodType<Wire<WorktreeView>>
 

@@ -16,6 +16,7 @@ Git worktree registry for the DeepSeek Harness: per-repository worktree lifecycl
 - `list(repoPath?)` — newest-first records, optionally filtered to one repository.
 - `status(path)` — live `{ branch, head, dirty, stashCount, ahead, behind }` for any git working directory; stash count is repo-global (stashes live in the common dir).
 - `pref(repoPath)` / `setPref(repoPath, pref)` — the durable per-repository default workspace mode: `checkout`, `new`, or `reuse:<worktreeId>`.
+- `aliasFromTitle(sessionId, cwd, title)` — the worktree's display alias, claimed from the first titled session running inside it and refined by that session's later titles (fallback → provider → user rename); slugified (`[a-z0-9-]`, ≤40 chars, `wt` fallback claims nothing). Display-only — paths and branches never move — and other sessions never rename a claimed worktree, so a reused one keeps its first claimant's name.
 - `remove(id, { force? })` — `git worktree remove` (refuses a dirty tree unless forced) plus record deletion; the branch is never deleted, so merge-back stays possible.
 
 ## Config
