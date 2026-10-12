@@ -481,6 +481,7 @@ function mountFrame(initialTree?: WmNode, workspaces?: { id: string; title: stri
       setFocus={(id) => { act(() => { wm.actions.setFocus(id) }) }}
       setBuffers={(buffers) => { act(() => { wm.actions.setBuffers(buffers) }) }}
       setSidebarWidth={(px) => { act(() => { layout.actions.setSidebar(px) }) }}
+      setMode={(mode) => { act(() => { layout.actions.setMode(mode) }) }}
       themeList={() => [{ id: 'anton-dark', colorScheme: 'dark' }, { id: 'paper', colorScheme: 'light' }]}
       loadTheme={(id) => { loadedThemes.push(id) }}
       reconcileBuffers={() => { act(() => { wm.actions.reconcile() }) }}
@@ -1079,6 +1080,41 @@ describe('WmFrame narrow viewport', () => {
     window.innerWidth = frameWidth
     const secondLife = mountFrame()
     expect(firstLeafId(secondLife.wm.getSnapshot().tree)).toBe(WM_LEAF_SIDEBAR)
+    expect(secondLife.wm.getSnapshot().sidebarBootDropped).toBe(false)
+  })
+
+  it('a per-workspace stash captured inside the drop window restores boot-dropped and heals (reload within the debounce)', () => {
+    // The reload races the 400ms per-workspace stash debounce: the stash can
+    // hold the narrow-dropped tree while the global persisted tree is already
+    // healed. The restore must carry the stash's drop marker so the widen
+    // re-attach heals it instead of resurrecting the drop.
+    const workspaces = [{ id: 'ws-1', title: 'Project', sessionIds: ['s-test'] }]
+    // First page life: wide boot with the sidebar, then the narrow dip drops
+    // it and the debounced stash captures the dropped tree + marker.
+    frameWidth = 1920
+    const firstLife = mountFrame(undefined, workspaces)
+    expect(findLeaf(firstLife.wm.getSnapshot().tree, WM_LEAF_SIDEBAR)).toBeDefined()
+    frameWidth = 800
+    window.innerWidth = frameWidth
+    act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
+    expect(leafIds(firstLife.wm.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION])
+    expect(firstLife.wm.getSnapshot().sidebarBootDropped).toBe(true)
+    act(() => { vi.advanceTimersByTime(400) })
+    const stash = JSON.parse(window.localStorage.getItem('dsh.layout.wm:ws-1')!) as { tree: WmNode; sidebarBootDropped?: boolean }
+    expect(leafIds(stash.tree)).toEqual([WM_LEAF_CONVERSATION])
+    expect(stash.sidebarBootDropped).toBe(true)
+    // Widen heals the global tree, but the page reloads before the post-heal
+    // stash debounce (400ms) can overwrite the stale dropped snapshot.
+    frameWidth = 1920
+    window.innerWidth = frameWidth
+    act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
+    expect(firstLeafId(firstLife.wm.getSnapshot().tree)).toBe(WM_LEAF_SIDEBAR)
+    firstLife.unmount()
+    // Second page life: the ws restore applies the stale dropped stash — the
+    // carried marker must drive the immediate re-attach, not stay dropped.
+    const secondLife = mountFrame(undefined, workspaces)
+    expect(firstLeafId(secondLife.wm.getSnapshot().tree)).toBe(WM_LEAF_SIDEBAR)
+    expect(leafIds(secondLife.wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
     expect(secondLife.wm.getSnapshot().sidebarBootDropped).toBe(false)
   })
 })

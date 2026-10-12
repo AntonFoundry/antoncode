@@ -1404,6 +1404,10 @@ export function WmFrame({
   }, [])
   const boardPrefsRef = useRef(boardPrefs)
   boardPrefsRef.current = boardPrefs
+  // The boot-drop marker is stash state too (see stashWs): mirrored into a ref
+  // so the stash callback stays dep-free.
+  const sidebarBootDroppedRef = useRef(sidebarBootDropped)
+  sidebarBootDroppedRef.current = sidebarBootDropped
   const stashWs = useCallback((target: string): void => {
     try {
       window.localStorage.setItem(`dsh.layout.wm:${target}`, JSON.stringify({
@@ -1412,6 +1416,10 @@ export function WmFrame({
         focusedLeafId: focusedIdRef.current,
         mode: modeRef.current,
         agentBoard: boardPrefsRef.current,
+        // The marker belongs to the stashed tree: a stash captured inside the
+        // narrow-drop window must restore as boot-dropped, or the reload's
+        // restore would resurrect the drop with no heal path.
+        sidebarBootDropped: sidebarBootDroppedRef.current,
         savedAt: Date.now(),
       }))
     } catch { /* private mode */ }
@@ -1433,7 +1441,13 @@ export function WmFrame({
     if (prev === ws) return
     if (prev !== undefined) stashWs(prev)
     prevWsRef.current = ws
-    let parsed: { tree?: WmNode; buffers?: WmBuffer[]; mode?: LayoutMode; agentBoard?: BoardPrefs } | undefined
+    let parsed: {
+      tree?: WmNode
+      buffers?: WmBuffer[]
+      mode?: LayoutMode
+      agentBoard?: BoardPrefs
+      sidebarBootDropped?: boolean
+    } | undefined
     try {
       const raw = window.localStorage.getItem(`dsh.layout.wm:${ws}`)
       parsed = raw === null ? undefined : JSON.parse(raw)
@@ -1460,6 +1474,11 @@ export function WmFrame({
       applySnapshot(parsed.tree, parsed.buffers)
       if (parsed.mode !== undefined) setMode(parsed.mode)
       if (parsed.agentBoard !== undefined) setBoardPrefs(parsed.agentBoard)
+      // The stash's drop marker travels with its tree: restoring a stash
+      // captured inside the narrow-drop window marks the absence as
+      // boot-dropped so the widen re-attach heals it; a deliberately closed
+      // stash restores false and stays closed.
+      setSidebarBootDropped(parsed.sidebarBootDropped === true)
       setFocus(undefined)
       preExpandRef.current = undefined
       setExpanded(false)
@@ -1467,7 +1486,7 @@ export function WmFrame({
     const view = workspaceSnapshot.items.find(w => w.workspaceId === ws)
     wsLabelRef.current = view?.title ?? ws
     // Runs on workspace change only; the prev guard makes re-runs no-ops.
-  }, [activeWorkspaceId, workspaceSnapshot.items, setFocus, setMode, stashWs, applySnapshot])
+  }, [activeWorkspaceId, workspaceSnapshot.items, setFocus, setMode, setSidebarBootDropped, stashWs, applySnapshot])
   // Mid-workspace edits: debounce-save into the CURRENT workspace's stash, so
   // refresh (not just workspace switches) restores the latest arrangement.
   // Runs after the load effect above; the prev guard there ran first.
