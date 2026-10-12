@@ -2,17 +2,15 @@
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
-  'mode.aria': '工作区模式，当前：{name}',
   'mode.checkout': '当前检出',
   'mode.new': '新工作树',
   'mode.reuse': '上一个工作树',
   'mode.reuseNamed': '上一个工作树（{branch}）',
   'mode.heading': '{repo} 新会话的默认工作区',
-  'hint.new': '新工作树基于 origin/main 创建；未跟踪文件（如 .env）不会带入',
-  'hint.mode': '选择新会话的默认工作区——只影响之后新建的会话，不改变当前会话',
   'status.aria': '仓库状态：{branch}，储藏 {count}',
   'status.worktree.aria': '工作树 {name}，分支 {branch}，储藏 {count}',
   'status.stash': '储藏 {count}',
+  'bar.current': '本会话：{name}',
   'bar.base': '基于 {base}',
   'bar.base.aria': '新工作树基准分支，当前：{base}',
   'bar.repo.aria': '仓库分支：{branch}',
@@ -25,17 +23,15 @@ export type WorktreeKey = keyof typeof zh
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
-  'mode.aria': 'Workspace mode, current: {name}',
   'mode.checkout': 'Current checkout',
   'mode.new': 'New worktree',
   'mode.reuse': 'Previous worktree',
   'mode.reuseNamed': 'Previous worktree ({branch})',
   'mode.heading': 'Default for new sessions in {repo}',
-  'hint.new': 'Created from origin/main; untracked files (e.g. .env) stay behind',
-  'hint.mode': 'Default workspace for NEW sessions — never changes the current session',
   'status.aria': 'Repo status: {branch}, {count} stashes',
   'status.worktree.aria': 'Worktree {name}, branch {branch}, {count} stashes',
   'status.stash': 'Stash {count}',
+  'bar.current': 'This session: {name}',
   'bar.base': 'From {base}',
   'bar.base.aria': 'Base branch for new worktrees, current: {base}',
   'bar.repo.aria': 'Repository branch: {branch}',

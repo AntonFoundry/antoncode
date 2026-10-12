@@ -14,7 +14,7 @@ import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionListState, WorktreeStatusView, WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
 import { IconBranchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import { worktreeName } from './WorktreeModeSelect.tsx'
+import { worktreeName } from './helpers.ts'
 import type { RepoStatusActions } from './slots.ts'
 import css from './RepoStatusChip.module.css'
 

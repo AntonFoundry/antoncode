@@ -77,7 +77,7 @@
 - button "Commands":
   - img
 - 'button "Access mode, current: Custom"': Custom
-- 'button "Workspace mode, current: Current checkout"': Current checkout
+- button "\"workspace\" is not a git repository — worktree isolation applies to git repositories": workspace
 - button "6% of context used"
 - button "Send message" [disabled]
 - text: 2 turns · 2 steps LLM {{duration}} TTFT avg {{duration}} · {{throughput}} tok/s Cache hit 99% Input 15.6K tok · Output 158 tok

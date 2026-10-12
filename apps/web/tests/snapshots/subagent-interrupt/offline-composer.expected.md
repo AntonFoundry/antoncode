@@ -40,6 +40,6 @@
 - button "Commands" [disabled]:
   - img
 - 'button "Access mode, current: Custom" [disabled]': Custom
-- 'button "Workspace mode, current: Current checkout"': Current checkout
+- button "\"workspace\" is not a git repository — worktree isolation applies to git repositories": workspace
 - button "Stop generating"
 - button "Send message" [disabled]

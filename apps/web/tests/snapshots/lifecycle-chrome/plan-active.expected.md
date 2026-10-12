@@ -65,7 +65,7 @@
   - img
 - 'button "Access mode, current: Workspace Write"': Workspace Write
 - button "Plan mode on, press to turn off": Plan
-- 'button "Workspace mode, current: Current checkout"': Current checkout
+- button "\"workspace\" is not a git repository — worktree isolation applies to git repositories": workspace
 - button "Select model":
   - text: Select model
   - img

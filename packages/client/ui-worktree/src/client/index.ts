@@ -1,7 +1,9 @@
 /**
  * Worktree surface plugin, browser half: the composer context bar
- * (the composer tool row beside the access select — repository chip,
- * workspace-mode select, base-ref picker) and the session header's repo-status chip
+ * (the composer tool row beside the access select — one workspace selector
+ * whose trigger is the session's location and whose menu holds the
+ * next-session mode default, plus the base-ref picker) and the session
+ * header's repo-status chip
  * (conversation.session.header.actions). Live state arrives through the
  * standard workspaces/sessions feeds; the inject faces carry the mode-write
  * verb and the status query from `ctx.workspaces`.
@@ -17,8 +19,7 @@ import { RepoStatusChip } from './RepoStatusChip.tsx'
 import { en, zh, type WorktreeKey } from './locales.ts'
 
 export { RepoStatusChip } from './RepoStatusChip.tsx'
-export { resolveRepo, WorktreeModeSelect } from './WorktreeModeSelect.tsx'
-export type { RepoStatusActions, WorktreeBarActions, WorktreeSelectActions } from './slots.ts'
+export type { RepoStatusActions, WorktreeBarActions } from './slots.ts'
 export type { WorktreeKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {

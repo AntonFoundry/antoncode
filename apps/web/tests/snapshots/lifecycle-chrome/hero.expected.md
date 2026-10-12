@@ -65,7 +65,7 @@
   - img
 - tooltip "Commands"
 - 'button "Access mode, current: Workspace Write"': Workspace Write
-- 'button "Workspace mode, current: Current checkout"': Current checkout
+- button "\"workspace\" is not a git repository — worktree isolation applies to git repositories": workspace
 - button "Select model":
   - text: Select model
   - img

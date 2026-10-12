@@ -9,18 +9,6 @@
 
 import type { WorktreeModePrefView, WorktreeStatusView } from '@deepseek-ai/dsh-client-runtime/client'
 
-/** Injected business face of the composer's workspace-mode select. */
-export interface WorktreeSelectActions {
-  /**
-   * Write the per-repository default workspace mode for new sessions.
-   * @param repoPath - the repository key the mode is stored under.
-   * @param pref - checkout, fresh-worktree-per-session, or a named worktree.
-   */
-  setMode: (repoPath: string, pref: WorktreeModePrefView) => Promise<void>
-  /** Reload the worktree projection from the Host (fire-and-forget refresh). */
-  refresh: () => void
-}
-
 /** Injected business face of the composer context bar. */
 export interface WorktreeBarActions {
   /**

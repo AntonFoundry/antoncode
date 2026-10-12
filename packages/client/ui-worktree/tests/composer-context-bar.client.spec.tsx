@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
 /**
- * ComposerContextBar: the branch chip + mode select + base picker render for
- * a repository cwd, the base picker writes the merged preference, the
- * effective base defaults through stored pref → origin/main → first
- * candidate, and the bar hides without a cwd or on a non-repository query.
+ * ComposerContextBar: one workspace selector — the trigger shows the
+ * session's location (worktree name, or branch in the main checkout), and
+ * its menu holds the next-session mode default under a heading that says
+ * so; the base picker writes the merged preference with the effective-base
+ * fallback (stored pref → origin/main → first candidate). The bar hides
+ * without a cwd; a non-repository query keeps the selector clickable with
+ * the reason heading over greyed rows.
  */
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -79,46 +82,80 @@ function props(over: {
   } as unknown as BarProps
 }
 
+/** Open the workspace selector menu and return the open view. */
+async function openSelector(view: ReturnType<typeof render>, triggerLabel: string) {
+  fireEvent.click(view.getByText(triggerLabel))
+  await waitFor(() => { expect(view.container.textContent).toContain('Default for new sessions in') })
+  return view
+}
+
 describe('ComposerContextBar', () => {
-  it('renders nothing without a cwd, and an enabled trigger with the locked explanation on a non-repository query', async () => {
+  it('renders nothing without a cwd, and an enabled selector with the locked explanation on a non-repository query', async () => {
     const noCwd = render(<ComposerContextBar {...props({ summary: {} })} />)
     await waitFor(() => { expect(noCwd.container.firstChild).toBeNull() })
     cleanup()
 
     // A cwd outside any git repository keeps the cluster visible and the
-    // trigger clickable: the menu opens with the reason heading and greyed
-    // rows; chip and picker stay hidden.
+    // selector clickable: the menu opens with the reason heading and greyed
+    // rows; the base picker stays hidden.
     const failing = render(<ComposerContextBar {...props({ status: async () => { throw new Error('not a repo') } })} />)
     await waitFor(() => { expect(failing.container.querySelector('[data-composer-context-bar]')).toBeTruthy() })
-    const trigger = failing.getByLabelText('Workspace mode, current: Current checkout') as HTMLButtonElement
+    const trigger = failing.getByRole('button', {
+      name: '"repo" is not a git repository — worktree isolation applies to git repositories',
+    }) as HTMLButtonElement
     expect(trigger.disabled).toBe(false)
     expect(trigger.title).toBe('"repo" is not a git repository — worktree isolation applies to git repositories')
     fireEvent.click(trigger)
     expect(failing.container.textContent).toContain('is not a git repository')
     expect(failing.container.textContent).toContain('New worktree')
     expect(failing.container.textContent).not.toContain('From ')
-    expect(failing.container.textContent).not.toContain('agent/slug')
   })
 
-  it('shows the branch, the mode select, and the origin/main base default', async () => {
+  it('shows the branch as the trigger, the mode menu under its heading, and the origin/main base default', async () => {
     const view = render(<ComposerContextBar {...props()} />)
     await waitFor(() => { expect(view.getByText('agent/slug')).toBeTruthy() })
-    // The mode select rides the bar with the effective default label (a fresh
-    // worktree per session — no stored preference), and the base picker
-    // reflects the origin/main fallback.
-    expect(view.container.textContent).toContain('New worktree')
+    // The mode default is not a chip anymore; it lives behind the location
+    // trigger, whose menu heading names what the rows decide.
+    expect(view.container.textContent).not.toContain('New worktree')
     expect(view.container.textContent).toContain('From origin/main')
+    await openSelector(view, 'agent/slug')
+    expect(view.container.textContent).toContain('This session: agent/slug')
+    expect(view.container.textContent).toContain('Default for new sessions in repo')
+    // The effective default (a fresh worktree per session — no stored
+    // preference) is the selected row.
+    expect(view.container.textContent).toContain('Current checkout')
   })
 
-  it('names the chip after the worktree when the session cwd is a registered worktree', async () => {
+  it('names the trigger after the worktree when the session cwd is a registered worktree', async () => {
     const view = render(<ComposerContextBar {...props({
       summary: { cwd: '/repo.worktrees/slug' },
       byRepo: { '/repo': [worktreeRecord] },
     })} />)
     await waitFor(() => { expect(view.getByText('slug')).toBeTruthy() })
     expect(view.queryByText('agent/slug')).toBeNull()
-    expect((view.getByRole('button', { name: 'Worktree slug, branch agent/slug' }) as HTMLElement).title)
-      .toBe('Worktree slug, branch agent/slug')
+    const trigger = view.getByRole('button', { name: 'Worktree slug, branch agent/slug' }) as HTMLElement
+    expect(trigger.title).toBe('Worktree slug, branch agent/slug')
+  })
+
+  it('writes the chosen mode as the per-repository next-session default', async () => {
+    const setMode = vi.fn(async () => {})
+    const view = render(<ComposerContextBar {...props({ setMode })} />)
+    await waitFor(() => { expect(view.getByText('agent/slug')).toBeTruthy() })
+    await openSelector(view, 'agent/slug')
+    fireEvent.click(view.getByText('Current checkout'))
+    await waitFor(() => {
+      expect(setMode).toHaveBeenCalledWith('/repo', { mode: 'checkout' })
+    })
+  })
+
+  it('lists the repository worktrees as reuse rows and marks the stored preference', async () => {
+    const view = render(<ComposerContextBar {...props({
+      prefs: { '/repo': { mode: 'reuse', worktreeId: 'wt-1' } as never },
+      byRepo: { '/repo': [worktreeRecord] },
+    })} />)
+    await waitFor(() => { expect(view.getByText('agent/slug')).toBeTruthy() })
+    await openSelector(view, 'agent/slug')
+    expect(view.container.textContent).toContain('Previous worktree (agent/slug)')
   })
 
   it('prefers the stored base over the origin/main fallback', async () => {
@@ -178,7 +215,7 @@ describe('ComposerContextBar', () => {
     await waitFor(() => { expect(setMode).toHaveBeenCalledOnce() })
   })
 
-  it('re-queries when the session goes idle and on a branch-chip click', async () => {
+  it('re-queries when the session goes idle and on opening the selector', async () => {
     const query = vi.fn(async (path: string) => status({ path }))
     const idle = render(<ComposerContextBar {...props({ summary: { cwd: '/repo', running: true }, status: query })} />)
     await waitFor(() => { expect(query).toHaveBeenCalledOnce() })
@@ -188,7 +225,7 @@ describe('ComposerContextBar', () => {
       status: query,
     })} />)
     await waitFor(() => { expect(query.mock.calls.length).toBeGreaterThanOrEqual(2) })
-    // The branch chip click re-queries as well.
+    // Opening the selector re-queries as well.
     const before = query.mock.calls.length
     fireEvent.click(idle.getByText('agent/slug'))
     await waitFor(() => { expect(query.mock.calls.length).toBeGreaterThan(before) })
