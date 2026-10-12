@@ -15,6 +15,10 @@ import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
 const homes: string[] = []
 const servers: Server[] = []
 
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
 afterEach(async () => {
   vi.unstubAllGlobals()
   vi.unstubAllEnvs()
@@ -182,6 +186,53 @@ describe('startup ZAI catalog refresh', () => {
       ids.push(...(await ctx.llm.listModels('zai')).map(model => model.id))
     })
     expect(ids).toEqual(['glm-4.7', 'glm-5-turbo', 'glm-5.2', 'glm-5.2-highspeed', 'glm-5.3'])
+  })
+})
+
+describe('periodic models.dev refresh', () => {
+  it('re-fetches on the configured cadence and disposal stops the timer', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-pi-models-dev-tick-'))
+    homes.push(dir)
+    await writeFile(join(dir, 'settings.yaml'), '')
+    let document = catalogDocument({
+      'glm-a': { name: 'GLM A', reasoning: true, limit: { context: 512, output: 64 } },
+    })
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      if (url.toString() !== MODELS_DEV_API_URL) throw new Error(`unexpected fetch of ${url}`)
+      return new Response(JSON.stringify(document), { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const ctx = new Context()
+    let disposed = false
+    try {
+      await ctx.plugin(LlmRuntime)
+      await ctx.plugin(FileSettingsProvider, { path: join(dir, 'settings.yaml'), watch: false })
+      await ctx.plugin(LlmPiAi, {
+        modelsDevRefreshMs: 25,
+        providers: { zai: { apiKeyEnv: 'PI_MODELS_DEV_TEST_KEY', baseURL: 'http://127.0.0.1:1/v1' } },
+      })
+      await vi.waitFor(async () => {
+        expect((await ctx.llm.listModels('zai')).map(model => model.id)).toContain('glm-a')
+      })
+
+      // The interval re-reads the republished document and the next picker
+      // query sees the new ids without a restart or a settings change.
+      document = catalogDocument({
+        'glm-b': { name: 'GLM B', reasoning: true, limit: { context: 1024, output: 128 } },
+      })
+      await vi.waitFor(async () => {
+        expect((await ctx.llm.listModels('zai')).map(model => model.id)).toContain('glm-b')
+      })
+
+      await ctx.fiber.dispose()
+      disposed = true
+      await sleep(5)
+      const fetchesAtDispose = fetchMock.mock.calls.length
+      await sleep(80)
+      expect(fetchMock).toHaveBeenCalledTimes(fetchesAtDispose)
+    } finally {
+      if (!disposed) await ctx.fiber.dispose()
+    }
   })
 })
 

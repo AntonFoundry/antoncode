@@ -42,6 +42,14 @@ export const DEFAULT_CONTEXT_WINDOW = 262_144
 export const DEFAULT_MAX_TOKENS = 32_768
 
 /**
+ * Re-fetch cadence for the models.dev live catalog. The document republishes
+ * continuously, and each read-path refresh additionally serves any snapshot
+ * younger than this, so a long-lived process tracks new provider model ids
+ * within eight hours of their publication without a restart.
+ */
+export const DEFAULT_MODELS_DEV_REFRESH_MS = 28_800_000
+
+/**
  * Modalities assumed for a model neither configuration nor the catalog
  * declares. Text is the floor every supported protocol certainly carries, so
  * this is the absence of a declaration rather than a guess at the endpoint:
@@ -192,6 +200,13 @@ export interface Config {
    */
   reservedProviders?: string[]
   /**
+   * Re-fetch cadence for the models.dev live catalog in milliseconds
+   * (default eight hours, `DEFAULT_MODELS_DEV_REFRESH_MS`). The mounted
+   * timer captures the mount-time value, like `catalogRefreshMs` in
+   * llm-models-dev; a settings-layer change takes effect on the next restart.
+   */
+  modelsDevRefreshMs?: number
+  /**
    * pi-ai provider routes, keyed by provider. An empty (or omitted) dict is
    * the dormant settings-driven posture: the adapter mounts with no routes
    * and registers them the moment a settings section supplies profiles.
@@ -277,6 +292,7 @@ const profile = z.object({
 /** Runtime schema for {@link Config}. */
 export const Config: z<Config> = z.object({
   reservedProviders: z.array(z.string()).default([]),
+  modelsDevRefreshMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).default(DEFAULT_MODELS_DEV_REFRESH_MS),
   providers: z.dict(profile).default({}),
 })
 

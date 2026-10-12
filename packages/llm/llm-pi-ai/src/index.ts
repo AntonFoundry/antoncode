@@ -63,7 +63,7 @@ import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deeps
 import { PiAiAdapter } from './adapter.ts'
 import { catalogProvider, catalogProviderIds, catalogProviderTakesApiKey } from './catalog.ts'
 import type { PiAiLiveModel, PiAiReasoningEfforts } from './catalog.ts'
-import { assertServiceable, Config, resolveProfiles } from './config.ts'
+import { assertServiceable, Config, DEFAULT_MODELS_DEV_REFRESH_MS, resolveProfiles } from './config.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { discoverModels } from './discovery.ts'
 import { fetchModelsDevDocument, parseModelsDevLiveModels, ZAI_REASONING_EFFORTS } from './models-dev.ts'
@@ -427,6 +427,22 @@ export function apply(ctx: Context, config: Config): void {
   // response invalidates the immutable profile snapshot and the next
   // picker/model read sees the provider's current IDs.
   for (const provider of Object.keys(MODELS_DEV_ROUTE_PROVIDERS)) void refreshModels(provider)
+  // Re-fetch on cadence, not only at mount: models.dev republishes its
+  // document continuously, so a long-lived process converges on a provider's
+  // newest ids without a restart. The tick reuses the mount path exactly —
+  // dropping the shared document and the refreshed set makes each mapped
+  // route's next refresh a real fetch — and `refreshModels`'s own gates
+  // (route configured, credential named) keep the tick a no-op elsewhere.
+  // Like llm-models-dev's `catalogRefreshMs`, the delay is the mount-time
+  // value; a settings-layer cadence change takes effect on restart.
+  ctx.effect(() => {
+    const timer = setInterval(() => {
+      modelsDevDocument = undefined
+      refreshedRoutes.clear()
+      for (const provider of Object.keys(MODELS_DEV_ROUTE_PROVIDERS)) void refreshModels(provider)
+    }, config.modelsDevRefreshMs ?? DEFAULT_MODELS_DEV_REFRESH_MS)
+    return () => { clearInterval(timer) }
+  })
 
   installSettingsSection(ctx, NS, Config, config, {
     // Refuse an unserviceable section where it is written: without this a

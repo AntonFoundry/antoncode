@@ -16,8 +16,8 @@
  * the shipped route set without a restart.
  *
  * Discovery freshness is push-based: the mount fetches every configured
- * route's tier once up front and re-fetches on `catalogRefreshMs` (one hour
- * by default) through a fiber-owned interval, so a restart always converges
+ * route's tier once up front and re-fetches on `catalogRefreshMs` (eight
+ * hours by default) through a fiber-owned interval, so a restart always converges
  * on the newest models.dev document without waiting for a picker query; a
  * failed refresh keeps serving the last good snapshot.
  *
@@ -54,8 +54,12 @@ const NS = settingsNamespace('llm-models-dev')
 
 /** The models.dev root every catalog fetch resolves against. */
 export const DEFAULT_CATALOG_URL = 'https://models.dev'
-/** One hour: models.dev refreshes its document at about this cadence. */
-export const DEFAULT_CATALOG_REFRESH_MS = 3_600_000
+/**
+ * Eight hours: the catalog document republishes continuously, and a query
+ * against a snapshot older than this cadence refetches on read, so staleness
+ * never outlives the interval by more than one picker query.
+ */
+export const DEFAULT_CATALOG_REFRESH_MS = 28_800_000
 /** The literal anonymous key OpenCode Zen accepts for its free tier. */
 const ZEN_ANONYMOUS_KEY = 'public'
 /**
@@ -405,7 +409,7 @@ export function apply(ctx: Context, config: Config): void {
   /**
    * Fetch every configured route's tier now, deduplicating routes that share
    * one catalog identity. Called once at mount and on every interval tick: a
-   * restart — and each subsequent hour at the default `catalogRefreshMs` —
+   * restart — and each subsequent interval at the default `catalogRefreshMs` —
    * converges on the newest models.dev document without waiting for a picker
    * query. Every route here has already passed `assertServiceable` (mount and
    * each validated settings generation), so resolution cannot throw; a failed
