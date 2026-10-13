@@ -10,7 +10,7 @@ Event-sourced same-session goal state. The service retains one current completio
 - id: goal
   name: '@deepseek-ai/dsh-goal'
   config:
-    defaultMaxGoalRounds: 256
+    defaultMaxGoalRounds: 500
 ```
 
 `defaultMaxGoalRounds` must be a positive safe integer. `create()` materializes this deployment default internally before committing a goal; a request-level value overrides it.
