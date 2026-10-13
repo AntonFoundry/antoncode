@@ -17,6 +17,7 @@ import {
   GitCommandError,
   gitCommonRoot,
   resolveBase,
+  refExists,
   slugify,
   worktreeAdd,
   worktreeRemove,
@@ -131,11 +132,20 @@ export class WorktreeRegistry extends Service {
    */
   async create(repoPath: string, opts: { name?: string; base?: string } = {}): Promise<WorktreeRecord> {
     const repo = await this.canonicalRepo(repoPath)
-    const slug = await this.uniqueSlug(repo, slugify(opts.name ?? this.defaultName()))
-    const worktreePath = join(dirname(repo), `${basename(repo)}${this.parentSuffix}`, slug)
-    const branch = `${this.branchPrefix}${slug}`
+    const slug = slugify(opts.name ?? this.defaultName())
     const base = await resolveBase(repo, opts.base)
-    await worktreeAdd(repo, worktreePath, branch, base)
+    let allocation = await this.allocate(repo, slug)
+    for (;;) {
+      try {
+        await worktreeAdd(repo, allocation.path, allocation.branch, base)
+        break
+      } catch (error: unknown) {
+        if (!(error instanceof GitCommandError) || !/already used|already checked out|already exists/i.test(error.stderr)) throw error
+        allocation = await this.allocate(repo, `${slug}-${allocation.attempt + 1}`)
+      }
+    }
+    const worktreePath = allocation.path
+    const branch = allocation.branch
 
     let workspaceId: string | undefined
     let workspaceRegistered = false
@@ -328,17 +338,21 @@ export class WorktreeRegistry extends Service {
     return await realpathNormalize(await gitCommonRoot(await realpathNormalize(repoPath)))
   }
 
-  /**
-   * Uniquify a slug inside a repository's worktree parent: the bare slug
-   * when free, otherwise `-2`, `-3`, … past every existing directory.
-   */
-  private async uniqueSlug(repo: string, slug: string): Promise<string> {
+  private async allocate(repo: string, slug: string): Promise<{ path: string; branch: string; attempt: number }> {
     const parent = join(dirname(repo), `${basename(repo)}${this.parentSuffix}`)
-    let candidate = slug
-    for (let attempt = 2; await this.exists(join(parent, candidate)); attempt += 1) {
-      candidate = `${slug}-${attempt}`
+    for (let attempt = 1; ; attempt += 1) {
+      const candidate = attempt === 1 ? slug : `${slug}-${attempt}`
+      const path = join(parent, candidate)
+      const branch = `${this.branchPrefix}${candidate}`
+      if (await this.exists(path)) continue
+      if (await refExists(repo, `refs/heads/${branch}`)) {
+        const stale = [...this.records.values()].some(record =>
+          record.repoPath === repo && record.branch === branch && record.path === path,
+        )
+        if (!stale) continue
+      }
+      return { path, branch, attempt }
     }
-    return candidate
   }
 
   private async exists(path: string): Promise<boolean> {

@@ -40,14 +40,23 @@ function modeRows(
   records: readonly { worktreeId: string; branch: string; path: string; alias?: string }[],
   t: PropsLocale<'worktree'>['t'],
 ): MenuItem[] {
+  const names = new Map<string, number>()
+  for (const record of records) {
+    const name = worktreeDisplayName(record)
+    names.set(name, (names.get(name) ?? 0) + 1)
+  }
   return [
     { id: 'checkout', label: t('mode.checkout'), icon: <IconFolderClose16 size={16} /> },
     { id: 'new', label: t('mode.new'), icon: <IconBranchOutline16 size={16} /> },
-    ...records.map(record => ({
-      id: `reuse:${record.worktreeId}`,
-      label: t('mode.reuseNamed', { name: worktreeDisplayName(record) }),
-      icon: <IconBranchOutline16 size={16} />,
-    })),
+    ...records.map((record) => {
+      const name = worktreeDisplayName(record)
+      const display = (names.get(name) ?? 0) > 1 ? `${name} · ${record.branch}` : name
+      return {
+        id: `reuse:${record.worktreeId}`,
+        label: t('mode.reuseNamed', { name: display }),
+        icon: <IconBranchOutline16 size={16} />,
+      }
+    }),
   ]
 }
 

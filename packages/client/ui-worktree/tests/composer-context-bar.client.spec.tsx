@@ -91,7 +91,7 @@ function props(over: {
 /** Open the workspace selector menu and return the open view. */
 async function openSelector(view: ReturnType<typeof render>, triggerLabel: string) {
   fireEvent.click(view.getByText(triggerLabel))
-  await waitFor(() => { expect(view.container.textContent).toContain('Default for new sessions in') })
+  await waitFor(() => { expect(view.container.textContent).toContain('Default location for the next session in') })
   return view
 }
 
@@ -122,14 +122,14 @@ describe('ComposerContextBar', () => {
     await waitFor(() => { expect(view.getByText('agent/slug')).toBeTruthy() })
     // The mode default is not a chip anymore; it lives behind the location
     // trigger, whose menu heading names what the rows decide.
-    expect(view.container.textContent).not.toContain('New worktree')
+    expect(view.container.textContent).not.toContain('New worktree (next session)')
     expect(view.container.textContent).toContain('From origin/main')
     await openSelector(view, 'agent/slug')
     expect(view.container.textContent).toContain('This session: agent/slug')
-    expect(view.container.textContent).toContain('Default for new sessions in repo')
+    expect(view.container.textContent).toContain('Default location for the next session in repo')
     // The effective default (a fresh worktree per session — no stored
     // preference) is the selected row.
-    expect(view.container.textContent).toContain('Current checkout')
+    expect(view.container.textContent).toContain('Current checkout (next session)')
   })
 
   it('names the trigger after the worktree when the session cwd is a registered worktree', async () => {
@@ -152,12 +152,24 @@ describe('ComposerContextBar', () => {
     expect(view.queryByText('slug')).toBeNull()
   })
 
+  it('disambiguates duplicate worktree aliases with their branches', async () => {
+    const second = { ...namedWorktreeRecord, worktreeId: 'wt-3' as never, branch: 'agent/fix-compiler-warnings-2' }
+    const view = render(<ComposerContextBar {...props({
+      prefs: {},
+      byRepo: { '/repo': [namedWorktreeRecord, second] },
+    })} />)
+    await waitFor(() => { expect(view.getByText('agent/slug')).toBeTruthy() })
+    await openSelector(view, 'agent/slug')
+    expect(view.container.textContent).toContain('Worktree fix-compiler-warnings · agent/slug')
+    expect(view.container.textContent).toContain('Worktree fix-compiler-warnings · agent/fix-compiler-warnings-2')
+  })
+
   it('writes the chosen mode as the per-repository next-session default', async () => {
     const setMode = vi.fn(async () => {})
     const view = render(<ComposerContextBar {...props({ setMode })} />)
     await waitFor(() => { expect(view.getByText('agent/slug')).toBeTruthy() })
     await openSelector(view, 'agent/slug')
-    fireEvent.click(view.getByText('Current checkout'))
+    fireEvent.click(view.getByText('Current checkout (next session)'))
     await waitFor(() => {
       expect(setMode).toHaveBeenCalledWith('/repo', { mode: 'checkout' })
     })

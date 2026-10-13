@@ -188,6 +188,15 @@ describe('worktree registry', () => {
     expect((await registry.list(repo.path)).map(record => record.path)).toEqual([second.path, first.path])
   })
 
+  it('skips a colliding branch even when its worktree directory is absent', async () => {
+    const repo = await makeRepo(root, 'branch-collide')
+    await git(repo.path, ['branch', 'agent/feature'])
+    const { registry } = await harness()
+    const record = await registry.create(repo.path, { name: 'feature' })
+    expect(record.branch).toBe('agent/feature-2')
+    expect(record.path).toBe(join(repo.worktreeParent, 'feature-2'))
+  })
+
   it('reattaches an existing branch instead of failing, after the worktree directory was removed', async () => {
     const repo = await makeRepo(root, 'stale')
     const { registry } = await harness()

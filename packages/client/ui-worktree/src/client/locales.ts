@@ -2,11 +2,11 @@
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
-  'mode.checkout': '当前检出',
-  'mode.new': '新工作树',
+  'mode.checkout': '当前检出（下一会话）',
+  'mode.new': '新工作树（下一会话）',
   'mode.reuse': '已删除的工作树',
-  'mode.reuseNamed': '工作树 {name}',
-  'mode.heading': '{repo} 新会话的默认工作区',
+  'mode.reuseNamed': '工作树 {name}（下一会话）',
+  'mode.heading': '{repo} 下一会话的默认工作区',
   'status.aria': '仓库状态：{branch}，储藏 {count}',
   'status.worktree.aria': '工作树 {name}，分支 {branch}，储藏 {count}',
   'status.stash': '储藏 {count}',
@@ -23,11 +23,11 @@ export type WorktreeKey = keyof typeof zh
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
-  'mode.checkout': 'Current checkout',
-  'mode.new': 'New worktree',
+  'mode.checkout': 'Current checkout (next session)',
+  'mode.new': 'New worktree (next session)',
   'mode.reuse': 'Removed worktree',
-  'mode.reuseNamed': 'Worktree {name}',
-  'mode.heading': 'Default for new sessions in {repo}',
+  'mode.reuseNamed': 'Worktree {name} (next session)',
+  'mode.heading': 'Default location for the next session in {repo}',
   'status.aria': 'Repo status: {branch}, {count} stashes',
   'status.worktree.aria': 'Worktree {name}, branch {branch}, {count} stashes',
   'status.stash': 'Stash {count}',
