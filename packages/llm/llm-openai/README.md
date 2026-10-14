@@ -26,7 +26,6 @@ exactly like user-added providers.
 llm-openai:
   # Section fields are the shared defaults every route falls back to.
   baseURL: https://api.openai.com/v1   # or http://127.0.0.1:1234/v1 for a local install
-  reasoningEffort: high            # off | low | medium | high | max (max maps to the wire's high)
   maxTokens: 16384
   defaultContextWindow: 128000
   models:
@@ -34,6 +33,8 @@ llm-openai:
       name: GPT-4o
       contextWindow: 128000
       maxTokens: 16384
+    - id: gpt-5
+      reasoningEfforts: [minimal, low, medium, high]
   # The dict key IS the route id; its presence registers the route, its
   # absence leaves it dormant. Every field is an optional per-route override.
   providers:
@@ -43,6 +44,9 @@ llm-openai:
         X-Provider-Mode: compatible
     openai-compatible:
       baseURL: http://127.0.0.1:1234/v1
+      models:                         # optional route-specific catalog
+        - id: local-reasoner
+          reasoningEfforts: [low, medium, high]
 ```
 
 A profile that names no `apiKeyEnv` derives the reference per route in upper
@@ -58,13 +62,19 @@ headers take precedence when names collide.
 
 ## Wire behavior
 
-- **Reasoning effort** maps the harness vocabulary onto OpenAI's:
-  `off` → omitted, `low` → `low`, `medium` → `medium`, `high` → `high`,
-  `max` → `high` (OpenAI has no "max" level). Every model offers the full
-  set; a configured `reasoningEffort` default is declared back verbatim
-  (`max` as `high`), and with none configured no effort is materialized
-  into requests — the provider's own default serves, which keeps
-  non-reasoning models and strict gateways requestable.
+- **Reasoning effort** is declared per catalog model with `reasoningEfforts`;
+  models without that field have no effort control. The built-in reasoning
+  catalog lists `low`/`medium`/`high` for o3 and o4-mini, and
+  `minimal`/`low`/`medium`/`high` for GPT-5. GPT-4o and GPT-4.1 models do not
+  expose reasoning controls. Per-route `providers.<route>.models` replaces
+  the shared catalog for endpoints with different model capabilities. A
+  configured default applies only when the selected model declares that
+  level; otherwise it is omitted. Unsupported explicit choices fail before
+  sending a request. `off` omits the effort field; `max` remains a legacy
+  alias for `high`.
+  The OpenAI API's `none`, `minimal`, and `xhigh` values are serialized
+  verbatim only when the selected model catalog lists them; OpenRouter keeps
+  its own exact catalog-advertised values.
   The models.dev OpenRouter route selects the serializer's OpenRouter dialect,
   which preserves its catalog-advertised `none`, `minimal`, `low`, `medium`,
   `high`, `xhigh`, and `max` values instead of clamping them to High.

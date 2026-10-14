@@ -42,7 +42,12 @@ export interface OpenAICatalogModel {
   contextWindow?: number
   /** Per-request output cap for this model; omission falls back to the profile's {@link OpenAIConnectionOptions.maxTokens}. */
   maxTokens?: number
+  /** Exact OpenAI reasoning values accepted by this model; omission hides the effort control. */
+  reasoningEfforts?: OpenAIReasoningEffort[]
 }
+
+/** OpenAI reasoning values supported by model-specific API metadata. */
+export type OpenAIReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 
 /**
  * Validated connection facts for one operation. The plugin's
@@ -133,12 +138,7 @@ const OFF_REASONING_EFFORT = ReasoningEffortId('off')
 const LOW_REASONING_EFFORT = ReasoningEffortId('low')
 const MEDIUM_REASONING_EFFORT = ReasoningEffortId('medium')
 const HIGH_REASONING_EFFORT = ReasoningEffortId('high')
-/**
- * The effort set the OpenAI wire route serves, offered for every model on
- * this adapter: chat-completions and Responses both spell `low`, `medium`,
- * and `high`, and `off` is the field's omission. OpenAI has no "max" harness
- * effort; the wire serializer maps it to `high`.
- */
+/** Legacy effort union; model pickers use each catalog entry's `reasoningEfforts`. */
 export const OPENAI_REASONING_EFFORTS = [
   { id: OFF_REASONING_EFFORT, name: 'Off' },
   { id: LOW_REASONING_EFFORT, name: 'Low' },
@@ -147,12 +147,8 @@ export const OPENAI_REASONING_EFFORTS = [
 ] as const
 
 /**
- * The effort a configured connection default declares for its models, spelled
- * exactly as configured: a deployment that pinned `low` must not see `high`
- * reported back. No configured default declares none, so a request carries an
- * effort only when the caller or a deployment chose one — the provider's own
- * default serves everything else, which is what keeps non-reasoning models
- * (and gateways that reject an unexpected `reasoning_effort`) requestable.
+ * Map the configured connection default to an OpenAI wire effort. The exact
+ * model's catalog entry decides whether that effort is advertised.
  * @param configured - the connection's configured default effort.
  * @returns the declared default effort id, or undefined for the provider default.
  */
@@ -162,6 +158,10 @@ export function declaredDefaultEffort(
   switch (configured) {
     case 'off':
       return OFF_REASONING_EFFORT
+    case 'none':
+    case 'minimal':
+    case 'xhigh':
+      return ReasoningEffortId(configured)
     case 'low':
       return LOW_REASONING_EFFORT
     case 'medium':
@@ -172,6 +172,27 @@ export function declaredDefaultEffort(
     default:
       return undefined
   }
+}
+
+/** Apply the catalog's exact effort capability to one model request. */
+function requestDefaults(connection: OpenAIConnectionOptions, options: GenerateOptions): RequestDefaults {
+  const defaults = connection.defaults
+  if (defaults.reasoningDialect === 'openrouter') return defaults
+  const model = connection.models.find(entry => entry.id === options.model)
+  const efforts = model?.reasoningEfforts ?? []
+  const requested = options.reasoningEffort?.toString()
+  if (model !== undefined && requested !== undefined && requested !== 'off'
+    && !efforts.includes(requested as OpenAIReasoningEffort)) {
+    throw new LlmError(
+      `OpenAI model "${options.model}" does not support reasoning effort "${requested}"`,
+      'UNSUPPORTED_REASONING_EFFORT',
+    )
+  }
+  const configured = declaredDefaultEffort(defaults.reasoningEffort)?.toString()
+  if (configured !== undefined && !efforts.includes(configured as OpenAIReasoningEffort)) {
+    return { ...defaults, reasoningEffort: undefined }
+  }
+  return defaults
 }
 
 function modelInfo(provider: string, model: OpenAICatalogModel): LlmModelInfo {
@@ -254,6 +275,18 @@ export class OpenAIAdapter extends LlmAdapter {
     const contextWindow = configured?.contextWindow
       ?? connection.defaultContextWindow
     const defaultEffort = declaredDefaultEffort(connection.defaults.reasoningEffort)
+    const efforts = configured?.reasoningEfforts ?? []
+    const reasoning = efforts.length === 0 ? undefined : {
+      efforts: efforts.map(level => ({
+        id: ReasoningEffortId(level),
+        name: level === 'none' ? 'None'
+          : level === 'xhigh' ? 'Extra High'
+            : level.slice(0, 1).toUpperCase() + level.slice(1),
+      })),
+      ...defaultEffort !== undefined && efforts.includes(defaultEffort.toString() as OpenAIReasoningEffort)
+        ? { defaultEffort }
+        : {},
+    }
     return Promise.resolve({
       // The chat-completions wire route is text-only regardless of catalog
       // membership, so the uncatalogued fallback declares the same negative
@@ -264,10 +297,7 @@ export class OpenAIAdapter extends LlmAdapter {
         : modelInfo(provider, configured),
       context: { contextWindow },
       defaultMaxTokens: configured?.maxTokens ?? connection.maxTokens,
-      reasoning: {
-        efforts: OPENAI_REASONING_EFFORTS,
-        ...defaultEffort === undefined ? {} : { defaultEffort },
-      },
+      ...(reasoning === undefined ? {} : { reasoning }),
     })
   }
 
@@ -350,7 +380,7 @@ export class OpenAIAdapter extends LlmAdapter {
     userId: AnonymousUserId,
     onComment: () => void,
   ): AsyncIterable<StreamChunk> {
-    const body = serializeRequest(options, connection.defaults)
+    const body = serializeRequest(options, requestDefaults(connection, options))
     // Prepared outside the try so the TRANSPORT label below covers exactly the
     // transport boundary, never a serialization failure.
     const payload = JSON.stringify(body)
@@ -446,7 +476,7 @@ export class OpenAIAdapter extends LlmAdapter {
     userId: AnonymousUserId,
     onComment: () => void,
   ): AsyncIterable<StreamChunk> {
-    const body = serializeResponsesRequest(options, connection.defaults)
+    const body = serializeResponsesRequest(options, requestDefaults(connection, options))
     // Prepared outside the try so the TRANSPORT label below covers exactly the
     // transport boundary, never a serialization failure.
     const payload = JSON.stringify(body)

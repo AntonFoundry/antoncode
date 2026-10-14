@@ -4,34 +4,28 @@ Status: implemented
 
 ## Problem
 
-The OpenAI-completions wire route (the `llm-openai` plugin and every adapter
-built on it, notably `llm-models-dev`'s `opencode-free` and `openrouter-free`
-free tiers) got effort levels wrong in three ways:
+The OpenAI wire route (the `llm-openai` plugin and adapters built on it) must
+not present one universal set of reasoning levels for models with different
+capabilities:
 
-1. `reasoningEffortWire` accepted no `medium` level — selecting it threw
-   `UNSUPPORTED_REASONING_EFFORT` even though the wire spellings are
-   `minimal`/`low`/`medium`/`high` and the JSDoc promised the mapping.
-2. `resolveModel` declared `off`/`low`/`high` with a hardcoded
-   `defaultEffort: high` for **every** model. The core materializes
-   `defaultEffort` into requests, so every free-tier request — including
-   ones to models the catalog marks non-reasoning — carried
-   `reasoning_effort: "high"` (or `reasoning: { effort: "high" }` on the
-   Responses route), and a configured `low` default was reported as `high`.
-3. `ModelsDevAdapter` inherited that blanket declaration, so reasoning
-   models like OpenCode Zen's `muse-spark-1.3-contributor-free` offered a
-   truncated level set with a forced default, and non-reasoning models
-   offered an effort control that could not do anything.
+1. A universal effort list exposed controls on non-reasoning models and
+   levels unsupported by particular reasoning models.
+2. A configured default could be materialized into requests for models that
+   do not accept reasoning parameters.
+3. The wire serializer rejected valid explicit OpenAI values such as
+   `minimal`, `none`, and `xhigh`.
 
 ## Decision
 
-- The wire mapping covers `medium`, and the declared effort set is the full
-  `off`/`low`/`medium`/`high` the route serves (`OPENAI_REASONING_EFFORTS`,
-  exported for adapters built on the base class).
-- A configured default is declared back verbatim via
-  `declaredDefaultEffort` (`max` as `high`); **no configured default
-  declares none**. The provider's own default then serves unselected
-  requests, which keeps non-reasoning models and gateways that reject an
-  unexpected `reasoning_effort` requestable.
+- Each catalog model may declare exact `reasoningEfforts`. Models without
+  that metadata expose no effort control. Route-specific catalogs replace
+  the shared catalog for endpoints with different model capabilities.
+- Request serialization accepts the explicit OpenAI effort vocabulary;
+  model metadata gates UI choices and configured defaults. Unsupported
+  explicit choices fail before transport, and defaults unsupported by the
+  selected model are omitted.
+- `OPENAI_REASONING_EFFORTS` remains exported for source compatibility, but
+  model resolution no longer uses this legacy union.
 - `ModelsDevAdapter.resolveModel` derives reasoning from the models.dev
   catalog entry: `reasoning: true` declares the full set with no default;
   anything else strips the inherited declaration entirely.
@@ -47,19 +41,15 @@ free tiers) got effort levels wrong in three ways:
 
 ## Alternatives considered
 
-- **Per-model wire capability probing** — no OpenAI listing endpoint reports
-  reasoning capability, so the catalog flag (where one exists) plus a silent
-  provider default is the only honest declaration.
-- **Keeping `defaultEffort: high`** — preserves the previous one-chip UX but
-  forces reasoning on every request; free-tier reasoning burns quota and
-  strict gateways 400 on the unexpected field.
+- **Infer capabilities from model-name patterns** — aliases and compatible
+  endpoints make model names insufficient evidence; deployments declare
+  exact capabilities in their catalog instead.
 
 ## Consequences
 
-Deployments that relied on every OpenAI-route request carrying
-`reasoning_effort: high` must now configure `reasoningEffort` explicitly.
-The Zen/OpenRouter free pickers expose `medium`, and `off` on a reasoning
-model omits the field instead of disabling a forced high.
+Deployments that need effort selection for custom OpenAI-compatible models
+must declare those models' supported levels. OpenRouter retains its own
+catalog-driven effort dialect.
 
 ## Testing
 

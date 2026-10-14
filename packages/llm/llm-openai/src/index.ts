@@ -36,7 +36,7 @@ import {
   DEFAULT_STREAM_IDLE_TIMEOUT_MS,
   OpenAIAdapter,
 } from './adapter.ts'
-import type { OpenAICatalogModel, OpenAIConnectionOptions } from './adapter.ts'
+import type { OpenAICatalogModel, OpenAIConnectionOptions, OpenAIReasoningEffort } from './adapter.ts'
 
 export {
   DEFAULT_CONTEXT_WINDOW,
@@ -46,7 +46,7 @@ export {
   OpenAIAdapter,
   declaredDefaultEffort,
 } from './adapter.ts'
-export type { OpenAIAdapterOptions, OpenAICatalogModel, OpenAIConnectionOptions } from './adapter.ts'
+export type { OpenAIAdapterOptions, OpenAICatalogModel, OpenAIConnectionOptions, OpenAIReasoningEffort } from './adapter.ts'
 export type { RequestDefaults } from './serialize.ts'
 export type * from './types.ts'
 
@@ -72,9 +72,9 @@ const DEFAULT_MODELS: OpenAICatalogModel[] = [
   { id: 'gpt-4o-mini', name: 'GPT-4o mini', contextWindow: 128_000, maxTokens: 16_384 },
   { id: 'gpt-4.1', name: 'GPT-4.1', contextWindow: 1_048_576, maxTokens: 32_768 },
   { id: 'gpt-4.1-mini', name: 'GPT-4.1 mini', contextWindow: 1_048_576, maxTokens: 32_768 },
-  { id: 'o3', name: 'OpenAI o3', contextWindow: 200_000, maxTokens: 100_000 },
-  { id: 'o4-mini', name: 'OpenAI o4-mini', contextWindow: 200_000, maxTokens: 100_000 },
-  { id: 'gpt-5', name: 'GPT-5', contextWindow: 400_000, maxTokens: 128_000 },
+  { id: 'o3', name: 'OpenAI o3', contextWindow: 200_000, maxTokens: 100_000, reasoningEfforts: ['low', 'medium', 'high'] },
+  { id: 'o4-mini', name: 'OpenAI o4-mini', contextWindow: 200_000, maxTokens: 100_000, reasoningEfforts: ['low', 'medium', 'high'] },
+  { id: 'gpt-5', name: 'GPT-5', contextWindow: 400_000, maxTokens: 128_000, reasoningEfforts: ['minimal', 'low', 'medium', 'high'] },
 ]
 
 /**
@@ -92,6 +92,8 @@ export interface OpenAIProviderProfile {
   displayName?: string
   /** Additional provider-specific HTTP headers; transport-owned headers win collisions. */
   headers?: Record<string, string>
+  /** Route-specific model facts; replaces the shared catalog for this endpoint. */
+  models?: OpenAICatalogModel[]
 }
 
 /**
@@ -115,8 +117,8 @@ export interface Config {
   apiKeyEnv?: string
   /** Shared endpoint base; falls back to $OPENAI_BASE_URL from a trusted environment layer, then the public API. */
   baseURL?: string
-  /** Default reasoning effort (`off`/`low`/`medium`/`high`/`max`; `max` maps to the wire's highest level). */
-  reasoningEffort?: 'off' | 'low' | 'medium' | 'high' | 'max'
+  /** Default reasoning effort; used only by models that declare the corresponding supported level. */
+  reasoningEffort?: 'off' | OpenAIReasoningEffort | 'max'
   /** Default per-request output cap; a model's own cap and explicit request values win. */
   maxTokens?: number
   /** Positive context capacity used when the selected model has no exact value (default 128,000). */
@@ -141,6 +143,7 @@ const catalogModel: z<OpenAICatalogModel> = z.object({
   description: z.string(),
   contextWindow: z.number().step(1).min(1),
   maxTokens: z.number().step(1).min(1),
+  reasoningEfforts: z.array(z.union(['none', 'minimal', 'low', 'medium', 'high', 'xhigh'])),
 })
 
 const profile: z<OpenAIProviderProfile> = z.object({
@@ -148,12 +151,13 @@ const profile: z<OpenAIProviderProfile> = z.object({
   baseURL: z.string(),
   displayName: z.string(),
   headers: z.dict(z.string()),
+  models: z.array(catalogModel),
 })
 
 export const Config: z<Config> = z.object({
   apiKeyEnv: z.string().role('credential-ref'),
   baseURL: z.string(),
-  reasoningEffort: z.union(['off', 'low', 'medium', 'high', 'max']),
+  reasoningEffort: z.union(['off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']),
   maxTokens: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(DEFAULT_MAX_TOKENS),
   defaultContextWindow: z.number().step(1).min(1).default(DEFAULT_CONTEXT_WINDOW),
   models: z.array(catalogModel).default(DEFAULT_MODELS),
@@ -209,6 +213,15 @@ function resolveModels(models: readonly OpenAICatalogModel[] | undefined): OpenA
         `llm-openai: catalog model "${model.id}" maxTokens must be a positive integer`,
       )
     }
+    if (model.reasoningEfforts !== undefined) {
+      const effortSet = new Set<OpenAIReasoningEffort>()
+      for (const effort of model.reasoningEfforts) {
+        if (effortSet.has(effort)) {
+          throw new Error(`llm-openai: catalog model "${model.id}" repeats reasoning effort "${effort}"`)
+        }
+        effortSet.add(effort)
+      }
+    }
     if (seen.has(model.id)) throw new Error(`llm-openai: duplicate catalog model "${model.id}"`)
     seen.add(model.id)
     return {
@@ -217,6 +230,7 @@ function resolveModels(models: readonly OpenAICatalogModel[] | undefined): OpenA
       ...model.description === undefined ? {} : { description: model.description },
       ...model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow },
       ...model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens },
+      ...model.reasoningEfforts === undefined ? {} : { reasoningEfforts: [...model.reasoningEfforts] },
     }
   })
 }
@@ -279,7 +293,7 @@ export function resolveAdapterOptions(config: Config, provider: string, environm
     },
     maxTokens: config.maxTokens ?? DEFAULT_MAX_TOKENS,
     defaultContextWindow: config.defaultContextWindow ?? DEFAULT_CONTEXT_WINDOW,
-    models: resolveModels(config.models),
+    models: resolveModels(route?.models ?? config.models),
     streamIdleTimeoutMs,
     retryPolicy: resolveRetryPolicy(config.retryPolicy, 'llm-openai: retryPolicy'),
   }
