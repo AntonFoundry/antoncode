@@ -2,15 +2,15 @@
  * Register a {@link ModelsDevAdapter} serving the free tiers of models.dev
  * catalog providers — the native port of the free-model pickers in OpenCode
  * and OpenRouter. Discovery reads `https://models.dev/api.json` (the same
- * catalog OpenCode itself bundles) and lists each route's zero-cost chat
- * models, keeping deprecated entries exactly as OpenCode's picker does;
+ * catalog OpenCode itself bundles) and lists each route's free chat models,
+ * using OpenCode's input-cost rule for Zen and explicit zero input/output
+ * costs for other gateways;
  * streaming rides each provider's own OpenAI-compatible gateway through the
- * inherited llm-openai transport, stamped with the client identity headers
- * OpenCode Zen's free tier requires (see `extraHeaders` below).
+ * inherited llm-openai transport. OpenCode Zen uses `OPENCODE_API_KEY` with
+ * bearer auth (or the public anonymous key) and OpenCode-compatible request
+ * identity headers. Per-route `headers` can add gateway-specific values.
  *
- * Two routes ship live: `opencode-free` (OpenCode Zen, anonymous access with
- * the gateway's literal `public` key, exactly as opencode itself falls back)
- * and `openrouter-free` (OpenRouter, whose free `:free` models still require
+ * The `openrouter-free` route ships live (its free `:free` models still require
  * an API key — requests fail `MISSING_CREDENTIAL` until one is stored). A
  * `llm-models-dev:` settings section overrides endpoints, key references, or
  * the shipped route set without a restart.
@@ -62,12 +62,6 @@ export const DEFAULT_CATALOG_URL = 'https://models.dev'
 export const DEFAULT_CATALOG_REFRESH_MS = 28_800_000
 /** The literal anonymous key OpenCode Zen accepts for its free tier. */
 const ZEN_ANONYMOUS_KEY = 'public'
-/**
- * The project header value when the caller carries no project identity.
- * OpenCode sends its project id (`global` for non-git directories); the
- * harness has no project concept, so it sends the same fallback.
- */
-const ZEN_PROJECT_FALLBACK = 'global'
 /** Session-id fallback for a request that carries no conversation session. */
 const fallbackSessionId = crypto.randomUUID()
 
@@ -92,14 +86,6 @@ interface DeclaredRoute {
  * and catalog entry, not deployment tunables.
  */
 const DECLARED: readonly DeclaredRoute[] = [
-  {
-    provider: 'opencode-free',
-    displayName: 'OpenCode Free',
-    catalogProvider: 'opencode',
-    baseURL: 'https://opencode.ai/zen/v1',
-    apiKeyEnv: 'OPENCODE_API_KEY',
-    anonymous: true,
-  },
   {
     provider: 'openrouter-free',
     displayName: 'OpenRouter Free',
@@ -131,6 +117,8 @@ export interface ModelDevProviderProfile {
   displayName?: string
   /** Accept anonymous free-tier requests when no key resolves (gateway-dependent). */
   anonymous?: boolean
+  /** Additional provider-specific HTTP headers; transport-owned headers win collisions. */
+  headers?: Record<string, string>
 }
 
 /**
@@ -163,6 +151,7 @@ const profileSchema: z<ModelDevProviderProfile> = z.object({
   baseURL: z.string(),
   displayName: z.string(),
   anonymous: z.boolean(),
+  headers: z.dict(z.string()),
 })
 
 export const Config: z<Config> = z.object({
@@ -179,29 +168,26 @@ export const Config: z<Config> = z.object({
 export type ResolvedModelsDevOptions = ModelsDevConnectionOptions
 
 /**
- * Build the Zen client headers for one request, mirroring antoncode-ui's
- * opencode provider (`packages/opencode/src/session/llm.ts`:
- * `x-antoncode-project/session/request/client` for provider ids starting
- * with `opencode`) with the upstream `x-opencode-*` names stamped alongside —
- * the Zen gateway routes and caches on the upstream names.
+ * Build the Zen client headers for one request, mirroring OpenCode's
+ * `packages/opencode/src/session/llm/request.ts` session/request/client
+ * headers. Project identity is omitted because the Harness does not expose
+ * OpenCode's project id to the model adapter.
  * @param provider - the route the request targets; non-`opencode*` routes get no headers.
  * @param sessionId - the conversation session id, or `undefined` for the process fallback.
+ * @param requestId - the latest user message id, or `undefined` for a generated fallback.
  * @returns the route-scoped headers for this one request.
  */
-export function resolveZenHeaders(provider: string, sessionId: string | undefined): Record<string, string> {
+export function resolveZenHeaders(provider: string, sessionId: string | undefined, requestId?: string): Record<string, string> {
   if (!provider.startsWith('opencode')) return {}
   const session = sessionId ?? fallbackSessionId
-  const request = `msg_${crypto.randomUUID()}`
+  const request = requestId ?? `msg_${crypto.randomUUID()}`
   const client = process.env.OPENCODE_CLIENT ?? 'cli'
   return {
-    'x-antoncode-project': ZEN_PROJECT_FALLBACK,
-    'x-antoncode-session': session,
-    'x-antoncode-request': request,
-    'x-antoncode-client': client,
-    'x-opencode-project': ZEN_PROJECT_FALLBACK,
     'x-opencode-session': session,
     'x-opencode-request': request,
     'x-opencode-client': client,
+    'x-opencode-session-id': session,
+    'user-agent': 'opencode/harness',
   }
 }
 
@@ -254,9 +240,10 @@ export function resolveAdapterOptions(config: Config, provider: string): Resolve
   }
   return {
     apiKeyEnv: credentialRef(route?.apiKeyEnv ?? meta?.apiKeyEnv ?? `${provider.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_API_KEY`),
+    ...(route?.headers === undefined ? {} : { headers: { ...route.headers } }),
     baseURL,
     displayName: route?.displayName ?? meta?.displayName ?? provider,
-    defaults: {},
+    defaults: catalogProvider === 'openrouter' ? { reasoningDialect: 'openrouter' } : {},
     maxTokens,
     defaultContextWindow,
     models: [],
@@ -278,7 +265,7 @@ export function assertServiceable(config: Config): void {
     // No profile to judge: resolve a declared route profilelessly so the
     // section's own fields still face their bounds.
     // A declared id literal: the array index itself carries no narrowing.
-    resolveAdapterOptions(config, 'opencode-free')
+    resolveAdapterOptions(config, 'openrouter-free')
     return
   }
   for (const provider of routes) resolveAdapterOptions(config, provider)
@@ -354,10 +341,9 @@ export function apply(ctx: Context, config: Config): void {
     // The Zen free tier is client-gated: without a session header the
     // gateway answers MissingSessionID regardless of model or key (see
     // {@link resolveZenHeaders}). Only `opencode*` routes carry these: other
-    // family routes (e.g. `openrouter-free`) must not see them. User-Agent
-    // stays with the mandatory harness attribution (the transport merges it
-    // after these extras); opencode itself sets no explicit UA on Zen requests.
-    extraHeaders: (provider, _connection, sessionId) => resolveZenHeaders(provider, sessionId),
+    // family routes (e.g. `openrouter-free`) must not see them. The OpenCode
+    // User-Agent is prefixed to mandatory Harness attribution by the transport.
+    extraHeaders: (provider, _connection, sessionId, requestId) => resolveZenHeaders(provider, sessionId, requestId),
     // The catalog declares each model's wire protocol (`provider.npm`):
     // Muse Spark on Zen serves only the OpenAI Responses protocol, and
     // chat-completions for it is a hard 500 — free or paid id alike. The

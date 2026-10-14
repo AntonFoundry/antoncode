@@ -32,7 +32,7 @@ export interface ResponsesRequest {
   stream: true
   instructions?: string
   tools?: readonly { type: 'function'; name: string; description: string; parameters: unknown }[]
-  reasoning?: { effort: 'minimal' | 'low' | 'medium' | 'high' }
+  reasoning?: { effort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' }
   temperature?: number
   max_output_tokens?: number
   stop?: string[]
@@ -115,7 +115,7 @@ export function serializeResponsesRequest(
     : options.reasoningEffort === undefined
       ? defaults.reasoningEffort
       : options.reasoningEffort
-  const wireEffort = reasoningEffortWire(effort)
+  const wireEffort = reasoningEffortWire(effort, defaults.reasoningDialect)
 
   return {
     model: options.model,

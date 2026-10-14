@@ -90,6 +90,8 @@ export interface OpenAIProviderProfile {
   baseURL?: string
   /** Selector label for this route; defaults to the declared route's name, or the route id for an undeclared one. */
   displayName?: string
+  /** Additional provider-specific HTTP headers; transport-owned headers win collisions. */
+  headers?: Record<string, string>
 }
 
 /**
@@ -145,6 +147,7 @@ const profile: z<OpenAIProviderProfile> = z.object({
   apiKeyEnv: z.string().role('credential-ref'),
   baseURL: z.string(),
   displayName: z.string(),
+  headers: z.dict(z.string()),
 })
 
 export const Config: z<Config> = z.object({
@@ -270,6 +273,7 @@ export function resolveAdapterOptions(config: Config, provider: string, environm
     displayName: route?.displayName
       ?? DECLARED.find(entry => entry.provider === provider)?.displayName
       ?? provider,
+    ...(route?.headers === undefined ? {} : { headers: { ...route.headers } }),
     defaults: {
       ...config.reasoningEffort === undefined ? {} : { reasoningEffort: config.reasoningEffort },
     },

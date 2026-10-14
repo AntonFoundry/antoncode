@@ -18,17 +18,13 @@
   - paragraph: 填入各提供方的 API 密钥即可使用其模型。
   - list:
     - listitem:
-      - text: OpenCode Free
-      - switch "在模型选择器中停用 OpenCode Free (opencode-free)" [checked]
-      - button "编辑 OpenCode Free (opencode-free)": 编辑
-    - listitem:
       - text: OpenRouter Free
       - switch "在模型选择器中停用 OpenRouter Free (openrouter-free)" [checked]
       - button "编辑 OpenRouter Free (openrouter-free)": 编辑
     - listitem:
-      - text: OpenCode Server
-      - switch "在模型选择器中停用 OpenCode Server (opencode-server)" [checked]
-      - button "编辑 OpenCode Server (opencode-server)": 编辑
+      - text: OpenCode Free
+      - switch "在模型选择器中停用 OpenCode Free (opencode-free)" [checked]
+      - button "编辑 OpenCode Free (opencode-free)": 编辑
     - listitem:
       - text: minimax-cn
       - img "API 密钥已配置"

@@ -22,6 +22,8 @@ export interface CatalogModel {
   readonly description?: string
   /** Whether the catalog marks the model as reasoning-capable. */
   readonly reasoning: boolean
+  /** Exact effort values advertised by the catalog, when available. */
+  readonly reasoningEfforts: readonly string[]
   /** Input modalities the catalog advertises, narrowed to the harness vocabulary. */
   readonly inputModalities: readonly ('text' | 'image')[]
   /** Positive combined request/response context capacity when advertised. */
@@ -46,6 +48,7 @@ interface WireModel {
   description?: unknown
   status?: unknown
   reasoning?: unknown
+  reasoning_options?: unknown
   cost?: WireCost
   modalities?: { input?: unknown }
   limit?: { context?: unknown }
@@ -60,15 +63,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * The freeness predicate: the entry must price both directions at exactly
- * zero. A *missing* cost block does not qualify — OpenRouter publishes
- * costless entries that are not free chat models (image and music
- * generators, uncosted router models), and treating absence as zero put
- * them in the picker. Every OpenCode Zen free entry declares explicit zero
- * costs, so the visible `opencode-free` set is unchanged; only providers
- * with undeclared costs lose entries.
+ * OpenCode's anonymous provider keeps models whose input cost is zero; other
+ * catalogs require explicit zero input and output costs. A missing cost
+ * never qualifies. OpenRouter publishes costless entries that are not free
+ * chat models, and treating absent costs as zero put them in the picker.
  */
-function isFreeModel(model: WireModel): boolean {
+function isFreeModel(model: WireModel, provider: string): boolean {
+  if (provider === 'opencode') return model.cost?.input === 0
   return model.cost?.input === 0 && model.cost?.output === 0
 }
 
@@ -78,6 +79,20 @@ function wireModalities(model: WireModel): readonly ('text' | 'image')[] | undef
   if (!Array.isArray(input)) return undefined
   const mods = input.filter((item): item is 'text' | 'image' => item === 'text' || item === 'image')
   return mods.includes('text') ? mods : undefined
+}
+
+const WIRE_EFFORTS = new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
+
+function wireReasoningEfforts(model: WireModel): string[] {
+  if (!Array.isArray(model.reasoning_options)) return []
+  const levels: string[] = []
+  for (const option of model.reasoning_options) {
+    if (!isRecord(option) || option.type !== 'effort' || !Array.isArray(option.values)) continue
+    for (const value of option.values) {
+      if (typeof value === 'string' && WIRE_EFFORTS.has(value) && !levels.includes(value)) levels.push(value)
+    }
+  }
+  return levels
 }
 
 /**
@@ -106,7 +121,7 @@ export function parseFreeModels(payload: unknown, provider: string): Map<string,
   for (const [id, raw] of Object.entries(rawModels)) {
     if (typeof id !== 'string' || id.length === 0 || !isRecord(raw)) continue
     const model = raw as WireModel
-    if (!isFreeModel(model)) continue
+    if (!isFreeModel(model, provider)) continue
     if (id.startsWith(`${provider}/`)) continue
     const modalities = wireModalities(model)
     if (modalities === undefined) continue
@@ -121,6 +136,7 @@ export function parseFreeModels(payload: unknown, provider: string): Map<string,
         ? { description: model.description }
         : {}),
       reasoning: model.reasoning === true,
+      reasoningEfforts: wireReasoningEfforts(model),
       inputModalities: modalities,
       ...contextWindow === undefined ? {} : { contextWindow },
       ...(model.provider?.npm === RESPONSES_PROVIDER_NPM ? { protocol: 'responses' as const } : {}),

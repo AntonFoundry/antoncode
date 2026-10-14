@@ -79,7 +79,7 @@ describe('toServerModel', () => {
 describe('variantDisplayName', () => {
   it('capitalizes variant ids for the picker', () => {
     expect(variantDisplayName('low')).toBe('Low')
-    expect(variantDisplayName('xhigh')).toBe('Xhigh')
+    expect(variantDisplayName('xhigh')).toBe('Extra High')
     expect(variantDisplayName('')).toBe('')
   })
 })

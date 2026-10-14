@@ -561,9 +561,7 @@
     # OpenCode itself bundles) and lists each route's zero-cost,
     # non-deprecated chat models; streaming rides each provider's own
     # OpenAI-compatible gateway through the inherited llm-openai transport.
-    # Two routes ship live under `providers:`: `opencode-free` (OpenCode Zen;
-    # anonymous access with the gateway's literal `public` key, exactly as
-    # opencode itself falls back) and `openrouter-free` (OpenRouter; its free
+    # The `openrouter-free` route ships live under `providers:`; its free
     # `:free` models still require OPENROUTER_API_KEY, so requests fail
     # MISSING_CREDENTIAL until a key is stored). A failed catalog refresh
     # keeps serving the last good snapshot; an empty dict unregisters every
@@ -572,15 +570,9 @@
     - id: llm-models-dev
       name: '@deepseek-ai/dsh-llm-models-dev'
 
-    # The local opencode server adapter: generations run inside the user's own
-    # opencode server (the only path OpenCode's free tier serves — direct
-    # gateway calls fail FreeTierError outside genuine OpenCode), discovered
-    # per request from serverURL, OPENCODE_SERVER_URL, the CLI registration
-    # file, or live `opencode service status`, with the Basic password read
-    # per request from the registration file (service.json, OPENCODE_SERVER_PASSWORD
-    # fallback). One `opencode-server` route ships live with pure discovery;
-    # an unreachable server fails TRANSPORT with recovery guidance instead of
-    # breaking registration.
+    # OpenCode's local service authenticates with its Basic credential and
+    # serves free models through transient generation. Harness owns the turn;
+    # this route never runs OpenCode's agent loop or its tools.
     - id: llm-opencode
       name: '@deepseek-ai/dsh-llm-opencode'
 

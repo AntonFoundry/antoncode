@@ -12,24 +12,20 @@ afterEach(() => {
 })
 
 describe('resolveZenHeaders', () => {
-  it('stamps matching antoncode and opencode headers for an opencode route', () => {
+  it('stamps OpenCode identity headers for an opencode route', () => {
     const headers = resolveZenHeaders('opencode-free', 'ses_test123')
-    expect(headers['x-antoncode-session']).toBe('ses_test123')
     expect(headers['x-opencode-session']).toBe('ses_test123')
-    expect(headers['x-antoncode-project']).toBe('global')
-    expect(headers['x-opencode-project']).toBe('global')
-    expect(headers['x-antoncode-client']).toBe('cli')
     expect(headers['x-opencode-client']).toBe('cli')
-    expect(headers['x-antoncode-request']).toMatch(/^msg_/)
-    expect(headers['x-opencode-request']).toBe(headers['x-antoncode-request'])
-    expect(headers).not.toHaveProperty('user-agent')
+    expect(headers['x-opencode-session-id']).toBe('ses_test123')
+    expect(headers['user-agent']).toBe('opencode/harness')
+    expect(headers['x-opencode-request']).toMatch(/^msg_/)
+    expect(headers).not.toHaveProperty('x-opencode-project')
     expect(headers).not.toHaveProperty('x-session-id')
   })
 
   it('honors OPENCODE_CLIENT like opencode itself', () => {
     vi.stubEnv('OPENCODE_CLIENT', 'web')
     const headers = resolveZenHeaders('opencode-free', 'ses_test123')
-    expect(headers['x-antoncode-client']).toBe('web')
     expect(headers['x-opencode-client']).toBe('web')
   })
 
@@ -44,6 +40,11 @@ describe('resolveZenHeaders', () => {
     const first = resolveZenHeaders('opencode-free', 'ses_test123')
     const second = resolveZenHeaders('opencode-free', 'ses_test123')
     expect(first['x-opencode-request']).not.toBe(second['x-opencode-request'])
+  })
+
+  it('uses the assembled user message id as the OpenCode request id', () => {
+    const headers = resolveZenHeaders('opencode-free', 'ses_test123', 'msg_user123')
+    expect(headers['x-opencode-request']).toBe('msg_user123')
   })
 
   it('sends nothing for non-opencode routes in the family', () => {

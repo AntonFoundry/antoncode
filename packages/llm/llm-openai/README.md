@@ -39,6 +39,8 @@ llm-openai:
   providers:
     openai:
       apiKeyEnv: OPENAI_API_KEY    # credential ref; default derived per route
+      headers:                      # optional provider-specific HTTP headers
+        X-Provider-Mode: compatible
     openai-compatible:
       baseURL: http://127.0.0.1:1234/v1
 ```
@@ -50,7 +52,9 @@ so a key stored there is the one the route resolves (and removal cleans up).
 
 Environment fallbacks (trusted layers only): `OPENAI_API_KEY`,
 `OPENAI_BASE_URL`. The key is never a configuration value — only its
-environment-variable reference is.
+environment-variable reference is. Route `headers` are sent with every
+request; transport-owned authorization, negotiation, and Harness attribution
+headers take precedence when names collide.
 
 ## Wire behavior
 
@@ -61,6 +65,9 @@ environment-variable reference is.
   (`max` as `high`), and with none configured no effort is materialized
   into requests — the provider's own default serves, which keeps
   non-reasoning models and strict gateways requestable.
+  The models.dev OpenRouter route selects the serializer's OpenRouter dialect,
+  which preserves its catalog-advertised `none`, `minimal`, `low`, `medium`,
+  `high`, `xhigh`, and `max` values instead of clamping them to High.
 - **Output capping** uses `max_completion_tokens` for o-series/GPT-5 class
   models (which reject `max_tokens`) and `max_tokens` for everything else.
 - **Reasoning streaming**: official API responses carry no CoT; reasoning

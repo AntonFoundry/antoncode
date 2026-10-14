@@ -12,6 +12,7 @@ import { join, delimiter } from 'node:path'
 import {
   DEFAULT_PASSWORD_ENV,
   DEFAULT_USERNAME,
+  EXECUTABLE_ENV,
   SERVER_URL_ENV,
   SERVICE_FILE,
   defaultSystem,
@@ -39,6 +40,7 @@ function systemOf(overrides: Partial<TransportSystem> = {}): TransportSystem {
     readServiceFile: () => Promise.resolve(undefined),
     readPasswordFile: () => Promise.resolve(undefined),
     serviceStatus: () => Promise.resolve(undefined),
+    serviceStart: () => Promise.resolve(undefined),
     ...overrides,
   }
 }
@@ -144,6 +146,32 @@ describe('resolveServerTransport URL discovery', () => {
 
   it('fails TRANSPORT when no source names a server', async () => {
     await expect(resolveServerTransport({}, systemOf())).rejects.toMatchObject({ code: 'TRANSPORT' })
+  })
+
+  it('starts an absent service and reads its new password', async () => {
+    let started = false
+    const system = systemOf({
+      readServiceFile: () => Promise.resolve(started ? { password: 'new-password' } : undefined),
+      serviceStart: () => {
+        started = true
+        return Promise.resolve('http://started:8')
+      },
+    })
+    const transport = await resolveServerTransport({}, system)
+    expect(transport.url).toBe('http://started:8')
+    expect(basicAuth(transport.headers)).toEqual(['Basic', `${DEFAULT_USERNAME}:new-password`])
+  })
+
+  it('does not start a service when autoStart is disabled', async () => {
+    let starts = 0
+    const system = systemOf({
+      serviceStart: () => {
+        starts += 1
+        return Promise.resolve('http://started:9')
+      },
+    })
+    await expect(resolveServerTransport({ autoStart: false }, system)).rejects.toMatchObject({ code: 'TRANSPORT' })
+    expect(starts).toBe(0)
   })
 })
 
@@ -300,7 +328,7 @@ describe('production system defaults', () => {
       },
       serviceStatus: () => Promise.resolve(undefined),
     }
-    await expect(resolveServerTransport({}, probing)).rejects.toMatchObject({ code: 'TRANSPORT' })
+    await expect(resolveServerTransport({ autoStart: false }, probing)).rejects.toMatchObject({ code: 'TRANSPORT' })
     expect(seen[0]?.endsWith(join('.local', 'state', 'opencode', SERVICE_FILE))).toBe(true)
   })
 
@@ -321,6 +349,7 @@ describe('production system defaults', () => {
   it('reports no status when the opencode executable is absent', async () => {
     const dir = tempdir()
     vi.stubEnv('PATH', dir)
+    vi.stubEnv(EXECUTABLE_ENV, join(dir, 'missing-opencode'))
     const system: TransportSystem = {
       ...defaultSystem({}),
       readServiceFile: () => Promise.resolve(undefined),
@@ -334,6 +363,7 @@ describe('production system defaults', () => {
     chmodSync(join(dir, 'opencode'), 0o755)
     writeFileSync(join(dir, 'opencode.cmd'), '@echo.\r\n')
     vi.stubEnv('PATH', `${dir}${delimiter}${process.env.PATH ?? ''}`)
+    vi.stubEnv(EXECUTABLE_ENV, join(dir, 'opencode'))
     const system: TransportSystem = {
       ...defaultSystem({}),
       readServiceFile: () => Promise.resolve(undefined),

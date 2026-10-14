@@ -86,9 +86,23 @@ describe('reasoningEffortWire', () => {
     expect(reasoningEffortWire('high')).toBe('high')
     expect(reasoningEffortWire('max')).toBe('high')
   })
+
+  it('preserves OpenRouter effort values from model metadata', () => {
+    for (const effort of ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const) {
+      expect(reasoningEffortWire(effort, 'openrouter')).toBe(effort)
+    }
+    expect(reasoningEffortWire('off', 'openrouter')).toBe('none')
+    expect(reasoningEffortWire(undefined, 'openrouter')).toBeUndefined()
+  })
 })
 
 describe('serializeRequest', () => {
+  it('sends OpenRouter xhigh unchanged', () => {
+    expect(serializeRequest(request({ reasoningEffort: ReasoningEffortId('xhigh') }), {
+      reasoningDialect: 'openrouter',
+    }).reasoning_effort).toBe('xhigh')
+  })
+
   it('builds the minimal streaming body with usage reporting', () => {
     expect(serializeRequest(request())).toEqual({
       model: 'gpt-4o',

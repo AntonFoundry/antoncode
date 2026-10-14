@@ -20,7 +20,7 @@ export interface WireRequest {
    * vocabulary maps off→omitted, low→low, high→high, max→high (OpenAI has no
    * "max" level). Non-reasoning models ignore the field.
    */
-  reasoning_effort?: 'minimal' | 'low' | 'medium' | 'high'
+  reasoning_effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   tools?: WireTool[]
   temperature?: number
   /** Output cap for classic models (gpt-4o class). */

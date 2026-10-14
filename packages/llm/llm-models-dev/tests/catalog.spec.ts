@@ -132,11 +132,33 @@ describe('parseFreeModels', () => {
     expect(models!.get('explicit-free')?.reasoning).toBe(false)
   })
 
+  it('matches OpenCode anonymous discovery by accepting zero-input-cost models', () => {
+    const models = parseFreeModels(payload({
+      'zero-input': { ...FREE_MODEL, cost: { input: 0, output: 1 } },
+      'nonzero-input': { ...FREE_MODEL, cost: { input: 1, output: 0 } },
+    }), 'opencode')
+    expect([...models!.keys()]).toEqual(['zero-input'])
+  })
+
   it('carries the catalog reasoning flag', () => {
     const models = parseFreeModels(payload({
       thinker: { ...FREE_MODEL, reasoning: true },
     }), 'opencode')
     expect(models!.get('thinker')?.reasoning).toBe(true)
+  })
+
+  it('keeps only advertised reasoning effort values', () => {
+    const models = parseFreeModels(payload({
+      thinker: {
+        ...FREE_MODEL,
+        reasoning: true,
+        reasoning_options: [
+          { type: 'toggle' },
+          { type: 'effort', values: ['none', 'minimal', 'high', 'xhigh', 'max', 'invalid', 'high'] },
+        ],
+      },
+    }), 'opencode')
+    expect(models!.get('thinker')?.reasoningEfforts).toEqual(['none', 'minimal', 'high', 'xhigh', 'max'])
   })
 })
 
@@ -153,7 +175,7 @@ describe('llm-models-dev mount freshness', () => {
       await ctx.plugin(LlmRuntime)
       await ctx.plugin(LlmModelsDev, {
         catalogRefreshMs: 25,
-        providers: { 'opencode-free': {} },
+        providers: { 'opencode-free': { baseURL: 'https://opencode.ai/zen/v1' } },
       })
 
       // Eager mount fetch: discovery is warm before any picker query.
@@ -185,18 +207,23 @@ describe('free-model reasoning metadata', () => {
     const home = await mkdtemp(join(tmpdir(), 'dsh-models-dev-reasoning-'))
     vi.stubEnv('DSH_HOME', home)
     vi.stubGlobal('fetch', okFetchOf(() => payload({
-      'reason-free': { ...FREE_MODEL, reasoning: true },
+      'reason-free': {
+        ...FREE_MODEL,
+        reasoning: true,
+        reasoning_options: [{ type: 'effort', values: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] }],
+      },
       'chat-only': FREE_MODEL,
+      'toggle-only': { ...FREE_MODEL, reasoning: true, reasoning_options: [{ type: 'toggle' }] },
     })))
     const ctx = new Context()
     const disposed = false
     try {
       await ctx.plugin(LlmRuntime)
-      await ctx.plugin(LlmModelsDev, { providers: { 'opencode-free': {} } })
+      await ctx.plugin(LlmModelsDev, { providers: { 'opencode-free': { baseURL: 'https://opencode.ai/zen/v1' } } })
 
       const reasoner = await ctx.llm.resolveModelInfo('opencode-free', 'reason-free')
       expect(reasoner.reasoning?.efforts.map(effort => effort.id.toString()))
-        .toEqual(['off', 'low', 'medium', 'high'])
+        .toEqual(['none', 'minimal', 'low', 'medium', 'high', 'xhigh'])
       // No materialized default: an unselected effort leaves the wire field
       // absent and the gateway's own default serves.
       expect(reasoner.reasoning?.defaultEffort).toBeUndefined()
@@ -207,6 +234,8 @@ describe('free-model reasoning metadata', () => {
       expect(plain.reasoning).toBeUndefined()
       const plainCall = await ctx.llm.resolveCallConfig({ provider: 'opencode-free', model: 'chat-only' })
       expect(plainCall.reasoningEffort).toBeUndefined()
+      const toggle = await ctx.llm.resolveModelInfo('opencode-free', 'toggle-only')
+      expect(toggle.reasoning).toBeUndefined()
     } finally {
       if (!disposed) await ctx.fiber.dispose()
       await rm(home, { recursive: true, force: true })

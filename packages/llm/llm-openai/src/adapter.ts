@@ -60,6 +60,8 @@ export interface OpenAIConnectionOptions {
    * only this name — a literal key is not a configuration value.
    */
   apiKeyEnv?: CredentialRef
+  /** Provider-specific headers sent with each request; transport-owned headers take precedence. */
+  headers?: Readonly<Record<string, string>>
   /** Resolved selector label for this route; a display fact, never a transport one. */
   displayName: string
   /** Request defaults applied to every call (reasoning effort). */
@@ -107,13 +109,14 @@ export interface OpenAIAdapterOptions {
    * emulation facts here — OpenCode Zen's anonymous free tier answers
    * `MissingSessionID` to any request without a session id and an
    * `opencode/*` User-Agent, facts no other configuration field can carry.
-   * The conversation's session id arrives so a gateway-side per-session
-   * quota bucket can mirror the caller's own conversation.
+   * The session id and latest message id arrive for gateway quota and request
+   * correlation. A supplied User-Agent is prefixed to Harness attribution.
    */
   extraHeaders?: (
     provider: string,
     connection: OpenAIConnectionOptions,
     sessionId: string | undefined,
+    requestId: string | undefined,
   ) => Record<string, string>
   /** Resolve the harness-home anonymous id shared with telemetry and feedback. */
   resolveUserId: () => AnonymousUserId
@@ -351,14 +354,26 @@ export class OpenAIAdapter extends LlmAdapter {
     // Prepared outside the try so the TRANSPORT label below covers exactly the
     // transport boundary, never a serialization failure.
     const payload = JSON.stringify(body)
-    const headers = {
+    const routeHeaders = {
       // Route-scoped headers resolve first so the fixed transport headers
       // below always win a name collision (authorization, content-type).
-      ...this.config.extraHeaders?.(options.provider, connection, options.sessionId === undefined ? undefined : String(options.sessionId)),
+      ...this.config.extraHeaders?.(
+        options.provider,
+        connection,
+        options.sessionId === undefined ? undefined : String(options.sessionId),
+        options.messages.findLast(message => message.role === 'user')?.id,
+      ),
+      ...connection.headers,
+    }
+    const headers = {
+      ...routeHeaders,
       ...(apiKey === undefined ? {} : { 'authorization': `Bearer ${apiKey}` }),
       'content-type': 'application/json',
       'accept': 'text/event-stream',
       ...attributionHeaders(),
+      ...(routeHeaders['user-agent'] === undefined ? {} : {
+        'user-agent': `${routeHeaders['user-agent']} ${attributionHeaders()['user-agent']}`,
+      }),
       'x-deepseek-harness-user-id': String(userId),
       ...options.sessionId !== undefined
         ? { 'x-deepseek-harness-session-id': String(options.sessionId) }
@@ -435,14 +450,26 @@ export class OpenAIAdapter extends LlmAdapter {
     // Prepared outside the try so the TRANSPORT label below covers exactly the
     // transport boundary, never a serialization failure.
     const payload = JSON.stringify(body)
-    const headers = {
+    const routeHeaders = {
       // Route-scoped headers resolve first so the fixed transport headers
       // below always win a name collision (authorization, content-type).
-      ...this.config.extraHeaders?.(options.provider, connection, options.sessionId === undefined ? undefined : String(options.sessionId)),
+      ...this.config.extraHeaders?.(
+        options.provider,
+        connection,
+        options.sessionId === undefined ? undefined : String(options.sessionId),
+        options.messages.findLast(message => message.role === 'user')?.id,
+      ),
+      ...connection.headers,
+    }
+    const headers = {
+      ...routeHeaders,
       ...(apiKey === undefined ? {} : { 'authorization': `Bearer ${apiKey}` }),
       'content-type': 'application/json',
       'accept': 'text/event-stream',
       ...attributionHeaders(),
+      ...(routeHeaders['user-agent'] === undefined ? {} : {
+        'user-agent': `${routeHeaders['user-agent']} ${attributionHeaders()['user-agent']}`,
+      }),
       'x-deepseek-harness-user-id': String(userId),
       ...options.sessionId !== undefined
         ? { 'x-deepseek-harness-session-id': String(options.sessionId) }

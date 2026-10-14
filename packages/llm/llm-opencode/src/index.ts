@@ -34,6 +34,7 @@ export type { OpenCodeServerAdapterOptions, OpenCodeServerConnection } from './a
 export {
   DEFAULT_PASSWORD_ENV,
   DEFAULT_USERNAME,
+  EXECUTABLE_ENV,
   SERVER_URL_ENV,
   resolveServerTransport,
 } from './transport.ts'
@@ -44,9 +45,7 @@ export const inject = ['llm']
 
 const NS = settingsNamespace('llm-opencode')
 /** The single provider route this plugin owns. */
-export const PROVIDER = 'opencode-server'
-/** Default poll cadence while a server turn runs. */
-export const DEFAULT_POLL_INTERVAL_MS = 1_000
+export const PROVIDER = 'opencode-free'
 
 /**
  * Plugin config, validated by the same-named schemastery schema and doubling
@@ -66,6 +65,8 @@ export interface Config {
   passwordFile?: string
   /** Environment variable holding the password fallback. */
   passwordEnv?: string
+  /** Start the OpenCode background service when none is running; defaults to true. */
+  autoStart?: boolean
   /** Working directory the server scopes sessions to; defaults to the launch directory. */
   directory?: string
   /** Selector label for this route. */
@@ -74,8 +75,6 @@ export interface Config {
   maxTokens?: number
   /** Positive context capacity used when the selected model has no exact value. */
   defaultContextWindow?: number
-  /** Delay between message polls while a turn runs. */
-  pollIntervalMs?: number
   /** Ceiling for one admitted turn, from prompt admission to terminal outcome. */
   requestTimeoutMs?: number
   /** Provider-owned model-request retry policy; omission uses normal defaults. */
@@ -88,11 +87,11 @@ export const Config: z<Config> = z.object({
   serviceFile: z.string(),
   passwordFile: z.string(),
   passwordEnv: z.string().default(DEFAULT_PASSWORD_ENV),
+  autoStart: z.boolean().default(true),
   directory: z.string(),
-  displayName: z.string().default('OpenCode Server'),
+  displayName: z.string().default('OpenCode Free'),
   maxTokens: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(DEFAULT_MAX_TOKENS),
   defaultContextWindow: z.number().step(1).min(1).default(DEFAULT_CONTEXT_WINDOW),
-  pollIntervalMs: z.number().min(Number.MIN_VALUE).max(MAX_TIMER_DELAY_MS).default(DEFAULT_POLL_INTERVAL_MS),
   requestTimeoutMs: z.number().min(Number.MIN_VALUE).max(MAX_TIMER_DELAY_MS).default(DEFAULT_STREAM_IDLE_TIMEOUT_MS),
   retryPolicy: RetryPolicySchema,
 })
@@ -136,12 +135,6 @@ export function resolveAdapterOptions(config: Config): ResolvedOpenCodeServerOpt
   if (!Number.isInteger(defaultContextWindow) || defaultContextWindow <= 0) {
     throw new Error('llm-opencode: defaultContextWindow must be a positive integer')
   }
-  const pollIntervalMs = config.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS
-  if (!Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0 || pollIntervalMs > MAX_TIMER_DELAY_MS) {
-    throw new Error(
-      `llm-opencode: pollIntervalMs must be a positive finite number no greater than ${MAX_TIMER_DELAY_MS}`,
-    )
-  }
   const requestTimeoutMs = config.requestTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS
   if (!Number.isFinite(requestTimeoutMs)
     || requestTimeoutMs <= 0
@@ -156,9 +149,9 @@ export function resolveAdapterOptions(config: Config): ResolvedOpenCodeServerOpt
     ...(config.serviceFile === undefined ? {} : { serviceFile: config.serviceFile }),
     ...(config.passwordFile === undefined ? {} : { passwordFile: config.passwordFile }),
     passwordEnv: config.passwordEnv ?? DEFAULT_PASSWORD_ENV,
+    autoStart: config.autoStart ?? true,
     directory: config.directory ?? process.cwd(),
-    displayName: config.displayName ?? 'OpenCode Server',
-    pollIntervalMs,
+    displayName: config.displayName ?? 'OpenCode Free',
     requestTimeoutMs,
     maxTokens,
     defaultContextWindow,
@@ -177,7 +170,7 @@ export function apply(ctx: Context, config: Config): void {
     transport: () => resolveServerTransport(resolved),
   })
   ctx.llm.registerConfigurableProviders([
-    { provider: PROVIDER, displayName: 'OpenCode Server', settingsNs: NS, settingsPath: [] },
+    { provider: PROVIDER, displayName: 'OpenCode Free', settingsNs: NS, settingsPath: [] },
   ])
   // Route effects bind to this apply fiber via the stable `ctx` reference,
   // even when a swap runs inside the scoped settings callback below.

@@ -1,8 +1,7 @@
 /**
  * Stream-flow tests for the opencode server adapter against a stateful
- * in-process mock of the server API: session lifecycle, both prompt shapes,
- * stale-session recovery, polling to terminal outcomes, and every error
- * mapping. Pure value mappings live in `mapping.spec.ts`.
+ * in-process mock of the server API: transient generation, session recovery,
+ * and transport failures. Pure value mappings live in `mapping.spec.ts`.
  */
 
 import { afterEach, describe, expect, it } from 'vitest'
@@ -44,7 +43,6 @@ function adapterOf(
     options: () =>
       resolveAdapterOptions({
         serverURL,
-        pollIntervalMs: 5,
         requestTimeoutMs: 2_000,
         directory: '/tmp/test',
         ...config,
@@ -54,7 +52,7 @@ function adapterOf(
 }
 
 function streamOptions(model: string, messages: Message[], extra: Partial<GenerateOptions> = {}): GenerateOptions {
-  return { provider: 'opencode-server', model, messages, ...extra }
+  return { provider: 'opencode-free', model, messages, ...extra }
 }
 
 async function collect(adapter: OpenCodeServerAdapter, options: GenerateOptions): Promise<StreamChunk[]> {
@@ -107,54 +105,6 @@ describe('OpenCodeServerAdapter happy paths', () => {
     const adapter = adapterOf(server.url)
     const chunks = await collect(adapter, streamOptions('fledge-alpha-free', [userText('ping?')]))
     expect(chunks.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
-  })
-
-  it('emits reasoning deltas and full usage when the turn carries them', async () => {
-    const server = await mockOpenCodeServer({
-      generate: 'unavailable',
-      assistant: {
-        reasoning: 'checking',
-        text: 'pong',
-        tokens: { input: 10, output: 3, reasoning: 2, cache: { read: 100, write: 4 } },
-      },
-    })
-    const chunks = await collect(adapterOf(server.url), streamOptions('fledge-alpha-free', [userText('ping?')]))
-    expect(chunks.map(chunk => chunk.type)).toEqual([
-      'block-start',
-      'reasoning-delta',
-      'block-end',
-      'block-start',
-      'text-delta',
-      'block-end',
-      'usage',
-      'finish',
-    ])
-    expect(chunks).toContainEqual({
-      type: 'usage',
-      usage: { inputTokens: 10, outputTokens: 3, cacheReadTokens: 100, cacheWriteTokens: 4, reasoningTokens: 2 },
-    })
-  })
-
-  it('omits the usage chunk when the turn carries no tokens', async () => {
-    const server = await mockOpenCodeServer({ generate: 'unavailable', assistant: { text: 'pong' } })
-    const chunks = await collect(adapterOf(server.url), streamOptions('fledge-alpha-free', [userText('ping?')]))
-    expect(chunks.some(chunk => chunk.type === 'usage')).toBe(false)
-    expect(chunks.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
-  })
-
-  it('maps a length finish to max-tokens', async () => {
-    const server = await mockOpenCodeServer({ generate: 'unavailable', assistant: { text: 'cut', finish: 'length' } })
-    const chunks = await collect(adapterOf(server.url), streamOptions('fledge-alpha-free', [userText('ping?')]))
-    expect(chunks.at(-1)).toEqual({ type: 'finish', reason: { kind: 'max-tokens' } })
-  })
-
-  it('falls back to the flat prompt shape when the server rejects nesting', async () => {
-    const server = await mockOpenCodeServer({ generate: 'unavailable', acceptShapes: ['flat'] })
-    const chunks = await collect(adapterOf(server.url), streamOptions('fledge-alpha-free', [userText('ping?')]))
-    expect(chunks.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
-    const prompts = server.requests.filter(entry => entry.path.endsWith('/prompt'))
-    expect(prompts).toHaveLength(2)
-    expect(prompts[1]?.body).toEqual({ text: 'User: ping?' })
   })
 
   it('resolves unknown model ids through the free-tier provider convention', async () => {
@@ -283,31 +233,6 @@ describe('OpenCodeServerAdapter sessions', () => {
     expect(generates.at(-1)?.body).toEqual({ prompt: 'User: first?\n\nUser: second?' })
   })
 
-  it('recovers a stale session against a flat-only server', async () => {
-    const server = await mockOpenCodeServer({
-      generate: 'unavailable',
-      staleFirstPrompt: true,
-      acceptShapes: ['flat'],
-    })
-    const adapter = adapterOf(server.url)
-    const sessionId = SessionId('conv-5')
-    const chunks = await collect(adapter, streamOptions('fledge-alpha-free', [userText('first?')], { sessionId }))
-    expect(chunks.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
-    expect(server.sessions).toHaveLength(4)
-    const prompts = server.requests.filter(entry => entry.path.endsWith('/prompt'))
-    expect(prompts.at(-1)?.body).toEqual({ text: 'User: first?' })
-  })
-
-  it('falls back to the prompt path when generate is unavailable', async () => {
-    const server = await mockOpenCodeServer({ generate: 'unavailable' })
-    const chunks = await collect(adapterOf(server.url), streamOptions('fledge-alpha-free', [userText('ping?')]))
-    expect(chunks.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
-    // Tracked session, generate retry, then the fallback admission.
-    expect(server.sessions).toHaveLength(3)
-    expect(server.requests.filter(entry => entry.path.endsWith('/generate'))).toHaveLength(2)
-    expect(server.requests.filter(entry => entry.path.endsWith('/prompt'))).toHaveLength(1)
-  })
-
   it('rejects an empty generation without polling', async () => {
     const server = await mockOpenCodeServer({ generate: 'empty' })
     const failure = await collectError(adapterOf(server.url), streamOptions('fledge-alpha-free', [userText('hi')]))
@@ -328,10 +253,19 @@ describe('OpenCodeServerAdapter sessions', () => {
     expect(chunks.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
     expect(server.sessions).toHaveLength(2)
   })
+
+  it('rejects servers without transient generation without invoking their agent loop', async () => {
+    const server = await mockOpenCodeServer({ generate: 'unavailable' })
+    const failure = await collectError(adapterOf(server.url), streamOptions('fledge-alpha-free', [userText('hi')]))
+    expect(failure.code).toBe('SERVER')
+    expect(failure.message).toMatch(/transient generation/)
+    expect(server.requests.filter(entry => entry.path.endsWith('/generate'))).toHaveLength(2)
+    expect(server.requests.some(entry => entry.path.endsWith('/prompt'))).toBe(false)
+  })
 })
 
 describe('OpenCodeServerAdapter failures', () => {
-  it('sets offered tools aside and answers as text through the server loop', async () => {
+  it('sets offered tools aside and answers as text without the server loop', async () => {
     const server = await mockOpenCodeServer({ assistant: { text: 'pong', tokens: { input: 10, output: 3 } } })
     const chunks = await collect(
       adapterOf(server.url),
@@ -368,12 +302,12 @@ describe('OpenCodeServerAdapter failures', () => {
   it('maps rate limiting to RATE_LIMIT', async () => {
     const server = await mockOpenCodeServer({ modelsStatus: 429 })
     const adapter = adapterOf(server.url)
-    await expect(adapter.listModels('opencode-server')).rejects.toMatchObject({ code: 'RATE_LIMIT' })
+    await expect(adapter.listModels('opencode-free')).rejects.toMatchObject({ code: 'RATE_LIMIT' })
   })
 
   it('maps unexpected model-listing statuses verbatim', async () => {
     const server = await mockOpenCodeServer({ modelsStatus: 403 })
-    await expect(adapterOf(server.url).listModels('opencode-server')).rejects.toMatchObject({ code: 'HTTP_403' })
+    await expect(adapterOf(server.url).listModels('opencode-free')).rejects.toMatchObject({ code: 'HTTP_403' })
   })
 
   it('maps session-creation failures to SERVER', async () => {
@@ -396,72 +330,6 @@ describe('OpenCodeServerAdapter failures', () => {
     expect(failure.message).toMatch(/without an id/)
   })
 
-  it('rejects doubly-rejected prompt shapes as invalid', async () => {
-    const server = await mockOpenCodeServer({ generate: 'unavailable', acceptShapes: [] })
-    const failure = await collectError(adapterOf(server.url), streamOptions('fledge-alpha-free', [userText('hi')]))
-    expect(failure.code).toBe('INVALID_REQUEST')
-  })
-
-  it('surfaces a replacement session that is also gone', async () => {
-    const server = await mockOpenCodeServer({ generate: 'unavailable', staleAllPrompts: true })
-    const failure = await collectError(adapterOf(server.url), streamOptions('fledge-alpha-free', [userText('hi')]))
-    expect(failure.code).toBe('HTTP_404')
-    expect(server.sessions).toHaveLength(4)
-  })
-
-  it('maps message-listing failures to SERVER', async () => {
-    const server = await mockOpenCodeServer({ generate: 'unavailable', messagesStatus: 500 })
-    const failure = await collectError(adapterOf(server.url), streamOptions('fledge-alpha-free', [userText('hi')]))
-    expect(failure.code).toBe('SERVER')
-  })
-
-  it('times out a turn that never completes', async () => {
-    const server = await mockOpenCodeServer({
-      generate: 'unavailable',
-      assistant: { text: 'late', completion: 'never' },
-    })
-    const adapter = adapterOf(server.url, { requestTimeoutMs: 150 })
-    const failure = await collectError(adapter, streamOptions('fledge-alpha-free', [userText('hi')]))
-    expect(failure.code).toBe('TIMEOUT')
-    expect(failure.message).toMatch(/150ms/)
-  })
-
-  it('times out malformed message payloads instead of hanging on them', async () => {
-    const server = await mockOpenCodeServer({ generate: 'unavailable', messagesInvalidJson: true })
-    const adapter = adapterOf(server.url, { requestTimeoutMs: 150 })
-    const failure = await collectError(adapter, streamOptions('fledge-alpha-free', [userText('hi')]))
-    expect(failure.code).toBe('TIMEOUT')
-  })
-
-  it('rejects a turn that finishes without an assistant message', async () => {
-    const server = await mockOpenCodeServer({ generate: 'unavailable', assistant: { completion: 'absent' } })
-    const failure = await collectError(adapterOf(server.url), streamOptions('fledge-alpha-free', [userText('hi')]))
-    expect(failure.code).toBe('EMPTY_RESPONSE')
-  })
-
-  it('rejects a failed terminal outcome', async () => {
-    const server = await mockOpenCodeServer({
-      generate: 'unavailable',
-      assistant: { text: 'partial', outcome: 'failed' },
-    })
-    const failure = await collectError(adapterOf(server.url), streamOptions('fledge-alpha-free', [userText('hi')]))
-    expect(failure.code).toBe('SERVER')
-  })
-
-  it('aborts a running turn on caller cancellation', async () => {
-    const server = await mockOpenCodeServer({
-      generate: 'unavailable',
-      assistant: { text: 'late', completion: 'never' },
-    })
-    const controller = new AbortController()
-    const pending = collect(
-      adapterOf(server.url),
-      streamOptions('fledge-alpha-free', [userText('hi')], { signal: controller.signal }),
-    )
-    setTimeout(() => { controller.abort() }, 50)
-    await expect(pending).rejects.toMatchObject({ code: 'ABORTED' })
-  })
-
   it('aborts before any session on an already-aborted signal', async () => {
     const server = await mockOpenCodeServer()
     const failure = await collectError(
@@ -481,7 +349,7 @@ describe('OpenCodeServerAdapter failures', () => {
 
   it('rethinks nothing: a defective transport surfaces its own failure', async () => {
     const adapter = new OpenCodeServerAdapter({
-      options: () => resolveAdapterOptions({ pollIntervalMs: 5, requestTimeoutMs: 500, directory: '/tmp' }),
+      options: () => resolveAdapterOptions({ requestTimeoutMs: 500, directory: '/tmp' }),
       transport: () => Promise.reject(new Error('no server configured')),
     })
     await expect(collect(adapter, streamOptions('fledge-alpha-free', [userText('hi')]))).rejects.toThrow(
@@ -498,8 +366,8 @@ describe('OpenCodeServerAdapter discovery', () => {
 
   it('lists only zero-cost models with their display names', async () => {
     const server = await mockOpenCodeServer({ models: PAID_MODELS })
-    expect(await adapterOf(server.url).listModels('opencode-server')).toEqual([
-      { provider: 'opencode-server', id: 'free-model', name: 'Free' },
+    expect(await adapterOf(server.url).listModels('opencode-free')).toEqual([
+      { provider: 'opencode-free', id: 'free-model', name: 'Free' },
     ])
   })
 
@@ -510,27 +378,27 @@ describe('OpenCodeServerAdapter discovery', () => {
         { modelID: 'dup-free', providerID: 'opencode', name: 'Second' },
       ],
     })
-    expect(await adapterOf(server.url).listModels('opencode-server')).toEqual([
-      { provider: 'opencode-server', id: 'dup-free', name: 'First' },
+    expect(await adapterOf(server.url).listModels('opencode-free')).toEqual([
+      { provider: 'opencode-free', id: 'dup-free', name: 'First' },
     ])
   })
 
   it('serves an empty picker from an unreachable server and recovers later', async () => {
     const adapter = adapterOf('http://127.0.0.1:1')
-    expect(await adapter.listModels('opencode-server')).toEqual([])
+    expect(await adapter.listModels('opencode-free')).toEqual([])
   })
 
   it('serves an empty picker from an empty model body', async () => {
     const server = await mockOpenCodeServer({ modelsEmptyBody: true })
-    expect(await adapterOf(server.url).listModels('opencode-server')).toEqual([])
+    expect(await adapterOf(server.url).listModels('opencode-free')).toEqual([])
   })
 
   it('resolves known models from the cached listing', async () => {
     const server = await mockOpenCodeServer({ models: PAID_MODELS })
     const adapter = adapterOf(server.url)
-    const resolved = await adapter.resolveModel('opencode-server', 'free-model')
+    const resolved = await adapter.resolveModel('opencode-free', 'free-model')
     expect(resolved).toMatchObject({ name: 'Free', context: { contextWindow: 50 }, defaultMaxTokens: 16_384 })
-    const again = await adapter.resolveModel('opencode-server', 'free-model')
+    const again = await adapter.resolveModel('opencode-free', 'free-model')
     expect(again.name).toBe('Free')
     expect(server.requests.filter(entry => entry.path === '/api/model')).toHaveLength(1)
   })
@@ -539,7 +407,7 @@ describe('OpenCodeServerAdapter discovery', () => {
     const server = await mockOpenCodeServer({
       models: [{ modelID: 'v-free', providerID: 'opencode', name: 'V', variants: [{ id: 'low' }, { id: 'high' }] }],
     })
-    const resolved = await adapterOf(server.url).resolveModel('opencode-server', 'v-free')
+    const resolved = await adapterOf(server.url).resolveModel('opencode-free', 'v-free')
     expect(resolved.reasoning).toEqual({
       efforts: [
         { id: 'low', name: 'Low' },
@@ -550,21 +418,21 @@ describe('OpenCodeServerAdapter discovery', () => {
 
   it('omits reasoning metadata for variant-free models', async () => {
     const server = await mockOpenCodeServer()
-    const resolved = await adapterOf(server.url).resolveModel('opencode-server', 'fledge-alpha-free')
+    const resolved = await adapterOf(server.url).resolveModel('opencode-free', 'fledge-alpha-free')
     expect(resolved.reasoning).toBeUndefined()
   })
 
   it('resolves unlisted models to defaults without rejecting them', async () => {
     const server = await mockOpenCodeServer({ models: PAID_MODELS })
-    const resolved = await adapterOf(server.url).resolveModel('opencode-server', 'ghost-free')
+    const resolved = await adapterOf(server.url).resolveModel('opencode-free', 'ghost-free')
     expect(resolved).toMatchObject({ name: 'ghost-free', context: { contextWindow: 128_000 } })
   })
 
   it('reports provider identity and retry policy from connection facts', async () => {
     const server = await mockOpenCodeServer()
     const adapter = adapterOf(server.url)
-    expect(adapter.providerInfo('opencode-server')).toEqual({ id: 'opencode-server', name: 'OpenCode Server' })
-    expect(adapter.providerRetryPolicy('opencode-server')).toEqual(resolveAdapterOptions({}).retryPolicy)
+    expect(adapter.providerInfo('opencode-free')).toEqual({ id: 'opencode-free', name: 'OpenCode Free' })
+    expect(adapter.providerRetryPolicy('opencode-free')).toEqual(resolveAdapterOptions({}).retryPolicy)
   })
 })
 
@@ -575,15 +443,14 @@ describe('OpenCodeServerAdapter through the runtime', () => {
     await ctx.plugin(LlmRuntime)
     const fiber = await ctx.plugin(LlmOpenCode, {
       serverURL: server.url,
-      pollIntervalMs: 5,
       requestTimeoutMs: 2_000,
       directory: '/tmp/test',
     })
-    expect(ctx.llm.listProviders()).toEqual([{ id: 'opencode-server', name: 'OpenCode Server' }])
+    expect(ctx.llm.listProviders()).toEqual([{ id: 'opencode-free', name: 'OpenCode Free' }])
     const kinds: string[] = []
     for await (
       const chunk of ctx.llm.stream({
-        provider: 'opencode-server',
+        provider: 'opencode-free',
         model: 'fledge-alpha-free',
         messages: [userText('ping?')],
       })

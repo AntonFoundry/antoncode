@@ -10,9 +10,9 @@
  * @module dsh-llm-models-dev/adapter
  */
 
-import { OPENAI_REASONING_EFFORTS, OpenAIAdapter } from '@deepseek-ai/dsh-llm-openai'
+import { OpenAIAdapter } from '@deepseek-ai/dsh-llm-openai'
 import type { OpenAIAdapterOptions, OpenAIConnectionOptions } from '@deepseek-ai/dsh-llm-openai'
-import type { LlmModelInfo, LlmResolvedModelInfo } from '@deepseek-ai/dsh-llm'
+import { ReasoningEffortId, type LlmModelInfo, type LlmResolvedModelInfo } from '@deepseek-ai/dsh-llm'
 import type { CatalogModel, ModelsDevCatalog } from './catalog.ts'
 
 /** One resolution's connection facts: the OpenAI facts plus the catalog identity. */
@@ -38,6 +38,11 @@ function toModelInfo(provider: string, model: CatalogModel): LlmModelInfo {
     ...model.description === undefined ? {} : { description: model.description },
     inputModalities: model.inputModalities,
   }
+}
+
+function effortName(level: string): string {
+  if (level === 'xhigh') return 'Extra High'
+  return level.slice(0, 1).toUpperCase() + level.slice(1)
 }
 
 export class ModelsDevAdapter extends OpenAIAdapter {
@@ -75,13 +80,8 @@ export class ModelsDevAdapter extends OpenAIAdapter {
     const resolved = await super.resolveModel(provider, model, signal)
     const entry = this.#catalog.peekCached(this.#options(provider).catalogProvider)?.get(model)
     if (entry === undefined) return resolved
-    // The catalog is the free-tier route's only reasoning signal: the base
-    // class cannot know a model's capability and would offer efforts for
-    // every model. A reasoning entry declares the full wire set with no
-    // default — the gateway's own default serves when the caller picks
-    // nothing, so no effort is materialized into requests the caller did
-    // not choose. A non-reasoning entry strips the inherited declaration,
-    // which offers no effort control and sends no reasoning field.
+    // The catalog advertises exact effort values for some models. A
+    // toggle-only model has no effort levels, so it gets no effort picker.
     const { reasoning: _inherited, ...known } = resolved
     return {
       ...known,
@@ -91,7 +91,12 @@ export class ModelsDevAdapter extends OpenAIAdapter {
       // The catalog advertises the gateway's real capacity; the configured
       // default only serves models the snapshot has not seen yet.
       ...(entry.contextWindow === undefined ? {} : { context: { contextWindow: entry.contextWindow } }),
-      ...(entry.reasoning ? { reasoning: { efforts: OPENAI_REASONING_EFFORTS } } : {}),
+      ...(entry.reasoning && entry.reasoningEfforts.length > 0
+        ? { reasoning: { efforts: entry.reasoningEfforts.map(level => ({
+          id: ReasoningEffortId(level),
+          name: effortName(level),
+        })) } }
+        : {}),
     }
   }
 }

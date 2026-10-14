@@ -20,6 +20,8 @@ import type { WireMessage, WireRequest, WireTool } from './types.ts'
 /** Adapter-level request defaults (from plugin config). */
 export interface RequestDefaults {
   reasoningEffort?: 'off' | 'low' | 'medium' | 'high' | 'max' | undefined
+  /** OpenRouter accepts its catalog's effort values verbatim, including `xhigh` and `max`. */
+  reasoningDialect?: 'openrouter'
 }
 
 /** Reasoning-model classes that require `max_completion_tokens`. */
@@ -33,8 +35,17 @@ const REASONING_MODEL = /^(o\d|gpt-5)/i
  * @returns the wire effort, or undefined when no field should be sent.
  */
 export function reasoningEffortWire(
-  effort: GenerateOptions['reasoningEffort'] | 'off' | 'low' | 'medium' | 'high' | 'max' | undefined,
-): 'minimal' | 'low' | 'medium' | 'high' | undefined {
+  effort: GenerateOptions['reasoningEffort'] | 'off' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | undefined,
+  dialect?: 'openrouter',
+): 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | undefined {
+  if (dialect === 'openrouter') {
+    if (effort === undefined) return undefined
+    if (effort === 'off') return 'none'
+    if (['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(String(effort))) {
+      return String(effort) as 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+    }
+    throw new LlmError(`OpenRouter does not support reasoning effort "${effort}"`, 'UNSUPPORTED_REASONING_EFFORT')
+  }
   switch (effort) {
     case undefined:
     case 'off':
@@ -159,7 +170,7 @@ export function serializeRequest(
     : options.reasoningEffort === undefined
       ? defaults.reasoningEffort
       : options.reasoningEffort
-  const wireEffort = reasoningEffortWire(effort)
+  const wireEffort = reasoningEffortWire(effort, defaults.reasoningDialect)
 
   return {
     model: options.model,

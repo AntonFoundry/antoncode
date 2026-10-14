@@ -8,6 +8,8 @@ The patch gates both shell stacks by platform on its own rows: `bash-sandbox`/`t
 
 The row set and its rationale are documented inline in the patch file; the [generated composition graph](../../../apps/cli/composition.md) renders it.
 
+The `opencode-free` row uses the local [OpenCode service adapter](../../llm/llm-opencode/README.md) for zero-cost models without a Zen API key. The adapter starts the service when it is absent and the CLI is available; its transient text generator does not carry Harness tool calls.
+
 ## Model Experience
 
 Indirectly, through the inserted rows: this bundle selects the shipped persona-less prompt base, tool set, and DeepSeek adapter that mode bundles specialize, and contributes no model-visible text of its own.

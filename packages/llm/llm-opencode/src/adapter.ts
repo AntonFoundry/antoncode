@@ -11,13 +11,10 @@
  * turns complete through `POST /api/session/:id/generate`, which renders
  * transient text without running the server's agent loop — no server-side
  * tool calls, so no permission prompts nobody answers and no runaway
- * sessions. Servers without the generate route fall back to the durable
- * prompt plus message-poll path.
+ * sessions. A server without the generate route fails the request; the
+ * adapter never delegates tool execution to OpenCode's agent loop.
  *
- * Both server wire generations are served: current field names first with a
- * single-shape fallback for released servers (nested `prompt.text`, then flat
- * `text`), and envelope-tolerant reads (`{data}` versus bare payloads)
- * everywhere, so a server upgrade never breaks this adapter mid-flight.
+ * Responses accept either a `{data}` envelope or a bare payload.
  *
  * @module dsh-llm-opencode/adapter
  */
@@ -50,8 +47,6 @@ export interface OpenCodeServerConnection extends OpenCodeServerTransportConfig 
   displayName: string
   /** Working directory the server scopes sessions to; defaults to the launch directory. */
   directory: string
-  /** Delay between message polls while a turn runs. */
-  pollIntervalMs: number
   /** Ceiling for one admitted turn, from prompt admission to terminal outcome. */
   requestTimeoutMs: number
   /** Per-request output cap used when the model advertises none. */
@@ -160,6 +155,7 @@ function wireVariants(raw: unknown): string[] {
 
 /** Display label for one server variant id. */
 export function variantDisplayName(variant: string): string {
+  if (variant === 'xhigh') return 'Extra High'
   return variant.length === 0 ? variant : variant.slice(0, 1).toUpperCase() + variant.slice(1)
 }
 
@@ -255,10 +251,9 @@ function messageHasImage(message: Message): boolean {
 
 /**
  * Render harness messages to the single text prompt a server session admits.
- * Assistant reasoning rides along as quoted context and tool traffic renders
- * as quoted text, because the server runs its own agent loop against its own
- * tools — offered harness tool schemas stay behind (see `stream`) while past
- * tool traffic remains visible to the model as text. Images have no text
+ * Assistant reasoning and tool traffic render as quoted context. The transient
+ * generation route accepts text only, so offered Harness tool schemas stay
+ * behind while past tool traffic remains visible. Images have no text
  * representation and are rejected instead of silently dropped.
  */
 export function renderPrompt(system: string | undefined, messages: readonly Message[]): string {
@@ -367,12 +362,6 @@ export function generatedText(body: unknown): string | undefined {
   if (typeof payload === 'string') return payload
   if (!isRecord(payload)) return undefined
   return typeof payload.text === 'string' ? payload.text : undefined
-}
-
-function createdAt(entry: unknown): number | undefined {
-  if (!isRecord(entry) || !isRecord(entry.time)) return undefined
-  const created = entry.time.created
-  return typeof created === 'number' ? created : undefined
 }
 
 function parseModels(body: unknown): ServerModel[] {
@@ -512,12 +501,8 @@ export class OpenCodeServerAdapter extends LlmAdapter {
   }
 
   private async * run(options: GenerateOptions): AsyncGenerator<StreamChunk> {
-    // Harness tool schemas intentionally do not cross this bridge: the
-    // preferred generate path renders no agent loop at all, and the fallback
-    // prompt path runs the server's own loop against its own tools. History
-    // tool traffic still rides along as quoted context (see renderPrompt),
-    // and binary image attachments keep failing loud below because they have
-    // no text form.
+    // The generate route emits text only. Harness tool schemas do not cross
+    // this bridge; past tool traffic remains visible as quoted context.
     const connection = this.#options(options.provider)
     const timeout = AbortSignal.timeout(connection.requestTimeoutMs)
     const signal = options.signal === undefined ? timeout : AbortSignal.any([options.signal, timeout])
@@ -527,7 +512,6 @@ export class OpenCodeServerAdapter extends LlmAdapter {
       const sessionKey = options.sessionId === undefined ? undefined : String(options.sessionId)
       const session = await this.sessionFor(sessionKey, options, connection, transport, model, signal)
       const complete = renderPrompt(options.system, options.messages)
-      const admittedAt = Date.now()
       const generated = await this.generateTurn(
         transport,
         session,
@@ -537,36 +521,7 @@ export class OpenCodeServerAdapter extends LlmAdapter {
         signal,
         sessionKey,
       )
-      if (generated !== undefined) {
-        yield* this.emitText(generated)
-        return
-      }
-      const freshID = await this.createSession(connection, transport, model, signal)
-      if (sessionKey !== undefined) {
-        this.#sessions.set(sessionKey, {
-          serverID: freshID,
-          model: options.model,
-          providerID: model.providerID,
-          ...model.variant === undefined ? {} : { variant: model.variant },
-        })
-      }
-      const effectiveID = await this.admit(
-        transport,
-        freshID,
-        complete,
-        options,
-        connection,
-        signal,
-        sessionKey,
-      )
-      const turn = await this.pollTurn(
-        transport,
-        effectiveID,
-        admittedAt,
-        connection.pollIntervalMs,
-        signal,
-      )
-      yield* this.emitTurn(turn)
+      yield* this.emitText(generated)
     } catch (error: unknown) {
       if (options.signal?.aborted === true) {
         throw new LlmError('llm-opencode: request aborted by caller', 'ABORTED', { cause: error })
@@ -587,8 +542,7 @@ export class OpenCodeServerAdapter extends LlmAdapter {
    * Complete one turn through transient generation, which renders text
    * without running the server's agent loop. A 404 either names a session
    * the server dropped (recreate once and retry there) or a server without
-   * the generate route (404 twice running); the latter answers `undefined`
-   * so the caller falls back to the durable prompt path.
+   * the generate route. The latter fails without running its agent loop.
    */
   private async generateTurn(
     transport: ServerTransport,
@@ -598,7 +552,7 @@ export class OpenCodeServerAdapter extends LlmAdapter {
     connection: OpenCodeServerConnection,
     signal: AbortSignal,
     sessionKey: string | undefined,
-  ): Promise<string | undefined> {
+  ): Promise<string> {
     const first = await this.generate(transport, session.serverID, text, signal)
     if (first.status === 'ok') return first.text
     const ref = await this.modelRef(options.provider, options.model, effortOf(options))
@@ -612,7 +566,10 @@ export class OpenCodeServerAdapter extends LlmAdapter {
       })
     }
     const second = await this.generate(transport, replacement, text, signal)
-    return second.status === 'ok' ? second.text : undefined
+    if (second.status === 'missing') {
+      throw new LlmError('llm-opencode: server does not support transient generation', 'SERVER')
+    }
+    return second.text
   }
 
   private async generate(
@@ -697,83 +654,6 @@ export class OpenCodeServerAdapter extends LlmAdapter {
     return id
   }
 
-  /**
-   * Admit one prompt on the fallback path, tolerating both wire generations:
-   * current servers take nested `prompt.text`, released ones flat `text`. A
-   * 404 means the session is gone (restart, wiped database): recreate once
-   * and admit there. Returns the session the prompt actually landed in.
-   */
-  private async admit(
-    transport: ServerTransport,
-    serverID: string,
-    text: string,
-    options: GenerateOptions,
-    connection: OpenCodeServerConnection,
-    signal: AbortSignal,
-    sessionKey: string | undefined,
-  ): Promise<string> {
-    const attempt = async (id: string, payload: unknown): Promise<{ status: number; body: unknown }> =>
-      this.request(transport, `/api/session/${id}/prompt`, { method: 'POST', body: payload, signal })
-    const shapes = (shaped: string): unknown[] => [{ prompt: { text: shaped } }, { text: shaped }]
-    for (const payload of shapes(text)) {
-      const admitted = await attempt(serverID, payload)
-      if (admitted.status === 400) continue
-      if (admitted.status === 404) break
-      if (admitted.status !== 200) throw statusError(admitted.status, errorMessage(admitted.body), transport.url)
-      return serverID
-    }
-    const ref = await this.modelRef(options.provider, options.model, effortOf(options))
-    const replacement = await this.createSession(connection, transport, ref, signal)
-    if (sessionKey !== undefined) {
-      this.#sessions.set(sessionKey, {
-        serverID: replacement,
-        model: options.model,
-        providerID: ref.providerID,
-        ...ref.variant === undefined ? {} : { variant: ref.variant },
-      })
-    }
-    for (const payload of shapes(text)) {
-      const admitted = await attempt(replacement, payload)
-      if (admitted.status === 400) continue
-      if (admitted.status !== 200) throw statusError(admitted.status, errorMessage(admitted.body), transport.url)
-      return replacement
-    }
-    throw statusError(400, 'server rejected both prompt shapes', transport.url)
-  }
-
-  private async pollTurn(
-    transport: ServerTransport,
-    serverID: string,
-    admittedAt: number,
-    pollIntervalMs: number,
-    signal: AbortSignal,
-  ): Promise<AssistantTurn> {
-    for (;;) {
-      signal.throwIfAborted()
-      const listed = await this.request(transport, `/api/session/${serverID}/message?limit=100&order=desc`, {
-        method: 'GET',
-        signal,
-      })
-      if (listed.status !== 200) throw statusError(listed.status, errorMessage(listed.body), transport.url)
-      const entries = isRecord(listed.body) && listed.body.data !== undefined ? listed.body.data : listed.body
-      const messages = Array.isArray(entries) ? entries : []
-      const fresh = messages.filter((entry) => {
-        const at = createdAt(entry)
-        return at !== undefined && at >= admittedAt
-      })
-      const outcome = fresh.map(entry => idleOutcome(entry)).find(result => result !== undefined)
-      if (outcome !== undefined) {
-        const turn = fresh.map(entry => assistantTurn(entry)).find(candidate => candidate !== undefined)
-        if (turn === undefined) {
-          throw new LlmError('llm-opencode: server turn finished without an assistant message', 'EMPTY_RESPONSE')
-        }
-        if (outcome === 'failed') throw new LlmError('llm-opencode: server turn failed', 'SERVER')
-        return turn
-      }
-      await sleep(pollIntervalMs, signal)
-    }
-  }
-
   private * emitText(text: string): Generator<StreamChunk> {
     yield { type: 'block-start', index: 0, blockType: 'text' }
     yield { type: 'text-delta', index: 0, text }
@@ -781,20 +661,6 @@ export class OpenCodeServerAdapter extends LlmAdapter {
     yield { type: 'finish', reason: { kind: 'stop' } }
   }
 
-  private * emitTurn(turn: AssistantTurn): Generator<StreamChunk> {
-    let index = 0
-    if (turn.reasoning.length > 0) {
-      yield { type: 'block-start', index, blockType: 'reasoning' }
-      yield { type: 'reasoning-delta', index, text: turn.reasoning }
-      yield { type: 'block-end', index, block: { type: 'reasoning', text: turn.reasoning } }
-      index += 1
-    }
-    yield { type: 'block-start', index, blockType: 'text' }
-    yield { type: 'text-delta', index, text: turn.text }
-    yield { type: 'block-end', index, block: { type: 'text', text: turn.text } }
-    if (turn.usage !== undefined) yield { type: 'usage', usage: turn.usage }
-    yield { type: 'finish', reason: turn.finish }
-  }
 }
 
 export type { GenerateOptions }

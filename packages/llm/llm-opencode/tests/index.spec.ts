@@ -42,10 +42,10 @@ describe('resolveAdapterOptions', () => {
   it('resolves defaults for an empty section', () => {
     expect(resolveAdapterOptions({})).toMatchObject({
       passwordEnv: 'OPENCODE_SERVER_PASSWORD',
-      displayName: 'OpenCode Server',
+      autoStart: true,
+      displayName: 'OpenCode Free',
       maxTokens: 16_384,
       defaultContextWindow: 128_000,
-      pollIntervalMs: 1_000,
     })
     expect('username' in resolveAdapterOptions({})).toBe(false)
     expect(resolveAdapterOptions({}).directory.length).toBeGreaterThan(0)
@@ -59,6 +59,7 @@ describe('resolveAdapterOptions', () => {
       serviceFile: '/custom/state.json',
       passwordFile: '/custom/service.json',
       passwordEnv: 'CUSTOM_PW',
+      autoStart: false,
       directory: '/work',
       displayName: 'Custom',
     })).toMatchObject({
@@ -67,6 +68,7 @@ describe('resolveAdapterOptions', () => {
       serviceFile: '/custom/state.json',
       passwordFile: '/custom/service.json',
       passwordEnv: 'CUSTOM_PW',
+      autoStart: false,
       directory: '/work',
       displayName: 'Custom',
     })
@@ -92,9 +94,6 @@ describe('resolveAdapterOptions', () => {
     expect(() => resolveAdapterOptions({ maxTokens: -2 })).toThrow(/maxTokens/)
     expect(() => resolveAdapterOptions({ defaultContextWindow: 0 })).toThrow(/defaultContextWindow/)
     expect(() => resolveAdapterOptions({ defaultContextWindow: 1.5 })).toThrow(/defaultContextWindow/)
-    expect(() => resolveAdapterOptions({ pollIntervalMs: 0 })).toThrow(/pollIntervalMs/)
-    expect(() => resolveAdapterOptions({ pollIntervalMs: Number.NaN })).toThrow(/pollIntervalMs/)
-    expect(() => resolveAdapterOptions({ pollIntervalMs: MAX_TIMER_DELAY_MS + 1 })).toThrow(/pollIntervalMs/)
     expect(() => resolveAdapterOptions({ requestTimeoutMs: 0 })).toThrow(/requestTimeoutMs/)
     expect(() => resolveAdapterOptions({ requestTimeoutMs: Number.POSITIVE_INFINITY })).toThrow(
       /requestTimeoutMs/,
@@ -110,23 +109,23 @@ describe('resolveAdapterOptions', () => {
 
 describe('llm-opencode dynamic configuration', () => {
   it('routes the next request with the freshly resolved server URL', async () => {
-    const ctx = await boot({ serverURL: 'http://127.0.0.1:1', pollIntervalMs: 5 })
-    await expect(ctx.llm.listModels('opencode-server')).resolves.toEqual([])
-    await ctx.settings.update(NS, { serverURL: 'http://127.0.0.1:2', pollIntervalMs: 5 })
-    await expect(ctx.llm.listModels('opencode-server')).resolves.toEqual([])
+    const ctx = await boot({ serverURL: 'http://127.0.0.1:1' })
+    await expect(ctx.llm.listModels('opencode-free')).resolves.toEqual([])
+    await ctx.settings.update(NS, { serverURL: 'http://127.0.0.1:2' })
+    await expect(ctx.llm.listModels('opencode-free')).resolves.toEqual([])
   })
 
   it('keeps the last good options when a snapshot fails beyond-schema validation', async () => {
     const server = await mockOpenCodeServer()
-    const ctx = await boot({ serverURL: server.url, pollIntervalMs: 5 })
+    const ctx = await boot({ serverURL: server.url })
     // Schema-valid (a plain string) but resolver-invalid (empty): the bad
     // snapshot must not move the endpoint.
     await ctx.settings.update(NS, { serverURL: '' })
-    await expect(ctx.llm.listModels('opencode-server')).resolves.toEqual([
-      { provider: 'opencode-server', id: 'fledge-alpha-free', name: 'Fledge Alpha Free' },
+    await expect(ctx.llm.listModels('opencode-free')).resolves.toEqual([
+      { provider: 'opencode-free', id: 'fledge-alpha-free', name: 'Fledge Alpha Free' },
     ])
     await ctx.settings.update(NS, { serverURL: 'http://127.0.0.1:1' })
-    await expect(ctx.llm.listModels('opencode-server')).resolves.toEqual([])
+    await expect(ctx.llm.listModels('opencode-free')).resolves.toEqual([])
   })
 
   it('re-registers the route in place when the captured retry policy changes', async () => {
@@ -138,14 +137,14 @@ describe('llm-opencode dynamic configuration', () => {
     await ctx.settings.update(NS, {
       retryPolicy: { mode: 'always', backoff: { initialDelayMs: 25, maxDelayMs: 100, jitterRatio: 0.2 } },
     })
-    expect(ctx.llm.providerRetryPolicy('opencode-server')).toEqual({
+    expect(ctx.llm.providerRetryPolicy('opencode-free')).toEqual({
       mode: 'always',
       initialDelayMs: 25,
       maxDelayMs: 100,
       jitterRatio: 0.2,
     })
-    expect(ctx.llm.listProviders()).toEqual([{ id: 'opencode-server', name: 'OpenCode Server' }])
-    expect(observed).toEqual([['opencode-server']])
+    expect(ctx.llm.listProviders()).toEqual([{ id: 'opencode-free', name: 'OpenCode Free' }])
+    expect(observed).toEqual([['opencode-free']])
   })
 
   it('falls back to the composition entry when settings detach', async () => {
@@ -160,6 +159,6 @@ describe('llm-opencode dynamic configuration', () => {
     await ctx.plugin(LlmOpenCode, { serverURL: 'http://127.0.0.1:3' })
     await ctx.settings.update(NS, { serverURL: 'http://127.0.0.1:4' })
     await settingsFiber.dispose()
-    await expect(ctx.llm.listModels('opencode-server')).resolves.toEqual([])
+    await expect(ctx.llm.listModels('opencode-free')).resolves.toEqual([])
   })
 })

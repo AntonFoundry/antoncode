@@ -1,13 +1,11 @@
 /**
  * Local opencode server discovery and authentication.
  *
- * OpenCode's free tier answers only inside genuine OpenCode: direct gateway
- * calls fail `FreeTierError` no matter which client headers are stamped, so
+ * Direct gateway calls for OpenCode's free tier returned `FreeTierError`, so
  * this provider speaks to the user's own running server instead — `GET
- * /api/model`, `POST /api/session`, `POST /api/session/:id/prompt`, `GET
- * /api/session/:id/message` — with the same Basic credential the `opencode
- * api` CLI subcommand uses. Every fact resolves per request (never frozen at
- * load): a TUI restart moves the port, and the next call re-discovers it.
+ * /api/model`, `POST /api/session`, `POST /api/session/:id/generate` — with
+ * the same Basic credential the `opencode api` CLI subcommand uses. Every
+ * request re-discovers the URL and starts the background service when absent.
  *
  * @module dsh-llm-opencode/transport
  */
@@ -19,6 +17,8 @@ import { LlmError } from '@deepseek-ai/dsh-llm'
 
 /** Environment variable naming an explicit server URL; honored before file and CLI discovery. */
 export const SERVER_URL_ENV = 'OPENCODE_SERVER_URL'
+/** Optional executable path when a GUI process cannot resolve `opencode` on PATH. */
+export const EXECUTABLE_ENV = 'OPENCODE_EXECUTABLE'
 /** Default credential environment variable the server itself reads. */
 export const DEFAULT_PASSWORD_ENV = 'OPENCODE_SERVER_PASSWORD'
 /** Basic-auth username the server expects unless configured otherwise. */
@@ -42,6 +42,8 @@ export interface OpenCodeServerTransportConfig {
   passwordFile?: string
   /** Environment variable holding the password fallback. */
   passwordEnv?: string
+  /** Start the OpenCode background service when discovery finds none. */
+  autoStart?: boolean
 }
 
 /** One resolved request transport: where to send it and how to authenticate. */
@@ -77,6 +79,8 @@ export interface TransportSystem {
    * binary is absent or no server is registered.
    */
   serviceStatus(): Promise<string | undefined>
+  /** Start the background service and return its URL; undefined when it cannot start. */
+  serviceStart(): Promise<string | undefined>
 }
 
 function defaultServiceFile(env: Record<string, string | undefined>, home: string): string {
@@ -124,16 +128,32 @@ async function defaultReadPasswordFile(path: string): Promise<string | undefined
   }
 }
 
-async function defaultServiceStatus(): Promise<string | undefined> {
-  try {
-    const { execFile } = await import('node:child_process')
-    const { promisify } = await import('node:util')
-    const { stdout } = await promisify(execFile)('opencode', ['service', 'status'])
-    const url = stdout.trim()
-    return url.length > 0 ? url : undefined
-  } catch {
-    return undefined
+async function serviceCommand(action: 'status' | 'start'): Promise<string | undefined> {
+  const { execFile } = await import('node:child_process')
+  const { promisify } = await import('node:util')
+  const executable = process.env[EXECUTABLE_ENV]
+  const candidates = executable === undefined || executable.length === 0
+    ? ['opencode', join(homedir(), '.opencode', 'bin', 'opencode'), '/opt/homebrew/bin/opencode', '/usr/local/bin/opencode']
+    : [executable]
+  for (const candidate of new Set(candidates)) {
+    try {
+      const { stdout } = await promisify(execFile)(candidate, ['service', action])
+      const url = stdout.trim()
+      if (url.length > 0) return url
+    } catch {
+      // A missing executable or unavailable service leaves other installed
+      // locations eligible for discovery.
+    }
   }
+  return undefined
+}
+
+async function defaultServiceStatus(): Promise<string | undefined> {
+  return serviceCommand('status')
+}
+
+async function defaultServiceStart(): Promise<string | undefined> {
+  return serviceCommand('start')
 }
 
 /** Production system boundary: real environment, home, service files, and CLI discovery. */
@@ -144,6 +164,7 @@ export function defaultSystem(env: Record<string, string | undefined> = process.
     readServiceFile: defaultReadServiceFile,
     readPasswordFile: defaultReadPasswordFile,
     serviceStatus: defaultServiceStatus,
+    serviceStart: defaultServiceStart,
   }
 }
 
@@ -160,10 +181,9 @@ function noServerError(): LlmError {
 }
 
 /**
- * Resolve one request's server transport: explicit URL first, then the
- * environment override, then the CLI's registration file (which needs no
- * binary on PATH, so GUI processes discover the server too), then live
- * `opencode service status` discovery. The password comes from the
+ * Resolve one request's server transport: explicit URL, environment override,
+ * registration file, live CLI status, then optional CLI start. The file lets
+ * GUI processes discover a running service without the CLI on PATH. The password comes from the
  * registration file with the password file and the server-password
  * environment variable as fallbacks; when none exists the requests go out
  * unauthenticated, which only an unsecured server (`OPENCODE_SERVER_PASSWORD`
@@ -180,9 +200,16 @@ export async function resolveServerTransport(
     throw new LlmError('llm-opencode: serverURL must be non-empty', 'INVALID_REQUEST')
   }
   const envURL = system.env[SERVER_URL_ENV]
-  const service = await system.readServiceFile(config.serviceFile ?? defaultServiceFile(system.env, system.home))
-  const discovered = serverURL ?? (envURL !== undefined && envURL.length > 0 ? envURL : undefined)
+  const servicePath = config.serviceFile ?? defaultServiceFile(system.env, system.home)
+  let service = await system.readServiceFile(servicePath)
+  let discovered = serverURL ?? (envURL !== undefined && envURL.length > 0 ? envURL : undefined)
     ?? service?.url ?? await system.serviceStatus()
+  if (discovered === undefined) {
+    if (config.autoStart !== false) {
+      discovered = await system.serviceStart()
+      if (discovered !== undefined) service = await system.readServiceFile(servicePath)
+    }
+  }
   if (discovered === undefined) throw noServerError()
   const url = discovered.endsWith('/') ? discovered.slice(0, -1) : discovered
 
