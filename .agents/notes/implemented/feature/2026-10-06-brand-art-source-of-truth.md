@@ -8,11 +8,18 @@ The harness web UI rendered the previous dark matrix-face mark while the product
 
 ## Decision
 
-`apps/anton-bridge/macos/AppIcon.png` is the brand-art source of truth. The three web assets are mechanical derivations of it, regenerated at their existing declared dimensions whenever the art changes (this change):
+`apps/anton-bridge/macos/AppIcon.png` is the brand-art source of truth for the
+dock icon and the header wordmark. The header tile is a mechanical derivation
+of it, regenerated at its existing declared dimension whenever the art changes:
 
-- `apps/web/public/anton-mark.png` — 540×540 (favicon, wordmark tile, rail mark, hero logo)
-- `apps/web/public/anton-mark@2x.png` — 1080×1080
-- `apps/web/public/anton.png` — 1024×1024 (PWA manifest `sizes: 1024x1024`)
+- `apps/web/public/anton-header.png` — 540×540 (header wordmark tile in the
+  app frame brand row and the sidebar brand button, via `BrandWordmark`)
+
+Deliberately NOT derived: the in-chat mark stays pinned to the previous art —
+`apps/web/public/anton-mark.png` (540×540; favicon, rail mark, hero logo via
+`FishLogo`), `apps/web/public/anton-mark@2x.png` (1080×1080), and
+`apps/web/public/anton.png` (1024×1024 PWA manifest icon) are not regenerated
+on art changes.
 
 No component changed: `BrandWordmark` and `FishLogo` already render `/anton-mark.png`, and the favicon link and manifest already point at these paths. The rounded-chip treatment (26–28% corner radius) stays; the new art's cream plate reads as the chip in both themes.
 

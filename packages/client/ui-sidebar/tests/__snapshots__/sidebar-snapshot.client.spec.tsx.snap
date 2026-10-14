@@ -115,7 +115,7 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
           <img
             alt=""
             height="48"
-            src="/anton-mark.png"
+            src="/anton-header.png"
             style="display: block; border-radius: 12.48px;"
             width="48"
           />
@@ -231,7 +231,7 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
           <img
             alt=""
             height="48"
-            src="/anton-mark.png"
+            src="/anton-header.png"
             style="display: block; border-radius: 12.48px;"
             width="48"
           />

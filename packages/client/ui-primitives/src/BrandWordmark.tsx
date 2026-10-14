@@ -1,6 +1,8 @@
-// Anton brand wordmark: the Anton mark tile (apps/web/public/anton-mark.png)
-// plus the "Anton" name. Ink rides currentColor; the tile is rounded so the
-// mark's plate reads as an app-icon chip in both themes.
+// Anton brand wordmark: the header mark tile (apps/web/public/anton-header.png,
+// derived from apps/anton-bridge/macos/AppIcon.png) plus the "Anton" name.
+// Ink rides currentColor; the tile is rounded so the mark's plate reads as an
+// app-icon chip in both themes. The in-chat mark (FishLogo, /anton-mark.png)
+// is a separate asset and stays on the previous art.
 
 import type { IconProps } from './icons/props.ts'
 
@@ -20,7 +22,7 @@ export function BrandWordmark({ size = 24, className }: IconProps) {
       style={{ display: 'inline-flex', alignItems: 'center', gap: size * 0.42 }}
     >
       <img
-        src="/anton-mark.png"
+        src="/anton-header.png"
         width={mark}
         height={mark}
         alt=""
