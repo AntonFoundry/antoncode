@@ -7,7 +7,7 @@
 import { useId } from 'react'
 import type { ReactNode, RefObject } from 'react'
 import {
-  FishLogo, IconChevronDownOutline14, IconFolderClose16, IconFolderOpen16,
+  FishLogoAnimated, IconChevronDownOutline14, IconFolderClose16, IconFolderOpen16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { workspaceTitleOf } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConversationSlotProps } from '../contract/slots.ts'
@@ -119,7 +119,7 @@ export function HeroShell({ t, children }: HeroShellProps) {
         <div className={css.headline}>
           {/* The Anton mark leads the hero as a large tile above the title. */}
           <span className={css.fishHitbox}>
-            <FishLogo size={288} className={css.fish} />
+            <FishLogoAnimated size={288} {...(css.fish === undefined ? {} : { className: css.fish })} />
           </span>
           <span className={css.titleRow}>
             <span className={css.headlineText}>{t('hero.headline')}</span>
