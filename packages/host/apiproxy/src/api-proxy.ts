@@ -325,6 +325,16 @@ function modelCatalogSettings(ctx: Context): ModelCatalogSettings {
     ?? { disabledProviders: [] }
 }
 
+/** Keep explicit free-tier labels ahead of paid/unsuffixed entries in the two mixed gateways. */
+function freeFirstModels<T extends { id: string; name: string }>(provider: string, models: T[]): T[] {
+  if (provider !== 'opencode-free' && provider !== 'openrouter-free') return models
+  const isFree = (model: T): boolean => /(?:^|[-_: ])free(?:$|[-_: ])/i.test(`${model.id} ${model.name}`)
+  return models
+    .map((model, index) => ({ model, index }))
+    .sort((left, right) => Number(!isFree(left.model)) - Number(!isFree(right.model)) || left.index - right.index)
+    .map(entry => entry.model)
+}
+
 /**
  * Build the provider/model catalog over every registered route. Shared by the
  * session-scoped `session.models` and host-scoped `llm.models`. Catalog
@@ -372,7 +382,7 @@ async function buildModelCatalog(ctx: Context): Promise<{
         const group: ModelProviderGroup = {
           id: provider.id,
           name: provider.name,
-          models: entries,
+          models: freeFirstModels(provider.id, entries),
         }
         return { kind: 'group' as const, group }
       } catch (error: unknown) {

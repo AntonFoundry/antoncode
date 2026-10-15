@@ -428,12 +428,8 @@ describe('catalog routes with per-model configuration', () => {
     expect(info.context).toEqual({ contextWindow: 4096 })
     expect(info.name).toBe(catalogModel.name)
     expect(info.defaultMaxTokens).toBeUndefined()
-    // An explicit list extends the catalog rather than replacing it: the
-    // configured id serves, and the catalog-only models remain.
-    expect((await ctx.llm.listModels('deepseek')).map(model => model.id)).toEqual([
-      catalogModel.id,
-      ...getBuiltinModels('deepseek').map(model => model.id).filter(id => id !== catalogModel.id),
-    ])
+    // An explicit list is strict curation: only the configured id serves.
+    expect((await ctx.llm.listModels('deepseek')).map(model => model.id)).toEqual([catalogModel.id])
   })
 
   it('materializes a request default only from a configured output cap', async () => {
@@ -508,10 +504,10 @@ describe('catalog routes with per-model configuration', () => {
     const explicit = resolveProfiles({
       zai: { models: [{ id: 'chosen', contextWindow: 4096, maxTokens: 512 }] },
     }, new Map([['zai', [{ id: 'ignored-live-model' }]]]))
-    // Strict curation: without liveModelUnion the explicit list replaces the
-    // catalog and the live listing stays out entirely.
+    // Strict curation: without liveModelUnion the explicit list replaces both
+    // the catalog and the live listing.
     expect(explicit.get('zai')?.piProvider.getModels().map(model => model.id))
-      .toEqual(['chosen', ...zaiCatalog])
+      .toEqual(['chosen'])
 
     const unioned = resolveProfiles({
       zai: { models: [{ id: 'chosen', contextWindow: 4096, maxTokens: 512 }], liveModelUnion: true },

@@ -460,13 +460,10 @@ export interface RouteCatalog {
 }
 
 /**
- * Materialize one route's catalog by merging the installed catalog defaults
- * under the configured entries. An explicit `models` list or a discovered live
- * listing extends the served catalog instead of replacing it — its entries win
- * by id, and catalog-only models keep serving — so a partial list cannot hide
- * the route's other models. A route with neither serves the installed catalog
- * unchanged, which is what keeps an existing
- * `providers: { deepseek: { apiKeyEnv: … } }` profile working untouched.
+ * Materialize one route's catalog from the configured entries, live entries,
+ * and installed defaults. An explicit `models` list is strict curation unless
+ * a live listing is also supplied for union mode; a route without an explicit
+ * list keeps the installed catalog. Configured and live entries win by id.
  * @param request - the route-level catalog facts.
  * @returns the materialized models and the explicitly configured request caps.
  */
@@ -525,11 +522,11 @@ export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
     if (declared.has(entry.id)) invalid(provider, `lists model "${entry.id}" more than once`)
     declared.add(entry.id)
   }
-  // The union tail: live-discovered models the explicit list did not name,
-  // then installed-catalog models neither source named, keeping their own
-  // fields. One running declared set deduplicates across all three sources —
-  // a discovered id the installed catalog also ships keeps the discovered
-  // entry. A catalog entry an override names still lands here, so
+  // Live-discovered models the explicit list did not name, then (when the
+  // route is not strict) installed-catalog models neither source named,
+  // keeping their own fields. One running declared set deduplicates across
+  // every source; a discovered id the installed catalog also ships keeps the
+  // discovered entry. A catalog entry an override names still lands here, so
   // `modelOverrides` never lands nowhere.
   const entries: PiAiModelProfile[] = [...configuredEntries]
   for (const model of liveEntries) {
@@ -537,10 +534,13 @@ export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
     declared.add(model.id)
     entries.push(model)
   }
-  for (const model of defaults.values()) {
-    if (declared.has(model.id)) continue
-    declared.add(model.id)
-    entries.push({ id: model.id, ...overrides[model.id] })
+  const includeInstalledCatalog = configured.length === 0 || request.liveModels !== undefined
+  if (includeInstalledCatalog) {
+    for (const model of defaults.values()) {
+      if (declared.has(model.id)) continue
+      declared.add(model.id)
+      entries.push({ id: model.id, ...overrides[model.id] })
+    }
   }
   if (entries.length === 0) {
     invalid(provider, 'resolves no models; the installed catalog does not describe this route, so its models'

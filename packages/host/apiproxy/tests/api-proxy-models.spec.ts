@@ -555,4 +555,27 @@ describe('Web session model selection', () => {
       .toEqual(['broken', 'metadata-broken', 'duplicate'])
     await ctx.fiber.dispose()
   })
+
+  it('places free-marked OpenCode and OpenRouter entries before paid entries', async () => {
+    const { ctx, sessionId } = await harness()
+    ctx.llm.registerAdapter(['opencode-free'], new CatalogAdapter('OpenCode Free', [
+      { provider: 'opencode-free', id: 'paid-model', name: 'Paid Model' },
+      { provider: 'opencode-free', id: 'small-free', name: 'Small Free' },
+    ]))
+    ctx.llm.registerAdapter(['openrouter-free'], new CatalogAdapter('OpenRouter Free', [
+      { provider: 'openrouter-free', id: 'paid-model', name: 'Paid Model' },
+      { provider: 'openrouter-free', id: 'vendor/model:free', name: 'Vendor Model' },
+    ]))
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+
+    const groups = expectValue(await api.sessions.models(request({ sessionId }))).groups
+    expect(groups.find(group => group.id === 'opencode-free')?.models.map(model => model.id))
+      .toEqual(['small-free', 'paid-model'])
+    expect(groups.find(group => group.id === 'openrouter-free')?.models.map(model => model.id))
+      .toEqual(['vendor/model:free', 'paid-model'])
+    await ctx.fiber.dispose()
+  })
 })

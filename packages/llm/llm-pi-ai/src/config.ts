@@ -84,8 +84,7 @@ export interface PiAiProviderProfile {
    * Union the startup live listing into an explicitly configured `models`
    * list: configured entries win by id, discovered ids join, and the
    * installed catalog keeps serving anything neither named. Without it, a
-   * `models` list is strict curation — the route serves exactly that list
-   * plus the installed catalog, and no live fetch runs for it.
+   * `models` list is strict curation and no live fetch runs for it.
    */
   liveModelUnion?: boolean
   /** Name shown by configuration surfaces; defaults to the route key. */
@@ -98,11 +97,7 @@ export interface PiAiProviderProfile {
   api?: string
   /** Endpoint for this route's models; defaults to the installed catalog's endpoint. */
   baseURL?: string
-  /**
-   * This route's model catalog. Omission serves the installed catalog for the
-   * route unchanged; an explicit list replaces it, each entry defaulting its
-   * unset fields from the installed model of the same id.
-   */
+  /** This route's model catalog; an explicit list is strict curation. */
   models?: PiAiModelProfile[]
   /**
    * Installed-catalog customizations by model id: each entry reshapes that
