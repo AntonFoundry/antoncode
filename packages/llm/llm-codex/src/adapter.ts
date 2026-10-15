@@ -22,6 +22,7 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
@@ -226,8 +227,17 @@ function cacheEffort(value: unknown): CodexReasoningEffort | undefined {
  * unreadable cache falls back to the configured catalog.
  */
 async function discoverModels(codexHome: string): Promise<CodexCatalogModel[]> {
-  try {
-    const parsed: ModelsCacheShape = JSON.parse(await readFile(join(codexHome, 'models_cache.json'), 'utf8'))
+  const cachePaths = [...new Set([
+    join(codexHome, 'models_cache.json'),
+    join(homedir(), '.codex', 'models_cache.json'),
+  ])]
+  for (const cachePath of cachePaths) {
+    let parsed: ModelsCacheShape
+    try {
+      parsed = JSON.parse(await readFile(cachePath, 'utf8')) as ModelsCacheShape
+    } catch {
+      continue
+    }
     const models: CodexCatalogModel[] = []
     for (const entry of parsed.models ?? []) {
       if (entry.supported_in_api === false) continue
@@ -256,10 +266,9 @@ async function discoverModels(codexHome: string): Promise<CodexCatalogModel[]> {
         ...Object.keys(descriptions).length === 0 ? {} : { reasoningEffortDescriptions: descriptions },
       })
     }
-    return models
-  } catch {
-    return []
+    if (models.length > 0) return models
   }
+  return []
 }
 
 /** Keep configured model facts, enriching missing reasoning data from Codex's live catalog cache. */
