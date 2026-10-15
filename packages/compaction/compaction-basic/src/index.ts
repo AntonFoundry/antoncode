@@ -11,8 +11,8 @@ import type { CompactionResult, CompactionTrigger } from '@deepseek-ai/dsh-compa
 import type { TokenMeter } from '@deepseek-ai/dsh-token-meter'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { CONTEXT_WINDOW_EXCEEDED_CODE, assertNever } from '@deepseek-ai/dsh-llm'
-import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
-import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
+import type { LlmCallConfig, Message } from '@deepseek-ai/dsh-llm'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
 // Type-only: makes the optional sibling service available to `ctx.get()`.
 import type {} from '@deepseek-ai/dsh-compaction-tool-result-pruner'
@@ -144,24 +144,21 @@ export class BasicCompactionEngine extends CompactionEngine {
       )
     }
 
-    ctx.on('agent/pre-step', async (
-      { agent, signal },
-      next,
-    ): Promise<PreStepDecision> => {
-      if (!signal.aborted) {
-        try {
-          const result = await this.compactIfNeeded(agent, 'pressure', signal)
-          if (result !== null) logResult(result, 'step pressure')
-        } catch (error: unknown) {
-          if (error instanceof TargetPressureConfigError) {
-            if (this.warnedPressureConfigTargets.has(error.targetKey)) return next()
-            this.warnedPressureConfigTargets.add(error.targetKey)
-          }
-          const message = error instanceof Error ? error.message : String(error)
-          ctx.logger.warn(`step compaction failed: ${message}; continuing the turn`)
+    ctx.on('agent/request-prepared', async (
+      { agent, provider, model, contextWindow, messages, signal },
+    ) => {
+      if (signal.aborted) return
+      try {
+        const result = await this.compactIfNeeded(agent, 'pressure', signal, { provider, model, ...(contextWindow === undefined ? {} : { contextWindow }), messages })
+        if (result !== null) logResult(result, 'request pressure')
+      } catch (error: unknown) {
+        if (error instanceof TargetPressureConfigError) {
+          if (this.warnedPressureConfigTargets.has(error.targetKey)) return
+          this.warnedPressureConfigTargets.add(error.targetKey)
         }
+        const message = error instanceof Error ? error.message : String(error)
+        ctx.logger.warn(`request compaction failed: ${message}; continuing the turn`)
       }
-      return next()
     })
 
     ctx.on('agent/status', ({ agent, status }) => {
@@ -246,25 +243,41 @@ export class BasicCompactionEngine extends CompactionEngine {
   }
 
   /**
-   * Compact for replayed step-boundary pressure or one provider-confirmed context
-   * overflow. Both triggers price the latest durable routed request envelope;
+   * Compact for the prepared request's pressure or one provider-confirmed context
+   * overflow. Pressure includes messages not yet durable on the current surface;
    * overflow bypasses the normal threshold and retained-tail policy so it can
    * force one useful balanced reduction.
-   * @param agent - agent whose latest durable routed request is measured.
-   * @param trigger - normal step-boundary pressure or context-overflow recovery.
+   * @param agent - agent whose durable surface and pending request are measured.
+   * @param trigger - prepared-request pressure or context-overflow recovery.
    * @param signal - live turn cancellation signal forwarded to summarization.
+   * @param preparedTarget - exact route, capacity, and pending messages for request-stage pressure.
    * @returns the latest summary compaction result, or `null` when no summary ran.
    */
   override async compactIfNeeded(
     agent: Agent,
     trigger: CompactionTrigger,
     signal: AbortSignal,
+    preparedTarget?: Pick<LlmCallConfig, 'provider' | 'model'> & {
+      contextWindow?: number
+      messages?: readonly Message[]
+    },
   ): Promise<CompactionResult | null> {
-    const target = routedTarget(agent.session)
+    const target = preparedTarget ?? routedTarget(agent.session)
     if (target === undefined) return null
     const policy = resolveTargetPolicy(this.config, target)
     const meter = this.ctx.tokenMeter
     let measurement = meter.measure(agent.session)
+    if (trigger === 'pressure' && preparedTarget?.messages !== undefined) {
+      const durableMessages = agent.session.deriveMessages()
+      const incomingMessages = preparedTarget.messages.slice(durableMessages.length)
+      const incomingTokens = incomingMessages
+        .reduce((sum, message) => sum + meter.estimateMessage(message), 0)
+      measurement = {
+        ...measurement,
+        totalTokens: measurement.totalTokens + incomingTokens,
+        surfaceTokens: measurement.surfaceTokens + incomingTokens,
+      }
+    }
     switch (trigger) {
       case 'context-overflow':
         break
@@ -290,17 +303,18 @@ export class BasicCompactionEngine extends CompactionEngine {
       return this.compactRegion(range.start, range.end, agent, signal)
     }
 
-    const context = (await this.ctx.llm.resolveModelInfo(target.provider, target.model, signal)).context
+    const contextWindow = preparedTarget?.contextWindow
+      ?? (await this.ctx.llm.resolveModelInfo(target.provider, target.model, signal)).context?.contextWindow
     assertNoActiveCompaction(agent.session, 'automatic pressure compaction')
     const targetKey = `${target.provider}/${target.model}`
-    if (context === undefined) {
+    if (contextWindow === undefined) {
       throw new TargetPressureConfigError(
         targetKey,
         `compaction-basic: no context capacity for ${targetKey}; `
         + 'configure contextWindow on that adapter model',
       )
     }
-    const spec = resolveCompactSpec(policy, context.contextWindow)
+    const spec = resolveCompactSpec(policy, contextWindow)
     if (measurement.totalTokens < spec.thresholdTokens) return null
 
     // Once pressure qualifies, land the model-free pass before choosing a

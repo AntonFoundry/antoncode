@@ -163,6 +163,12 @@ interface AgentOptions {
   model?: string
   /** Maximum output tokens for each conversation-model request. */
   maxTokens?: number
+  /**
+   * Reasoning effort this agent's model requests run at. The selected
+   * provider validates the id per model; an unserviceable effort fails at
+   * request time. Absent means the route's own default.
+   */
+  reasoningEffort?: string
 }
 ```
 
@@ -232,7 +238,7 @@ type PreStepDecision =
 type RequestErrorAction = { kind: 'retry' } | undefined
 ```
 
-`agent/pre-step` is the only serial listener chain before request derivation. `agent/turn-stopping` runs when a turn has no tool or steering continuation, before one final steering drain.
+`agent/pre-step` is the serial admission chain before a step opens. After `agent/request` resolves the final route and the loop logs the canonical header and adapter capacity, serial `agent/request-prepared` runs before request messages are derived and frozen. Listeners may compact the durable surface; the loop re-derives messages after they settle. `agent/turn-stopping` runs when a turn has no tool or steering continuation, before one final steering drain.
 
 `agent/session-start` carries a `SessionStartSource` (why the session lifecycle began; a bridge keys its SessionStart matcher on it):
 
