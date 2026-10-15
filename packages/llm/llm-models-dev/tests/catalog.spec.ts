@@ -202,6 +202,13 @@ describe('llm-models-dev mount freshness', () => {
   })
 })
 
+describe('declared route credentials', () => {
+  it('defaults OpenRouter Free to its saved free-tier credential reference', () => {
+    expect(LlmModelsDev.resolveAdapterOptions({}, 'openrouter-free').apiKeyEnv)
+      .toBe('OPENROUTER_FREE_API_KEY')
+  })
+})
+
 describe('free-model reasoning metadata', () => {
   it('declares efforts only for reasoning models, with the gateway default', async () => {
     const home = await mkdtemp(join(tmpdir(), 'dsh-models-dev-reasoning-'))

@@ -91,7 +91,7 @@ const DECLARED: readonly DeclaredRoute[] = [
     displayName: 'OpenRouter Free',
     catalogProvider: 'openrouter',
     baseURL: 'https://openrouter.ai/api/v1',
-    apiKeyEnv: 'OPENROUTER_API_KEY',
+    apiKeyEnv: 'OPENROUTER_FREE_API_KEY',
     anonymous: false,
   },
 ]
