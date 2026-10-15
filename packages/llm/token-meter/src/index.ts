@@ -174,6 +174,11 @@ export class TokenMeter extends Service {
     while (state.consumedEvents < session.events.length) {
       // oxlint-disable-next-line typescript/no-non-null-assertion -- contiguous session seqs index the durable log
       const event = session.events[state.consumedEvents]!
+      // The constructor marker ends a seeded lifecycle even when measurement
+      // consumed only a prefix before construction appended it.
+      if (event.type === 'session/end-seed' && event.seq <= session.firstLiveSeq) {
+        state.stepStart = undefined
+      }
       this._foldEvent(session, state, event)
       state.consumedEvents += 1
     }
@@ -193,6 +198,11 @@ export class TokenMeter extends Service {
     switch (event.type) {
       case 'request/header':
         nextHeader = canonicalHeader(event.data.header)
+        break
+      case 'session/end-seed':
+        // Only markers inside the consumed constructor seed separate replay
+        // lifecycles. A live marker-less event stream is not a resume boundary.
+        if (event.seq < session.firstLiveSeq) nextStepStart = undefined
         break
       case 'step/start':
         if (state.stepStart !== undefined) {
