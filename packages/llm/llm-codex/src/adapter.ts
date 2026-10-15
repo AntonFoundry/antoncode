@@ -126,8 +126,8 @@ function modelReasoningEfforts(configured: CodexCatalogModel | undefined) {
       name: id === 'off' ? 'Off'
         : id === 'none' ? 'None'
           : id === 'xhigh' ? 'Extra high'
-            : id === 'max' ? 'Max'
-              : id === 'ultra' ? 'More reasoning…'
+            : id === 'max' ? 'More reasoning…'
+              : id === 'ultra' ? 'Ultra'
                 : id.slice(0, 1).toUpperCase() + id.slice(1),
       ...configured.reasoningEffortDescriptions?.[id] === undefined
         ? {}
