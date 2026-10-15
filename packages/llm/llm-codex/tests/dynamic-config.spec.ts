@@ -29,12 +29,12 @@ async function home(): Promise<string> {
 }
 
 /** A Codex home holding a usable login: a non-JWT access token never expires locally. */
-async function codexHome(dir: string): Promise<string> {
+async function codexHome(dir: string, refreshToken = ''): Promise<string> {
   const homeDir = join(dir, 'codex-home')
   await mkdir(homeDir, { recursive: true })
   await writeFile(
     join(homeDir, 'auth.json'),
-    JSON.stringify({ tokens: { access_token: 'fake-access', refresh_token: '', account_id: 'acct-1' } }),
+    JSON.stringify({ tokens: { access_token: 'fake-access', refresh_token: refreshToken, account_id: 'acct-1' } }),
     { mode: 0o600 },
   )
   return homeDir
@@ -56,6 +56,7 @@ interface RecordedRequest {
   path: string
   authorization: string | undefined
   accountId: string | undefined
+  originator: string | undefined
 }
 
 /** A minimal complete Responses-protocol text generation. */
@@ -67,7 +68,7 @@ const HELLO_EVENTS = [
 ]
 
 /** Codex backend stand-in: records each request, answers the one scripted generation. */
-async function codexServer(): Promise<{ url: string; requests: RecordedRequest[] }> {
+async function codexServer(options: { expireFirst?: boolean } = {}): Promise<{ url: string; requests: RecordedRequest[] }> {
   const requests: RecordedRequest[] = []
   const server = createServer((request: IncomingMessage, response: ServerResponse) => {
     let body = ''
@@ -76,8 +77,14 @@ async function codexServer(): Promise<{ url: string; requests: RecordedRequest[]
       requests.push({
         path: request.url ?? '',
         authorization: request.headers.authorization,
-        accountId: request.headers['openai-account-id'] as string | undefined,
+        accountId: request.headers['chatgpt-account-id'] as string | undefined,
+        originator: request.headers.originator as string | undefined,
       })
+      if (options.expireFirst === true && requests.length === 1) {
+        response.writeHead(401, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({ error: { code: 'token_expired', message: 'expired' } }))
+        return
+      }
       response.writeHead(200, { 'content-type': 'text/event-stream' })
       for (const event of HELLO_EVENTS) response.write(`data: ${event}\n\n`)
       response.end()
@@ -170,10 +177,32 @@ describe('request-level dynamic profile', () => {
     expect(server.requests[0]?.path).toBe('/responses')
     expect(server.requests[0]?.authorization).toBe('Bearer fake-access')
     expect(server.requests[0]?.accountId).toBe('acct-1')
+    expect(server.requests[0]?.originator).toBe('opencode')
 
     // The exact mutation the Models page's delete flow performs.
     await ctx.settings.mutate(NS, [{ op: 'unset', path: ['providers', 'codex'] }])
     expect(ctx.llm.listProviders()).toEqual([])
+  })
+
+  it('refreshes once when the Codex backend rejects the cached token as expired', async () => {
+    const dir = await home()
+    const codexDir = await codexHome(dir, 'refresh-1')
+    const server = await codexServer({ expireFirst: true })
+    const realFetch = globalThis.fetch
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).startsWith('https://auth.openai.com/')) {
+        return new Response(JSON.stringify({ access_token: 'fresh-access', refresh_token: 'refresh-2' }), { status: 200 })
+      }
+      return realFetch(input, init)
+    })
+    const ctx = await boot(dir, {})
+
+    await ctx.settings.update(NS, { providers: { codex: { codexHome: codexDir, baseURL: server.url } } })
+    expect(await streamText(ctx, 'gpt-5.5')).toBe('hello')
+    expect(server.requests.map(request => request.authorization)).toEqual([
+      'Bearer fake-access',
+      'Bearer fresh-access',
+    ])
   })
 
   it('re-registers the route in place when a captured fact changes', async () => {

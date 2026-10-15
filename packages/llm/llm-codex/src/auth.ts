@@ -24,6 +24,8 @@ export interface CodexTokenSet {
   access_token: string
   refresh_token: string
   account_id?: string
+  /** OpenAI's regional processing claim, when the access token carries one. */
+  residency?: string
 }
 
 export interface CodexAuthSnapshot {
@@ -154,11 +156,22 @@ export async function refreshToken(refreshToken: string): Promise<CodexTokenSet>
   if (typeof access !== 'string' || access.length === 0) {
     throw new LlmError('OpenAI Codex token refresh returned no access token', 'AUTH')
   }
+  const residency = residencyOf(access)
   return {
     access_token: access,
     refresh_token: typeof nextRefresh === 'string' ? nextRefresh : refreshToken,
     ...typeof payload.account_id === 'string' ? { account_id: payload.account_id } : {},
+    ...residency === undefined ? {} : { residency },
   }
+}
+
+/** Read the Codex residency routing claim without exposing token contents. */
+function residencyOf(accessToken: string): string | undefined {
+  const payload = decodeJwtSegment(accessToken.split('.')[1] ?? '')
+  const value = payload?.['https://api.openai.com/auth']
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const residency = (value as Record<string, unknown>).chatgpt_compute_residency
+  return typeof residency === 'string' && residency !== 'no_constraint' ? residency : undefined
 }
 
 /**
@@ -189,15 +202,18 @@ async function writeAuth(codexHome: string, tokens: CodexTokenSet): Promise<void
  * Resolve a usable access token for one request: read the shared Codex auth,
  * refreshing (and writing back) when the stored access token is expired.
  * @param codexHome - Codex home directory.
- * @returns the access token plus the account id for the `OpenAI-Account-Id` header.
+ * @param forceRefresh - refresh even when the local token expiry is usable.
+ * @returns the access token plus the account id for the `ChatGPT-Account-Id` header.
  */
-export async function resolveAccessToken(codexHome: string): Promise<CodexTokenSet> {
+export async function resolveAccessToken(codexHome: string, forceRefresh = false): Promise<CodexTokenSet> {
   const snapshot = await readAuth(codexHome)
-  if (tokenUsable(snapshot.access_token)) {
+  if (!forceRefresh && tokenUsable(snapshot.access_token)) {
+    const residency = residencyOf(snapshot.access_token)
     return {
       access_token: snapshot.access_token,
       refresh_token: snapshot.refresh_token,
       ...snapshot.account_id === undefined ? {} : { account_id: snapshot.account_id },
+      ...residency === undefined ? {} : { residency },
     }
   }
   if (snapshot.refresh_token.length === 0) {
@@ -212,5 +228,6 @@ export async function resolveAccessToken(codexHome: string): Promise<CodexTokenS
     access_token: refreshed.access_token,
     refresh_token: refreshed.refresh_token,
     ...snapshot.account_id !== undefined ? { account_id: snapshot.account_id } : {},
+    ...refreshed.residency === undefined ? {} : { residency: refreshed.residency },
   }
 }

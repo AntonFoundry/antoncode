@@ -307,11 +307,15 @@ export function apply(ctx: Context, config: Config): void {
   // Fail loud at load on anything the schema could not express, dormant or not.
   assertServiceable(config)
 
-  const resolveAuth = async (connection: CodexConnectionOptions): Promise<{ accessToken: string; accountId?: string }> => {
-    const session = await resolveAccessToken(connection.codexHome)
+  const resolveAuth = async (
+    connection: CodexConnectionOptions,
+    forceRefresh = false,
+  ): Promise<{ accessToken: string; accountId?: string; residency?: string }> => {
+    const session = await resolveAccessToken(connection.codexHome, forceRefresh)
     return {
       accessToken: session.access_token,
       ...session.account_id === undefined ? {} : { accountId: session.account_id },
+      ...session.residency === undefined ? {} : { residency: session.residency },
     }
   }
 

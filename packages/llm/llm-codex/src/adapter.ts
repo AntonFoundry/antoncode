@@ -94,7 +94,10 @@ export interface CodexAdapterOptions {
    * id), refreshing and persisting the shared login as needed. Throws
    * `LlmError` `MISSING_CREDENTIAL`/`AUTH` when no usable login exists.
    */
-  resolveAuth: (connection: CodexConnectionOptions) => Promise<{ accessToken: string; accountId?: string }>
+  resolveAuth: (
+    connection: CodexConnectionOptions,
+    forceRefresh?: boolean,
+  ) => Promise<{ accessToken: string; accountId?: string; residency?: string }>
   /** Resolve the harness-home anonymous id used as the Codex ephemeral user id. */
   resolveUserId: () => AnonymousUserId
   /** Durable attachment resolver used to replay image-bearing history. */
@@ -384,6 +387,7 @@ export class CodexAdapter extends LlmAdapter {
       modelInfo,
       auth.accessToken,
       auth.accountId,
+      auth.residency,
       userId,
       () => { watchdog.pulse() },
     )[Symbol.asyncIterator]()
@@ -429,8 +433,10 @@ export class CodexAdapter extends LlmAdapter {
     modelInfo: CodexCatalogModel | undefined,
     accessToken: string,
     accountId: string | undefined,
+    residency: string | undefined,
     userId: AnonymousUserId,
     onComment: () => void,
+    retriedAfterAuthRefresh = false,
   ): AsyncIterable<StreamChunk> {
     const body = await serializeRequest(
       options,
@@ -442,8 +448,12 @@ export class CodexAdapter extends LlmAdapter {
       'authorization': `Bearer ${accessToken}`,
       'content-type': 'application/json',
       'accept': 'text/event-stream',
+      'originator': 'opencode',
       'openai-ephemeral-user-id': String(userId),
       ...attributionHeaders(),
+      ...options.sessionId !== undefined
+        ? { 'session-id': String(options.sessionId) }
+        : {},
       'x-deepseek-harness-user-id': String(userId),
       ...options.sessionId !== undefined
         ? { 'x-deepseek-harness-session-id': String(options.sessionId) }
@@ -452,7 +462,8 @@ export class CodexAdapter extends LlmAdapter {
         ? { 'x-deepseek-harness-compact': '1' }
         : {},
     }
-    if (accountId !== undefined && accountId.length > 0) headers['chatgpt-account-id'] = accountId
+    if (accountId !== undefined && accountId.length > 0) headers['ChatGPT-Account-Id'] = accountId
+    if (residency !== undefined) headers['x-openai-internal-codex-residency'] = residency
 
     let response: Response
     try {
@@ -482,6 +493,22 @@ export class CodexAdapter extends LlmAdapter {
       } catch {
         // Only swallow error-body parsing: the HTTP status still identifies the
         // failure, so malformed gateway JSON must not mask it.
+      }
+      if (!retriedAfterAuthRefresh && response.status === 401 && providerError?.error?.code === 'token_expired') {
+        const refreshed = await this.config.resolveAuth(connection, true)
+        yield* this.request(
+          options,
+          signal,
+          connection,
+          modelInfo,
+          refreshed.accessToken,
+          refreshed.accountId,
+          refreshed.residency,
+          userId,
+          onComment,
+          true,
+        )
+        return
       }
       const delay = providerRetryAfterMs(response.headers.get('retry-after'))
       const id = requestId(response.headers)

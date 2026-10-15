@@ -53,9 +53,10 @@
  * - **Models**: the built-in list is supplemented by the models discovered
  *   from the Codex CLI's account-specific model cache.
  * - **Auth**: reads `~/.codex/auth.json` per request; sends the OAuth bearer
- *   token and `ChatGPT-Account-ID`, refreshes the token when near expiry, and
- *   writes the refreshed session back so the CLI/editor stay in sync. A
- *   missing login fails with a pointer to `codex login` — never a key prompt.
+ *   token and `ChatGPT-Account-ID`, refreshes the token when near expiry or
+ *   when the backend returns `token_expired`, and writes the refreshed session
+ *   back so the CLI/editor stay in sync. A missing login fails with a pointer
+ *   to `codex login` — never a key prompt.
  * - **Text-only route**: image blocks are rejected with `UNSUPPORTED_CONTENT`.
  * - **Errors** normalize to harness `LlmError` codes: `AUTH`, `RATE_LIMIT`,
  *   `QUOTA_EXCEEDED`, `CONTEXT_WINDOW_EXCEEDED`, `INVALID_REQUEST`, `SERVER`,

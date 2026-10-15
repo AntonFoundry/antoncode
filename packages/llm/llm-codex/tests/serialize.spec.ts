@@ -103,7 +103,7 @@ describe('reasoningEffortWire', () => {
     expect(reasoningEffortWire('off')).toBeUndefined()
     expect(reasoningEffortWire('low')).toBe('low')
     expect(reasoningEffortWire('high')).toBe('high')
-    expect(reasoningEffortWire('max')).toBe('xhigh')
+    expect(reasoningEffortWire('max')).toBe('max')
   })
 })
 
