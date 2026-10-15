@@ -206,6 +206,8 @@ interface ModelsCacheEntry {
   supported_in_api?: unknown
   default_reasoning_level?: unknown
   supported_reasoning_levels?: { effort?: unknown; description?: unknown }[]
+  /** Codex CLI's combined request/response capacity for this model. */
+  context_window?: unknown
 }
 
 interface ModelsCacheShape { models?: ModelsCacheEntry[] }
@@ -264,6 +266,9 @@ async function discoverModels(codexHome: string): Promise<CodexCatalogModel[]> {
       models.push({
         id,
         ...typeof entry.display_name === 'string' ? { name: entry.display_name } : {},
+        ...(typeof entry.context_window === 'number' && Number.isSafeInteger(entry.context_window) && entry.context_window > 0
+          ? { contextWindow: entry.context_window }
+          : {}),
         ...(reasoningEfforts === undefined ? {} : { reasoningEfforts: [...new Set(reasoningEfforts)] }),
         ...(defaultReasoningEffort === undefined ? {} : { defaultReasoningEffort }),
         ...Object.keys(descriptions).length === 0 ? {} : { reasoningEffortDescriptions: descriptions },
@@ -274,7 +279,7 @@ async function discoverModels(codexHome: string): Promise<CodexCatalogModel[]> {
   return []
 }
 
-/** Keep configured model facts, enriching missing reasoning data from Codex's live catalog cache. */
+/** Keep configured model facts, enriching missing capacity and reasoning data from Codex's live catalog cache. */
 function mergeModels(catalog: readonly CodexCatalogModel[], discovered: readonly CodexCatalogModel[]): CodexCatalogModel[] {
   const known = new Set(catalog.map(model => model.id))
   const byId = new Map(discovered.map(model => [model.id, model]))
@@ -285,6 +290,9 @@ function mergeModels(catalog: readonly CodexCatalogModel[], discovered: readonly
       return {
         ...live,
         ...model,
+        ...(model.contextWindow === undefined && live.contextWindow !== undefined
+          ? { contextWindow: live.contextWindow }
+          : {}),
         ...(model.reasoningEfforts === undefined && live.reasoningEfforts !== undefined
           ? { reasoningEfforts: live.reasoningEfforts }
           : {}),

@@ -199,6 +199,21 @@ describe('request-level dynamic profile', () => {
     expect(ctx.llm.listProviders()).toEqual([])
   })
 
+  it('uses discovered context capacity for cached models without a configured override', async () => {
+    const dir = await home()
+    const codexDir = await codexHome(dir)
+    await writeFile(join(codexDir, 'models_cache.json'), JSON.stringify({
+      models: [{ slug: 'private-small-model', display_name: 'Private Small', context_window: 128_000 }],
+    }))
+    const ctx = await boot(dir, {})
+
+    await ctx.settings.update(NS, { providers: { codex: { codexHome: codexDir } } })
+    await expect(ctx.llm.resolveModelInfo('codex', 'private-small-model')).resolves.toMatchObject({
+      id: 'private-small-model',
+      context: { contextWindow: 128_000 },
+    })
+  })
+
   it('refreshes once when the Codex backend rejects the cached token as expired', async () => {
     const dir = await home()
     const codexDir = await codexHome(dir, 'refresh-1')

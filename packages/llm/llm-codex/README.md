@@ -50,8 +50,10 @@
  *   its default. When cache metadata is unavailable, the adapter keeps its
  *   legacy fallback effort set. Explicit `models[].reasoningEfforts` values
  *   override the cached list for a configured model.
- * - **Models**: the built-in list is supplemented by the models discovered
- *   from the Codex CLI's account-specific model cache.
+ * - **Models and capacity**: the built-in list is supplemented by the models
+ *   discovered from the Codex CLI's account-specific model cache. A cached
+ *   `context_window` supplies discovered model capacity unless a configured
+ *   exact model entry provides its own `contextWindow`.
  * - **Auth**: reads `~/.codex/auth.json` per request; sends the OAuth bearer
  *   token and `ChatGPT-Account-ID`, refreshes the token when near expiry or
  *   when the backend returns `token_expired`, and writes the refreshed session
