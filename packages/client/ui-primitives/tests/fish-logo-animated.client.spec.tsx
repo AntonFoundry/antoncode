@@ -1,10 +1,11 @@
 /** @vitest-environment jsdom */
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { drawFrame, FishLogoAnimated } from '../src/FishLogoAnimated.tsx'
+import { chooseRandomEffect, drawFrame, FishLogoAnimated } from '../src/FishLogoAnimated.tsx'
 import type { AnimationClock, FishLogoAnimatedAdapters } from '../src/FishLogoAnimated.tsx'
 import type { DrawSurface, ImageDomAdapter, PixelSource } from '../src/ttfx/image-grid.ts'
 import type { GridCell } from '../src/ttfx/grid.ts'
+import { EFFECT_IDS } from '../src/ttfx/effects.ts'
 
 /** A deterministic clock that stores RAF callbacks until a test flushes. */
 function makeClock() {
@@ -65,7 +66,7 @@ function makeAdapters(clock: AnimationClock): FishLogoAnimatedAdapters {
     [{ sym: 'A', fg: [35, 90, 150], bg: [40, 100, 160] }, { sym: '▀', fg: [45, 110, 170], bg: [50, 120, 180] }],
     [{ sym: '▄', fg: [55, 130, 190], bg: null }, { sym: '█', fg: null, bg: [60, 140, 200] }],
   ]
-  return { imageDom: dom, clock, sampleGrid }
+  return { imageDom: dom, clock, sampleGrid, random: () => 0 }
 }
 
 afterEach(() => {
@@ -83,6 +84,30 @@ function mockCanvas(): void {
 }
 
 describe('FishLogoAnimated', () => {
+  it('chooses opening effects across the full curated roster', () => {
+    expect(chooseRandomEffect(() => 0)).toBe(EFFECT_IDS[0])
+    expect(chooseRandomEffect(() => 0.5)).toBe(EFFECT_IDS[Math.floor(EFFECT_IDS.length / 2)])
+    expect(chooseRandomEffect(() => 1)).toBe(EFFECT_IDS.at(-1))
+  })
+
+  it('chooses once per mount and keeps the effect through rerenders', async () => {
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false }) })
+    mockCanvas()
+    const fake = makeClock()
+    const adapters = makeAdapters(fake.clock)
+    const random = vi.fn(() => 0.5)
+    adapters.random = random
+    const view = render(<FishLogoAnimated adapters={adapters} />)
+    await act(async () => { await Promise.resolve() })
+    expect(random).toHaveBeenCalledTimes(1)
+    view.rerender(<FishLogoAnimated size={290} adapters={adapters} />)
+    expect(random).toHaveBeenCalledTimes(1)
+    view.unmount()
+    render(<FishLogoAnimated adapters={adapters} />)
+    await act(async () => { await Promise.resolve() })
+    expect(random).toHaveBeenCalledTimes(2)
+  })
+
   it('draws each supported character cell and leaves transparent halves alone', () => {
     const clearRect = vi.fn()
     const fillRect = vi.fn()

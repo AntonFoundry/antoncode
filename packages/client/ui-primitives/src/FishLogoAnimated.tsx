@@ -7,7 +7,7 @@
  * @module ui-primitives/FishLogoAnimated
  */
 
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type { CSSProperties, PointerEvent } from 'react'
 import { browserImageDom, loadPixelSource, sampleImageGrid } from './ttfx/image-grid.ts'
 import type { ImageDomAdapter, PixelSource } from './ttfx/image-grid.ts'
@@ -22,13 +22,20 @@ const MARK_URL = '/anton-mark.png'
 const GRID_COLS = 96
 const CORNER_RATIO = 0.28
 const FPS_INTERVAL = 1000 / 24
-const ENTRANCE: EffectId = 'decrypt'
+/**
+ * Choose one opening effect from the curated roster.
+ * @param random - source of a value in the interval [0, 1].
+ * @returns selected effect.
+ */
+export function chooseRandomEffect(random: () => number): EffectId {
+  const index = Math.min(EFFECT_IDS.length - 1, Math.floor(random() * EFFECT_IDS.length))
+  return EFFECT_IDS[index] as EffectId
+}
 
 /** True when the browser explicitly requests reduced motion. */
 function prefersReducedMotion(): boolean {
   return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
-const HOVER_CYCLE: readonly EffectId[] = EFFECT_IDS.filter(id => id !== ENTRANCE)
 
 /** Injectable RAF/clock surface for deterministic component tests. */
 export interface AnimationClock {
@@ -48,6 +55,8 @@ export interface FishLogoAnimatedAdapters {
   clock?: AnimationClock
   /** Optional sampler override for deterministic tests. */
   sampleGrid?: (source: PixelSource, cols: number, cornerRadiusRatio: number) => GridCell[][]
+  /** Optional RNG override for deterministic tests. */
+  random?: () => number
 }
 
 /** Animated fish logo props. */
@@ -56,7 +65,7 @@ export interface FishLogoAnimatedProps {
   size?: number
   /** Extra class for layout placement. */
   className?: string
-  /** Auto-run the decrypt effect on mount (default true). */
+  /** Auto-run a randomly selected effect on mount (default true). */
   entrance?: boolean
   /** Disable pointer-enter effect cycle (default false). */
   disableHover?: boolean
@@ -136,6 +145,11 @@ export function FishLogoAnimated({
   const clock = resolvedAdapters.clock ?? browserClock
   const dom = resolvedAdapters.imageDom
   const sampler = resolvedAdapters.sampleGrid ?? defaultSampler
+  const random = resolvedAdapters.random ?? Math.random
+  const openingEffectRef = useRef<EffectId | null>(null)
+  if (openingEffectRef.current === null) openingEffectRef.current = chooseRandomEffect(random)
+  const openingEffect = openingEffectRef.current
+  const hoverCycle = useMemo(() => EFFECT_IDS.filter(effect => effect !== openingEffect), [openingEffect])
 
   const play = useCallback((effect: EffectId) => {
     const source = sourceRef.current
@@ -175,7 +189,7 @@ export function FishLogoAnimated({
     void loadPixelSource(MARK_URL, dom).then((source) => {
       if (disposed) return
       sourceRef.current = source
-      if (entrance) play(ENTRANCE)
+      if (entrance) play(openingEffect)
     }).catch(() => {
       // Image decoding can fail when the static asset is unavailable; the img remains visible.
     })
@@ -184,15 +198,15 @@ export function FishLogoAnimated({
       activeRef.current = false
       if (rafRef.current !== null) clock.cancel(rafRef.current)
     }
-  }, [clock, dom, entrance, play])
+  }, [clock, dom, entrance, openingEffect, play])
 
   const onPointerEnter = useCallback((_event: PointerEvent<HTMLSpanElement>) => {
     if (disableHover || prefersReducedMotion()) return
     if (activeRef.current) return
-    const effect = HOVER_CYCLE[nextEffectRef.current % HOVER_CYCLE.length] as EffectId
+    const effect = hoverCycle[nextEffectRef.current % hoverCycle.length] as EffectId
     nextEffectRef.current += 1
     play(effect)
-  }, [disableHover, play])
+  }, [disableHover, hoverCycle, play])
 
   const style: CSSProperties = { width: size, height: size, display: 'block', borderRadius: size * 0.28 }
   const overlayStyle: CSSProperties = {

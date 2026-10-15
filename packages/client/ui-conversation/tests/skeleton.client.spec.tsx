@@ -99,6 +99,8 @@ function mount(
     composerBlock?: { reason: string }
     /** Mutable view ledger used by registration-order regressions. */
     viewTabs?: ViewTab[]
+    /** Session identity used by the hero's mount key. */
+    sessionId?: SessionId
   } = {},
 ) {
   const root = sid('root')
@@ -234,8 +236,8 @@ function mount(
       )
       : (opts?.fallback ?? null)
   )) as ConversationRootProps['renderSlotChain']
-  const props: ConversationRootProps = {
-    sessionId: SID,
+  let props: ConversationRootProps = {
+    sessionId: options.sessionId ?? SID,
     SessionProvider: ({ children }) => children(SID),
     useSession,
     useSessions: bindSnapshotSelector(sessions),
@@ -253,11 +255,24 @@ function mount(
   return {
     view, chat, sink, retargetWorkspace, session, slotCalls, seatOwners, open,
     pickerOwner: () => pickerOwner,
-    rerender: () => { view.rerender(<ConversationRoot {...props} />) },
+    rerender: (nextSessionId?: SessionId) => {
+      if (nextSessionId !== undefined) props = { ...props, sessionId: nextSessionId }
+      view.rerender(<ConversationRoot {...props} />)
+    },
   }
 }
 
 describe('Hero chrome', () => {
+  it('remounts the animation for a new session but preserves it across same-session renders', () => {
+    const b = mount(conversationSnapshot({ composerPhase: 'blank', blank: true }))
+    const firstImage = b.view.container.querySelector('img[src="/anton-mark.png"]')
+    expect(firstImage).not.toBeNull()
+    b.rerender()
+    expect(b.view.container.querySelector('img[src="/anton-mark.png"]')).toBe(firstImage)
+    b.rerender(sid('s2'))
+    expect(b.view.container.querySelector('img[src="/anton-mark.png"]')).not.toBe(firstImage)
+  })
+
   it('renders the English preview badge through the hero locale seat', () => {
     const view = render(<HeroShell t={makeTranslate(en, commonEn)} />)
     expect(view.getByText('Into the Unknown')).toBeTruthy()
