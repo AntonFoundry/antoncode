@@ -1,6 +1,7 @@
 /** Local provider artwork shared by model selection and provider settings. */
 const logos: Readonly<Record<string, string>> = {
   openai: 'openai.svg',
+  codex: 'openai.svg',
   'openai-codex': 'openai.svg',
   antigravity: 'antigravity.png',
   'google-antigravity': 'antigravity.png',

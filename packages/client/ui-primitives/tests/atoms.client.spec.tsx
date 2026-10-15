@@ -1,10 +1,17 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Button, ConnectionBanner, Input, Menu, Modal, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, ConnectionBanner, Input, Menu, Modal, Pill, ProviderLogo } from '@deepseek-ai/dsh-client-ui-primitives'
 import { POINTER_GRACE_MS } from '../src/pointer-grace.ts'
 
 afterEach(cleanup)
+
+describe('ProviderLogo', () => {
+  it('uses the OpenAI asset for the Codex provider route', () => {
+    const { container } = render(<ProviderLogo provider="codex" name="OpenAI Codex" />)
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('/assets/providers/openai.svg')
+  })
+})
 
 describe('Button', () => {
   it('renders children, icon, and forwards clicks', () => {
