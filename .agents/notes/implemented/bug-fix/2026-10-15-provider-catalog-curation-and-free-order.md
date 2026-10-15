@@ -8,7 +8,7 @@ The NVIDIA route exposed a live model listing containing retired, non-chat, and 
 
 ## Decision
 
-The NVIDIA settings route uses a strict, static catalog with live discovery and union disabled. The catalog retains only the seven identifiers that returned a successful chat-completion response during the 2026-10-15 probe; models that timed out or returned transient server/resource errors are not presented until they are verified separately. Route-level explicit model lists now replace the installed catalog unless live union is requested, matching the documented strict-curation behavior.
+The NVIDIA settings route uses a strict, static catalog with live discovery and union disabled. The catalog retains the identifiers that returned successful chat-completion responses during the 2026-10-15 probes, plus an explicit intermittent allowlist for GLM 5.3, GLM 5.3 Flash, and Nemotron Nano Omni because NVIDIA capacity can make those known-working endpoints time out. Retired 404/410 ids remain excluded. Route-level explicit model lists now replace the installed catalog unless live union is requested, matching the documented strict-curation behavior.
 
 The host model catalog stably orders entries whose id or display name carries a free marker before paid or unsuffixed entries for `opencode-free` and `openrouter-free` only. Entries retain their original order within each tier, and all other providers retain their existing order.
 
@@ -22,4 +22,4 @@ The host model catalog stably orders entries whose id or display name carries a 
 
 ## Consequences
 
-The NVIDIA picker is smaller and may omit a model until a later probe verifies it. The seven retained entries remain available through the saved NVIDIA credential and carry verified context/output metadata where the endpoint supplied it. OpenCode and OpenRouter can add paid entries without letting them precede explicitly free entries, while unchanged providers are unaffected.
+The NVIDIA picker excludes retired and non-chat ids but still exposes intermittent models when the provider has capacity. The retained entries use the saved NVIDIA credential and carry verified context/output metadata where the endpoint supplied it. OpenCode and OpenRouter can add paid entries without letting them precede explicitly free entries, while unchanged providers are unaffected.
