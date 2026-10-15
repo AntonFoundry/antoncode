@@ -69,6 +69,37 @@ class StepwiseToolAdapter extends LlmAdapter {
   }
 }
 
+/** Resolve model capacity by provider and record the request actually dispatched. */
+class RoutedCapacityAdapter extends LlmAdapter {
+  readonly conversationRequests: GenerateOptions[] = []
+  readonly summaryRequests: GenerateOptions[] = []
+
+  override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+    return Promise.resolve({
+      provider,
+      id: model,
+      name: model,
+      context: { contextWindow: provider === 'large' ? 10_000 : 1_000 },
+    })
+  }
+
+  async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    const trailing = options.messages.at(-1)?.content
+      .map(block => (block.type === 'text' ? block.text : ''))
+      .join('') ?? ''
+    if (trailing.includes('acting as a compaction engine')) {
+      this.summaryRequests.push(options)
+      yield { type: 'block-start', index: 0, blockType: 'text' }
+      yield { type: 'block-end', index: 0, block: { type: 'text', text: 'ROUTED CHECKPOINT' } }
+    } else {
+      this.conversationRequests.push(options)
+      yield { type: 'block-start', index: 0, blockType: 'text' }
+      yield { type: 'block-end', index: 0, block: { type: 'text', text: 'route accepted' } }
+    }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  }
+}
+
 /** First conversation request overflows, then the rebuilt retry succeeds. */
 class OverflowRecoveryAdapter extends LlmAdapter {
   readonly conversationRequests: GenerateOptions[] = []
@@ -241,6 +272,81 @@ describe('CBR-001: a real-loop checkpoint is a valid boundary on both sides', ()
         type: 'turn/end',
         data: { reason: { kind: 'completed' } },
       })
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('uses the final smaller model capacity after request routing and before dispatch', async () => {
+    const ctx = new Context()
+    const adapter = new RoutedCapacityAdapter()
+    await mountAgentLoopTestDependencies(ctx)
+    await mountInvariants(ctx)
+    await ctx.plugin(AgentLoop, { agents: [] })
+    await ctx.plugin(TokenMeter)
+    ctx.llm.registerAdapter(['large', 'small'], adapter)
+    await ctx.plugin(BasicCompactionEngine, {
+      thresholdRatio: 0.5,
+      retainTokens: 50,
+      compactionRetries: 1,
+    })
+    try {
+      const session = Session.create(SessionId('request-route-capacity'))
+      session.append('turn/start', { turn: 1 })
+      session.append('request/header', {
+        header: { config: { provider: 'large', model: 'shared-id' } },
+        reason: 'initial',
+      })
+      session.append('request/context', { provider: 'large', model: 'shared-id', contextWindow: 10_000 })
+      for (const [index, text] of ['OLD ROUTED HISTORY '.repeat(35), 'PRESERVED RECENT HISTORY '.repeat(2)].entries()) {
+        session.append('user/message', createUserMessage({
+          content: [{ type: 'text', text }],
+          source: { kind: 'user' },
+        }), { surfaceOp: 'append' })
+        session.append('step/start', { turn: 1, step: index + 1 })
+        session.append('assistant/message', {
+          turn: 1,
+          step: index + 1,
+          message: createMessage({
+            role: 'assistant',
+            content: [{ type: 'text', text: `routed answer ${index} ${'response detail '.repeat(index === 0 ? 35 : 2)}` }],
+            source: { kind: 'model', provider: 'large', model: 'shared-id' },
+          }),
+        }, { surfaceOp: 'append' })
+        session.append('step/end', { turn: 1, step: index + 1 })
+      }
+      session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+      const { agent } = await ctx.agentLoop.createAgent(ctx, {
+        sessionId: session.id,
+        seed: [...session.events],
+        agentOptions: { provider: 'large', model: 'shared-id' },
+      })
+      const before = ctx.tokenMeter.measure(agent.session).totalTokens
+      expect(before).toBeLessThan(5_000)
+      let requestHeaderAtPreStep: string | undefined
+      ctx.on('agent/pre-step', async ({ agent: subject }, next) => {
+        if (subject === agent) requestHeaderAtPreStep = agent.session.requestHeader()?.config.provider
+        return next()
+      })
+      ctx.on('agent/request', async ({ agent: subject }, next) => subject === agent
+        ? { ...await next(), provider: 'small', model: 'shared-id' }
+        : next())
+
+      agent.followup(createUserMessage({
+        content: [{ type: 'text', text: 'Switch to the smaller routed model.' }],
+        source: { kind: 'user' },
+      }))
+      await agent.whenIdle()
+
+      expect(requestHeaderAtPreStep).toBe('large')
+      expect(agent.session.requestContext()).toMatchObject({ provider: 'small', model: 'shared-id', contextWindow: 1_000 })
+      expect(adapter.summaryRequests).toHaveLength(2)
+      expect(adapter.conversationRequests).toHaveLength(1)
+      const dispatched = JSON.stringify(adapter.conversationRequests[0]!.messages)
+      expect(dispatched).toContain('ROUTED CHECKPOINT')
+      expect(dispatched).toContain('PRESERVED RECENT HISTORY')
+      expect(dispatched).not.toContain('OLD ROUTED HISTORY')
+      expect(agent.session.events.some(event => event.type === 'compaction/summary')).toBe(true)
     } finally {
       await ctx.fiber.dispose()
     }
