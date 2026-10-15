@@ -67,7 +67,7 @@ describe('ui-worktree browser plugin', () => {
     expect(b.chipEntry()?.inject).toBeTypeOf('function')
     // The dictionaries landed under the worktree namespace (the default
     // locale in tests is English).
-    expect(b.ctx.locale.bind('worktree')('mode.new')).toBe('New worktree')
+    expect(b.ctx.locale.bind('worktree')('mode.new')).toBe('New worktree (next session)')
   })
 
   it('inject faces delegate to the workspaces domain', async () => {
