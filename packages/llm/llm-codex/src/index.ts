@@ -67,9 +67,33 @@ export const PUBLIC_BASE_URL = 'https://chatgpt.com/backend-api/codex'
  * picker always reflects what the account actually supports.
  */
 const DEFAULT_MODELS: CodexCatalogModel[] = [
-  { id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', contextWindow: 400_000, maxTokens: 32_768 },
-  { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra', contextWindow: 400_000, maxTokens: 32_768 },
-  { id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna', contextWindow: 400_000, maxTokens: 32_768 },
+  // Keep the shipped catalog useful before the Codex CLI cache is available.
+  // The cache still enriches discovered models, but a configured entry must
+  // never lose the effort picker merely because discovery was stale or late.
+  {
+    id: 'gpt-5.6-sol',
+    name: 'GPT-5.6 Sol',
+    contextWindow: 400_000,
+    maxTokens: 32_768,
+    reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+    defaultReasoningEffort: 'low',
+  },
+  {
+    id: 'gpt-5.6-terra',
+    name: 'GPT-5.6 Terra',
+    contextWindow: 400_000,
+    maxTokens: 32_768,
+    reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+    defaultReasoningEffort: 'medium',
+  },
+  {
+    id: 'gpt-5.6-luna',
+    name: 'GPT-5.6 Luna',
+    contextWindow: 400_000,
+    maxTokens: 32_768,
+    reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+    defaultReasoningEffort: 'medium',
+  },
   { id: 'gpt-5.5', name: 'GPT-5.5', contextWindow: 400_000, maxTokens: 32_768 },
   { id: 'gpt-5.4', name: 'GPT-5.4', contextWindow: 400_000, maxTokens: 32_768 },
   { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini', contextWindow: 400_000, maxTokens: 32_768 },

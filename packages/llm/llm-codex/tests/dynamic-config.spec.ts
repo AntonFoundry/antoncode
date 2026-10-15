@@ -173,6 +173,21 @@ describe('request-level dynamic profile', () => {
     // disk at registration time reports as configured.
     expect(ctx.llm.listProviders()).toEqual([{ id: 'codex', name: 'OpenAI Codex', authConfigured: true }])
 
+    // The shipped GPT-5.6 catalog keeps model-specific effort levels visible
+    // even before the Codex CLI has populated models_cache.json.
+    await expect(ctx.llm.resolveModelInfo('codex', 'gpt-5.6-luna')).resolves.toMatchObject({
+      reasoning: {
+        efforts: [
+          { id: 'low' },
+          { id: 'medium' },
+          { id: 'high' },
+          { id: 'xhigh' },
+          { id: 'max' },
+        ],
+        defaultEffort: 'medium',
+      },
+    })
+
     expect(await streamText(ctx, 'gpt-5.5')).toBe('hello')
     expect(server.requests[0]?.path).toBe('/responses')
     expect(server.requests[0]?.authorization).toBe('Bearer fake-access')
