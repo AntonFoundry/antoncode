@@ -2,8 +2,8 @@
  * Serialize harness messages into Codex Responses input items. User text
  * becomes `message` items, assistant text `output_text` parts, assistant tool
  * calls `function_call` items, and tool results `function_call_output` items.
- * Reasoning effort maps the harness off/low/high/max vocabulary onto the
- * Codex wire levels (OpenAI has no "max"; `max` maps to `high`). Core image
+ * Reasoning effort maps the harness's model-declared Codex levels onto the
+ * Responses wire values; `off` omits the effort field. Core image
  * blocks are resolved from the Harness attachment store as Responses
  * `input_image` content, keeping a selected Codex model usable after an
  * image-bearing turn.
@@ -18,30 +18,38 @@ import type { WireContentPart, WireInputItem, WireRequest, WireTool } from './ty
 
 /** Adapter-level request defaults (from plugin config). */
 export interface RequestDefaults {
-  reasoningEffort?: 'off' | 'low' | 'high' | 'max' | undefined
+  reasoningEffort?: 'off' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | undefined
 }
 
 /**
- * Map the harness effort vocabulary onto the Codex wire levels. `off` and
- * `undefined` both put nothing on the wire; the Codex backend's levels are
- * low/medium/high/xhigh, so the harness `low`→`low`, `high`→`high`, and
- * `max`→`xhigh` (the backend's maximum).
+ * Preserve Codex model effort values on the Responses wire. `off` and
+ * `undefined` both omit the effort field.
  * @param effort - the harness effort, or undefined to apply the default.
  * @returns the wire effort, or undefined when no field should be sent.
  */
 export function reasoningEffortWire(
-  effort: GenerateOptions['reasoningEffort'] | 'off' | 'low' | 'high' | 'max' | undefined,
-): 'low' | 'medium' | 'high' | 'xhigh' | undefined {
+  effort: GenerateOptions['reasoningEffort'] | 'off' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | undefined,
+): 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | undefined {
   switch (effort) {
     case undefined:
     case 'off':
       return undefined
+    case 'none':
+      return 'none'
+    case 'minimal':
+      return 'minimal'
     case 'low':
       return 'low'
+    case 'medium':
+      return 'medium'
     case 'high':
       return 'high'
-    case 'max':
+    case 'xhigh':
       return 'xhigh'
+    case 'max':
+      return 'max'
+    case 'ultra':
+      return 'ultra'
     default:
       throw new LlmError(`OpenAI Codex does not support reasoning effort "${effort}"`, 'UNSUPPORTED_REASONING_EFFORT')
   }

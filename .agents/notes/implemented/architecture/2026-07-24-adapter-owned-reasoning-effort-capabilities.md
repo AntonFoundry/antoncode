@@ -16,6 +16,8 @@ Reasoning strength was adapter configuration only, so a conversation could not d
 
 The native DeepSeek adapter advertises `off`, `low`, `high`, and `max` when deployment policy permits thinking, and defaults to the configured effort or `high`. Its adapter-owned `off` maps to `thinking.type: disabled` with no `reasoning_effort`; `low`, `high`, and `max` enable thinking and carry their same-named official wire effort. A `thinking: disabled` deployment publishes only `off` and rejects attempts to enable thinking before provider I/O. The pi-ai adapter publishes each exact model's `getSupportedThinkingLevels()` result unchanged, including `off`, preserves an absent profile default as a provider default, and leaves provider wire-value mapping inside pi-ai. Its common stream options represent `off` by omitting `reasoning`, as required by pi-ai's own API.
 
+The Codex adapter consumes each model's exact choices and default from the account-specific Codex model catalog cache (`models_cache.json`), rather than maintaining model-specific lists in code. GPT-6 Luna currently exposes `low`, `medium`, `high`, `xhigh`, and `max`, defaults to `medium`, and sends the selected value unchanged to the Responses API. Models with no catalog effort metadata retain the adapter's legacy fallback set.
+
 ## Alternatives considered
 
 **Define the pi-ai `ThinkingLevel` union in core.** Rejected because current pi-ai canonical names are an adapter implementation detail; a future provider can expose a different identifier without requiring a core release.

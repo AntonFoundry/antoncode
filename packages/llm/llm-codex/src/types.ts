@@ -22,7 +22,7 @@ export interface WireRequest {
   tools?: WireTool[]
   tool_choice?: 'auto' | 'none' | 'required'
   /** Reasoning effort + summary for gpt-5.x-codex class models. */
-  reasoning?: { effort?: 'low' | 'medium' | 'high' | 'xhigh'; summary?: 'auto' | 'concise' | 'detailed' | 'none' }
+  reasoning?: { effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'; summary?: 'auto' | 'concise' | 'detailed' | 'none' }
 }
 
 /** One entry of the request `input` array. */

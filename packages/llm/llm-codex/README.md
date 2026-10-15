@@ -25,7 +25,6 @@
  * # $DSH_HOME/settings.yaml — written by the web Models page
  * llm-codex:
  *   codexHome: ~/.codex        # optional; defaults to $CODEX_HOME or ~/.codex
- *   reasoningEffort: high      # off | low | high | max (max maps to the wire's high)
  *   maxTokens: 32768
  *   models:
  *     - id: gpt-5.2-codex
@@ -44,12 +43,19 @@
  *
  * - **Protocol**: OpenAI Responses API (`POST {base}/responses`, SSE stream),
  *   `causal: true`, reasoning effort + auto summary, `max_output_tokens`.
- * - **Models**: gpt-5.3-codex, gpt-5.2-codex, gpt-5.1-codex, gpt-5.1-codex-mini,
- *   gpt-5.1-codex-max, o3, o4-mini.
- * - **Auth**: reads `~/.codex/auth.json` per request; refreshes the access
- *   token (OAuth `refresh_token` grant) when near expiry and writes the
- *   refreshed session back so the CLI/editor stay in sync. A missing login
- *   fails with a pointer to `codex login` — never a key prompt.
+ * - **Reasoning effort** comes from the Codex model catalog cached at
+ *   `~/.codex/models_cache.json`. The Harness reads each model's
+ *   `supported_reasoning_levels` and `default_reasoning_level`; GPT-6 Luna's
+ *   current catalog offers low, medium, high, xhigh, and max, with medium as
+ *   its default. When cache metadata is unavailable, the adapter keeps its
+ *   legacy fallback effort set. Explicit `models[].reasoningEfforts` values
+ *   override the cached list for a configured model.
+ * - **Models**: the built-in list is supplemented by the models discovered
+ *   from the Codex CLI's account-specific model cache.
+ * - **Auth**: reads `~/.codex/auth.json` per request; sends the OAuth bearer
+ *   token and `ChatGPT-Account-ID`, refreshes the token when near expiry, and
+ *   writes the refreshed session back so the CLI/editor stay in sync. A
+ *   missing login fails with a pointer to `codex login` — never a key prompt.
  * - **Text-only route**: image blocks are rejected with `UNSUPPORTED_CONTENT`.
  * - **Errors** normalize to harness `LlmError` codes: `AUTH`, `RATE_LIMIT`,
  *   `QUOTA_EXCEEDED`, `CONTEXT_WINDOW_EXCEEDED`, `INVALID_REQUEST`, `SERVER`,

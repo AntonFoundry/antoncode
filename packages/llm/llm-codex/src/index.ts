@@ -33,7 +33,7 @@ import {
   DEFAULT_STREAM_IDLE_TIMEOUT_MS,
   CodexAdapter,
 } from './adapter.ts'
-import type { CodexCatalogModel, CodexConnectionOptions } from './adapter.ts'
+import type { CodexCatalogModel, CodexConnectionOptions, CodexReasoningEffort } from './adapter.ts'
 import { codexHomeOf, resolveAccessToken } from './auth.ts'
 
 export {
@@ -42,7 +42,7 @@ export {
   DEFAULT_STREAM_IDLE_TIMEOUT_MS,
   CodexAdapter,
 } from './adapter.ts'
-export type { CodexAdapterOptions, CodexCatalogModel, CodexConnectionOptions } from './adapter.ts'
+export type { CodexAdapterOptions, CodexCatalogModel, CodexConnectionOptions, CodexReasoningEffort } from './adapter.ts'
 export { CODEX_CLIENT_ID, codexHomeOf, readAuth, refreshToken, resolveAccessToken } from './auth.ts'
 export type { CodexTokenSet, CodexAuthSnapshot } from './auth.ts'
 export type { RequestDefaults } from './serialize.ts'
@@ -105,8 +105,8 @@ export interface Config {
   codexHome?: string
   /** Codex backend base URL; defaults to the public chatgpt.com Codex endpoint. */
   baseURL?: string
-  /** Default reasoning effort (`off`/`low`/`high`/`max`; `max` maps to the wire's highest level). */
-  reasoningEffort?: 'off' | 'low' | 'high' | 'max'
+  /** Default reasoning effort; an absent setting uses the selected model's default. */
+  reasoningEffort?: CodexReasoningEffort
   /** Default per-request output cap; a model's own cap and explicit request values win. */
   maxTokens?: number
   /** Positive context capacity used when the selected model has no exact value (default 400,000). */
@@ -132,6 +132,9 @@ const catalogModel: z<CodexCatalogModel> = z.object({
   description: z.string(),
   contextWindow: z.number().step(1).min(1),
   maxTokens: z.number().step(1).min(1),
+  reasoningEfforts: z.array(z.union(['off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])),
+  defaultReasoningEffort: z.union(['off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']),
+  reasoningEffortDescriptions: z.dict(z.string()),
 })
 
 const profile: z<CodexProviderProfile> = z.object({
@@ -143,7 +146,7 @@ const profile: z<CodexProviderProfile> = z.object({
 export const Config: z<Config> = z.object({
   codexHome: z.string(),
   baseURL: z.string(),
-  reasoningEffort: z.union(['off', 'low', 'high', 'max']),
+  reasoningEffort: z.union(['off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']),
   maxTokens: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(DEFAULT_MAX_TOKENS),
   defaultContextWindow: z.number().step(1).min(1).default(DEFAULT_CONTEXT_WINDOW),
   models: z.array(catalogModel).default(DEFAULT_MODELS),
@@ -172,6 +175,10 @@ function resolveModels(models: readonly CodexCatalogModel[] | undefined): CodexC
         `llm-codex: catalog model "${model.id}" maxTokens must be a positive integer`,
       )
     }
+    if (model.reasoningEfforts !== undefined
+      && new Set(model.reasoningEfforts).size !== model.reasoningEfforts.length) {
+      throw new Error(`llm-codex: catalog model "${model.id}" repeats a reasoning effort`)
+    }
     if (seen.has(model.id)) throw new Error(`llm-codex: duplicate catalog model "${model.id}"`)
     seen.add(model.id)
     return {
@@ -180,6 +187,11 @@ function resolveModels(models: readonly CodexCatalogModel[] | undefined): CodexC
       ...model.description === undefined ? {} : { description: model.description },
       ...model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow },
       ...model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens },
+      ...model.reasoningEfforts === undefined ? {} : { reasoningEfforts: [...model.reasoningEfforts] },
+      ...model.defaultReasoningEffort === undefined ? {} : { defaultReasoningEffort: model.defaultReasoningEffort },
+      ...model.reasoningEffortDescriptions === undefined
+        ? {}
+        : { reasoningEffortDescriptions: { ...model.reasoningEffortDescriptions } },
     }
   })
 }
@@ -325,7 +337,7 @@ export function apply(ctx: Context, config: Config): void {
     // The registry captures the route set, the route's providerInfo label and
     // login-readiness answer (read from codexHome), and the retry policy at
     // registration, so a change to any must re-register.
-    const facts = routes.map(provider => {
+    const facts = routes.map((provider) => {
       const connection = options(provider)
       return {
         provider,

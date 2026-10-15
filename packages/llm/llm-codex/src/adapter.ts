@@ -44,7 +44,16 @@ export interface CodexCatalogModel {
   contextWindow?: number
   /** Per-request output cap for this model; omission falls back to the profile's {@link CodexConnectionOptions.maxTokens}. */
   maxTokens?: number
+  /** Exact reasoning choices accepted by this model; omission uses the adapter's legacy Codex set. */
+  reasoningEfforts?: CodexReasoningEffort[]
+  /** API-advertised default reasoning choice. */
+  defaultReasoningEffort?: CodexReasoningEffort
+  /** API-advertised descriptions keyed by exact reasoning choice. */
+  reasoningEffortDescriptions?: Partial<Record<CodexReasoningEffort, string>>
 }
+
+/** Codex effort ids exposed by model metadata and the Responses request. */
+export type CodexReasoningEffort = 'off' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
 
 /**
  * Validated connection facts for one operation. The plugin's
@@ -101,12 +110,46 @@ const STREAM_IDLE_TIMEOUT_CODE = 'LLM_STREAM_IDLE_TIMEOUT'
 const OFF_REASONING_EFFORT = ReasoningEffortId('off')
 const LOW_REASONING_EFFORT = ReasoningEffortId('low')
 const HIGH_REASONING_EFFORT = ReasoningEffortId('high')
-/** OpenAI has no "max" harness effort; the wire serializer maps it to `high`. */
+/** Legacy fallback for catalogs that predate per-model effort metadata. */
 const REASONING_EFFORTS = [
   { id: OFF_REASONING_EFFORT, name: 'Off' },
   { id: LOW_REASONING_EFFORT, name: 'Low' },
   { id: HIGH_REASONING_EFFORT, name: 'High' },
 ] as const
+
+/** Return the catalog's exact effort set or the adapter's legacy Codex set. */
+function modelReasoningEfforts(configured: CodexCatalogModel | undefined) {
+  if (configured?.reasoningEfforts !== undefined) {
+    return configured.reasoningEfforts.map(id => ({
+      id: ReasoningEffortId(id),
+      name: id === 'off' ? 'Off'
+        : id === 'none' ? 'None'
+          : id === 'xhigh' ? 'Extra high'
+            : id === 'max' ? 'Max'
+              : id === 'ultra' ? 'More reasoning…'
+                : id.slice(0, 1).toUpperCase() + id.slice(1),
+      ...configured.reasoningEffortDescriptions?.[id] === undefined
+        ? {}
+        : { description: configured.reasoningEffortDescriptions[id] },
+    }))
+  }
+  return REASONING_EFFORTS
+}
+
+/** Do not send a configured default that this model's picker cannot select. */
+function requestDefaults(
+  connection: CodexConnectionOptions,
+  model: string,
+  configured: CodexCatalogModel | undefined,
+): RequestDefaults {
+  const effort = connection.defaults.reasoningEffort
+  if (effort !== undefined
+    && !modelReasoningEfforts(configured ?? connection.models.find(entry => entry.id === model))
+      .some(choice => choice.id === ReasoningEffortId(effort))) {
+    return { ...connection.defaults, reasoningEffort: undefined }
+  }
+  return connection.defaults
+}
 
 function modelInfo(provider: string, model: CodexCatalogModel): LlmModelInfo {
   return {
@@ -153,8 +196,28 @@ export function httpErrorCode(status: number, error?: WireError): string {
   return `HTTP_${status}`
 }
 
-interface ModelsCacheShape {
-  models?: { slug?: unknown; display_name?: unknown; supported_in_api?: unknown }[]
+interface ModelsCacheEntry {
+  slug?: unknown
+  display_name?: unknown
+  supported_in_api?: unknown
+  default_reasoning_level?: unknown
+  supported_reasoning_levels?: { effort?: unknown; description?: unknown }[]
+}
+
+interface ModelsCacheShape { models?: ModelsCacheEntry[] }
+
+function isReasoningLevel(value: unknown): value is { effort?: unknown; description?: unknown } {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+const CODEX_REASONING_EFFORTS = new Set<CodexReasoningEffort>([
+  'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra',
+])
+
+function cacheEffort(value: unknown): CodexReasoningEffort | undefined {
+  return typeof value === 'string' && CODEX_REASONING_EFFORTS.has(value as CodexReasoningEffort)
+    ? value as CodexReasoningEffort
+    : undefined
 }
 
 /**
@@ -170,9 +233,27 @@ async function discoverModels(codexHome: string): Promise<CodexCatalogModel[]> {
       if (entry.supported_in_api === false) continue
       const id = entry.slug
       if (typeof id !== 'string' || id.length === 0) continue
+      const levels = Array.isArray(entry.supported_reasoning_levels)
+        ? entry.supported_reasoning_levels.filter(isReasoningLevel)
+        : undefined
+      const reasoningEfforts = levels
+        ?.map(level => cacheEffort(level.effort))
+        .filter((effort): effort is CodexReasoningEffort => effort !== undefined)
+      const descriptions = Object.fromEntries(
+        (levels ?? []).flatMap((level) => {
+          const effort = cacheEffort(level.effort)
+          return effort !== undefined && typeof level.description === 'string' && level.description.length > 0
+            ? [[effort, level.description]]
+            : []
+        }),
+      ) as Partial<Record<CodexReasoningEffort, string>>
+      const defaultReasoningEffort = cacheEffort(entry.default_reasoning_level)
       models.push({
         id,
         ...typeof entry.display_name === 'string' ? { name: entry.display_name } : {},
+        ...(reasoningEfforts === undefined ? {} : { reasoningEfforts: [...new Set(reasoningEfforts)] }),
+        ...(defaultReasoningEffort === undefined ? {} : { defaultReasoningEffort }),
+        ...Object.keys(descriptions).length === 0 ? {} : { reasoningEffortDescriptions: descriptions },
       })
     }
     return models
@@ -181,10 +262,30 @@ async function discoverModels(codexHome: string): Promise<CodexCatalogModel[]> {
   }
 }
 
-/** Catalog first for known metadata, then any discovered ids not in it. */
+/** Keep configured model facts, enriching missing reasoning data from Codex's live catalog cache. */
 function mergeModels(catalog: readonly CodexCatalogModel[], discovered: readonly CodexCatalogModel[]): CodexCatalogModel[] {
   const known = new Set(catalog.map(model => model.id))
-  return [...catalog, ...discovered.filter(model => !known.has(model.id))]
+  const byId = new Map(discovered.map(model => [model.id, model]))
+  return [
+    ...catalog.map((model) => {
+      const live = byId.get(model.id)
+      if (live === undefined) return model
+      return {
+        ...live,
+        ...model,
+        ...(model.reasoningEfforts === undefined && live.reasoningEfforts !== undefined
+          ? { reasoningEfforts: live.reasoningEfforts }
+          : {}),
+        ...(model.defaultReasoningEffort === undefined && live.defaultReasoningEffort !== undefined
+          ? { defaultReasoningEffort: live.defaultReasoningEffort }
+          : {}),
+        ...(model.reasoningEffortDescriptions === undefined && live.reasoningEffortDescriptions !== undefined
+          ? { reasoningEffortDescriptions: live.reasoningEffortDescriptions }
+          : {}),
+      }
+    }),
+    ...discovered.filter(model => !known.has(model.id)),
+  ]
 }
 
 /**
@@ -220,28 +321,37 @@ export class CodexAdapter extends LlmAdapter {
     return mergeModels(connection.models, discovered).map(model => modelInfo(provider, model))
   }
 
-  override resolveModel(
+  override async resolveModel(
     provider: string,
     model: string,
     _signal?: AbortSignal,
   ): Promise<LlmResolvedModelInfo> {
     const connection = this.config.options(provider)
-    const configured = connection.models.find(entry => entry.id === model)
+    const discovered = await discoverModels(connection.codexHome)
+    const configured = mergeModels(connection.models, discovered).find(entry => entry.id === model)
     const contextWindow = configured?.contextWindow
       ?? connection.defaultContextWindow
-    return Promise.resolve({
+    const efforts = modelReasoningEfforts(configured)
+    const configuredDefault = connection.defaults.reasoningEffort
+      ?? configured?.defaultReasoningEffort
+      ?? (configured?.reasoningEfforts === undefined ? 'high' : undefined)
+    const defaultEffort = configuredDefault === undefined ? undefined : ReasoningEffortId(configuredDefault)
+    const supportedDefaultEffort = efforts.some(effort => effort.id === defaultEffort)
+      ? defaultEffort
+      : undefined
+    return {
       ...configured === undefined
         ? { provider, id: model, name: model, inputModalities: ['text', 'image'] }
         : modelInfo(provider, configured),
       context: { contextWindow },
       defaultMaxTokens: configured?.maxTokens ?? connection.maxTokens,
-      reasoning: {
-        efforts: REASONING_EFFORTS,
-        defaultEffort: connection.defaults.reasoningEffort === 'off'
-          ? OFF_REASONING_EFFORT
-          : HIGH_REASONING_EFFORT,
-      },
-    })
+      ...(efforts.length === 0 ? {} : {
+        reasoning: {
+          efforts,
+          ...(supportedDefaultEffort === undefined ? {} : { defaultEffort: supportedDefaultEffort }),
+        },
+      }),
+    }
   }
 
   async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
@@ -249,6 +359,8 @@ export class CodexAdapter extends LlmAdapter {
     // freeze here and hold for this whole request, so an in-flight stream
     // never observes a configuration change and the next call re-resolves.
     const connection = this.config.options(options.provider)
+    const discovered = await discoverModels(connection.codexHome)
+    const modelInfo = mergeModels(connection.models, discovered).find(entry => entry.id === options.model)
     const auth = await this.config.resolveAuth(connection)
     const userId = this.config.resolveUserId()
     const consumer = new AbortController()
@@ -260,6 +372,7 @@ export class CodexAdapter extends LlmAdapter {
       options,
       watchdog.signal,
       connection,
+      modelInfo,
       auth.accessToken,
       auth.accountId,
       userId,
@@ -304,12 +417,17 @@ export class CodexAdapter extends LlmAdapter {
     options: GenerateOptions,
     signal: AbortSignal,
     connection: CodexConnectionOptions,
+    modelInfo: CodexCatalogModel | undefined,
     accessToken: string,
     accountId: string | undefined,
     userId: AnonymousUserId,
     onComment: () => void,
   ): AsyncIterable<StreamChunk> {
-    const body = await serializeRequest(options, connection.defaults, this.config.resolveAttachments())
+    const body = await serializeRequest(
+      options,
+      requestDefaults(connection, options.model, modelInfo),
+      this.config.resolveAttachments(),
+    )
     const payload = JSON.stringify(body)
     const headers: Record<string, string> = {
       'authorization': `Bearer ${accessToken}`,
@@ -325,7 +443,7 @@ export class CodexAdapter extends LlmAdapter {
         ? { 'x-deepseek-harness-compact': '1' }
         : {},
     }
-    if (accountId !== undefined && accountId.length > 0) headers['openai-account-id'] = accountId
+    if (accountId !== undefined && accountId.length > 0) headers['chatgpt-account-id'] = accountId
 
     let response: Response
     try {
@@ -367,11 +485,12 @@ export class CodexAdapter extends LlmAdapter {
     if (!response.body) {
       throw new LlmError('OpenAI Codex returned no response body', 'EMPTY_RESPONSE')
     }
+    const responseBody = response.body
 
     // SSE data payloads → parsed events → harness StreamChunks. Malformed
     // JSON payloads abort with MALFORMED_RESPONSE.
     async function* events(): AsyncGenerator<import('./types.ts').WireEvent> {
-      for await (const payload of parseSse(response!.body!, onComment)) {
+      for await (const payload of parseSse(responseBody, onComment)) {
         let event: import('./types.ts').WireEvent
         try {
           event = JSON.parse(payload) as import('./types.ts').WireEvent
