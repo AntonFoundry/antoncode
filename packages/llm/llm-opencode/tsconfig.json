@@ -24,6 +24,15 @@
       "path": "../../llm/llm-openai"
     },
     {
+      "path": "../../llm/llm-models-dev"
+    },
+    {
+      "path": "../../credentials/credentials"
+    },
+    {
+      "path": "../../identity/anonymous-user-id"
+    },
+    {
       "path": "../../settings/settings"
     },
     {

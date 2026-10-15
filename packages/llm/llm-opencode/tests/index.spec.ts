@@ -47,6 +47,12 @@ describe('resolveAdapterOptions', () => {
       maxTokens: 16_384,
       defaultContextWindow: 128_000,
     })
+    expect(String(resolveAdapterOptions({}).apiKeyEnv)).toBe('OPENCODE_API_KEY')
+    expect(resolveAdapterOptions({})).toMatchObject({
+      zenBaseURL: 'https://opencode.ai/zen/v1',
+      catalogURL: 'https://models.dev',
+      catalogRefreshMs: 28_800_000,
+    })
     expect('username' in resolveAdapterOptions({})).toBe(false)
     expect(resolveAdapterOptions({}).directory.length).toBeGreaterThan(0)
     expect(resolveAdapterOptions({}).retryPolicy).toMatchObject({ mode: 'normal' })
@@ -83,6 +89,9 @@ describe('resolveAdapterOptions', () => {
       { passwordEnv: '' },
       { directory: '' },
       { displayName: '' },
+      { apiKeyEnv: '' },
+      { zenBaseURL: '' },
+      { catalogURL: '' },
     ] satisfies Config[]) {
       expect(() => resolveAdapterOptions(config)).toThrow(/non-empty/)
     }
@@ -99,6 +108,9 @@ describe('resolveAdapterOptions', () => {
       /requestTimeoutMs/,
     )
     expect(() => resolveAdapterOptions({ requestTimeoutMs: MAX_TIMER_DELAY_MS + 1 })).toThrow(/requestTimeoutMs/)
+    expect(() => resolveAdapterOptions({ catalogRefreshMs: 0 })).toThrow(/catalogRefreshMs/)
+    expect(() => resolveAdapterOptions({ catalogRefreshMs: 1.5 })).toThrow(/catalogRefreshMs/)
+    expect(() => resolveAdapterOptions({ catalogRefreshMs: MAX_TIMER_DELAY_MS + 1 })).toThrow(/catalogRefreshMs/)
   })
 
   it('throws at load when the composition entry is invalid', () => {
