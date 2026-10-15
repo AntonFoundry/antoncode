@@ -562,7 +562,7 @@
     # non-deprecated chat models; streaming rides each provider's own
     # OpenAI-compatible gateway through the inherited llm-openai transport.
     # The `openrouter-free` route ships live under `providers:`; its free
-    # `:free` models still require OPENROUTER_API_KEY, so requests fail
+    # `:free` models still require OPENROUTER_FREE_API_KEY, so requests fail
     # MISSING_CREDENTIAL until a key is stored). A failed catalog refresh
     # keeps serving the last good snapshot; an empty dict unregisters every
     # route. A `llm-models-dev:` settings section overrides endpoints, key

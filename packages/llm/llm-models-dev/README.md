@@ -2,7 +2,7 @@
 
 English
 
-This adapter registers the shipped `openrouter-free` route and discovers its zero-cost chat models from `models.dev/api.json`. OpenRouter requires an API key even for free models; the route resolves `OPENROUTER_API_KEY` by default, or the `apiKeyEnv` named in its `llm-models-dev.providers.openrouter-free` settings profile. A missing key fails `MISSING_CREDENTIAL`. The catalog refreshes at mount and on the configured interval; an existing snapshot survives a failed refresh.
+This adapter registers the shipped `openrouter-free` route and discovers its zero-cost chat models from `models.dev/api.json`. OpenRouter requires an API key even for free models; the route resolves `OPENROUTER_FREE_API_KEY` by default, or the `apiKeyEnv` named in its `llm-models-dev.providers.openrouter-free` settings profile. A missing key fails `MISSING_CREDENTIAL`. The catalog refreshes at mount and on the configured interval; an existing snapshot survives a failed refresh.
 
 For each model, `reasoning_options` determines the selectable effort values. The picker offers only explicit `effort` values, and the OpenRouter request sends the selected value verbatim, including `none`, `minimal`, `xhigh`, and `max`. A model that advertises only a reasoning toggle has no effort picker; selecting no effort lets the gateway apply its own default. Other routes can be configured under `providers`, but the shipped OpenCode Free route belongs to the [local-service adapter](../llm-opencode/README.md).
 
