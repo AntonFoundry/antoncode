@@ -724,8 +724,8 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
       process.standardOutput = log
       process.standardError = log
     }
-    process.terminationHandler = { [weak self] _ in
-      DispatchQueue.main.async { self?.bridgeExited() }
+    process.terminationHandler = { [weak self] finished in
+      DispatchQueue.main.async { self?.bridgeExited(finished) }
     }
     do {
       try process.run()
@@ -736,10 +736,18 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
   }
 
   /// The bridge died on its own: relaunch it on the same profile, escalating
-  /// to recovery after repeated rapid deaths. Deliberate swaps
-  /// (enterRecovery/exitRecovery/quit) clear the handler first.
-  private func bridgeExited() {
-    guard bridge != nil, !terminatingBridge else { return }
+  /// to recovery after repeated rapid deaths.
+  ///
+  /// Identity, not a flag, decides whether this death is ours to act on.
+  /// `Process.terminate()` is asynchronous, so a deliberate swap's handler
+  /// lands well after `swapBridge` has already installed the replacement; a
+  /// `terminatingBridge` flag cleared synchronously is always back to `false`
+  /// by then. Comparing against the current `bridge` makes a superseded
+  /// process exit silently, which keeps a swap from being counted as a crash,
+  /// from orphaning the live bridge's handle, and from racing a second
+  /// instance onto the same port.
+  private func bridgeExited(_ finished: Process) {
+    guard !terminatingBridge, bridge === finished else { return }
     bridge = nil
     bridgeDeaths.append(Date())
     bridgeDeaths.removeAll { Date().timeIntervalSince($0) > 300 }
@@ -748,10 +756,41 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
       return
     }
     setHarnessState(.transitioning)
-    launchBridge(profile: recoveryMode ? "recovery" : "web")
+    // A bridge that dies on startup (port still held, bad profile) would
+    // otherwise respawn as fast as the CPU allows. Back off on consecutive
+    // deaths so the loop stays observable and the log stays readable.
+    let delay = min(pow(2.0, Double(bridgeDeaths.count)), 30.0)
+    let profile = recoveryMode ? "recovery" : "web"
+    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+      guard let self, self.bridge == nil, !self.terminatingBridge else { return }
+      self.launchBridge(profile: profile)
+    }
   }
 
+  /// Last time the browser surface was opened, used to collapse bursts.
+  private var lastOpenedAnton: Date?
+
+  /// Open the bridge's web surface, at most once every few seconds, reporting
+  /// whether the tab was actually opened.
+  ///
+  /// Every automatic caller here is state-driven (a recovery episode reaching
+  /// `.running`, a start/restart the bridge accepted), so a state machine that
+  /// flaps turns directly into a pile of browser tabs. The throttle keeps a
+  /// flap costing a wrong state instead of an unusable browser. Callers that
+  /// latch a "surface shown" flag must latch it on the returned value, or a
+  /// throttled call would leave the flag set with no window on screen.
+  @discardableResult
+  private func openAntonSurface() -> Bool {
+    if let last = lastOpenedAnton, Date().timeIntervalSince(last) < 5 { return false }
+    lastOpenedAnton = Date()
+    NSWorkspace.shared.open(bridgeURL)
+    return true
+  }
+
+  /// Menu target. A deliberate click is always honoured: the user asking for
+  /// the window twice is not the flap the throttle exists to absorb.
   @objc private func openAnton() {
+    lastOpenedAnton = Date()
     NSWorkspace.shared.open(bridgeURL)
   }
 
@@ -807,7 +846,7 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
           // A menu always dismisses after its action. Opening the browser only
           // after the bridge accepted the health-checked start makes Start
           // Harness feel like a real launch rather than a transient icon flash.
-          self.openAnton()
+          self.openAntonSurface()
         }
       }
     }.resume()
@@ -946,6 +985,10 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     recoveryMode = true
     stoppedSince = nil
     recoveryUIOpened = false
+    // The deaths that justified this escalation have been acted on. Leaving
+    // them in the window would re-trigger the escalation the moment recovery
+    // is left, which is what made recovery mode inescapable.
+    bridgeDeaths.removeAll()
     swapBridge(profile: "recovery")
   }
 
@@ -953,14 +996,17 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     recoveryMode = false
     userStopped = false
     stoppedSince = nil
+    bridgeDeaths.removeAll()
     swapBridge(profile: "web")
   }
 
+  /// Replace the running bridge with one on a different profile. The outgoing
+  /// process is released before the replacement starts; its late
+  /// `terminationHandler` is discarded by the identity guard in
+  /// `bridgeExited(_:)` rather than by a flag that cannot outlive this call.
   private func swapBridge(profile: String) {
-    terminatingBridge = true
     bridge?.terminate()
     bridge = nil
-    terminatingBridge = false
     setHarnessState(.transitioning)
     launchBridge(profile: profile)
   }
@@ -969,8 +1015,7 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     harnessState = state
     updatePresentation()
     if recoveryMode && state == .running && !recoveryUIOpened {
-      recoveryUIOpened = true
-      openAnton()
+      recoveryUIOpened = openAntonSurface()
     }
   }
 
