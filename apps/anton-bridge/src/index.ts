@@ -656,7 +656,35 @@ function relayDownlink(socket: Bun.ServerWebSocket<BridgeSocketData>): void {
   })
 }
 
-const server = Bun.serve<BridgeSocketData>({
+/**
+ * Start the Bridge's own HTTP/WS listener, tolerating the brief `EADDRINUSE`
+ * window a relaunch races into: an in-place bundle swap or app restart spawns
+ * this new process while the previous Anton Bridge instance is still
+ * releasing port {@link bridgePort}. A few short retries ride out that
+ * teardown instead of crashing the whole app into recovery mode for a purely
+ * transient listener handoff. Any other bind failure, or `EADDRINUSE` that
+ * outlasts every attempt (a genuinely different process holds the port),
+ * still throws.
+ * @param start - thunk performing the synchronous `Bun.serve` call.
+ * @param attempts - total bind attempts before giving up.
+ * @param delayMs - wait between attempts.
+ * @returns the bound server once `start` succeeds.
+ */
+async function serveWithPortRetry<T>(start: () => T, attempts = 10, delayMs = 500): Promise<T> {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return start()
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException | undefined)?.code
+      if (code !== 'EADDRINUSE' || attempt === attempts) throw error
+      console.warn(`Anton Bridge port ${bridgePort} is still in use (attempt ${attempt}/${attempts}); a prior instance is likely still exiting after a relaunch. Retrying in ${delayMs}ms...`)
+      await Bun.sleep(delayMs)
+    }
+  }
+  throw new Error('unreachable')
+}
+
+const server = await serveWithPortRetry(() => Bun.serve<BridgeSocketData>({
   hostname: '127.0.0.1',
   port: bridgePort,
   // Harness keeps its event downlinks open for the lifetime of a page.
@@ -849,7 +877,7 @@ const server = Bun.serve<BridgeSocketData>({
       }
     },
   },
-})
+}))
 
 console.info(`Anton Bridge listening at ${bridgeUrl}`)
 console.info(`Local controls: ${bridgeUrl}/bridge`)
