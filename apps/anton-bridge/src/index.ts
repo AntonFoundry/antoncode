@@ -1,6 +1,6 @@
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, basename, join, resolve } from 'node:path'
 import { ensureBlueantPreset, ensureBlueantProfileLink } from './blueant-preset.ts'
 import { startMobileIngest } from './inbox.ts'
 import { startJournalCollector } from './journal.ts'
@@ -241,6 +241,61 @@ function ensureRepairProfile(): void {
 }
 
 /**
+ * Windows half of first-run provisioning: a `dsh.cmd` wrapper in
+ * `%APPDATA%\Anton\bin` (same home the launcher scripts use, so the CLI and
+ * the app share one configuration tree). Bundle paths are baked in at
+ * install time; a dev checkout running under Bun never lands here because
+ * its executable is not `anton-bridge.exe`. Idempotent like the POSIX side:
+ * an existing file without the Anton marker is never clobbered.
+ */
+function ensureWindowsDshLauncher(): void {
+  const execPath = process.execPath
+  if (basename(execPath).toLowerCase() !== 'anton-bridge.exe') return
+  const distRoot = resolve(execPath, '..', '..')
+  const marker = 'REM dsh-launcher: anton'
+  const script = [
+    '@echo off',
+    marker,
+    'REM dsh -- DeepSeek Harness CLI launcher (installed by Anton).',
+    'setlocal',
+    'REM One home: the terminal CLI shares Anton profiles, credentials, and',
+    'REM settings -- no second configuration tree to maintain.',
+    'if not defined DSH_HOME set "DSH_HOME=%APPDATA%\\Anton\\dsh"',
+    'if defined DSH_ROOT if exist "%DSH_ROOT%\\apps\\cli\\lib\\bin.js" (',
+    '  set "ROOT=%DSH_ROOT%"',
+    ') else (',
+    `  set "ROOT=${distRoot}\\deepseek-harness"`,
+    ')',
+    `set "NODE_BIN=${distRoot}\\node\\node.exe"`,
+    'if not exist "%NODE_BIN%" set "NODE_BIN=node"',
+    'where "%NODE_BIN%" >nul 2>nul',
+    'if errorlevel 1 (',
+    '  echo dsh: no usable node runtime 1>&2',
+    '  exit /b 1',
+    ')',
+    '"%NODE_BIN%" "%ROOT%\\apps\\cli\\lib\\bin.js" %*',
+  ].join('\r\n')
+  const appData = process.env.APPDATA
+  if (appData === undefined || appData.length === 0) {
+    console.warn('dsh launcher install skipped: %APPDATA% is not set')
+    return
+  }
+  const binDir = join(appData, 'Anton', 'bin')
+  const launcher = join(binDir, 'dsh.cmd')
+  mkdirSync(binDir, { recursive: true })
+  try {
+    const existing = existsSync(launcher) ? readFileSync(launcher, 'utf8') : undefined
+    if (existing !== undefined && !existing.includes(marker)) return
+    if (existing === script) return
+    writeFileSync(launcher, `${script}\r\n`)
+    console.info(`Installed dsh launcher at ${launcher}`)
+    console.info(`Hint: add ${binDir} to PATH (setx PATH "%PATH%;${binDir}")`)
+  } catch (error) {
+    // A restricted environment never blocks the app itself.
+    console.warn(`dsh launcher install skipped: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+/**
  * First-run provisioning: put a `dsh` launcher on PATH (~/.local/bin/dsh)
  * so the CLI is available from any terminal on a fresh system. Only the
  * packaged app installs it — a checkout developer already has `pnpm dsh`.
@@ -251,6 +306,13 @@ function ensureRepairProfile(): void {
  */
 function ensureDshLauncher(): void {
   if (process.env.ANTON_INSTALL_DSH_LAUNCHER === 'false') return
+  // Windows ships anton-bridge.exe, not an .app bundle: same first-run
+  // promise through a `dsh.cmd` wrapper. (No PATH mutation — the location is
+  // logged; the in-app login button removes the CLI need most users over.)
+  if (process.platform === 'win32') {
+    ensureWindowsDshLauncher()
+    return
+  }
   // Bundle mode only: this bridge's own executable path names the app bundle
   // (.../Anton.app/Contents/Resources/bin). Path-derived, never a stat of the
   // bundle contents — sandboxed environments may deny stats inside .app
