@@ -198,6 +198,86 @@
         toolName: subagent_fork
         backgroundMode: continuable
 
+    # Role-specialised delegation rows (a team of agents, not N generalists).
+    #
+    # Each row is another mount of the SAME plugin with its own `toolName`,
+    # `persona` and `toolFilter`. The `spawn`/`fork` providers both declare
+    # `toolFilter: true, persona: true`, and `applyChildComposition` scopes
+    # both to the child — invisible to parent and siblings. `toolFilter`
+    # INTERSECTS the inherited chain, so a role can only ever hold FEWER
+    # tools than its parent, never more.
+    #
+    # `deny` is used rather than `allow` deliberately: an allow-list would
+    # also strip infrastructure the child needs to report at all (todo/plan
+    # tools, reporting), and every name in a filter must resolve or startup
+    # fails. Denying the specific mutation verbs is the narrow, robust cut.
+    #
+    # `backgroundMode: continuable` on every row is load-bearing, not
+    # cosmetic: `tool-subagent` registers the standing "Delegation is the
+    # DEFAULT" system-prompt section only `if (backgroundEnabled &&
+    # continuable)`. With the `one-shot` default that section is never
+    # injected, the tool still exists but nothing pushes the orchestrator to
+    # decompose, and fan-out quietly stops happening.
+
+    # Read-only analyst: structurally incapable of mutating the tree. For
+    # audits, surveys, "which of these N files/suites does X" — the
+    # breadth-first work that fans out cleanly.
+    - id: tool-subagent-analyst
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent_analyst
+        backgroundMode: continuable
+        persona: >-
+          You are an ANALYST subagent. Your job is to investigate and report,
+          never to change the tree. You have no write, edit, or shell access
+          by construction. Read the evidence, then answer with findings and
+          exact references — file paths with line numbers, symbol names,
+          commit hashes — so the delegating agent can verify every claim
+          without redoing your work. State plainly when evidence is absent
+          or inconclusive; never present an inference as a measurement.
+        toolFilter:
+          deny: [write, edit, bash]
+
+    # Scoped implementer: full toolset, but a persona that pins it to an
+    # explicit spec and demands a verifiable artifact rather than a claim.
+    - id: tool-subagent-implementer
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent_implementer
+        backgroundMode: continuable
+        persona: >-
+          You are an IMPLEMENTER subagent. Implement exactly the change you
+          were given — no adjacent refactors, no opportunistic cleanups, no
+          scope growth. Report the concrete artifact: the files you changed,
+          the diff, and the exact command plus output that demonstrates it
+          works. If the spec is ambiguous or you believe it is wrong, stop
+          and say so instead of guessing; a wrong change that reports
+          success is worse than no change.
+
+    # Independent verifier: can run anything, can change nothing. This is the
+    # separation that catches a fix which passes its own narrow check and is
+    # still wrong — it cannot adjust the code or the test to agree with each
+    # other, because it holds no write or edit tool at all.
+    - id: tool-subagent-verifier
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent_verifier
+        backgroundMode: continuable
+        persona: >-
+          You are a VERIFIER subagent. Judge work you cannot modify: you hold
+          shell and read access but no write or edit tool, by construction.
+          Re-run the checks yourself rather than trusting any claim that they
+          passed, and actively try to break the result — test the boundary and
+          the larger case, not only the case the implementer chose. A narrow
+          green result is not a pass; say so when coverage is too thin to
+          support the conclusion. Report the exact commands you ran and their
+          real output, and state a clear verdict with the evidence behind it.
+        toolFilter:
+          deny: [write, edit]
+
     # Production dsh does not install these optional providers. An opting-in
     # Profile mounts each provider once on the host plane; copy this preset,
     # then remove `disabled` from the matching tool row.
