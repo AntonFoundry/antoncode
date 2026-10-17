@@ -20,10 +20,11 @@ import { DONE } from './sse.ts'
 export type { RequestDefaults } from './serialize.ts'
 
 /** One `input` array item of a Responses request. */
-type ResponsesInputItem =
+export type ResponsesInputItem =
   | { role: 'user' | 'assistant'; content: readonly [{ type: 'input_text' | 'output_text'; text: string }] }
   | { type: 'function_call'; call_id: string; name: string; arguments: string }
   | { type: 'function_call_output'; call_id: string; output: string }
+  | { role: 'developer'; content: string }
 
 /** The Responses request body this adapter sends. */
 export interface ResponsesRequest {

@@ -1418,7 +1418,7 @@ describe('operator-tunable settings sections', () => {
     await ctx.plugin(MemorySettings)
     const requests: SubagentStartRequest[] = []
     await mock.mountScriptedProvider(ctx, { name: 'mock', onStart: (request) => { requests.push(request) } })
-    await ctx.plugin(tool, { provider: 'mock', ...toolConfig })
+    await ctx.plugin(tool, { ...toolConfig, provider: 'mock' })
     return { ctx, requests }
   }
 

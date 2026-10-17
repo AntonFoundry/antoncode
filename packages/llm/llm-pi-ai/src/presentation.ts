@@ -1,7 +1,7 @@
 /** Format provider routes and model ids for model selectors. */
 
 const PROVIDER_NAMES: Readonly<Record<string, string>> = {
-  anthropic: 'Anthropic',
+  anthropic: 'Anthropic Claude',
   deepseek: 'DeepSeek',
   google: 'Google',
   'kimi-coding': 'Kimi Coding',

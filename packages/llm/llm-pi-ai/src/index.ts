@@ -100,6 +100,9 @@ export type {
   ResolvedPiAiProviderProfile,
 } from './config.ts'
 export { supportedProtocols } from './provider.ts'
+export { buildProvider } from './provider.ts'
+export type { ProviderSpec } from './provider.ts'
+export { catalogModels, catalogProvider } from './catalog.ts'
 
 export const name = 'llm-pi-ai'
 export const inject = ['llm']

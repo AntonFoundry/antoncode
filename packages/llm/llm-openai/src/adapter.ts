@@ -26,9 +26,10 @@ import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import { serializeRequest } from './serialize.ts'
 import type { RequestDefaults } from './serialize.ts'
 import { serializeResponsesRequest, translateResponses } from './responses.ts'
+import type { ResponsesRequest } from './responses.ts'
 import { parseSse } from './sse.ts'
 import { translate } from './translate.ts'
-import type { WireError } from './types.ts'
+import type { WireError, WireRequest } from './types.ts'
 
 /** One optional model entry advertised by the direct-fetch adapter. */
 export interface OpenAICatalogModel {
@@ -123,6 +124,26 @@ export interface OpenAIAdapterOptions {
     sessionId: string | undefined,
     requestId: string | undefined,
   ) => Record<string, string>
+  /**
+   * Send a route-supplied User-Agent byte-identical, without the Harness
+   * attribution suffix. Only gateways that fingerprint their exact client
+   * User-Agent opt in (OpenCode's free-tier gate); everywhere else the
+   * attribution suffix stays because it honestly identifies this client.
+   * Defaults to false.
+   */
+  exactUserAgent?: boolean
+  /**
+   * Rewrite one serialized wire body before it is sent, per protocol. Runs
+   * after the standard serializers with the owning route's request in scope,
+   * so a gateway that admits only a reshaped body (fixed marker, flattened
+   * history, no native tools) gets exactly that without forking the
+   * transport. Absent means the serialized body travels unchanged.
+   */
+  transformBody?: (
+    body: WireRequest | ResponsesRequest,
+    protocol: 'chat-completions' | 'responses',
+    options: GenerateOptions,
+  ) => WireRequest | ResponsesRequest
   /** Resolve the harness-home anonymous id shared with telemetry and feedback. */
   resolveUserId: () => AnonymousUserId
 }
@@ -380,7 +401,8 @@ export class OpenAIAdapter extends LlmAdapter {
     userId: AnonymousUserId,
     onComment: () => void,
   ): AsyncIterable<StreamChunk> {
-    const body = serializeRequest(options, requestDefaults(connection, options))
+    const wire = serializeRequest(options, requestDefaults(connection, options))
+    const body = this.config.transformBody?.(wire, 'chat-completions', options) ?? wire
     // Prepared outside the try so the TRANSPORT label below covers exactly the
     // transport boundary, never a serialization failure.
     const payload = JSON.stringify(body)
@@ -402,7 +424,9 @@ export class OpenAIAdapter extends LlmAdapter {
       'accept': 'text/event-stream',
       ...attributionHeaders(),
       ...(routeHeaders['user-agent'] === undefined ? {} : {
-        'user-agent': `${routeHeaders['user-agent']} ${attributionHeaders()['user-agent']}`,
+        'user-agent': this.config.exactUserAgent === true
+          ? routeHeaders['user-agent']
+          : `${routeHeaders['user-agent']} ${attributionHeaders()['user-agent']}`,
       }),
       'x-deepseek-harness-user-id': String(userId),
       ...options.sessionId !== undefined
@@ -476,7 +500,8 @@ export class OpenAIAdapter extends LlmAdapter {
     userId: AnonymousUserId,
     onComment: () => void,
   ): AsyncIterable<StreamChunk> {
-    const body = serializeResponsesRequest(options, requestDefaults(connection, options))
+    const wire = serializeResponsesRequest(options, requestDefaults(connection, options))
+    const body = this.config.transformBody?.(wire, 'responses', options) ?? wire
     // Prepared outside the try so the TRANSPORT label below covers exactly the
     // transport boundary, never a serialization failure.
     const payload = JSON.stringify(body)
@@ -498,7 +523,9 @@ export class OpenAIAdapter extends LlmAdapter {
       'accept': 'text/event-stream',
       ...attributionHeaders(),
       ...(routeHeaders['user-agent'] === undefined ? {} : {
-        'user-agent': `${routeHeaders['user-agent']} ${attributionHeaders()['user-agent']}`,
+        'user-agent': this.config.exactUserAgent === true
+          ? routeHeaders['user-agent']
+          : `${routeHeaders['user-agent']} ${attributionHeaders()['user-agent']}`,
       }),
       'x-deepseek-harness-user-id': String(userId),
       ...options.sessionId !== undefined
