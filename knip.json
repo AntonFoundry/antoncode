@@ -480,6 +480,15 @@
         "tests/**/*.ts"
       ]
     },
+    "packages/llm/llm-claude": {
+      "entry": [
+        "tests/**/*.spec.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "tests/**/*.ts"
+      ]
+    },
     "packages/llm/llm-pi-ai": {
       "entry": [
         "tests/**/*.spec.ts",

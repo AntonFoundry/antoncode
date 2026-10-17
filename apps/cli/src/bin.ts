@@ -52,6 +52,27 @@ switch (invocation.mode) {
     await runModels(invocation.profile)
     break
   }
+  case 'opencode-login': {
+    const { runOpencodeLogin } = await import('./opencode-login.ts')
+    process.exit(await runOpencodeLogin({
+      ...(invocation.dshHome === undefined ? {} : { dshHome: invocation.dshHome }),
+      ...(invocation.oauthRef === undefined ? {} : { oauthRef: invocation.oauthRef }),
+      ...(invocation.consoleBase === undefined ? {} : { consoleBase: invocation.consoleBase }),
+      openBrowser: invocation.openBrowser,
+      ...(invocation.org === undefined ? {} : { org: invocation.org }),
+    }))
+    break
+  }
+  case 'claude-login': {
+    const { runClaudeLoginCli } = await import('./claude-login.ts')
+    process.exit(await runClaudeLoginCli({
+      ...(invocation.dshHome === undefined ? {} : { dshHome: invocation.dshHome }),
+      ...(invocation.oauthRef === undefined ? {} : { oauthRef: invocation.oauthRef }),
+      ...(invocation.consoleBase === undefined ? {} : { consoleBase: invocation.consoleBase }),
+      openBrowser: invocation.openBrowser,
+    }))
+    break
+  }
   case 'anton': {
     const { runAnton } = await import('./anton.ts')
     process.exit(await runAnton(invocation.action))

@@ -50,6 +50,25 @@ interface ModelsInvocation {
   profile: string
 }
 
+/** One-time OpenCode Zen workspace login over the device flow. */
+interface OpencodeLoginInvocation {
+  mode: 'opencode-login'
+  dshHome?: string
+  oauthRef?: string
+  consoleBase?: string
+  openBrowser: boolean
+  org?: string
+}
+
+/** One-time Claude Code subscription login over the browser code flow. */
+interface ClaudeLoginInvocation {
+  mode: 'claude-login'
+  dshHome?: string
+  oauthRef?: string
+  consoleBase?: string
+  openBrowser: boolean
+}
+
 /** Control the local Anton app's harness through its bridge API. */
 interface AntonInvocation {
   mode: 'anton'
@@ -76,6 +95,8 @@ export type DshInvocation =
   | DumpConfigInvocation
   | PluginInvocation
   | ModelsInvocation
+  | OpencodeLoginInvocation
+  | ClaudeLoginInvocation
   | AntonInvocation
   | AntonRebuildInvocation
   | AntonRebuildSuperviseInvocation
@@ -220,6 +241,42 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
       rejectParentOptions('models')
       const profile = options.profile !== undefined && options.profile !== '' ? options.profile : 'web'
       resolved = { mode: 'models', profile }
+    })
+
+  const opencodeLogin = program.command('opencode-login').description('log the opencode-free route into an OpenCode Zen workspace over the device flow, then exit')
+  opencodeLogin
+    .option('--home <path>', 'harness home holding .credentials.yaml (defaults to $DSH_HOME or ~/.dsh)')
+    .option('--oauth-ref <name>', 'credential reference holding the workspace session')
+    .option('--org <id-or-name>', 'workspace to bill against (prompts when ambiguous)')
+    .option('--no-browser', 'print the verification link without opening it')
+    .option('--console-base <url>', 'console root override (advanced; default production)')
+    .action((options: { home?: string; oauthRef?: string; org?: string; browser?: boolean; consoleBase?: string }) => {
+      rejectParentOptions('opencode-login')
+      resolved = {
+        mode: 'opencode-login',
+        ...(options.home === undefined ? {} : { dshHome: options.home }),
+        ...(options.oauthRef === undefined ? {} : { oauthRef: options.oauthRef }),
+        ...(options.consoleBase === undefined ? {} : { consoleBase: options.consoleBase }),
+        openBrowser: options.browser !== false,
+        ...(options.org === undefined ? {} : { org: options.org }),
+      }
+    })
+
+  const claudeLogin = program.command('claude-login').description('log the claude-code route into a Claude subscription over the browser code flow, then exit')
+  claudeLogin
+    .option('--home <path>', 'harness home holding .credentials.yaml (defaults to $DSH_HOME or ~/.dsh)')
+    .option('--oauth-ref <name>', 'credential reference holding the subscription session')
+    .option('--no-browser', 'print the approval link without opening it')
+    .option('--console-base <url>', 'console root override (advanced; default production)')
+    .action((options: { home?: string; oauthRef?: string; browser?: boolean; consoleBase?: string }) => {
+      rejectParentOptions('claude-login')
+      resolved = {
+        mode: 'claude-login',
+        ...(options.home === undefined ? {} : { dshHome: options.home }),
+        ...(options.oauthRef === undefined ? {} : { oauthRef: options.oauthRef }),
+        ...(options.consoleBase === undefined ? {} : { consoleBase: options.consoleBase }),
+        openBrowser: options.browser !== false,
+      }
     })
 
   const anton = program.command('anton').description('control the local Anton app and its managed rebuilds')

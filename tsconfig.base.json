@@ -142,6 +142,7 @@
         "./packages/boot/*/src/invariant.ts",
         "./packages/examples/*/src/invariant.ts",
         "./packages/util/*/src/invariant.ts",
+        "./packages/zai/*/src/invariant.ts",
         "./packages/mcp/*/src/invariant.ts",
         "./packages/identity/*/src/invariant.ts",
         "./packages/test-support/*/src/invariant.ts"
@@ -273,6 +274,7 @@
         "./packages/boot/*/src",
         "./packages/examples/*/src",
         "./packages/util/*/src",
+        "./packages/zai/*/src",
         "./packages/mcp/*/src",
         "./packages/identity/*/src",
         "./packages/test-support/*/src",

@@ -111,6 +111,24 @@ describe('parseDshArgs', () => {
     expect(exitCode(['anton', 'rebuild', 'start', '--timeout', 'later'])).toBe(1)
   })
 
+  it('routes the OpenCode Zen workspace login', () => {
+    expect(parse(['opencode-login']))
+      .toEqual({ mode: 'opencode-login', openBrowser: true })
+    expect(parse(['opencode-login', '--org', 'antoncode', '--no-browser']))
+      .toEqual({ mode: 'opencode-login', openBrowser: false, org: 'antoncode' })
+    expect(parse(['opencode-login', '--home', '/tmp/dsh', '--oauth-ref', 'CUSTOM_OAUTH']))
+      .toEqual({ mode: 'opencode-login', openBrowser: true, dshHome: '/tmp/dsh', oauthRef: 'CUSTOM_OAUTH' })
+  })
+
+  it('routes the Claude subscription login', () => {
+    expect(parse(['claude-login']))
+      .toEqual({ mode: 'claude-login', openBrowser: true })
+    expect(parse(['claude-login', '--no-browser', '--oauth-ref', 'CUSTOM_OAUTH']))
+      .toEqual({ mode: 'claude-login', openBrowser: false, oauthRef: 'CUSTOM_OAUTH' })
+    expect(parse(['claude-login', '--home', '/tmp/dsh']))
+      .toEqual({ mode: 'claude-login', openBrowser: true, dshHome: '/tmp/dsh' })
+  })
+
   it('keeps its own help for an invocation with no app to hand it to', () => {
     expect(exitCode(['--help'])).toBe(0)
     expect(exitCode(['-h'])).toBe(0)
