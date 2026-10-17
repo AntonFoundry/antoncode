@@ -601,3 +601,13 @@
     # section supplies its profile under `providers:`.
     - id: llm-antigravity
       name: '@deepseek-ai/dsh-llm-antigravity'
+
+    # The Claude Code subscription adapter, mounted live unlike the dormant
+    # Codex/Antigravity pair: Claude subscription OAuth (browser login,
+    # silently refreshed) — no API key, no key input. Speaks the Anthropic
+    # Messages API through pi-ai's Anthropic transport with Claude Code
+    # identity. The `claude-code` route registers with an empty section and
+    # fails per request with the login fix while no session is stored, so
+    # picking it is what onboards the operator.
+    - id: llm-claude
+      name: '@deepseek-ai/dsh-llm-claude'
