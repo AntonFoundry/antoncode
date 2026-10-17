@@ -25,7 +25,7 @@ Loop-level: a fresh agent with `AgentOptions.reasoningEffort` seeds its first re
 
 ## Alternatives considered
 
-**A settings-section default beside `subagent-child-model.defaultModel`.** The model route needed its four-layer chain because different children legitimately want different models; a single global effort default had no per-session consumer and would have re-implemented the config surface the plugin's `agentOptions` already owns. The per-call argument plus config default covers the expressed need.
+**A settings-section default beside `subagent-child-model.defaultModel`.** The model route needed its four-layer chain because different children legitimately want different models; a single global effort default had no per-session consumer and would have re-implemented the config surface the plugin's `agentOptions` already owns. The per-call argument plus config default covers the expressed need. **Reversed**: [a later Agent Note](2026-10-15-agents-panel-and-subagent-tuning.md) added `defaultEffort` to that same section once an operator-facing UI needed to tune the swarm default without a `cordis.yml` edit — the per-call argument this note added still outranks it.
 
 **Branding `AgentOptions.reasoningEffort` as `ReasoningEffortId`.** The agent-options boundary crosses plugin config (Schemastery strings) and tool JSON; branding there would force every caller to cast while adding no validation the provider does not already own at `prepareCall`.
 
