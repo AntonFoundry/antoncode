@@ -1,5 +1,7 @@
 /** Local provider artwork shared by model selection and provider settings. */
 const logos: Readonly<Record<string, string>> = {
+  anthropic: 'anthropic.svg',
+  'claude-code': 'anthropic.svg',
   openai: 'openai.svg',
   codex: 'openai.svg',
   'openai-codex': 'openai.svg',

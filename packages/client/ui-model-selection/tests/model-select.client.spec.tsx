@@ -147,6 +147,35 @@ describe('ModelSelect reasoning effort', () => {
       .toEqual(['Default', 'Standard'])
   })
 
+  it('shortens the longest stop labels while the pill keeps the full name', () => {
+    const efforts = [
+      { id: 'low', name: 'Low' },
+      { id: 'medium', name: 'Medium' },
+      { id: 'high', name: 'High' },
+      { id: 'xhigh', name: 'Extra High' },
+    ]
+    const directory = createSnapshotStore(state({
+      groups: [{
+        id: 'provider',
+        name: 'Provider',
+        models: [{ id: 'model', name: 'Model', reasoning: { efforts } }],
+      }],
+      current: { provider: 'provider', model: 'model' },
+    }))
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={directory}
+      load={vi.fn()}
+      select={vi.fn().mockResolvedValue(true)}
+      t={t}
+    />)
+
+    expect(screen.getByRole('button', { name: '推理力度：Default' })).toBeTruthy()
+    expect([...document.querySelectorAll('[class*="stops"] > button')].map(stop => stop.textContent))
+      .toEqual(['Default', 'Low', 'Med', 'High', 'XHigh'])
+  })
+
   it('prompts for a selection when the current model is no longer advertised', () => {
     const directory = createSnapshotStore(state({
       current: { provider: 'deepseek-official', model: 'removed-model' },

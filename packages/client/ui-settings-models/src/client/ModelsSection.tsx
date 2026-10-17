@@ -18,6 +18,8 @@ import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
 import { Button, IconPlusOutline16, Modal, ProviderLogo } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-web-react'
 import { CustomProviderCard } from './CustomProviderCard.tsx'
+import { OpencodeLoginDialog } from './OpencodeLoginDialog.tsx'
+import { ClaudeLoginDialog } from './ClaudeLoginDialog.tsx'
 import {
   deriveKeyRef, disabledProvidersOf, messageOf, MODEL_CATALOG_NAMESPACE, protocolChoices, providerUsable,
 } from './store.ts'
@@ -33,7 +35,7 @@ export interface ModelsSectionInjected {
   /** uSES subscription hook bound to the store. */
   useSnapshot: SnapshotSelectorHook<ModelsSettingsState>
   /** Wire faces the editor writes through. */
-  api: Pick<IApiClient, 'settings' | 'credentials' | 'llm'>
+  api: Pick<IApiClient, 'settings' | 'credentials' | 'llm' | 'opencodeOAuth' | 'claudeOAuth'>
   /** Section copy. */
   t: (key: keyof typeof en) => string
 }
@@ -73,6 +75,40 @@ interface EditorTarget extends ProviderIdentity {
   credentialRef?: string
   /** The adapter reports this route as one it does not ship (see {@link ProviderEditorProps.declared}). */
   declared?: boolean
+}
+
+/** Settings namespaces whose routes authenticate through a stored OAuth session. */
+const OAUTH_SETTINGS_NS: Readonly<Record<string, 'opencode' | 'claude'>> = {
+  'llm-opencode': 'opencode',
+  'llm-claude': 'claude',
+}
+
+/**
+ * Remove a shipped route's stored credentials (API key and/or OAuth
+ * session) without touching its settings profile, which the deployment
+ * owns. Shipped routes have nothing settings-side to delete — that is what
+ * distinguishes this from {@link removeProviderProfile} — so the row stays
+ * listed and only its secrets go away.
+ * @param api - wire faces for the credential writes.
+ * @param controller - the page store reloaded after the removal lands.
+ * @param refs - credential references to unset, in order.
+ * @returns the failure message, or undefined once the removal landed.
+ */
+export async function removeRouteCredentials(
+  api: Pick<IApiClient, 'credentials'>,
+  controller: ModelsSettingsStore,
+  refs: readonly string[],
+): Promise<string | undefined> {
+  try {
+    for (const ref of refs) {
+      const response = await api.credentials.unset({ ref })
+      if (!response.result.ok) return response.result.error.message
+    }
+  } catch (error) {
+    return messageOf(error)
+  }
+  await controller.load()
+  return undefined
 }
 
 /** Values that vary around the shared provider-editor rendering. */
@@ -232,6 +268,10 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
   const [editing, setEditing] = useState<EditorTarget | undefined>(undefined)
   const [adding, setAdding] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<EditorTarget | undefined>(undefined)
+  const [loginTarget, setLoginTarget] = useState<EditorTarget | undefined>(undefined)
+  const [resetTarget, setResetTarget] = useState<(ProviderIdentity & { refs: readonly string[] }) | undefined>(undefined)
+  const [resetting, setResetting] = useState(false)
+  const [resetFailure, setResetFailure] = useState<string | undefined>(undefined)
   const [deleting, setDeleting] = useState(false)
   const [deleteFailure, setDeleteFailure] = useState<string | undefined>(undefined)
   const [savedTarget, setSavedTarget] = useState<ProviderIdentity | undefined>(undefined)
@@ -283,6 +323,52 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
   const closeSetup = (changed: boolean, target: ProviderIdentity): void => {
     setDismissedSetup(previous => new Set([...previous, target.provider]))
     if (changed) announceSaved(target)
+  }
+
+  const closeLogin = (changed: boolean): void => {
+    setLoginTarget(undefined)
+    if (changed) void controller.load()
+  }
+
+  const closeReset = (): void => {
+    if (resetting) return
+    setResetTarget(undefined)
+    setResetFailure(undefined)
+  }
+
+  const confirmReset = (): void => {
+    if (resetTarget === undefined || resetting) return
+    setResetting(true)
+    setResetFailure(undefined)
+    void removeRouteCredentials(api, controller, resetTarget.refs)
+      .then((failure) => {
+        if (failure !== undefined) {
+          setResetFailure(failure)
+          return
+        }
+        setResetTarget(undefined)
+      })
+      .finally(() => { setResetting(false) })
+  }
+
+  /** Stored credentials a shipped row can drop: API key and/or OAuth session. */
+  const resettableRefs = (row: ProviderRow): readonly string[] => [
+    ...(row.credential?.configured === true && row.apiKeyEnv !== undefined ? [row.apiKeyEnv] : []),
+    ...(row.oauthSession?.configured === true && row.oauthRef !== undefined ? [row.oauthRef] : []),
+  ]
+  const logoutSession = (target: ProviderIdentity, ref: string): void => {
+    setToggleFailure(undefined)
+    void api.credentials.unset({ ref })
+      .then((response) => {
+        if (!response.result.ok) {
+          setToggleFailure(providerCopy(t('logoutFailed'), target))
+          return
+        }
+        void controller.load()
+      })
+      .catch(() => {
+        setToggleFailure(providerCopy(t('logoutFailed'), target))
+      })
   }
 
   const closeDelete = (): void => {
@@ -389,7 +475,10 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
           const subscriptionConfigured = row.entry.authConfigured === true
           const subscriptionMissing = row.entry.authConfigured === false
           const isAntigravity = row.entry.settingsNs === 'llm-antigravity'
-          const statusConfigured = credentialConfigured || subscriptionConfigured
+          // A stored OAuth session lights the row exactly like a stored key:
+          // without it a logged-in workspace still reads red on its key dot.
+          const oauthConfigured = row.oauthSession?.configured === true
+          const statusConfigured = credentialConfigured || subscriptionConfigured || oauthConfigured
           const statusMissing = credentialMissing || subscriptionMissing
           const statusLabel = subscriptionConfigured
             ? (isAntigravity ? t('antigravitySubscriptionConfigured') : t('subscriptionConfigured'))
@@ -397,7 +486,9 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
               ? (isAntigravity ? t('antigravitySubscriptionMissing') : t('subscriptionMissing'))
               : credentialConfigured
                 ? t('credentialConfigured')
-                : t('credentialMissing')
+                : oauthConfigured
+                  ? t('oauthSessionActive')
+                  : t('credentialMissing')
           return (
             <li key={row.entry.provider} className={styles['rowCard']}>
               <div className={styles['rowHead']}>
@@ -445,6 +536,39 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
                   >
                     <span className={styles['providerSwitchKnob']} />
                   </button>
+                  {OAUTH_SETTINGS_NS[target.settingsNs] === undefined
+                    ? null
+                    : row.oauthSession?.configured === true
+                      ? (
+                        <button
+                          type="button"
+                          className={styles['secondaryButton']}
+                          aria-label={providerCopy(t('logout'), target)}
+                          disabled={!state.writable}
+                          onClick={() => {
+                            if (row.oauthRef !== undefined) logoutSession(target, row.oauthRef)
+                          }}
+                        >
+                          {t('logout')}
+                        </button>
+                      )
+                      : (
+                        <button
+                          type="button"
+                          className={styles['secondaryButton']}
+                          aria-label={providerCopy(
+                            target.settingsNs === 'llm-claude' ? t('claudeLogin') : t('opencodeLogin'),
+                            target,
+                          )}
+                          disabled={!state.writable}
+                          onClick={() => {
+                            setSavedTarget(undefined)
+                            setLoginTarget(target)
+                          }}
+                        >
+                          {target.settingsNs === 'llm-claude' ? t('claudeLogin') : t('opencodeLogin')}
+                        </button>
+                      )}
                   <button
                     type="button"
                     className={styles['secondaryButton']}
@@ -477,7 +601,27 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
                         {t('remove')}
                       </button>
                     )
-                    : null}
+                    : resettableRefs(row).length > 0
+                      ? (
+                        <button
+                          type="button"
+                          className={styles['dangerButton']}
+                          aria-label={providerCopy(t('resetCredentials'), target)}
+                          disabled={!state.writable}
+                          onClick={() => {
+                            setSavedTarget(undefined)
+                            setResetFailure(undefined)
+                            setResetTarget({
+                              provider: target.provider,
+                              displayName: target.displayName,
+                              refs: resettableRefs(row),
+                            })
+                          }}
+                        >
+                          {t('remove')}
+                        </button>
+                      )
+                      : null}
                 </span>
               </div>
               {open
@@ -594,6 +738,53 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
               </div>
             )}
       </div>
+      {loginTarget === undefined
+        ? null
+        : loginTarget.settingsNs === 'llm-claude'
+          ? (
+            <ClaudeLoginDialog
+              api={api}
+              t={t}
+              readOnly={!state.writable}
+              onClose={closeLogin}
+            />
+          )
+          : (
+            <OpencodeLoginDialog
+              api={api}
+              t={t}
+              readOnly={!state.writable}
+              onClose={closeLogin}
+            />
+          )}
+      {resetTarget === undefined
+        ? null
+        : (
+          <Modal
+            open
+            onClose={closeReset}
+            title={providerCopy(t('resetCredentialsTitle'), resetTarget)}
+            closeLabel={t('close')}
+            description={providerCopy(t('resetCredentialsDescription'), resetTarget)}
+            footer={(
+              <>
+                <Button variant="outline" autoFocus disabled={resetting} onClick={closeReset}>
+                  {t('cancel')}
+                </Button>
+                <Button
+                  variant="outline"
+                  className={styles['deleteConfirm']}
+                  disabled={resetting}
+                  onClick={confirmReset}
+                >
+                  {resetting ? t('resettingCredentials') : t('resetCredentialsConfirm')}
+                </Button>
+              </>
+            )}
+          >
+            {resetFailure === undefined ? null : <p className={styles['error']}>{resetFailure}</p>}
+          </Modal>
+        )}
       <Modal
         open={deleteTarget !== undefined}
         onClose={closeDelete}

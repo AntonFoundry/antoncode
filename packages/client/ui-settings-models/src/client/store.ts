@@ -34,6 +34,10 @@ export interface ProviderRow {
   apiKeyEnv: string | undefined
   /** Credential state for {@link apiKeyEnv}, once described. */
   credential: CredentialView | undefined
+  /** OAuth session reference for subscription routes, when the route owns one. */
+  oauthRef: string | undefined
+  /** Credential state for {@link oauthRef}, once described. */
+  oauthSession: CredentialView | undefined
   /** Whether the provider's models appear in the session model catalog. */
   enabled: boolean
 }
@@ -160,6 +164,13 @@ export class ModelsSettingsStore {
     }
     const namespaces = new Map(views.map(view => [view.ns, view]))
     const disabled = new Set(disabledProvidersOf(namespaces.get(MODEL_CATALOG_NAMESPACE)))
+    // Subscription routes authenticate through a stored OAuth session
+    // rather than an API key; describing it lets the row show session state
+    // (status dot, login/logout) beside the key state it already shows.
+    const OAUTH_REF_BY_SETTINGS_NS: Readonly<Record<string, string>> = {
+      'llm-opencode': 'OPENCODE_ZEN_OAUTH',
+      'llm-claude': 'CLAUDE_CODE_OAUTH',
+    }
     const rows: ProviderRow[] = providers.map((entry) => {
       const namespace = namespaces.get(entry.settingsNs)
       const configured = namespace !== undefined
@@ -168,16 +179,22 @@ export class ModelsSettingsStore {
         && entry.settingsPath.length > 0
         && hasPath(namespace.user, entry.settingsPath)
         && !hasPath(namespace.base, entry.settingsPath)
+      const oauthRef = OAUTH_REF_BY_SETTINGS_NS[entry.settingsNs]
       return {
         entry,
         configured,
         removable,
         apiKeyEnv: apiKeyEnvOf(namespace, entry.settingsPath),
         credential: undefined,
+        oauthRef,
+        oauthSession: undefined,
         enabled: !disabled.has(entry.provider),
       }
     })
-    const refs = [...new Set(rows.flatMap(row => row.apiKeyEnv === undefined ? [] : [row.apiKeyEnv]))]
+    const refs = [...new Set(rows.flatMap(row => [
+      ...(row.apiKeyEnv === undefined ? [] : [row.apiKeyEnv]),
+      ...(row.oauthRef === undefined ? [] : [row.oauthRef]),
+    ]))]
     let credentials: Record<string, CredentialView> = {}
     let credentialError: string | null = null
     if (refs.length > 0) {
@@ -202,6 +219,9 @@ export class ModelsSettingsStore {
         ...row,
         ...row.apiKeyEnv !== undefined && credentials[row.apiKeyEnv] !== undefined
           ? { credential: credentials[row.apiKeyEnv] }
+          : {},
+        ...row.oauthRef !== undefined && credentials[row.oauthRef] !== undefined
+          ? { oauthSession: credentials[row.oauthRef] }
           : {},
       }))
       s.namespaces = namespaces

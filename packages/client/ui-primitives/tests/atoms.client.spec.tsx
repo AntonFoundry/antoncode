@@ -13,6 +13,20 @@ describe('ProviderLogo', () => {
   })
 })
 
+describe('ProviderLogo Claude Code', () => {
+  it('uses the Claude asset for the claude-code subscription route', () => {
+    const { container } = render(<ProviderLogo provider="claude-code" name="Claude Code" />)
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('/assets/providers/anthropic.svg')
+  })
+})
+
+describe('ProviderLogo Anthropic', () => {
+  it('uses the Claude asset for the anthropic provider route', () => {
+    const { container } = render(<ProviderLogo provider="anthropic" name="Anthropic Claude" />)
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('/assets/providers/anthropic.svg')
+  })
+})
+
 describe('Button', () => {
   it('renders children, icon, and forwards clicks', () => {
     const onClick = vi.fn()

@@ -43,6 +43,16 @@ const EFFORT_LEVEL: Record<string, string> = {
 }
 
 /**
+ * Compact stop labels for the hover slider, keyed by effort id. The card is
+ * narrow, so the two longest adapter names shorten here — the pill keeps the
+ * adapter's full name.
+ */
+const COMPACT_STOP_LABEL: Record<string, string> = {
+  medium: 'Med',
+  xhigh: 'XHigh',
+}
+
+/**
  * Render the composer model seat: the model trigger, and — for a model with
  * reasoning metadata — the effort pill with its hover slider.
  * @param props - owner share (locked) + injected face (shared directory
@@ -116,7 +126,7 @@ export function ModelSelect(
       ...reasoning.efforts.map((effort: ModelReasoningEffort) => ({
         key: `effort:${effort.id}`,
         effort: effort.id,
-        label: effort.name,
+        label: COMPACT_STOP_LABEL[effort.id] ?? effort.name,
         ...effort.description === undefined ? {} : { description: effort.description },
       })),
     ], [reasoning, t])
