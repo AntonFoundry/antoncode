@@ -37,7 +37,7 @@ import type {
   ToolCallView, ToolEventView, ToolResultView, WorkspaceId, WorkspaceView,
   WorktreeId, WorktreeModePrefView, WorktreeView,
 } from './api.ts'
-import type { RequestPayload, ResponseValue, RpcMethodMap } from '@deepseek-ai/dsh-host-apiproxy/api'
+import type { ClaudeLoginWire, OAuthLoginWire, RequestPayload, ResponseValue, RpcMethodMap } from '@deepseek-ai/dsh-host-apiproxy/api'
 import { AbstractApiClient, RpcId, SESSION_SEARCH_RESULT_LIMIT } from './api.ts'
 import { randomUuid } from './random-uuid.ts'
 import type { ClientConnectionRpc } from '../rpc.ts'
@@ -3127,6 +3127,152 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         return ok(request, {})
       },
     },
+    opencodeOAuth: (() => {
+      // Canned device flow: first status poll stays pending, the second
+      // approves with two workspaces so surfaces exercise the picker.
+      let nextLogin = 0
+      const logins = new Map<string, { polls: number; status: OAuthLoginWire['status']; orgID?: string }>()
+      const view = (id: string): OAuthLoginWire => {
+        const record = logins.get(id)
+        if (record === undefined) throw new Error(`fixture: unknown opencode login "${id}"`)
+        const base: OAuthLoginWire = { loginId: id, status: record.status }
+        if (record.status === 'pending') {
+          base.userCode = 'ABCD-1234'
+          base.verificationUri = 'https://opencode.ai/device?code=ABCD-1234'
+          base.intervalSeconds = 2
+          base.expiresInSeconds = 600
+        }
+        if (record.status === 'awaiting-org') {
+          base.orgs = [{ id: 'org-a', name: 'A' }, { id: 'org-b', name: 'B' }]
+        }
+        if (record.orgID !== undefined) base.orgID = record.orgID
+        if (record.status === 'done') base.allowedModelCount = 3
+        return base
+      }
+      return {
+        start: (request) => {
+          nextLogin += 1
+          const id = `login_fixture_${nextLogin}`
+          logins.set(id, { polls: 0, status: 'pending' })
+          return ok(request, { login: view(id) })
+        },
+        status: (request) => {
+          const record = logins.get(request.payload.loginId)
+          if (record === undefined) {
+            return err(request, {
+              code: 'opencode-login-not-found',
+              message: `no OpenCode login "${request.payload.loginId}" exists on this server`,
+              details: { loginId: request.payload.loginId },
+            })
+          }
+          if (record.status === 'pending') {
+            record.polls += 1
+            if (record.polls >= 2) record.status = 'awaiting-org'
+          }
+          return ok(request, { login: view(request.payload.loginId) })
+        },
+        select: (request) => {
+          const record = logins.get(request.payload.loginId)
+          if (record === undefined) {
+            return err(request, {
+              code: 'opencode-login-not-found',
+              message: `no OpenCode login "${request.payload.loginId}" exists on this server`,
+              details: { loginId: request.payload.loginId },
+            })
+          }
+          if (record.status !== 'awaiting-org') {
+            return err(request, {
+              code: 'opencode-login-invalid',
+              message: `OpenCode login "${request.payload.loginId}" is ${record.status}; no workspace pick is open`,
+              details: { loginId: request.payload.loginId },
+            })
+          }
+          if (request.payload.orgID !== undefined
+            && !(record.status === 'awaiting-org')) {
+            return err(request, {
+              code: 'opencode-login-invalid',
+              message: `workspace "${request.payload.orgID}" is not offered by this login`,
+              details: { loginId: request.payload.loginId },
+            })
+          }
+          record.status = 'done'
+          if (request.payload.orgID !== undefined) record.orgID = request.payload.orgID
+          return ok(request, { login: view(request.payload.loginId) })
+        },
+        cancel: (request) => {
+          const record = logins.get(request.payload.loginId)
+          if (record === undefined) {
+            return err(request, {
+              code: 'opencode-login-not-found',
+              message: `no OpenCode login "${request.payload.loginId}" exists on this server`,
+              details: { loginId: request.payload.loginId },
+            })
+          }
+          if (record.status === 'pending' || record.status === 'awaiting-org') record.status = 'cancelled'
+          return ok(request, { login: view(request.payload.loginId) })
+        },
+      }
+    })(),
+    claudeOAuth: (() => {
+      // Canned paste-back flow: submit redeems immediately, no polling.
+      let nextLogin = 0
+      const logins = new Map<string, { status: ClaudeLoginWire['status'] }>()
+      const view = (id: string): ClaudeLoginWire => {
+        const record = logins.get(id)
+        if (record === undefined) throw new Error(`fixture: unknown Claude login "${id}"`)
+        const base: ClaudeLoginWire = { loginId: id, status: record.status }
+        if (record.status === 'pending') {
+          base.verificationUri = 'https://platform.claude.com/oauth/authorize?response_type=code'
+        }
+        return base
+      }
+      return {
+        start: (request) => {
+          nextLogin += 1
+          const id = `login_claude_fixture_${nextLogin}`
+          logins.set(id, { status: 'pending' })
+          return ok(request, { login: view(id) })
+        },
+        submit: (request) => {
+          const record = logins.get(request.payload.loginId)
+          if (record === undefined) {
+            return err(request, {
+              code: 'claude-login-not-found',
+              message: `no Claude login "${request.payload.loginId}" exists on this server`,
+              details: { loginId: request.payload.loginId },
+            })
+          }
+          if (record.status !== 'pending') {
+            return err(request, {
+              code: 'claude-login-invalid',
+              message: `Claude login "${request.payload.loginId}" is ${record.status}; no paste is open`,
+              details: { loginId: request.payload.loginId },
+            })
+          }
+          if (request.payload.pasted.trim().length === 0) {
+            return err(request, {
+              code: 'claude-login-invalid',
+              message: 'Claude login failed: pasted code is empty',
+              details: { loginId: request.payload.loginId },
+            })
+          }
+          record.status = 'done'
+          return ok(request, { login: view(request.payload.loginId) })
+        },
+        cancel: (request) => {
+          const record = logins.get(request.payload.loginId)
+          if (record === undefined) {
+            return err(request, {
+              code: 'claude-login-not-found',
+              message: `no Claude login "${request.payload.loginId}" exists on this server`,
+              details: { loginId: request.payload.loginId },
+            })
+          }
+          if (record.status === 'pending') record.status = 'cancelled'
+          return ok(request, { login: view(request.payload.loginId) })
+        },
+      }
+    })(),
     llm: {
       providers: request => ok(request, {
         providers: [
@@ -3344,6 +3490,13 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'term.input': return this.api.term.input(request)
       case 'term.resize': return this.api.term.resize(request)
       case 'term.dispose': return this.api.term.dispose(request)
+      case 'opencodeOAuth.start': return this.api.opencodeOAuth.start(request)
+      case 'opencodeOAuth.status': return this.api.opencodeOAuth.status(request)
+      case 'opencodeOAuth.select': return this.api.opencodeOAuth.select(request)
+      case 'opencodeOAuth.cancel': return this.api.opencodeOAuth.cancel(request)
+      case 'claudeOAuth.start': return this.api.claudeOAuth.start(request)
+      case 'claudeOAuth.submit': return this.api.claudeOAuth.submit(request)
+      case 'claudeOAuth.cancel': return this.api.claudeOAuth.cancel(request)
     }
   }
 

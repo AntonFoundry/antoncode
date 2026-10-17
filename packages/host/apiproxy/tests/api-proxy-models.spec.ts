@@ -556,6 +556,35 @@ describe('Web session model selection', () => {
     await ctx.fiber.dispose()
   })
 
+  it('orders every provider newest generation first, free partition intact', async () => {
+    const { ctx, sessionId } = await harness()
+    ctx.llm.registerAdapter(['acme'], new CatalogAdapter('Acme', [
+      { provider: 'acme', id: 'model-4-5', name: 'Model 4.5' },
+      { provider: 'acme', id: 'model-5', name: 'Model 5' },
+      { provider: 'acme', id: 'model-4-8', name: 'Model 4.8' },
+      { provider: 'acme', id: 'model-plain', name: 'Plain' },
+      { provider: 'acme', id: 'model-4-5-20251101', name: 'Model 4.5 Snapshot' },
+    ]))
+    ctx.llm.registerAdapter(['opencode-free'], new CatalogAdapter('OpenCode Free', [
+      { provider: 'opencode-free', id: 'chat-free', name: 'Chat Free' },
+      { provider: 'opencode-free', id: 'paid-pro', name: 'Paid Pro' },
+      { provider: 'opencode-free', id: 'spark-free', name: 'Spark Free' },
+    ]))
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+
+    const groups = expectValue(await api.sessions.models(request({ sessionId }))).groups
+    // Newest generation first; the pinned snapshot trails its floating base.
+    expect(groups.find(group => group.id === 'acme')?.models.map(model => model.id))
+      .toEqual(['model-5', 'model-4-8', 'model-4-5', 'model-4-5-20251101', 'model-plain'])
+    // Free partition stays ahead regardless of generation.
+    expect(groups.find(group => group.id === 'opencode-free')?.models.map(model => model.id))
+      .toEqual(['chat-free', 'spark-free', 'paid-pro'])
+    await ctx.fiber.dispose()
+  })
+
   it('places free-marked OpenCode and OpenRouter entries before paid entries', async () => {
     const { ctx, sessionId } = await harness()
     ctx.llm.registerAdapter(['opencode-free'], new CatalogAdapter('OpenCode Free', [

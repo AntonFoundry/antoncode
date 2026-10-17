@@ -16,6 +16,8 @@ import type { SkillsApi } from './skills.ts'
 import type { GoalsApi } from './goals.ts'
 import type { SettingsApi } from './settings.ts'
 import type { CredentialsApi } from './credentials.ts'
+import type { OpencodeOAuthApi } from './opencode-oauth.ts'
+import type { ClaudeOAuthApi } from './claude-oauth.ts'
 import type { LlmApi } from './llm.ts'
 import type { SubagentsApi } from './subagents.ts'
 import type { TermApi } from './term.ts'
@@ -100,6 +102,13 @@ export interface RpcMethodMap {
   'credentials.describe': CredentialsApi['describe']
   'credentials.set': CredentialsApi['set']
   'credentials.unset': CredentialsApi['unset']
+  'opencodeOAuth.start': OpencodeOAuthApi['start']
+  'opencodeOAuth.status': OpencodeOAuthApi['status']
+  'opencodeOAuth.select': OpencodeOAuthApi['select']
+  'opencodeOAuth.cancel': OpencodeOAuthApi['cancel']
+  'claudeOAuth.start': ClaudeOAuthApi['start']
+  'claudeOAuth.submit': ClaudeOAuthApi['submit']
+  'claudeOAuth.cancel': ClaudeOAuthApi['cancel']
   'llm.providers': LlmApi['providers']
   'llm.models': LlmApi['models']
   'llm.discoverModels': LlmApi['discoverModels']

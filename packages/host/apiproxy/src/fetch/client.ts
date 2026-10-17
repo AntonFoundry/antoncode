@@ -97,6 +97,13 @@ import {
 import {
   credentialsDescribeValueSchema, credentialsSetValueSchema, credentialsUnsetValueSchema,
 } from '../api/credentials.schema.ts'
+import {
+  opencodeOAuthCancelValueSchema, opencodeOAuthSelectValueSchema, opencodeOAuthStartValueSchema,
+  opencodeOAuthStatusValueSchema,
+} from '../api/opencode-oauth.schema.ts'
+import {
+  claudeOAuthCancelValueSchema, claudeOAuthStartValueSchema, claudeOAuthSubmitValueSchema,
+} from '../api/claude-oauth.schema.ts'
 import { llmDiscoverModelsValueSchema, llmModelsValueSchema, llmProvidersValueSchema } from '../api/llm.schema.ts'
 import {
   subagentHistoryValueSchema,
@@ -240,6 +247,17 @@ export interface IApiClient {
     set(payload: RequestPayload<'credentials.set'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'credentials.set'>>>
     unset(payload: RequestPayload<'credentials.unset'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'credentials.unset'>>>
   }
+  opencodeOAuth: {
+    start(payload: RequestPayload<'opencodeOAuth.start'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'opencodeOAuth.start'>>>
+    status(payload: RequestPayload<'opencodeOAuth.status'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'opencodeOAuth.status'>>>
+    select(payload: RequestPayload<'opencodeOAuth.select'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'opencodeOAuth.select'>>>
+    cancel(payload: RequestPayload<'opencodeOAuth.cancel'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'opencodeOAuth.cancel'>>>
+  }
+  claudeOAuth: {
+    start(payload: RequestPayload<'claudeOAuth.start'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'claudeOAuth.start'>>>
+    submit(payload: RequestPayload<'claudeOAuth.submit'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'claudeOAuth.submit'>>>
+    cancel(payload: RequestPayload<'claudeOAuth.cancel'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'claudeOAuth.cancel'>>>
+  }
   llm: {
     providers(payload: RequestPayload<'llm.providers'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'llm.providers'>>>
     models(payload: RequestPayload<'llm.models'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'llm.models'>>>
@@ -329,6 +347,13 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'credentials.describe': credentialsDescribeValueSchema,
   'credentials.set': credentialsSetValueSchema,
   'credentials.unset': credentialsUnsetValueSchema,
+  'opencodeOAuth.start': opencodeOAuthStartValueSchema,
+  'opencodeOAuth.status': opencodeOAuthStatusValueSchema,
+  'opencodeOAuth.select': opencodeOAuthSelectValueSchema,
+  'opencodeOAuth.cancel': opencodeOAuthCancelValueSchema,
+  'claudeOAuth.start': claudeOAuthStartValueSchema,
+  'claudeOAuth.submit': claudeOAuthSubmitValueSchema,
+  'claudeOAuth.cancel': claudeOAuthCancelValueSchema,
   'llm.providers': llmProvidersValueSchema,
   'llm.models': llmModelsValueSchema,
   'llm.discoverModels': llmDiscoverModelsValueSchema,
@@ -650,6 +675,19 @@ export abstract class AbstractApiClient implements IApiClient {
     describe: (payload, signal) => this.callUnary('credentials.describe', payload, signal),
     set: (payload, signal) => this.callUnary('credentials.set', payload, signal),
     unset: (payload, signal) => this.callUnary('credentials.unset', payload, signal),
+  }
+
+  readonly opencodeOAuth: IApiClient['opencodeOAuth'] = {
+    start: (payload, signal) => this.callUnary('opencodeOAuth.start', payload, signal),
+    status: (payload, signal) => this.callUnary('opencodeOAuth.status', payload, signal),
+    select: (payload, signal) => this.callUnary('opencodeOAuth.select', payload, signal),
+    cancel: (payload, signal) => this.callUnary('opencodeOAuth.cancel', payload, signal),
+  }
+
+  readonly claudeOAuth: IApiClient['claudeOAuth'] = {
+    start: (payload, signal) => this.callUnary('claudeOAuth.start', payload, signal),
+    submit: (payload, signal) => this.callUnary('claudeOAuth.submit', payload, signal),
+    cancel: (payload, signal) => this.callUnary('claudeOAuth.cancel', payload, signal),
   }
 
   readonly llm: IApiClient['llm'] = {

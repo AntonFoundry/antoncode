@@ -112,6 +112,12 @@
     },
     {
       "path": "../../util/native-command"
+    },
+    {
+      "path": "../../llm/llm-opencode"
+    },
+    {
+      "path": "../../llm/llm-claude"
     }
   ]
 }

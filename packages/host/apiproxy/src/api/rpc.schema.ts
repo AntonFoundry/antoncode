@@ -83,6 +83,12 @@ export const rpcErrorSchema: z.ZodType<RpcError> = z.discriminatedUnion('code', 
   z.object({ code: z.literal('subagent-delivery-unavailable'), message: z.string(), details: z.object({ childSessionId: z.string() }) }),
   z.object({ code: z.literal('job-not-found'), message: z.string(), details: z.object({ jobId: z.string() }) }),
   z.object({ code: z.literal('jobs-unavailable'), message: z.string(), details: z.object({}) }),
+  z.object({ code: z.literal('opencode-oauth-unavailable'), message: z.string(), details: z.object({}) }),
+  z.object({ code: z.literal('opencode-login-not-found'), message: z.string(), details: z.object({ loginId: z.string() }) }),
+  z.object({ code: z.literal('opencode-login-invalid'), message: z.string(), details: z.object({ loginId: z.string().optional() }) }),
+  z.object({ code: z.literal('claude-oauth-unavailable'), message: z.string(), details: z.object({}) }),
+  z.object({ code: z.literal('claude-login-not-found'), message: z.string(), details: z.object({ loginId: z.string() }) }),
+  z.object({ code: z.literal('claude-login-invalid'), message: z.string(), details: z.object({ loginId: z.string().optional() }) }),
   z.object({ code: z.literal('internal'), message: z.string(), details: z.object({}) }),
 ]) as unknown as z.ZodType<RpcError>
 

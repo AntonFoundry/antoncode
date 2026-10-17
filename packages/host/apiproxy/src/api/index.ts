@@ -18,6 +18,8 @@ import type { EventsApi } from './events.ts'
 import type { GoalsApi } from './goals.ts'
 import type { SettingsApi } from './settings.ts'
 import type { CredentialsApi } from './credentials.ts'
+import type { OpencodeOAuthApi } from './opencode-oauth.ts'
+import type { ClaudeOAuthApi } from './claude-oauth.ts'
 import type { LlmApi } from './llm.ts'
 import type { DownloadsApi } from './downloads.ts'
 import type { TermApi } from './term.ts'
@@ -42,6 +44,8 @@ export interface ApiProxy {
   goals: GoalsApi
   settings: SettingsApi
   credentials: CredentialsApi
+  opencodeOAuth: OpencodeOAuthApi
+  claudeOAuth: ClaudeOAuthApi
   llm: LlmApi
   /** Interactive PTY sessions for the GUI terminal (login bash on a node-pty). */
   term: TermApi
@@ -83,6 +87,8 @@ export type { EventsApi, MuxFrame, HostFrame, QueuedInboxItem, ToolCallView, Too
 export type { GoalsApi, GoalId, GoalRef } from './goals.ts'
 export type { SettingsApi, SettingsNamespaceView, SettingsPathOpView, SettingsSecretView } from './settings.ts'
 export type { CredentialsApi, CredentialView } from './credentials.ts'
+export type { OpencodeOAuthApi, OAuthLoginWire, OAuthOrgWire } from './opencode-oauth.ts'
+export type { ClaudeOAuthApi, ClaudeLoginWire } from './claude-oauth.ts'
 export type { ConfigurableProviderView, DiscoveredModelView, LlmApi } from './llm.ts'
 export type { DownloadsApi } from './downloads.ts'
 export type { ApprovalResponsePayload } from './approvals.ts'

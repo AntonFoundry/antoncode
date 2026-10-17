@@ -92,6 +92,13 @@ import {
 import {
   credentialsDescribeRequestSchema, credentialsSetRequestSchema, credentialsUnsetRequestSchema,
 } from '../api/credentials.schema.ts'
+import {
+  opencodeOAuthCancelRequestSchema, opencodeOAuthSelectRequestSchema, opencodeOAuthStartRequestSchema,
+  opencodeOAuthStatusRequestSchema,
+} from '../api/opencode-oauth.schema.ts'
+import {
+  claudeOAuthCancelRequestSchema, claudeOAuthStartRequestSchema, claudeOAuthSubmitRequestSchema,
+} from '../api/claude-oauth.schema.ts'
 import { llmDiscoverModelsRequestSchema,
   llmModelsRequestSchema, llmProvidersRequestSchema } from '../api/llm.schema.ts'
 import {
@@ -198,6 +205,13 @@ const UNARY_ROUTES: UnaryRoutes = {
   'credentials.describe': { schema: credentialsDescribeRequestSchema, invoke: (api, r) => api.credentials.describe(r) },
   'credentials.set': { schema: credentialsSetRequestSchema, invoke: (api, r) => api.credentials.set(r) },
   'credentials.unset': { schema: credentialsUnsetRequestSchema, invoke: (api, r) => api.credentials.unset(r) },
+  'opencodeOAuth.start': { schema: opencodeOAuthStartRequestSchema, invoke: (api, r) => api.opencodeOAuth.start(r) },
+  'opencodeOAuth.status': { schema: opencodeOAuthStatusRequestSchema, invoke: (api, r) => api.opencodeOAuth.status(r) },
+  'opencodeOAuth.select': { schema: opencodeOAuthSelectRequestSchema, invoke: (api, r) => api.opencodeOAuth.select(r) },
+  'opencodeOAuth.cancel': { schema: opencodeOAuthCancelRequestSchema, invoke: (api, r) => api.opencodeOAuth.cancel(r) },
+  'claudeOAuth.start': { schema: claudeOAuthStartRequestSchema, invoke: (api, r) => api.claudeOAuth.start(r) },
+  'claudeOAuth.submit': { schema: claudeOAuthSubmitRequestSchema, invoke: (api, r) => api.claudeOAuth.submit(r) },
+  'claudeOAuth.cancel': { schema: claudeOAuthCancelRequestSchema, invoke: (api, r) => api.claudeOAuth.cancel(r) },
   'llm.providers': { schema: llmProvidersRequestSchema, invoke: (api, r) => api.llm.providers(r) },
   'llm.models': { schema: llmModelsRequestSchema, invoke: (api, r) => api.llm.models(r) },
   'llm.discoverModels': { schema: llmDiscoverModelsRequestSchema, invoke: (api, r, signal) => api.llm.discoverModels(r, signal) },
@@ -239,9 +253,6 @@ function fullResponse(narrow: RpcResponse<unknown>): Response {
  * Wire<> widening back to the exact payload (undefined-valued properties and
  * absent ones are indistinguishable after JSON transport).
  */
-// K appears once in the signature but ties the UNARY_ROUTES[K] row lookup to its own
-// schema/invoke pairing; a union parameter degrades the row to an uninvokable intersection.
-// oxlint-disable-next-line typescript/no-unnecessary-type-parameters
 async function handleUnary<K extends keyof RpcMethodMap>(
   api: ApiProxy, method: K, message: ClientRequest, signal: AbortSignal,
 ): Promise<Response> {

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ApiProxy, HostFrame, MuxFrame } from '../src/api/index.ts'
-import type { ClientResponse, RpcMessage, RpcReceipt, RpcRequest } from '../src/api/rpc.ts'
+import type { ClientResponse, RpcMessage, RpcReceipt, RpcRequest, RpcResponse } from '../src/api/rpc.ts'
 import { RpcId } from '../src/api/rpc.ts'
 import { toFetchHandler } from '../src/fetch/handler.ts'
 import { AbstractApiClient, InProcessApiClient } from '../src/fetch/client.ts'
@@ -9,6 +9,8 @@ import { AbstractApiClient, InProcessApiClient } from '../src/fetch/client.ts'
 function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFrame[]; crashOn: string }> = {}): ApiProxy {
   const muxFrames = overrides.muxFrames ?? [{ type: 'session/subscribed', sessionId: 's1' as never, lastSeq: -1 }]
   const hostFrames = overrides.hostFrames ?? [{ type: 'host/session-removed', sessionId: 's1' as never }]
+  const oauthError = <T>(request: RpcRequest<unknown>): Promise<RpcResponse<T>> =>
+    Promise.resolve({ rpcId: request.rpcId, result: { ok: false, error: { code: 'internal' as const, message: 'stub', details: {} } } })
   async function * stream<F>(frames: F[], signal: AbortSignal): AsyncGenerator<RpcRequest<F>> {
     for (const payload of frames) {
       if (signal.aborted) return
@@ -27,6 +29,17 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
       pref: () => Promise.resolve({ rpcId: RpcId('worktree-pref'), result: { ok: true as const, value: { pref: null } } }),
       setPref: () => Promise.resolve({ rpcId: RpcId('worktree-setpref'), result: { ok: true as const, value: { saved: true } } }),
       remove: () => Promise.resolve({ rpcId: RpcId('worktree-remove'), result: { ok: true as const, value: { deleted: true } } }),
+    },
+    opencodeOAuth: {
+      start: oauthError,
+      status: oauthError,
+      select: oauthError,
+      cancel: oauthError,
+    },
+    claudeOAuth: {
+      start: oauthError,
+      submit: oauthError,
+      cancel: oauthError,
     },
     sessions: {
       async list(request) {

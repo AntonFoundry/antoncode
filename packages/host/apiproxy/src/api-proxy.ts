@@ -41,6 +41,10 @@ import type { PresetBearingSession } from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-tools'
 // Declaration merge only: brings ctx.flowBuilder into this program.
 import type {} from '@deepseek-ai/dsh-flowbuilder-service'
+// Declaration merge only: brings ctx.opencodeOAuth into this program.
+import type {} from '@deepseek-ai/dsh-llm-opencode'
+// Declaration merge only: brings ctx.claudeOAuth into this program.
+import type {} from '@deepseek-ai/dsh-llm-claude'
 // Declaration merge only: brings ctx.langflow into this program.
 import type {} from '@deepseek-ai/dsh-langflow-sidecar'
 import type { BlockLibraryEntryRecord, FlowDefinitionRecord, FlowRunRecordRecord } from '@deepseek-ai/dsh-flowbuilder-domain'
@@ -325,13 +329,52 @@ function modelCatalogSettings(ctx: Context): ModelCatalogSettings {
     ?? { disabledProviders: [] }
 }
 
-/** Keep explicit free-tier labels ahead of paid/unsuffixed entries in the two mixed gateways. */
-function freeFirstModels<T extends { id: string; name: string }>(provider: string, models: T[]): T[] {
-  if (provider !== 'opencode-free' && provider !== 'openrouter-free') return models
+/** Version signal parsed from a model id: numeric segments for recency plus a set-aside snapshot date. */
+interface ModelVersionKey {
+  /** Numeric segments in id order (`opus-4-8` → `[4, 8]`); empty when the id carries none. */
+  numbers: readonly number[]
+  /** Trailing snapshot date (`-20251101`), if the id pins one. */
+  dated: string | undefined
+}
+
+/** Split a trailing 6/8-digit snapshot date off a model id for generation comparison. */
+function versionKeyOf(id: string): ModelVersionKey {
+  const dated = id.match(/-(\d{6}|\d{8})$/)?.[1]
+  const stem = dated === undefined ? id : id.slice(0, -(dated.length + 1))
+  const numbers = [...stem.matchAll(/\d+/g)].map(match => Number.parseInt(match[0], 10)).filter(Number.isSafeInteger)
+  return { numbers, dated }
+}
+
+/**
+ * Order one provider's catalog entries: explicit free-tier labels first on
+ * the two mixed gateways, then newest generation first everywhere (a pinned
+ * snapshot trails its floating base, newer snapshots lead older ones),
+ * unparseable ids stable last. One composite stable sort keeps the free
+ * partition intact while recency applies within it — a global version sort
+ * would remix paid models above free ones.
+ */
+function orderCatalogModels<T extends { id: string; name: string }>(provider: string, models: T[]): T[] {
+  const mixed = provider === 'opencode-free' || provider === 'openrouter-free'
   const isFree = (model: T): boolean => /(?:^|[-_: ])free(?:$|[-_: ])/i.test(`${model.id} ${model.name}`)
   return models
-    .map((model, index) => ({ model, index }))
-    .sort((left, right) => Number(!isFree(left.model)) - Number(!isFree(right.model)) || left.index - right.index)
+    .map((model, index) => ({ model, index, key: versionKeyOf(model.id) }))
+    .sort((left, right) => {
+      if (mixed) {
+        const freeRank = Number(!isFree(left.model)) - Number(!isFree(right.model))
+        if (freeRank !== 0) return freeRank
+      }
+      const depth = Math.max(left.key.numbers.length, right.key.numbers.length)
+      for (let at = 0; at < depth; at += 1) {
+        const delta = (right.key.numbers[at] ?? -1) - (left.key.numbers[at] ?? -1)
+        if (delta !== 0) return delta
+      }
+      if (left.key.dated !== right.key.dated) {
+        if (left.key.dated === undefined) return -1
+        if (right.key.dated === undefined) return 1
+        if (left.key.dated !== right.key.dated) return left.key.dated < right.key.dated ? 1 : -1
+      }
+      return left.index - right.index
+    })
     .map(entry => entry.model)
 }
 
@@ -382,7 +425,7 @@ async function buildModelCatalog(ctx: Context): Promise<{
         const group: ModelProviderGroup = {
           id: provider.id,
           name: provider.name,
-          models: freeFirstModels(provider.id, entries),
+          models: orderCatalogModels(provider.id, entries),
         }
         return { kind: 'group' as const, group }
       } catch (error: unknown) {
@@ -2102,6 +2145,26 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   /** Missing-service report shared by the credentials domain. */
   function credentialsAbsent(): RpcError {
     return { code: 'internal', message: 'credentials service is absent: this deployment does not mount a credential provider (e.g. @deepseek-ai/dsh-credentials-local) in its composition', details: {} }
+  }
+
+  /** Missing-plugin report shared by the OpenCode-login domain. */
+  function oauthUnavailable(): RpcError {
+    return { code: 'opencode-oauth-unavailable', message: 'OpenCode login is unavailable: this deployment does not mount @deepseek-ai/dsh-llm-opencode in its composition', details: {} }
+  }
+
+  /** Unknown-login report shared by the OpenCode-login domain. */
+  function loginNotFound(loginId: string): RpcError {
+    return { code: 'opencode-login-not-found', message: `no OpenCode login "${loginId}" exists on this server`, details: { loginId } }
+  }
+
+  /** Missing-plugin report shared by the Claude-login domain. */
+  function claudeUnavailable(): RpcError {
+    return { code: 'claude-oauth-unavailable', message: 'Claude login is unavailable: this deployment does not mount @deepseek-ai/dsh-llm-claude in its composition', details: {} }
+  }
+
+  /** Unknown-login report shared by the Claude-login domain. */
+  function claudeLoginNotFound(loginId: string): RpcError {
+    return { code: 'claude-login-not-found', message: `no Claude login "${loginId}" exists on this server`, details: { loginId } }
   }
 
   /** Map one redacted settings descriptor to its wire view. */
@@ -3865,6 +3928,90 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           })
         }
         return ok(request, {})
+      },
+    },
+
+    opencodeOAuth: {
+      async start(request) {
+        const flow = ctx.get('opencodeOAuth')
+        if (flow === undefined) return err(request, oauthUnavailable())
+        try {
+          return ok(request, { login: await flow.start() })
+        } catch (error: unknown) {
+          return err(request, {
+            code: 'opencode-login-invalid',
+            message: error instanceof Error ? error.message : String(error),
+            details: {},
+          })
+        }
+      },
+
+      async status(request) {
+        const flow = ctx.get('opencodeOAuth')
+        if (flow === undefined) return err(request, oauthUnavailable())
+        const login = flow.snapshot(request.payload.loginId)
+        if (login === undefined) return err(request, loginNotFound(request.payload.loginId))
+        return ok(request, { login })
+      },
+
+      async select(request) {
+        const flow = ctx.get('opencodeOAuth')
+        if (flow === undefined) return err(request, oauthUnavailable())
+        const { loginId, orgID } = request.payload
+        try {
+          return ok(request, {
+            login: await flow.select(loginId, orgID === undefined ? undefined : orgID),
+          })
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error)
+          if (/unknown OpenCode login/.test(message)) return err(request, loginNotFound(loginId))
+          return err(request, { code: 'opencode-login-invalid', message, details: { loginId } })
+        }
+      },
+
+      async cancel(request) {
+        const flow = ctx.get('opencodeOAuth')
+        if (flow === undefined) return err(request, oauthUnavailable())
+        const login = flow.cancel(request.payload.loginId)
+        if (login === undefined) return err(request, loginNotFound(request.payload.loginId))
+        return ok(request, { login })
+      },
+    },
+
+    claudeOAuth: {
+      async start(request) {
+        const flow = ctx.get('claudeOAuth')
+        if (flow === undefined) return err(request, claudeUnavailable())
+        try {
+          return ok(request, { login: flow.start() })
+        } catch (error: unknown) {
+          return err(request, {
+            code: 'claude-login-invalid',
+            message: error instanceof Error ? error.message : String(error),
+            details: {},
+          })
+        }
+      },
+
+      async submit(request) {
+        const flow = ctx.get('claudeOAuth')
+        if (flow === undefined) return err(request, claudeUnavailable())
+        const { loginId, pasted } = request.payload
+        try {
+          return ok(request, { login: await flow.submit(loginId, pasted) })
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error)
+          if (/unknown Claude login/.test(message)) return err(request, claudeLoginNotFound(loginId))
+          return err(request, { code: 'claude-login-invalid', message, details: { loginId } })
+        }
+      },
+
+      async cancel(request) {
+        const flow = ctx.get('claudeOAuth')
+        if (flow === undefined) return err(request, claudeUnavailable())
+        const login = flow.cancel(request.payload.loginId)
+        if (login === undefined) return err(request, claudeLoginNotFound(request.payload.loginId))
+        return ok(request, { login })
       },
     },
 

@@ -115,6 +115,13 @@ const PRIVILEGED_METHODS = new Set([
   'credentials.describe',
   'credentials.set',
   'credentials.unset',
+  'opencodeOAuth.start',
+  'opencodeOAuth.status',
+  'opencodeOAuth.select',
+  'opencodeOAuth.cancel',
+  'claudeOAuth.start',
+  'claudeOAuth.submit',
+  'claudeOAuth.cancel',
   'llm.discoverModels',
 ])
 

@@ -109,6 +109,18 @@ export interface RpcErrorDetailsMap {
   'job-not-found': { jobId: string }
   /** No background-job registry is composed in this deployment. */
   'jobs-unavailable': Record<string, never>
+  /** The llm-opencode plugin (owner of the Zen login flow) is not installed. */
+  'opencode-oauth-unavailable': Record<string, never>
+  /** No login with this id exists on the Zen login flow. */
+  'opencode-login-not-found': { loginId: string }
+  /** The login exists but the transition is invalid (wrong phase, unknown workspace, capped, console failure). */
+  'opencode-login-invalid': { loginId?: string }
+  /** The llm-claude plugin (owner of the Claude login flow) is not installed. */
+  'claude-oauth-unavailable': Record<string, never>
+  /** No Claude login with this id exists on the Claude login flow. */
+  'claude-login-not-found': { loginId: string }
+  /** The login exists but the transition is invalid (wrong phase, foreign state, capped, exchange denial). */
+  'claude-login-invalid': { loginId?: string }
   'internal': {}
 }
 

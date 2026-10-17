@@ -42,6 +42,17 @@ function scriptedApi(overrides: {
       setPref: err,
       remove: err,
     },
+    opencodeOAuth: {
+      start: err,
+      status: err,
+      select: err,
+      cancel: err,
+    },
+    claudeOAuth: {
+      start: err,
+      submit: err,
+      cancel: err,
+    },
     sessions: {
       list: r => ok(r, { items: [] }),
       search: r => ok(r, { items: [], hasMore: false }),
