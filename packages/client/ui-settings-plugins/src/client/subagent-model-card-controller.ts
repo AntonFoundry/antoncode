@@ -18,6 +18,8 @@ export const SUBAGENT_MODEL_NS = 'subagent-child-model'
 export interface SubagentModelSettings {
   /** Route children inherit when their delegation names none. */
   defaultModel?: string
+  /** Reasoning effort children inherit when their delegation names none. */
+  defaultEffort?: string
 }
 
 /** One selectable model route: `provider/model` id plus a display label. */
@@ -32,6 +34,8 @@ export interface SubagentModelOption {
 export interface SubagentModelCardState extends CardShell {
   /** The global child-model route. */
   defaultModel: CardFieldState
+  /** The global default reasoning effort. */
+  defaultEffort: CardFieldState
 }
 
 /** The registration-side face the subagent-model card's slot entry injects. */
@@ -57,7 +61,7 @@ export class SubagentModelCardController {
     scope: SettingsScope<SubagentModelSettings>,
     private readonly fetchCatalog: () => Promise<readonly SubagentModelOption[]>,
   ) {
-    this.form = new CardForm(scope, [textField('defaultModel')])
+    this.form = new CardForm(scope, [textField('defaultModel'), textField('defaultEffort')])
     this.store = this.form.bind(() => this.projection())
   }
 
@@ -65,6 +69,7 @@ export class SubagentModelCardController {
     return {
       ...this.form.shell(),
       defaultModel: this.form.field('defaultModel'),
+      defaultEffort: this.form.field('defaultEffort'),
     }
   }
 

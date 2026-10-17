@@ -422,6 +422,30 @@ describe('SubagentModelCardController', () => {
     await vi.waitFor(() => { expect(host.unset).toHaveBeenCalledWith('defaultModel') })
     expect(face.hooks.subagentModelCard.getSnapshot().defaultModel.text).toBe('')
   })
+
+  it('stages and saves the default reasoning effort independently of the model route', async () => {
+    const host = stubSettingsScope<SubagentModelSettings>()
+    acceptWrites(host)
+    const controller = new SubagentModelCardController(host.scope, vi.fn(async () => []))
+    host.publish({ status: 'ready', writable: true, value: {}, user: {} })
+    const face = controller.inject()
+
+    expect(face.hooks.subagentModelCard.getSnapshot().defaultEffort).toEqual({ text: '', overridden: false, invalid: false })
+
+    face.edit('defaultEffort', 'high')
+    face.save()
+    // Wait for the save to fully settle (not just the write to land): the
+    // stub publishes synchronously, so `dirty` alone can read false before
+    // the form's own `saving` flag clears, and a second save() while the
+    // first is still in flight is a no-op by design.
+    await vi.waitFor(() => { expect(host.set).toHaveBeenCalledWith('defaultEffort', 'high') })
+    await vi.waitFor(() => { expect(face.hooks.subagentModelCard.getSnapshot().saving).toBe(false) })
+    expect(face.hooks.subagentModelCard.getSnapshot().dirty).toBe(false)
+
+    face.resetField('defaultEffort')
+    face.save()
+    await vi.waitFor(() => { expect(host.unset).toHaveBeenCalledWith('defaultEffort') })
+  })
 })
 
 describe('WebSearchCardController', () => {

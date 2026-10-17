@@ -24,6 +24,13 @@ const CUSTOM = '__custom'
 const INHERIT = ''
 
 /**
+ * Reasoning-effort ids a delegation may name, duplicated from
+ * `@deepseek-ai/dsh-tool-subagent`'s `REASONING_EFFORT_LEVELS`: a client
+ * package must not depend on a Host package.
+ */
+const REASONING_EFFORT_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+
+/**
  * Render the subagent-model card.
  * @param props - locale copy, the card snapshot, its form actions, and the
  *   catalog loader.
@@ -103,6 +110,24 @@ export function SubagentModelCard(props: SubagentModelCardProps) {
             }}
           />
         )}
+      <SelectField
+        id="plugin-config-subagent-model-default-effort"
+        label={t('subagentEffortDefault')}
+        hint={t('subagentEffortDefaultHint')}
+        overridden={state.defaultEffort.overridden}
+        overriddenLabel={t('overridden')}
+        resetLabel={t('reset')}
+        invalid={state.defaultEffort.invalid}
+        invalidLabel={t('invalidNumber')}
+        disabled={disabled}
+        value={state.defaultEffort.text}
+        options={[
+          { id: INHERIT, label: t('subagentEffortInherit') },
+          ...REASONING_EFFORT_LEVELS.map(level => ({ id: level, label: level })),
+        ]}
+        onEdit={(value) => { props.edit('defaultEffort', value) }}
+        onReset={() => { props.edit('defaultEffort', INHERIT) }}
+      />
     </PluginCard>
   )
 }

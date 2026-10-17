@@ -23,6 +23,7 @@ export type PluginsSettingsLocaleKey =
   | 'subagentModelTitle' | 'subagentModelDescription'
   | 'subagentModelDefault' | 'subagentModelDefaultHint'
   | 'subagentModelInherit' | 'subagentModelCustom' | 'subagentModelLoading'
+  | 'subagentEffortDefault' | 'subagentEffortDefaultHint' | 'subagentEffortInherit'
 
 /** English copy. */
 export const en: Record<PluginsSettingsLocaleKey, string> = {
@@ -94,12 +95,15 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   contextCodeMapOverride: 'Prompt override — code-map guidance',
   contextCodeMapOverrideHint: 'Replaces the ripwire code-map guidance section. Leave blank to use the built-in text.',
   subagentModelTitle: 'Subagent model',
-  subagentModelDescription: 'Which model delegated children run when a delegation does not name its own.',
+  subagentModelDescription: 'Which model and reasoning effort delegated children run when a delegation names neither.',
   subagentModelDefault: 'Default child model',
   subagentModelDefaultHint: 'Route children inherit, e.g. openrouter/strong-model. Leave blank to inherit the parent model.',
   subagentModelInherit: 'Inherit the parent session\'s model',
   subagentModelCustom: 'Custom route…',
   subagentModelLoading: 'Loading models…',
+  subagentEffortDefault: 'Default reasoning effort',
+  subagentEffortDefaultHint: 'Effort children use when a delegation names none. Leave as inherit to keep the route\'s own default.',
+  subagentEffortInherit: 'Inherit (route default)',
 }
 
 /** Simplified Chinese copy. */
@@ -172,10 +176,13 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   contextCodeMapOverride: '提示词覆盖 — 代码地图指引',
   contextCodeMapOverrideHint: '替换 ripwire 代码地图指引段落。留空使用内置文本。',
   subagentModelTitle: '子 Agent 模型',
-  subagentModelDescription: '委派调用未指定模型时，子 agent 使用哪个模型。',
+  subagentModelDescription: '委派调用未指定模型与推理强度时，子 agent 使用哪个模型、哪种推理强度。',
   subagentModelDefault: '默认子模型',
   subagentModelDefaultHint: '子 agent 继承的路由，如 openrouter/strong-model；留空则继承父会话的模型。',
   subagentModelInherit: '继承父会话的模型',
   subagentModelCustom: '自定义路由…',
   subagentModelLoading: '正在加载模型…',
+  subagentEffortDefault: '默认推理强度',
+  subagentEffortDefaultHint: '委派调用未指定推理强度时子 agent 使用的强度；保持继承则沿用路由自身的默认值。',
+  subagentEffortInherit: '继承（路由默认值）',
 }
