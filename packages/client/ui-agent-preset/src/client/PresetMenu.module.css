@@ -1,0 +1,24 @@
+.optionLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.optionName {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* Clamped to two lines: a long preset description must not stretch the menu
+   row past what a picker can show without scrolling into one item. */
+.optionDesc {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-tertiary);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}

@@ -13,9 +13,22 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { AgentPresetSection } from '../src/client/AgentPresetSection.tsx'
 import type { AgentPresetSectionProps } from '../src/client/AgentPresetSection.tsx'
 import type { AgentPresetSectionState, CopyDraft } from '../src/client/section-store.ts'
+import type { DelegationDepthState } from '../src/client/delegation-depth-controller.ts'
 import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
+
+/** The delegation-depth card stays unavailable unless a spec says otherwise. */
+const DEPTH_UNAVAILABLE: DelegationDepthState = {
+  available: false,
+  writable: false,
+  deploymentDefault: undefined,
+  value: 3,
+  overridden: false,
+  pendingEdit: false,
+  saving: false,
+  failed: false,
+}
 
 const READY: AgentPresetSectionState = {
   status: 'ready',
@@ -40,9 +53,10 @@ const READY: AgentPresetSectionState = {
  */
 function renderSection(
   state: Partial<AgentPresetSectionState> = {},
-  options: { creator?: boolean } = {},
+  options: { creator?: boolean; depth?: Partial<DelegationDepthState> } = {},
 ) {
   const store = createSnapshotStore<AgentPresetSectionState>({ ...READY, ...state })
+  const depthStore = createSnapshotStore<DelegationDepthState>({ ...DEPTH_UNAVAILABLE, ...options.depth })
   const actions = {
     load: vi.fn(() => Promise.resolve()),
     // The shell-owned section affordance (SettingsSectionOwnerProps.close).
@@ -59,11 +73,20 @@ function renderSection(
     confirmDelete: vi.fn(),
     remove: vi.fn(() => Promise.resolve()),
     makeDefault: vi.fn(() => Promise.resolve()),
+    max: vi.fn(() => 10),
+    stage: vi.fn(),
+    save: vi.fn(() => Promise.resolve()),
+    discard: vi.fn(),
+    reset: vi.fn(() => Promise.resolve()),
   }
   const props = {
     ...actions,
     useAgentPresetSection: bindSnapshotSelector(store),
-    t: (key: keyof typeof en) => en[key],
+    useDelegationDepth: bindSnapshotSelector(depthStore),
+    t: (key: keyof typeof en, params?: Record<string, string | number>) => {
+      const template = en[key]
+      return params === undefined ? template : template.replace(/\{(\w+)\}/g, (_, name) => String(params[name]))
+    },
   } as unknown as AgentPresetSectionProps
   render(<AgentPresetSection {...props} />)
   return actions
@@ -89,9 +112,12 @@ describe('the preset list', () => {
     renderSection()
 
     // Display copy is what a picker reads; the id stays visible as the key the
-    // composition and the session header actually carry.
-    expect(screen.getByText(en.presetStandardName)).toBeTruthy()
-    expect(screen.getByText(en.presetStandardDescription)).toBeTruthy()
+    // composition and the session header actually carry. The name also
+    // labels the default-agent dropdown trigger, so the card is checked
+    // within its own row rather than by a page-wide text query.
+    const standard = rowFor('standard')
+    expect(within(standard).getByText(en.presetStandardName)).toBeTruthy()
+    expect(within(standard).getByText(en.presetStandardDescription)).toBeTruthy()
     const mine = rowFor('mine')
     expect(within(mine).getAllByText('mine').length).toBeGreaterThan(0)
     expect(within(mine).getByText(en.noDescription)).toBeTruthy()
@@ -299,6 +325,7 @@ describe('the preset list', () => {
     const { container } = render(<AgentPresetSection {...({
       useAgentPresetSection: bindSnapshotSelector(
         createSnapshotStore<AgentPresetSectionState>({ ...READY, status: 'unavailable', rows: [] })),
+      useDelegationDepth: bindSnapshotSelector(createSnapshotStore<DelegationDepthState>(DEPTH_UNAVAILABLE)),
       t: (key: keyof typeof en) => en[key],
       load: vi.fn(() => Promise.resolve()),
     } as unknown as AgentPresetSectionProps)} />)
@@ -515,5 +542,82 @@ describe('a long card description', () => {
     }).not.toThrow()
     // The first measurement does not depend on the observer.
     expect(within(rowFor('zh')).getByText(LONG).getAttribute('title')).toBe('')
+  })
+})
+
+describe('the default-agent dropdown', () => {
+  it('names the current default and writes a pick through makeDefault', () => {
+    const actions = renderSection()
+
+    const trigger = screen.getByRole('button', { name: en.presetStandardName })
+    fireEvent.click(trigger)
+    // The menu shows every selectable preset's name and description — the
+    // same stacked label the General row's picker renders. Scoped to the
+    // menu: the roster card below repeats the same built-in description.
+    const menu = screen.getByRole('menu')
+    expect(within(menu).getByText(en.presetStandardDescription)).toBeTruthy()
+
+    fireEvent.click(within(menu).getByText(`mine · ${en.userTrust}`))
+    expect(actions.makeDefault).toHaveBeenCalledWith('mine')
+  })
+
+  it('omits a broken preset from the selectable options', () => {
+    renderSection({
+      rows: [
+        ...READY.rows,
+        { id: 'broken', trust: 'user', isDefault: false, broken: 'missing agent.cordis.yml' },
+      ],
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: en.presetStandardName }))
+    expect(within(screen.getByRole('menu')).queryByText('broken')).toBeNull()
+  })
+})
+
+describe('the delegation-depth card', () => {
+  it('renders nothing while the namespace is unavailable', () => {
+    renderSection()
+    expect(screen.queryByText(en.depthTitle)).toBeNull()
+  })
+
+  it('shows the slider, the deployment default, and the overridden badge, and stages a drag without writing', () => {
+    const actions = renderSection({}, {
+      depth: { available: true, writable: true, deploymentDefault: 3, value: 5, overridden: true, pendingEdit: false },
+    })
+
+    expect(screen.getByText(en.depthTitle)).toBeTruthy()
+    expect(screen.getByText('5')).toBeTruthy()
+    expect(screen.getByText(en.depthOverridden)).toBeTruthy()
+    expect(screen.getByText(en.depthDeploymentDefault.replace('{value}', '3'))).toBeTruthy()
+
+    const slider = screen.getByRole('slider')
+    fireEvent.change(slider, { target: { value: '7' } })
+    expect(actions.stage).toHaveBeenCalledWith(7)
+    expect(actions.save).not.toHaveBeenCalled()
+  })
+
+  it('saves a staged edit and discards it without reaching the host', () => {
+    const actions = renderSection({}, { depth: { available: true, writable: true, pendingEdit: true } })
+
+    fireEvent.click(screen.getByRole('button', { name: en.depthSave }))
+    expect(actions.save).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: en.depthDiscard }))
+    expect(actions.discard).toHaveBeenCalledTimes(1)
+  })
+
+  it('resets to the deployment default from the overridden badge', () => {
+    const actions = renderSection({}, { depth: { available: true, writable: true, overridden: true } })
+
+    fireEvent.click(screen.getByRole('button', { name: en.depthReset }))
+    expect(actions.reset).toHaveBeenCalledTimes(1)
+  })
+
+  it('disables every control on a read-only document and reports a failed save', () => {
+    renderSection({}, { depth: { available: true, writable: false, pendingEdit: true, failed: true } })
+
+    expect(screen.getByRole('slider')).toHaveProperty('disabled', true)
+    expect(screen.getByRole('button', { name: en.depthSave })).toHaveProperty('disabled', false)
+    expect(screen.getByText(en.depthSaveFailed)).toBeTruthy()
   })
 })

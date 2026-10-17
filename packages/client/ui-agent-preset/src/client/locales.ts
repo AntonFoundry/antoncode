@@ -17,6 +17,9 @@ export type AgentPresetSettingsKey =
   | 'openLocation' | 'showLocation' | 'revealedPathLabel'
   | 'idRequired' | 'idInvalid' | 'idTaken'
   | 'deleteTitle' | 'deleteDescription' | 'deleteConfirm' | 'deleting'
+  | 'defaultAgentLabel' | 'defaultAgentHint'
+  | 'depthTitle' | 'depthDescription' | 'depthLabel' | 'depthHint' | 'depthDeploymentDefault'
+  | 'depthOverridden' | 'depthReset' | 'depthSave' | 'depthSaving' | 'depthDiscard' | 'depthSaveFailed'
 
 /** English copy. */
 export const en: Record<AgentPresetSettingsKey, string> = {
@@ -27,7 +30,7 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   userTrust: 'Custom',
   seatHint: 'Agent preset for the session you are about to start',
   headerHint: 'The agent preset this session runs, fixed when it started',
-  nav: 'Agent presets',
+  nav: 'Agents',
   sectionIntro:
     'A preset is the plugin composition one session\'s agent runs — its tools, prompt, and capabilities. '
     + 'Duplicate an existing one and make it yours, or let the agent draft one for you in Creator mode.',
@@ -82,6 +85,19 @@ export const en: Record<AgentPresetSettingsKey, string> = {
     'The preset directory is deleted. Sessions already running on it keep working; new sessions cannot select it.',
   deleteConfirm: 'Delete',
   deleting: 'Deleting…',
+  defaultAgentLabel: 'Default agent',
+  defaultAgentHint: 'The preset sessions started without an explicit choice compose from.',
+  depthTitle: 'Delegation depth',
+  depthDescription: 'How many levels a subagent may delegate to another subagent.',
+  depthLabel: 'Maximum delegation depth',
+  depthHint: '0 forbids delegation entirely; higher values let a chain of subagents keep delegating further.',
+  depthDeploymentDefault: 'Deployment default: {value}',
+  depthOverridden: 'Overridden',
+  depthReset: 'Reset to default',
+  depthSave: 'Save',
+  depthSaving: 'Saving…',
+  depthDiscard: 'Discard',
+  depthSaveFailed: 'The deployment did not accept this value; it was left for you to correct.',
 }
 
 /** Simplified Chinese copy. */
@@ -93,7 +109,7 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   userTrust: '自定义',
   seatHint: '即将开始的这个会话所用的 Agent 预设',
   headerHint: '本会话运行的 Agent 预设，开始时即固定',
-  nav: 'Agent 预设',
+  nav: 'Agent',
   sectionIntro: '预设即一个会话的 Agent 所运行的插件组装 —— 它的工具、提示词与能力。复制一份既有预设改成自己的，或用「创造模式」让 Agent 帮你创建。',
   builtIn: '内置',
   setDefault: '设为默认',
@@ -139,6 +155,19 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   deleteDescription: '预设目录将被删除。已在其上运行的会话不受影响；新会话将无法再选择它。',
   deleteConfirm: '删除',
   deleting: '正在删除…',
+  defaultAgentLabel: '默认 Agent',
+  defaultAgentHint: '未明确选择时，新会话所使用的预设。',
+  depthTitle: '委派深度',
+  depthDescription: '子 agent 可以再向下委派给另一个子 agent 的层数。',
+  depthLabel: '最大委派深度',
+  depthHint: '0 表示完全禁止委派；更大的值允许更长的子 agent 委派链继续向下委派。',
+  depthDeploymentDefault: '部署默认值：{value}',
+  depthOverridden: '已覆盖',
+  depthReset: '恢复默认值',
+  depthSave: '保存',
+  depthSaving: '正在保存…',
+  depthDiscard: '放弃',
+  depthSaveFailed: '部署未接受该值，已保留供你修正。',
 }
 
 /** Preset roster fields needed to resolve Web display copy. */

@@ -12,6 +12,7 @@
 import { IconChevronDownOutline14, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { AgentPresetOption } from './settings-store.ts'
 import { presetDisplayText, type AgentPresetSettingsKey } from './locales.ts'
+import css from './PresetMenu.module.css'
 
 /** What one surface passes to the shared picker. */
 export interface PresetMenuProps {
@@ -51,12 +52,20 @@ export function PresetMenu({
       open={open}
       onClose={() => { onOpenChange(false) }}
       items={options.map((option) => {
-        const name = presetDisplayText(option, t).name
+        const text = presetDisplayText(option, t)
+        const name = option.trust === 'user' ? `${text.name} · ${t('userTrust')}` : text.name
         return {
           id: option.id,
           // All preset surfaces resolve copy the same way; the id is addressing,
-          // not a label, except where no display name exists.
-          label: option.trust === 'user' ? `${name} · ${t('userTrust')}` : name,
+          // not a label, except where no display name exists. Every item
+          // shows its description stacked under the name, so a picker never
+          // forces the user to open something else to see what a preset is.
+          label: (
+            <span className={css.optionLabel}>
+              <span className={css.optionName}>{name}</span>
+              {text.description === undefined ? null : <span className={css.optionDesc}>{text.description}</span>}
+            </span>
+          ),
         }
       })}
       selectedId={selectedId}

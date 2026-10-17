@@ -110,6 +110,17 @@ describe('the General-settings row', () => {
     expect(screen.getAllByText(en.presetStandardName)).toHaveLength(2)
   })
 
+  it('shows each option\'s description stacked under its name', () => {
+    renderRow()
+
+    fireEvent.click(screen.getByRole('button'))
+
+    // `standard` resolves the shipped built-in description; `mine` published
+    // none, so its row shows no description rather than a fabricated one.
+    expect(screen.getByText(en.presetStandardDescription)).toBeTruthy()
+    expect(screen.queryByText(en.noDescription)).toBeNull()
+  })
+
   it('falls back to the id for a preset that published no name', () => {
     renderRow({
       currentValue: 'mine',

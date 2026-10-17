@@ -11,6 +11,7 @@ import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { TestRemote, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
+import { SettingsScopeBinder } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-agent-preset/client'
 import { AgentPresetLabel } from '../src/client/AgentPresetLabel.tsx'
 import type { AgentPresetLabelInjected } from '../src/client/AgentPresetLabel.tsx'
@@ -109,6 +110,9 @@ async function bench() {
       },
       settings: {
         // The row reads this to learn whether this browser may write at all.
+        // Empty `namespaces`: no spec here exercises the depth card's actual
+        // write path, so its namespace stays unserved and the card renders
+        // nothing, exactly like a deployment without `tool-subagent`.
         describe: () => Promise.resolve({
           rpcId: 'r',
           result: { ok: true as const, value: { writable: true, hasDocument: true, namespaces: [] } },
@@ -117,6 +121,7 @@ async function bench() {
       },
     },
   } as never)
+  await ctx.plugin(SettingsScopeBinder).await()
   return { ctx, slots: ctx.get('slots') as SlotRegistry, calls, moveDefault }
 }
 
@@ -178,7 +183,7 @@ function sessionsDouble(state: {
 
 describe('ui-agent-preset apply', () => {
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'settingsScope'])
   })
 
   it('registers the General row and the settings section', async () => {
@@ -194,7 +199,7 @@ describe('ui-agent-preset apply', () => {
     expect(section.component).toBe(AgentPresetSection)
     expect(section.options).toMatchObject({ id: 'agent-presets', order: 20 })
     // The nav label is a locale-following thunk; owners resolve it at read time.
-    expect(resolveSlotLabel(section.options.label)).toBe('Agent 预设')
+    expect(resolveSlotLabel(section.options.label)).toBe('Agent')
   })
 
   it('registers into a declaration that arrives after apply', async () => {

@@ -2,7 +2,7 @@
 
 English
 
-The agent-preset surfaces: a General-settings row choosing which [preset](../../preset/agent-presets/README.md) new sessions are composed from, a chip on the new-session screen choosing the next session's, a read-only label in the session header, and a settings section that manages the roster — copy, delete, default, and the way into a preset's own files.
+The agent-preset surfaces: a General-settings row choosing which [preset](../../preset/agent-presets/README.md) new sessions are composed from, a chip on the new-session screen choosing the next session's, a read-only label in the session header, and the "Agents" settings section that manages the roster — a default-agent dropdown, copy, delete, the way into a preset's own files, and the delegation-depth control.
 
 ## Why it is a new-session preference
 
@@ -32,7 +32,9 @@ The row re-reads on `settings/changed` for its own namespace and on `connection/
 
 ## The management section
 
-A fourth surface, its own settings page (`settings.section` id `agent-presets`, ordered after Models — choosing a model is routine, composing an agent is the deployment-shaping act behind it): the roster as cards, a copy dialog as the only way a preset is created, and a read-only viewer over the shipped compositions.
+A fourth surface, its own settings page — labelled "Agents" (`settings.section` id `agent-presets`, ordered after Models — choosing a model is routine, composing an agent is the deployment-shaping act behind it): a default-agent dropdown, the roster as cards, a copy dialog as the only way a preset is created, a read-only viewer over the shipped compositions, and the delegation-depth card.
+
+The default-agent dropdown is the section's primary selection control: it names the current default and, when opened, lists every non-broken preset with its name and description stacked — the same shared `PresetMenu` picker the General row and the new-session chip render, so every surface that can choose a preset shows what it is for, not only its name. Picking a row calls the same `makeDefault` write the cards' click-to-select body performs; the two exist side by side because a card's body doubling as its own disclosed-description trigger is still useful for a roster small enough to browse, while the dropdown is the faster point of entry.
 
 The browser edits no composition text. Editing YAML in a web textarea was a weak surface (no completion, no highlighting, no diff), so a new preset is a host-side copy of an existing one — the dialog collects an id (it becomes the directory name, which is why it must be named up front and cannot change later) and an optional display name, and `{ from, id, name? }` is all that crosses the wire. Everything else — description, composition, skills — is edited in the preset's own files, and the page's other job is getting the user TO those files: the copy completes by opening the new directory, and every custom row keeps a location action. Where the host has no desktop opener (`hasDocument: false` on the roster; remote and container deployments), the same actions answer the directory as text on the row instead of offering a button that would spawn into nothing.
 
@@ -52,13 +54,19 @@ Setting the default writes the `agent-presets` settings namespace, which the hos
 
 `agentPreset.read`, `copy`, `openDocument`, and `remove` are loopback-pinned ([`dsh-client-connection`](../connection/README.md)): a composition names the plugins a session runs, so reading one is reconnaissance, and the rest manage the roster and drive the host desktop. `agentPreset.list` is not — it carries ids, trust, and the two path-free capability flags, and a LAN client's picker needs it.
 
+## The delegation-depth card
+
+A sibling card inside the Agents section, unrelated to the preset roster: a slider over `@deepseek-ai/dsh-tool-subagent`'s operator-tunable `subagent-depth-limit` settings section (namespace spelled locally rather than imported — a client package must not depend on a Host package). It renders nothing while that namespace is unavailable — a deployment with no `tool-subagent` plugin, or one configured `maxDepth: 'provider-managed'` (a cap the client cannot usefully tune, since the provider owns the budget).
+
+The slider's range is `[0, max(10, deploymentDefault)]`: ten covers ordinary deployments, and a deployment configured above ten still gets a usable range rather than being clamped below its own default. Dragging stages a draft; Save and Discard mirror the staged-edit convention every settings card in this deployment follows — nothing is written until Save. An "Overridden" badge and its Reset action appear whenever a stored override exists (staged or already saved), and clear it back to the deployment default. The card shows that default directly (`base.maxDepth` on the settings scope) when the composition layer carries one.
+
 ## When the surfaces are absent
 
 A deployment that composes no presets answers with an empty roster, and the row, the chip, the label, and the section all render nothing — every session then shares the host composition, and there is nothing to choose between or manage. A deployment that configures no writable root answers `authorable: false`, and the section stays a read-only browser: the shipped compositions still open in the viewer, but every copy action is disabled with the reason as its tooltip rather than offering a dialog whose create always fails.
 
 ## Model Experience
 
-Indirectly, through the preset a later session is composed from; [`dsh-agent-presets`](../../preset/agent-presets/README.md) owns what that composition puts in front of the model.
+Indirectly, through the preset a later session is composed from; [`dsh-agent-presets`](../../preset/agent-presets/README.md) owns what that composition puts in front of the model. The delegation-depth card's write is also indirect: it changes the effective `maxDepth` [`dsh-tool-subagent`](../../subagent/tool-subagent/README.md) sends to its provider on the NEXT delegation, never a running one.
 
 #### KV Cache effect
 
@@ -69,3 +77,4 @@ No direct invalidation. Changing the default never touches a running session's p
 - **A preset without metadata is listed by id** — display text is optional, and a copy given no name deliberately falls back to its directory name rather than presenting itself identically to its source.
 - **A revealed path is display text, not a link** — where the host has no desktop opener the row shows the directory to copy by hand; the browser cannot open a host filesystem location itself.
 - **Composition edits are invisible to the page** — the files are edited outside the browser and nothing on the wire announces a file change, so the roster re-reads on its own actions, `settings/changed`, and `connection/reset`, not on every disk edit.
+- **The delegation-depth card depends on `tool-subagent`'s plugin row order, not on this section's own availability** — a deployment composing no presets still shows nothing for either, since the whole Agents section renders nothing without a roster; a deployment with presets but no `tool-subagent` plugin shows the roster with no depth card.

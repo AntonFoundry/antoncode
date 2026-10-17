@@ -1,7 +1,9 @@
 /**
- * Agent-presets settings section: the roster as cards, a copy dialog as the
- * only way a preset is created, and a read-only viewer over the shipped
- * compositions.
+ * The Agents settings section: a default-agent dropdown naming and
+ * description over the roster, the roster as management cards, a copy
+ * dialog as the only way a preset is created, a read-only viewer over the
+ * shipped compositions, and the delegation-depth card controlling how many
+ * levels a subagent may delegate through.
  *
  * The browser edits no composition text — a shipped preset opens read-only to
  * be READ (it is the known-good composition a copy starts from), and a custom
@@ -19,13 +21,23 @@ import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { draftBlocker, type AgentPresetSectionState } from './section-store.ts'
 import { presetDisplayText, type AgentPresetSettingsKey } from './locales.ts'
+import type { DelegationDepthFace } from './delegation-depth-controller.ts'
+import { DelegationDepthCard } from './DelegationDepthCard.tsx'
+import { PresetMenu } from './PresetMenu.tsx'
 import css from './AgentPresetSection.module.css'
 
 /** Registration-side business face for the management section. */
-export interface AgentPresetSectionInjected {
+export interface AgentPresetSectionInjected extends Omit<DelegationDepthFace, 'hooks'> {
   hooks: {
     /** Page snapshot bound by the renderer as useAgentPresetSection. */
     agentPresetSection: SnapshotStore<AgentPresetSectionState>
+    /**
+     * Delegation-depth card snapshot bound by the renderer as
+     * useDelegationDepth. Always bound; the card itself renders nothing
+     * while the namespace reports unavailable (a `'provider-managed'` cap,
+     * or no `tool-subagent` plugin at all).
+     */
+    delegationDepth: DelegationDepthFace['hooks']['delegationDepth']
   }
   /** Read the roster; called once when the section first renders. */
   load: () => Promise<void>
@@ -171,13 +183,17 @@ function CardDescription({ text }: { text: string }): ReactNode {
 }
 
 /**
- * Render the Agent presets section content column.
+ * Render the Agents section content column: the roster as cards, a
+ * default-agent dropdown as the primary selection control, and the
+ * delegation-depth card.
  * @param props - composed slot props.
  * @returns the section, or null when the deployment composes no presets.
  */
 export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
-  const { useAgentPresetSection, t, load } = props
+  const { useAgentPresetSection, useDelegationDepth, t, load } = props
   const state = useAgentPresetSection(snapshot => snapshot)
+  const depthState = useDelegationDepth(snapshot => snapshot)
+  const [defaultOpen, setDefaultOpen] = useState(false)
   const viewedId = state.view?.id
   const viewedRow = viewedId === undefined ? undefined : state.rows.find(row => row.id === viewedId)
   const viewedTitle = state.view === null
@@ -228,11 +244,35 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
     )
     : null
 
+  // Selectable presets for the default-agent dropdown: a broken one cannot
+  // compose a session, so it is absent here exactly as its card is disabled.
+  const selectableRows = state.rows.filter(row => row.broken === undefined)
+  const currentDefault = state.rows.find(row => row.isDefault)
+  const defaultLabel = currentDefault === undefined ? t('loading') : presetDisplayText(currentDefault, t).name
+
   return (
     <div className={css.section}>
       <h2 className={css.title}>{t('nav')}</h2>
       <p className={css.intro}>{t('sectionIntro')}</p>
       {state.error === null ? null : <p className={css.error} role="alert">{state.error}</p>}
+      <div className={css.defaultRow}>
+        <div className={css.defaultText}>
+          <span className={css.fieldLabel}>{t('defaultAgentLabel')}</span>
+          <span className={css.intro}>{t('defaultAgentHint')}</span>
+        </div>
+        <PresetMenu
+          options={selectableRows}
+          selectedId={currentDefault?.id ?? ''}
+          label={defaultLabel}
+          t={t}
+          buttonClassName={css.defaultSelector}
+          chevronClassName={css.defaultChevron}
+          disabled={selectableRows.length === 0}
+          open={defaultOpen}
+          onOpenChange={setDefaultOpen}
+          onSelect={(id) => { void props.makeDefault(id) }}
+        />
+      </div>
       {([['system', t('builtInGroup')], ['user', t('customGroup')]] as const).map(([trust, heading]) => {
         const group = state.rows
           .filter(row => row.trust === trust)
@@ -361,6 +401,15 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
           </section>
         )
       })}
+      <DelegationDepthCard
+        t={t}
+        state={depthState}
+        max={props.max()}
+        stage={props.stage}
+        save={() => { void props.save() }}
+        discard={props.discard}
+        reset={() => { void props.reset() }}
+      />
       <CopyDialog
         state={state}
         t={t}

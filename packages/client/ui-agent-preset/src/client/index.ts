@@ -17,7 +17,8 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the ctx.remote merge and the forwarded-event key face
 // (the settings invalidation rides the allowlist) into this program.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
-// Type-only: pulls the settings shell's SlotMap merge (the 'settings.section' entry).
+// Type-only: pulls the settings shell's SlotMap merge (the 'settings.section'
+// entry) and the ctx.settingsScope Context merge.
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import { AgentPresetLabel } from './AgentPresetLabel.tsx'
@@ -31,6 +32,7 @@ import type { AgentPresetSectionInjected } from './AgentPresetSection.tsx'
 import { AgentPresetSeatController } from './seat-store.ts'
 import type { SeatSessionSummary } from './seat-store.ts'
 import { AgentPresetSectionController } from './section-store.ts'
+import { DelegationDepthController, SUBAGENT_DEPTH_NS } from './delegation-depth-controller.ts'
 import { en, zh } from './locales.ts'
 import { AGENT_PRESET_SETTINGS_NS, AgentPresetSettingsController } from './settings-store.ts'
 
@@ -46,7 +48,7 @@ export type { AgentPresetOption, AgentPresetSettingsState } from './settings-sto
 export { AGENT_PRESET_SETTINGS_NS, writeDefaultPreset } from './settings-store.ts'
 
 /** Required services (cordis fiber inject). */
-export const inject = ['slots', 'locale', 'connection', 'remote']
+export const inject = ['slots', 'locale', 'connection', 'remote', 'settingsScope']
 
 /**
  * Mount the General-settings row.
@@ -62,6 +64,10 @@ export function apply(ctx: ClientContext): void {
     void controller.load()
     for (const read of rosterReaders) read()
   })
+  // Delegation-depth control: a sibling of the roster management section,
+  // bound to the host's tool-subagent settings namespace rather than the
+  // agentPresets roster API.
+  const delegationDepth = new DelegationDepthController(ctx.settingsScope.bind({ namespace: SUBAGENT_DEPTH_NS }))
 
   ctx.effect(() => ctx.locale.register('settings.agentPreset', { zh, en }), 'ui-agent-preset: settings row dictionaries')
 
@@ -187,22 +193,30 @@ export function apply(ctx: ClientContext): void {
     }, 'ui-agent-preset: new-session chip and header label')
   })
 
-  const sectionInjected = (): AgentPresetSectionInjected => ({
-    hooks: { agentPresetSection: section.store },
-    load: () => section.load(),
-    view: (id: string) => section.view(id),
-    closeView: () => { section.closeView() },
-    beginCopy: (from: string) => { section.beginCopy(from) },
-    cancelCopy: () => { section.cancelCopy() },
-    setCopyId: (id: string) => { section.setCopyId(id) },
-    setCopyName: (name: string) => { section.setCopyName(name) },
-    confirmCopy: () => section.confirmCopy(),
-    openLocation: (id: string) => section.openLocation(id),
-    ...creatorDraft === undefined ? {} : { startCreatorDraft: creatorDraft },
-    confirmDelete: (id: string | null) => { section.confirmDelete(id) },
-    remove: () => section.remove(),
-    makeDefault: (id: string) => section.makeDefault(id),
-  })
+  const sectionInjected = (): AgentPresetSectionInjected => {
+    const depthFace = delegationDepth.inject()
+    return {
+      hooks: { agentPresetSection: section.store, delegationDepth: depthFace.hooks.delegationDepth },
+      max: depthFace.max,
+      stage: depthFace.stage,
+      save: depthFace.save,
+      discard: depthFace.discard,
+      reset: depthFace.reset,
+      load: () => section.load(),
+      view: (id: string) => section.view(id),
+      closeView: () => { section.closeView() },
+      beginCopy: (from: string) => { section.beginCopy(from) },
+      cancelCopy: () => { section.cancelCopy() },
+      setCopyId: (id: string) => { section.setCopyId(id) },
+      setCopyName: (name: string) => { section.setCopyName(name) },
+      confirmCopy: () => section.confirmCopy(),
+      openLocation: (id: string) => section.openLocation(id),
+      ...creatorDraft === undefined ? {} : { startCreatorDraft: creatorDraft },
+      confirmDelete: (id: string | null) => { section.confirmDelete(id) },
+      remove: () => section.remove(),
+      makeDefault: (id: string) => section.makeDefault(id),
+    }
+  }
 
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({
     name: 'settings.general.item',
