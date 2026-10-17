@@ -14,6 +14,8 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
+import { SettingsProvider } from '@deepseek-ai/dsh-settings'
+import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
@@ -313,6 +315,16 @@ describe('dsh-tool-subagent', () => {
     // The call's own model still outranks `auto`.
     expect(tool.resolveChildModelRoute({ defaultModel: 'auto', bySession: {} }, 's1', 'mine/model', undefined, 'fix the bug', () => ({ provider: 'zai', model: 'x' })))
       .toEqual({ provider: 'mine', model: 'model' })
+  })
+
+  it('resolves the child effort: call arg > section default > config', () => {
+    expect(tool.resolveChildEffort({ defaultEffort: '' }, undefined, undefined)).toBeUndefined()
+    expect(tool.resolveChildEffort({ defaultEffort: '' }, undefined, 'low')).toBe('low')
+    expect(tool.resolveChildEffort({ defaultEffort: 'high' }, undefined, 'low')).toBe('high')
+    // The call's own argument outranks every default.
+    expect(tool.resolveChildEffort({ defaultEffort: 'high' }, 'xhigh', 'low')).toBe('xhigh')
+    // Blank strings never apply.
+    expect(tool.resolveChildEffort({ defaultEffort: '  ' }, '  ', 'low')).toBe('low')
   })
 
   it('defaults toolName and omits agentOptions when apply() is called directly (schema bypass)', async () => {
@@ -1376,5 +1388,63 @@ describe('depth budget configuration', () => {
     await callSubagent(ctx, { description: 'd', prompt: 'p' })
     expect(requests[0]?.maxDepth).toBeUndefined()
     expect(requests[0]?.toolFilter).toBeUndefined()
+  })
+})
+
+/** The smallest real provider: one in-memory document, always writable. */
+class MemorySettings extends SettingsProvider {
+  doc: Record<string, unknown> = {}
+
+  get writable(): boolean {
+    return true
+  }
+
+  protected load(): Promise<Record<string, unknown>> {
+    return Promise.resolve(structuredClone(this.doc))
+  }
+
+  protected persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+    this.doc = { ...this.doc, [ns]: structuredClone(section) }
+    return Promise.resolve()
+  }
+}
+
+describe('operator-tunable settings sections', () => {
+  async function settingsHarness(toolConfig: tool.Config) {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(SubagentRuntime)
+    await ctx.plugin(MemorySettings)
+    const requests: SubagentStartRequest[] = []
+    await mock.mountScriptedProvider(ctx, { name: 'mock', onStart: (request) => { requests.push(request) } })
+    await ctx.plugin(tool, { provider: 'mock', ...toolConfig })
+    return { ctx, requests }
+  }
+
+  it('overrides the configured maxDepth from the subagent-depth-limit settings section', async () => {
+    const { ctx, requests } = await settingsHarness({ provider: 'mock', maxDepth: 3 })
+    await callSubagent(ctx, { description: 'd', prompt: 'p' })
+    expect(requests[0]?.maxDepth).toBe(3)
+
+    await ctx.settings.update(tool.SUBAGENT_DEPTH_SETTINGS_NAMESPACE, { maxDepth: 7 })
+    await callSubagent(ctx, { description: 'd', prompt: 'p' })
+    expect(requests[1]?.maxDepth).toBe(7)
+  })
+
+  it('never installs the depth section for a provider-managed cap', async () => {
+    const { ctx } = await settingsHarness({ provider: 'mock', maxDepth: 'provider-managed' })
+    expect(ctx.settings.describe().map(row => String(row.ns))).not.toContain('subagent-depth-limit')
+  })
+
+  it('applies the subagent-child-model section default effort when the call names none', async () => {
+    const { ctx, requests } = await settingsHarness({ provider: 'mock' })
+    await ctx.settings.update(tool.SUBAGENT_MODEL_SETTINGS_NAMESPACE, { defaultEffort: 'high' })
+    await callSubagent(ctx, { description: 'd', prompt: 'p' })
+    expect(requests[0]?.agentOptions).toMatchObject({ reasoningEffort: 'high' })
+
+    // The call's own argument still outranks the section default.
+    await callSubagent(ctx, { description: 'd', prompt: 'p', reasoningEffort: 'low' })
+    expect(requests[1]?.agentOptions).toMatchObject({ reasoningEffort: 'low' })
   })
 })

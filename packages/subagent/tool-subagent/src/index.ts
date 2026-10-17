@@ -112,10 +112,25 @@ export const Config: z<Config> = z.object({
 /** Settings namespace carrying the swarm defaults: which model children run. */
 export const SUBAGENT_MODEL_SETTINGS_NAMESPACE = settingsNamespace('subagent-child-model')
 
-/** Section schema: one global default plus optional per-parent-session routes. */
-const ChildModelSection: z<{ defaultModel: string; bySession: Record<string, string> }> = z.object({
+/**
+ * Settings namespace carrying the operator-tunable recursion cap. Installed
+ * only when {@link Config.maxDepth} is numeric: `'provider-managed'` cannot
+ * accept an override because the provider, not this cap, owns the budget.
+ */
+export const SUBAGENT_DEPTH_SETTINGS_NAMESPACE = settingsNamespace('subagent-depth-limit')
+
+/** Section schema: one global default plus optional per-parent-session routes, and the default effort. */
+const ChildModelSection: z<{ defaultModel: string; bySession: Record<string, string>; defaultEffort: string }> = z.object({
   defaultModel: z.string().default(''),
   bySession: z.dict(z.string()).default({}),
+  // Plain string, like agentOptions.reasoningEffort: the config plane accepts
+  // any effort id, and the selected provider validates it per model.
+  defaultEffort: z.string().default(''),
+})
+
+/** Depth-section schema: an optional override of the configured `maxDepth`. */
+const DepthSection: z<{ maxDepth?: number }> = z.object({
+  maxDepth: z.number().step(1).min(0).max(Number.MAX_SAFE_INTEGER),
 })
 
 /** Split a `provider/model` (or bare `model`) route string into agent options. */
@@ -154,6 +169,27 @@ export function resolveChildModelRoute(
     return splitModelRoute(section.defaultModel.trim())
   }
   return configuredModel !== undefined ? { model: configuredModel } : undefined
+}
+
+/**
+ * Resolve one delegation's reasoning effort from the swarm defaults, mirroring
+ * {@link resolveChildModelRoute}'s precedence: the call's own `reasoningEffort`
+ * argument wins, then the section's global default, then the plugin-configured
+ * `agentOptions.reasoningEffort`. `undefined` = the child inherits whatever its
+ * route otherwise resolves to.
+ * @param section - the currently authoritative settings section.
+ * @param callEffort - the delegation call's optional `reasoningEffort` argument.
+ * @param configuredEffort - the plugin config's `agentOptions.reasoningEffort`.
+ * @returns the effort id to apply, or undefined to apply none.
+ */
+export function resolveChildEffort(
+  section: { defaultEffort: string },
+  callEffort: string | undefined,
+  configuredEffort: string | undefined,
+): string | undefined {
+  if (callEffort !== undefined && callEffort.trim().length > 0) return callEffort.trim()
+  if (section.defaultEffort.trim().length > 0) return section.defaultEffort.trim()
+  return configuredEffort
 }
 
 /** Render text blocks from the canonical JSON block array without trusting arbitrary values. */
@@ -342,12 +378,33 @@ export function apply(ctx: Context, config: Config): void {
   // file) projects per call — the call's own `model` argument wins, then the
   // parent session's route, then the global default, then this plugin's
   // configured `agentOptions.model`, then the child inherits the parent model.
-  let sectionSource: () => { defaultModel: string; bySession: Record<string, string> } =
-    () => ({ defaultModel: '', bySession: {} })
-  installSettingsSection(ctx, SUBAGENT_MODEL_SETTINGS_NAMESPACE, ChildModelSection, { defaultModel: '', bySession: {} }, {
-    setSource: (source) => { sectionSource = source },
-    onChange: () => {},
-  })
+  // The same section carries the default reasoning effort, resolved the same
+  // way minus the per-session layer.
+  let sectionSource: () => { defaultModel: string; bySession: Record<string, string>; defaultEffort: string } =
+    () => ({ defaultModel: '', bySession: {}, defaultEffort: '' })
+  installSettingsSection(
+    ctx, SUBAGENT_MODEL_SETTINGS_NAMESPACE, ChildModelSection,
+    { defaultModel: '', bySession: {}, defaultEffort: '' },
+    {
+      setSource: (source) => { sectionSource = source },
+      onChange: () => {},
+    },
+  )
+  // Operator-tunable recursion cap: installed only when the static config
+  // names a numeric cap this provider is known (at mount) to enforce.
+  // `'provider-managed'` never gets this section — there is no cap to tune.
+  let depthSource: () => { maxDepth?: number } = () => ({})
+  if (config.maxDepth !== 'provider-managed') {
+    installSettingsSection(
+      ctx, SUBAGENT_DEPTH_SETTINGS_NAMESPACE, DepthSection,
+      config.maxDepth === undefined ? {} : { maxDepth: config.maxDepth },
+      {
+        setSource: (source) => { depthSource = source },
+        onChange: () => {},
+        validate: (value) => { assertSubagentMaxDepth(value.maxDepth) },
+      },
+    )
+  }
   // The `auto` route reads the optional model-intel datasheet service. It may
   // mount after this plugin (sibling order is unconstrained), so the lookup is
   // per call through the global store, never a topology-sensitive property.
@@ -465,7 +522,12 @@ export function apply(ctx: Context, config: Config): void {
           throw new Error('subagent tool requires a calling agent (exec.agent was undefined)')
         }
 
-        const maxDepth = typeof config.maxDepth === 'number' ? config.maxDepth : undefined
+        // The section's stored override wins over the static config; a
+        // `'provider-managed'` configuration never reaches this branch with a
+        // numeric depthSource() result because its section is never installed.
+        const maxDepth = config.maxDepth === 'provider-managed'
+          ? undefined
+          : depthSource().maxDepth ?? config.maxDepth
         // Route resolution: the call's `model` argument, the settings section
         // (per-session, then global), then the configured agentOptions model —
         // merged OVER the configured agent options so a route overrides only
@@ -482,10 +544,14 @@ export function apply(ctx: Context, config: Config): void {
           autoRouteSource(),
         )
         // The call's `reasoningEffort` argument rides the agent options: it is
-        // per-child request configuration, not a route field.
-        const effort = typeof args.reasoningEffort === 'string' && args.reasoningEffort.length > 0
-          ? args.reasoningEffort
-          : undefined
+        // per-child request configuration, not a route field. The swarm
+        // default (section, then configured agentOptions) applies when the
+        // call names none.
+        const effort = resolveChildEffort(
+          sectionSource(),
+          typeof args.reasoningEffort === 'string' ? args.reasoningEffort : undefined,
+          config.agentOptions?.reasoningEffort,
+        )
         const agentOptions: AgentOptions | undefined = route !== undefined || effort !== undefined
           || config.agentOptions !== undefined
           ? { ...config.agentOptions, ...route, ...effort === undefined ? {} : { reasoningEffort: effort } }
