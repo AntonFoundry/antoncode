@@ -43,6 +43,12 @@ export interface MockZenGatewayOptions {
   chat?: MockZenChatScript
   /** Responses script; defaults to a single `pong` text turn. */
   responses?: MockZenResponsesScript
+  /**
+   * Answer inference paths with the live free-tier gate verdict (403
+   * `FreeTierError`) instead of scripted turns. Models the upstream client
+   * check firing despite valid credentials.
+   */
+  freeTierDenial?: boolean
 }
 
 export interface MockZenGateway {
@@ -140,6 +146,18 @@ export async function mockZenGateway(script: MockZenGatewayOptions = {}): Promis
       if (override !== undefined) {
         response.writeHead(override, { 'content-type': 'application/json' })
         response.end(JSON.stringify({ error: { type: 'UpstreamError', message: `status ${override}` } }))
+        return
+      }
+      if (script.freeTierDenial === true
+        && request.method === 'POST'
+        && (url.pathname === '/chat/completions' || url.pathname === '/responses')) {
+        response.writeHead(403, { 'content-type': 'application/json' })
+        response.end(JSON.stringify({
+          error: {
+            type: 'FreeTierError',
+            message: "OpenCode's free tier can only be used from within OpenCode. Download it at https://opencode.ai and keep building.",
+          },
+        }))
         return
       }
       if (request.method === 'POST' && url.pathname === '/chat/completions') {

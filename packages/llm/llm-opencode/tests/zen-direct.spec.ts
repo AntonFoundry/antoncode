@@ -204,11 +204,14 @@ async function harness(options: {
   const credentials = options.key === undefined
     ? undefined
     : { resolve: async () => ({ value: options.key as string }) }
+  const keyed = async (): Promise<boolean> =>
+    (await resolveRealKey(credentialRef('OPENCODE_TEST_KEY'), credentials)) !== undefined
   const router = new OpenCodeRouterAdapter({
-    direct,
     service,
-    hasRealKey: async () =>
-      (await resolveRealKey(credentialRef('OPENCODE_TEST_KEY'), credentials)) !== undefined,
+    direct,
+    resolveTransport: async () => (await keyed())
+      ? { adapter: direct, freeTier: false, via: 'keyed' as const }
+      : { adapter: service, freeTier: false, via: 'service' as const },
   })
   return { router, zenURL: zen.url, zen }
 }

@@ -1,16 +1,20 @@
 /**
  * Register the `opencode-free` provider route on `ctx.llm`: one route over
- * two transports, picked per request. A stored Zen bearer key selects direct
- * OpenCode Zen generation — the models.dev `opencode` free tier over
- * `https://opencode.ai/zen/v1` with the Harness's own tool schemas, so
- * returned tool calls execute through Harness tools and never through
- * OpenCode's local agent loop. Without a key the route serves the user's
- * own OpenCode service (`opencode service start`, auto-started by default)
- * through transient text generation; when no service is reachable either,
- * the request falls through to anonymous direct and surfaces the gateway's
- * real verdict. Connection facts resolve per settings snapshot instead of
- * freezing at load. The one registration-captured fact — the retry policy —
- * re-registers the route in place when it changes.
+ * three transports, picked per request. A logged-in Zen workspace session
+ * (device-flow OAuth, approved once in the browser) selects the direct
+ * inference gateway with workspace identity — the only path that serves
+ * free-tier models with tool calling today; zero-cost turns additionally
+ * take the free-tier gate (identity headers, marker/flattened history,
+ * text-protocol tools parsed back into harness calls). A stored Zen bearer
+ * key selects direct Zen generation with native Harness tool schemas.
+ * Without either, the route serves the user's own OpenCode service through
+ * transient text generation; when no service is reachable either, the
+ * request falls through to anonymous direct and surfaces the gateway's
+ * real verdict. Returned tool calls always execute through Harness tools,
+ * never through OpenCode's local agent loop. Connection facts resolve per
+ * settings snapshot instead of freezing at load. The one
+ * registration-captured fact — the retry policy — re-registers the route
+ * in place when it changes.
  * @module @deepseek-ai/dsh-llm-opencode
  */
 
@@ -44,6 +48,20 @@ import {
   resolveZenHeaders,
   type ZenCredentialSource,
 } from './zen.ts'
+import {
+  DEFAULT_INFERENCE_BASE_URL,
+  DEFAULT_OAUTH_REF,
+  ZEN_OAUTH_UA,
+  LlmOAuthError,
+  isAccessValid,
+  parseOAuthState,
+  refreshAccessToken,
+} from './zen-oauth.ts'
+import {
+  freeTierHeaders,
+  shapeFreeTierBody,
+} from './zen-gate.ts'
+import { ZenLoginFlow, OPENCODE_OAUTH_SERVICE } from './zen-login-flow.ts'
 
 export { OpenCodeServerAdapter } from './adapter.ts'
 export type { OpenCodeServerAdapterOptions, OpenCodeServerConnection } from './adapter.ts'
@@ -58,6 +76,34 @@ export {
   resolveZenApiKey,
   resolveZenHeaders,
 } from './zen.ts'
+export {
+  DEFAULT_INFERENCE_BASE_URL,
+  DEFAULT_OAUTH_REF,
+  ZEN_OAUTH_UA,
+  isAccessValid,
+  parseOAuthState,
+  refreshAccessToken,
+  runZenLogin,
+} from './zen-oauth.ts'
+export type { ZenLoginInteraction, ZenOAuthState, ZenOrg } from './zen-oauth.ts'
+export { ZenLoginFlow, OPENCODE_OAUTH_SERVICE } from './zen-login-flow.ts'
+export type {
+  ZenLoginFlowOptions,
+  ZenLoginPhase,
+  ZenLoginSnapshot,
+  ZenLoginCredentialSink,
+} from './zen-login-flow.ts'
+export {
+  augmentSystemWithTextProtocol,
+  buildTextToolProtocol,
+  extractToolBlocks,
+  freeTierHeaders,
+  freeTierSessionId,
+  parseFreeTextTools,
+  shapeFreeTierBody,
+  GATE_PREAMBLE,
+  ZEN_MARKER_PROMPT,
+} from './zen-gate.ts'
 export {
   DEFAULT_PASSWORD_ENV,
   DEFAULT_USERNAME,
@@ -109,8 +155,16 @@ export interface Config {
   displayName?: string
   /** Credential reference naming the Zen bearer key; defaults to `OPENCODE_API_KEY`. */
   apiKeyEnv?: string
+  /**
+   * Credential reference holding the Zen OAuth workspace session (JSON);
+   * defaults to `OPENCODE_ZEN_OAUTH`. Written by the login flow, read and
+   * silently refreshed per request.
+   */
+  oauthRef?: string
   /** Direct Zen gateway base; `/chat/completions` and `/responses` are appended. */
   zenBaseURL?: string
+  /** OAuth inference gateway base; the workspace session talks here instead of {@link zenBaseURL}. */
+  inferenceBaseURL?: string
   /** Catalog root fetched as `<catalogURL>/api.json` for direct-transport discovery. */
   catalogURL?: string
   /** Direct-transport re-fetch cadence: the mount fetches eagerly, then this interval re-fetches. */
@@ -135,7 +189,9 @@ export const Config: z<Config> = z.object({
   directory: z.string(),
   displayName: z.string().default('OpenCode Free'),
   apiKeyEnv: z.string().role('credential-ref').default(OPENCODE_API_KEY_ENV),
+  oauthRef: z.string().role('credential-ref').default(DEFAULT_OAUTH_REF),
   zenBaseURL: z.string().default(ZEN_BASE_URL),
+  inferenceBaseURL: z.string().default(DEFAULT_INFERENCE_BASE_URL),
   catalogURL: z.string().default(DEFAULT_CATALOG_URL),
   catalogRefreshMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).default(DEFAULT_CATALOG_REFRESH_MS),
   maxTokens: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(DEFAULT_MAX_TOKENS),
@@ -148,8 +204,12 @@ export const Config: z<Config> = z.object({
 export interface ResolvedOpenCodeServerOptions extends OpenCodeServerConnection {
   /** Validated credential reference naming the Zen bearer key. */
   apiKeyEnv: CredentialRef
+  /** Validated credential reference holding the Zen OAuth workspace session. */
+  oauthRef: CredentialRef
   /** Direct Zen gateway base. */
   zenBaseURL: string
+  /** OAuth inference gateway base. */
+  inferenceBaseURL: string
   /** Catalog root the direct transport reads the `opencode` free tier from. */
   catalogURL: string
   /** Direct-transport catalog re-fetch cadence in milliseconds. */
@@ -187,8 +247,14 @@ export function resolveAdapterOptions(config: Config): ResolvedOpenCodeServerOpt
   if (config.apiKeyEnv !== undefined && config.apiKeyEnv.length === 0) {
     throw new Error('llm-opencode: apiKeyEnv must be non-empty')
   }
+  if (config.oauthRef !== undefined && config.oauthRef.length === 0) {
+    throw new Error('llm-opencode: oauthRef must be non-empty')
+  }
   if (config.zenBaseURL !== undefined && config.zenBaseURL.length === 0) {
     throw new Error('llm-opencode: zenBaseURL must be non-empty')
+  }
+  if (config.inferenceBaseURL !== undefined && config.inferenceBaseURL.length === 0) {
+    throw new Error('llm-opencode: inferenceBaseURL must be non-empty')
   }
   if (config.catalogURL !== undefined && config.catalogURL.length === 0) {
     throw new Error('llm-opencode: catalogURL must be non-empty')
@@ -225,7 +291,9 @@ export function resolveAdapterOptions(config: Config): ResolvedOpenCodeServerOpt
     directory: config.directory ?? process.cwd(),
     displayName: config.displayName ?? 'OpenCode Free',
     apiKeyEnv: credentialRef(config.apiKeyEnv ?? OPENCODE_API_KEY_ENV),
+    oauthRef: credentialRef(config.oauthRef ?? DEFAULT_OAUTH_REF),
     zenBaseURL: config.zenBaseURL ?? ZEN_BASE_URL,
+    inferenceBaseURL: config.inferenceBaseURL ?? DEFAULT_INFERENCE_BASE_URL,
     catalogURL: config.catalogURL ?? DEFAULT_CATALOG_URL,
     catalogRefreshMs,
     requestTimeoutMs,
@@ -246,10 +314,51 @@ export function apply(ctx: Context, config: Config): void {
     const credentials = ctx.get('credentials')
     return credentials === undefined ? undefined : { resolve: ref => credentials.resolve(ref) }
   }
-  // A real stored key selects direct Zen; its absence selects the service.
-  // Runs per operation so a stored key reaches the very next request.
-  const hasRealKey = async (): Promise<boolean> =>
-    (await resolveRealKey(resolved.apiKeyEnv, credentialsOf())) !== undefined
+  // A logged-in workspace session selects the inference gateway; else a
+  // real stored key selects direct Zen; absence of both selects the
+  // service. Runs per operation so a login or a stored key reaches the very
+  // next request — and a removal falls back — without re-registration.
+  const resolveOAuthAccess = async (): Promise<{
+    access: string
+    orgID?: string
+    allowedModels?: readonly string[]
+  } | undefined> => {
+    const credentials = ctx.get('credentials')
+    let raw: string | undefined
+    try {
+      raw = credentials !== undefined
+        ? (await credentials.resolve(resolved.oauthRef))?.value
+        : process.env[resolved.oauthRef]
+    } catch {
+      return undefined
+    }
+    const state = parseOAuthState(raw)
+    if (state === undefined) return undefined
+    if (isAccessValid(state)) {
+      return {
+        access: state.access,
+        ...(state.orgID === undefined ? {} : { orgID: state.orgID }),
+        ...(state.allowedModels === undefined ? {} : { allowedModels: state.allowedModels }),
+      }
+    }
+    let next
+    try {
+      next = await refreshAccessToken(state, { signal: AbortSignal.timeout(30_000) })
+    } catch {
+      return undefined
+    }
+    if (credentials !== undefined) {
+      await credentials.set(resolved.oauthRef, JSON.stringify(next)).catch((error: unknown) => {
+        ctx.logger.warn('llm-opencode: renewed Zen workspace token stays request-local; the stored copy could not be updated')
+        ctx.logger.warn(error)
+      })
+    }
+    return {
+      access: next.access,
+      ...(next.orgID === undefined ? {} : { orgID: next.orgID }),
+      ...(next.allowedModels === undefined ? {} : { allowedModels: next.allowedModels }),
+    }
+  }
 
   const catalog = new ModelsDevCatalog(
     resolved.catalogURL,
@@ -296,7 +405,83 @@ export function apply(ctx: Context, config: Config): void {
     options: () => resolved,
     transport: () => resolveServerTransport(resolved),
   })
-  const adapter = new OpenCodeRouterAdapter({ direct, service, hasRealKey })
+  // UI-driven logins share the device flow and the credential seam with the
+  // CLI: one provided flow per install, request-scoped reads, disposal-safe
+  // (pending browser waits abort with the fiber).
+  const loginFlow = new ZenLoginFlow({
+    credentialsOf,
+    store: async (ref, value) => {
+      const credentials = ctx.get('credentials')
+      if (credentials === undefined) throw new LlmOAuthError('cannot store the Zen session without the credentials service')
+      await credentials.set(ref, value)
+    },
+    oauthRefOf: () => resolved.oauthRef,
+  })
+  // Per-request OAuth transport: request-scoped facts (token, workspace,
+  // free-tier flag) must never leak across concurrent turns, so each call
+  // builds its own adapter over the shared catalog.
+  const oauthDirectFor = (
+    access: string,
+    orgID: string | undefined,
+    free: boolean,
+    protocol: 'chat-completions' | 'responses',
+  ): ModelsDevAdapter =>
+    new ModelsDevAdapter({
+      options: () => ({ ...zenConnection(resolved), baseURL: resolved.inferenceBaseURL }),
+      resolveApiKey: async () => access,
+      resolveUserId,
+      catalog,
+      // Free-tier turns mimic the genuine client byte-identically (exact UA);
+      // paid workspace turns keep Harness attribution (no gate to satisfy).
+      exactUserAgent: free,
+      extraHeaders: () => free
+        ? {
+          ...freeTierHeaders(),
+          ...(orgID === undefined ? {} : { 'x-opencode-org-id': orgID }),
+        }
+        : {
+          'user-agent': ZEN_OAUTH_UA,
+          ...(orgID === undefined ? {} : { 'x-opencode-org-id': orgID }),
+        },
+      modelProtocol: () => protocol,
+      transformBody: (body, wire) =>
+        free && wire === 'responses' && 'input' in body ? shapeFreeTierBody(body) : body,
+      onCatalogError,
+    })
+  const adapter = new OpenCodeRouterAdapter({
+    service,
+    direct,
+    resolveTransport: async (options) => {
+      await direct.listModels(PROVIDER)
+      const oauth = await resolveOAuthAccess()
+      if (oauth !== undefined) {
+        const free = catalog.peekCached(ZEN_CATALOG_PROVIDER)?.has(options.model) ?? false
+        // The catalog owns the wire protocol: the live gateway 400s
+        // Responses for free models that only serve chat-completions.
+        const protocol = catalog.peekProtocol(ZEN_CATALOG_PROVIDER, options.model) === 'responses'
+          ? 'responses'
+          : 'chat-completions'
+        return {
+          adapter: oauthDirectFor(oauth.access, oauth.orgID, free, protocol),
+          freeTier: free,
+          via: 'oauth',
+          protocol,
+          ...(oauth.allowedModels === undefined ? {} : { allowedModels: oauth.allowedModels }),
+        }
+      }
+      if ((await resolveRealKey(resolved.apiKeyEnv, credentialsOf())) !== undefined) {
+        return { adapter: direct, freeTier: false, via: 'keyed' }
+      }
+      return { adapter: service, freeTier: false, via: 'service' }
+    },
+  })
+  ctx.effect(() => {
+    const unprovide = ctx.provide(OPENCODE_OAUTH_SERVICE, loginFlow)
+    return () => {
+      loginFlow.dispose()
+      unprovide()
+    }
+  })
   ctx.llm.registerConfigurableProviders([
     { provider: PROVIDER, displayName: 'OpenCode Free', settingsNs: NS, settingsPath: [] },
   ])

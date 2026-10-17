@@ -1,4 +1,4 @@
-# `@deepseek-ai/dsh-llm-opencode`
+This provider registers `opencode-free` on `ctx.llm`: one route over three transports, picked per request. A logged-in Zen workspace session (device-flow OAuth via `dsh opencode-login` or the Models-page Log in button, approved once in the browser and stored as JSON in the credentials seam under `OPENCODE_ZEN_OAUTH` with silent refresh) selects the direct inference gateway at `https://opencode.ai/inference/openai/v1` with workspace identity (workspace discovery, paid models, and zero-cost turns where the gateway admits this client); zero-cost turns additionally take the free-tier gate (client-identity headers, a fixed marker with flattened history, and a fenced text tool protocol parsed back into Harness tool calls). A stored Zen bearer key (`OPENCODE_API_KEY` by default, resolved per request through the credential seam or the environment) selects direct OpenCode Zen generation — the models.dev `opencode` free tier over `https://opencode.ai/zen/v1` with the Harness's own tool schemas, so returned tool calls come back to the Harness and execute through Harness tools, never through OpenCode's local agent loop. Without either, the route serves the user's own OpenCode service (discovered from `OPENCODE_SERVER_URL`, the CLI state-home `service.json`, or live `opencode service status`, auto-started by default; Basic password from its registration file with `OPENCODE_SERVER_PASSWORD` as fallback) through transient text generation. When no service is reachable either, the request falls through to anonymous direct and surfaces the gateway's real verdict instead of a misleading transport error. No Zen API key is required for the service path.
 
 English
 
@@ -37,13 +37,15 @@ list empty until discovery succeeds; an incorrect service password produces
 
 The `llm-opencode:` settings section accepts `serverURL`, `username`,
 `serviceFile`, `passwordFile`, `passwordEnv`, `autoStart`, `directory`,
-`displayName`, `apiKeyEnv`, `zenBaseURL`, `catalogURL`, `catalogRefreshMs`,
+`displayName`, `apiKeyEnv`, `oauthRef`, `zenBaseURL`, `inferenceBaseURL`, `catalogURL`, `catalogRefreshMs`,
 `maxTokens`, `defaultContextWindow`, `requestTimeoutMs`, and `retryPolicy`.
 Set `autoStart: false` to require a separately running service. Connection
 facts resolve for each request so restarting the OpenCode service does not
 require restarting Harness. The direct catalog refreshes at mount and on
 `catalogRefreshMs` (eight hours by default); a failed refresh keeps the
 last good snapshot.
+
+Authentication failures on this route name their fix in the failed turn: anonymous rejections point at login (`dsh opencode-login` or the Models-page button), a rejected workspace session at re-running it, and a rejected bearer key at the stored key or login. UI-driven login runs the same device flow server-side (`ZenLoginFlow`, provided as `ctx.opencodeOAuth`) and persists through the credentials seam — the CLI stays for headless use.
 
 ## Model Experience
 
@@ -56,6 +58,8 @@ no new model-visible text is added by the plugin. The generator returns
 text only, so the service path emits no tool calls or separate reasoning
 blocks.
 
+OAuth workspace turns send the workspace bearer and billed workspace id (`x-opencode-org-id`) with the request. Zero-cost turns additionally reshape the Responses body for the free-tier gate: a fixed developer marker first, the history flattened into one user message (past tool traffic quoted, never re-executed), no native `tools` field, and the tool definitions appended to the system prompt as fenced ```tool JSON blocks; fenced calls in the reply parse back into Harness tool-call chunks for Harness-side execution. Title and compaction calls skip the text protocol and stream parsing.
+
 #### KV Cache effect
 
 Keyed turns resend the complete request prefix on each call; cache reuse
@@ -65,6 +69,6 @@ selected model.
 
 ## Known Limitations and Deferred Work
 
-- The transient generation API accepts text, not Harness tool schemas or image attachments. Anonymous turns can answer chat but cannot drive Harness coding tools through structured tool calls; store a Zen key for tool-capable turns.
-- Anonymous direct requests currently receive the gateway's free-tier rejection (`FreeTierError`); the service path exists precisely because only genuine OpenCode network stacks pass it today.
+- The transient generation API accepts text, not Harness tool schemas or image attachments. Anonymous turns can answer chat but cannot drive Harness coding tools through structured tool calls; run `dsh opencode-login` for workspace turns or store a Zen key for keyed tool-capable turns.
+- Live-verified 2026-10-16: the inference gateway answers `FreeTierError` to harness-runtime requests even with a valid workspace session, byte-exact client headers, catalog-correct protocol, and gate-shaped bodies on both wire protocols — only genuine OpenCode network stacks pass the client check. The local-service path therefore remains the working free path (text-only); the workspace session still owns discovery narrowing, paid-model turns, silent refresh, and exact failure guidance.
 - Automatic startup searches `PATH`, `~/.opencode/bin`, and the usual Homebrew executable locations; `OPENCODE_EXECUTABLE` can name another path. If the CLI is absent, start the service separately or configure a reachable `serverURL`. The provider does not stop the service.
