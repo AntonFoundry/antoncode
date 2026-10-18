@@ -263,6 +263,23 @@ export function createInnerAdapter(options: {
   models: Parameters<typeof buildProvider>[0]['models']
   baseURL?: string
   resolveAccess: () => Promise<string>
+  /**
+   * Durable attachment store, used only to convert image blocks. Omission
+   * is why this route silently degraded every image to placeholder text:
+   * pi-ai's adapter strips images when `resolveAttachments` yields
+   * `undefined`, independently of whether the model declares `image`
+   * input — and the Anthropic catalog does declare it for these models.
+   * Supplied as a resolver rather than a value so a service appearing or
+   * disappearing after registration is observed per request, matching how
+   * the keyed pi-ai route wires the same seam.
+   *
+   * Typed off `PiAiAdapter`'s own config rather than importing
+   * `AttachmentStore` directly: this package deliberately owns no wire or
+   * content code (see the module header) and has no `dsh-attachment`
+   * dependency, so deriving the type keeps that boundary intact and can
+   * never drift from what the adapter actually accepts.
+   */
+  resolveAttachments?: ConstructorParameters<typeof PiAiAdapter>[0]['resolveAttachments']
 }): PiAiAdapter {
   // Re-stamp catalog models to this route: pi-ai resolves the serving
   // provider from `model.provider`, so inherited `anthropic` stamps would
@@ -293,6 +310,9 @@ export function createInnerAdapter(options: {
       },
     ]]),
     resolveApiKey: () => options.resolveAccess(),
+    ...(options.resolveAttachments === undefined
+      ? {}
+      : { resolveAttachments: options.resolveAttachments }),
   })
 }
 
@@ -337,6 +357,10 @@ export function apply(ctx: Context, config: Config): void {
       models,
       ...(resolved.baseURL === undefined ? {} : { baseURL: resolved.baseURL }),
       resolveAccess,
+      // Same seam the keyed pi-ai route wires (llm-pi-ai/src/index.ts):
+      // resolved per request so a late-registering attachment service is
+      // picked up without re-registering this route.
+      resolveAttachments: () => ctx.get('attachments'),
     }),
   })
 

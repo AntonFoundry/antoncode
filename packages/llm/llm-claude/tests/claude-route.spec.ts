@@ -15,6 +15,7 @@ import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, { LlmError, MessageId, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { FileSettingsProvider } from '@deepseek-ai/dsh-settings-file'
 import { LocalCredentialProvider } from '@deepseek-ai/dsh-credentials-local'
+import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import { catalogModels } from '@deepseek-ai/dsh-llm-pi-ai'
 import * as LlmClaude from '@deepseek-ai/dsh-llm-claude'
 import {
@@ -148,6 +149,35 @@ async function boot(keyFile?: Record<string, string>, baseURL?: string): Promise
     await ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
   }
   await ctx.plugin(LlmClaude, baseURL === undefined ? {} : { baseURL })
+  if (ctx.llm.listProviders().every(entry => entry.id !== 'claude-code')) {
+    throw new Error('claude-code route did not register')
+  }
+  return { ctx, dir }
+}
+
+/**
+ * Same mount as {@link boot} plus the durable attachment service, which is
+ * what image conversion requires. Separate helper so existing tests keep
+ * mounting exactly what they did before.
+ */
+async function bootWithAttachments(
+  keyFile: Record<string, string>,
+  baseURL: string,
+): Promise<{ ctx: Context; dir: string }> {
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-llm-claude-img-'))
+  homes.push(dir)
+  vi.stubEnv('DSH_HOME', dir)
+  await writeFile(
+    join(dir, '.credentials.yaml'),
+    Object.entries(keyFile).map(([ref, value]) => `${ref}: '${value}'`).join('\n') + '\n',
+    { mode: 0o600 },
+  )
+  const ctx = new Context()
+  await ctx.plugin(LlmRuntime)
+  await ctx.plugin(FileSettingsProvider, { path: join(dir, 'settings.yaml'), watch: false })
+  await ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
+  await ctx.plugin(LocalAttachmentStore, { dshHome: dir })
+  await ctx.plugin(LlmClaude, { baseURL })
   if (ctx.llm.listProviders().every(entry => entry.id !== 'claude-code')) {
     throw new Error('claude-code route did not register')
   }
@@ -293,6 +323,72 @@ describe('subscription turns', () => {
       expect(gateway.requests[0]!.headers.authorization).toBe('Bearer sk-ant-oat01-access-2')
       const stored = await readFile(join(dir, '.credentials.yaml'), 'utf8')
       expect(stored).toContain('sk-ant-oat01-access-2')
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+})
+
+/**
+ * Image input over the route. Regression guard for a silent degradation:
+ * this route built its inner pi-ai adapter WITHOUT `resolveAttachments`, so
+ * pi-ai's adapter took its "no attachment service" branch and replaced every
+ * image with placeholder text — even though the installed Anthropic catalog
+ * declares `input: ['text','image']` for these models. Nothing errored;
+ * images simply never reached the gateway. That is exactly the kind of
+ * missing-wire omission no existing test caught, so it is asserted on the
+ * wire rather than by inspecting adapter internals.
+ */
+describe('image input', () => {
+  it('declares image input in the installed catalog', () => {
+    // The other half of pi-ai's strip condition: if the catalog ever stops
+    // declaring image support, images are dropped before attachments matter.
+    const models = [...catalogModels('anthropic').values()]
+    const withImages = models.filter(model => (model as { input?: readonly string[] }).input?.includes('image'))
+    expect(withImages.length).toBeGreaterThan(0)
+  })
+
+  it('sends image content to the gateway instead of placeholder text', async () => {
+    const gateway = await mockGateway()
+    const { ctx } = await bootWithAttachments(
+      { CLAUDE_CODE_OAUTH: JSON.stringify(VALID_STATE) },
+      gateway.url,
+    )
+    try {
+      const models = await ctx.llm.listModels('claude-code')
+      const model = models.find(entry => (entry as { input?: readonly string[] }).input?.includes('image'))
+        ?? models[0]!
+      // 1x1 transparent PNG.
+      const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+      const store = ctx.get('attachments')
+      if (store === undefined) throw new Error('attachment service did not register')
+      const saved = await store.saveImage({
+        data: new Uint8Array(Buffer.from(png, 'base64')),
+        mediaType: 'image/png',
+      })
+      messageCounter += 1
+      const imgChunks = await collect(ctx.llm.stream({
+        provider: 'claude-code',
+        model: model.id,
+        messages: [{
+          id: MessageId(`msg-claude-img-${messageCounter}`),
+          role: 'user',
+          content: [
+            { type: 'text', text: 'describe' },
+            { type: 'image', attachment: saved },
+          ],
+          source: { kind: 'plugin', plugin: 'test' },
+        }] as never,
+      }))
+      if (gateway.requests.length !== 1) {
+        // Surface the stream failure rather than a bare length mismatch.
+        throw new Error(`no gateway request; chunks=${JSON.stringify(imgChunks).slice(0, 600)}`)
+      }
+      const wire = JSON.stringify(gateway.requests[0]!.body)
+      // The exact symptom this guards: placeholder text reaching the wire.
+      expect(wire).not.toContain('image omitted')
+      // Positive side: real image content was serialized for the gateway.
+      expect(wire).toContain('base64')
     } finally {
       await ctx.fiber.dispose()
     }
