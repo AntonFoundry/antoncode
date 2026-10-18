@@ -11,7 +11,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { AgentOptions } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
@@ -366,6 +367,50 @@ function resolveDelegationRun(
   }
 }
 
+/**
+ * Install a settings section shared across every mounted instance of this
+ * plugin. Both swarm-default namespaces are deliberately shared by name
+ * rather than keyed per instance (one swarm default applies to every
+ * delegation tool in the deployment), and `SettingsProvider.register`
+ * fails loud on a duplicate namespace — so when a sibling `tool-subagent`
+ * row's `apply()` has already registered this namespace, this instance
+ * falls back to a read-only live view of the same resolved value through
+ * `ctx.settings.get()` instead of throwing. Every mounted instance stays
+ * synchronized with whichever one owns the write path; only the owner's
+ * `validate` hook runs, since only it receives writes.
+ * @param ctx - the owning plugin context.
+ * @param ns - the shared namespace.
+ * @param schema - schema resolving the namespace's value.
+ * @param entry - this instance's composition-layer default.
+ * @param setSource - receives the thunk this instance should read per call.
+ * @param validate - rejects a resolved section this instance could not act on.
+ */
+function installSharedSettingsSection<T>(
+  ctx: Context,
+  ns: SettingsNamespace,
+  schema: z<T>,
+  entry: T,
+  setSource: (source: () => T) => void,
+  validate?: (value: T) => void,
+): void {
+  ctx.inject(['settings'], (sctx) => {
+    try {
+      const scope = sctx.settings.register(ns, schema, {
+        base: entry,
+        ...validate === undefined ? {} : { validate },
+      })
+      setSource(() => scope.get())
+      sctx.effect(() => () => { setSource(() => entry) }, `tool-subagent: release shared section ${String(ns)}`)
+      return
+    } catch {
+      // A sibling tool-subagent instance already owns this namespace;
+      // ctx.settings.get() is the read-only path every registrant-less
+      // consumer may use, so this instance still sees committed writes.
+    }
+    setSource(() => (sctx.settings.get(ns) as T | undefined) ?? entry)
+  })
+}
+
 export function apply(ctx: Context, config: Config): void {
   // Direct apply() bypasses Schemastery's numeric constraints. A direct-apply
   // omission stays capless (the schema default only runs through the loader).
@@ -382,27 +427,21 @@ export function apply(ctx: Context, config: Config): void {
   // way minus the per-session layer.
   let sectionSource: () => { defaultModel: string; bySession: Record<string, string>; defaultEffort: string } =
     () => ({ defaultModel: '', bySession: {}, defaultEffort: '' })
-  installSettingsSection(
+  installSharedSettingsSection(
     ctx, SUBAGENT_MODEL_SETTINGS_NAMESPACE, ChildModelSection,
     { defaultModel: '', bySession: {}, defaultEffort: '' },
-    {
-      setSource: (source) => { sectionSource = source },
-      onChange: () => {},
-    },
+    (source) => { sectionSource = source },
   )
   // Operator-tunable recursion cap: installed only when the static config
   // names a numeric cap this provider is known (at mount) to enforce.
   // `'provider-managed'` never gets this section — there is no cap to tune.
   let depthSource: () => { maxDepth?: number } = () => ({})
   if (config.maxDepth !== 'provider-managed') {
-    installSettingsSection(
+    installSharedSettingsSection(
       ctx, SUBAGENT_DEPTH_SETTINGS_NAMESPACE, DepthSection,
       config.maxDepth === undefined ? {} : { maxDepth: config.maxDepth },
-      {
-        setSource: (source) => { depthSource = source },
-        onChange: () => {},
-        validate: (value) => { assertSubagentMaxDepth(value.maxDepth) },
-      },
+      (source) => { depthSource = source },
+      (value) => { assertSubagentMaxDepth(value.maxDepth) },
     )
   }
   // The `auto` route reads the optional model-intel datasheet service. It may

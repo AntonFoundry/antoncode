@@ -1447,4 +1447,46 @@ describe('operator-tunable settings sections', () => {
     await callSubagent(ctx, { description: 'd', prompt: 'p', reasoningEffort: 'low' })
     expect(requests[1]?.agentOptions).toMatchObject({ reasoningEffort: 'low' })
   })
+
+  it('shares both namespaces across multiple mounted instances instead of the second throwing on a duplicate registration', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(SubagentRuntime)
+    await ctx.plugin(MemorySettings)
+    const requests: Record<string, SubagentStartRequest[]> = { a: [], b: [] }
+    await mock.mountScriptedProvider(ctx, { name: 'mock', onStart: (request) => { requests['a']?.push(request) } })
+    await mock.mountScriptedProvider(ctx, { name: 'mock-b', onStart: (request) => { requests['b']?.push(request) } })
+    // Two mounted rows, mirroring a deployment that loads one tool-subagent
+    // instance per provider — the exact shape that used to throw on the
+    // second namespace registration.
+    await ctx.plugin(tool, { provider: 'mock', toolName: 'subagent', maxDepth: 3 })
+    await ctx.plugin(tool, { provider: 'mock-b', toolName: 'subagent_fork', maxDepth: 3 })
+
+    // Both instances mounted without the second's settings registration
+    // throwing and taking its own tool down with it.
+    const namespaces = ctx.settings.describe().map(row => String(row.ns))
+    expect(namespaces.filter(ns => ns === 'subagent-depth-limit')).toHaveLength(1)
+    expect(namespaces.filter(ns => ns === 'subagent-child-model')).toHaveLength(1)
+
+    const callA = (args: unknown) => ctx.tools.execute({
+      signal: testToolSignal, callId: CallId(`call-${++callCounter}`), name: 'subagent', arguments: args, agent: fakeAgent(),
+    })
+    const callB = (args: unknown) => ctx.tools.execute({
+      signal: testToolSignal, callId: CallId(`call-${++callCounter}`), name: 'subagent_fork', arguments: args, agent: fakeAgent(),
+    })
+
+    await callA({ description: 'd', prompt: 'p' })
+    await callB({ description: 'd', prompt: 'p' })
+    expect(requests['a']?.[0]?.maxDepth).toBe(3)
+    expect(requests['b']?.[0]?.maxDepth).toBe(3)
+
+    // A write through the owning (first) instance's namespace reaches the
+    // second instance too — the shared section is one swarm-wide knob.
+    await ctx.settings.update(tool.SUBAGENT_DEPTH_SETTINGS_NAMESPACE, { maxDepth: 9 })
+    await callA({ description: 'd', prompt: 'p' })
+    await callB({ description: 'd', prompt: 'p' })
+    expect(requests['a']?.[1]?.maxDepth).toBe(9)
+    expect(requests['b']?.[1]?.maxDepth).toBe(9)
+  })
 })
