@@ -305,7 +305,6 @@ export class BasicCompactionEngine extends CompactionEngine {
 
     const contextWindow = preparedTarget?.contextWindow
       ?? (await this.ctx.llm.resolveModelInfo(target.provider, target.model, signal)).context?.contextWindow
-    assertNoActiveCompaction(agent.session, 'automatic pressure compaction')
     const targetKey = `${target.provider}/${target.model}`
     if (contextWindow === undefined) {
       throw new TargetPressureConfigError(
@@ -316,6 +315,10 @@ export class BasicCompactionEngine extends CompactionEngine {
     }
     const spec = resolveCompactSpec(policy, contextWindow)
     if (measurement.totalTokens < spec.thresholdTokens) return null
+    // The active-compaction lock scan walks back to the last end-seed and is
+    // O(session log). Take it only once pressure qualifies, and before any
+    // surface mutation, so unpressured requests never pay the scan.
+    assertNoActiveCompaction(agent.session, 'automatic pressure compaction')
 
     // Once pressure qualifies, land the model-free pass before choosing a
     // summary range, then remeasure through the singleton replay fold.
