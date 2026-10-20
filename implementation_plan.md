@@ -1,12 +1,8 @@
-# Drive the remaining local-main failures to green
+# Plan: Synchronize c0ntext plugin, diagnose retrieval, and deploy
 
-## Goal
-The fork's local `main` (131 unpushed commits, including a WIP checkpoint) carries ~57 failing tests across ~33 host suites plus three client-side behavior regressions. Fix or refresh each cluster to green, one root cause per commit, and leave the three standing gates (`test:gui`, `test:coverage`, targeted `test:web` replay) green. Machine load (OrbStack) stays out of scope: load-sensitive verdicts are taken from solo runs.
-
-## Phases
-1. **Survey & classify** — DONE.
-2. **Fix host clusters** — DONE (14+ conventional commits per root cause).
-3. **Fix client regressions** — DONE (test:gui 4247 green; no reproducible JSDOM-lane regressions).
-4. **Gates** — `test:gui` green, `test:coverage` deterministic content green, docs gates green (AGENTS budgets pre-existing red, reported).
-5. **Web replay reconciliation** — the replay lane was pre-existing red (103 failures / 51 files) behind four intentional WIP surface changes: settings window shell (no 关闭, WM Close control), first-run onboarding modal (inert root), WM grid layout (retired `centerCol`), paged tool gating (`tool_search` grants). Five fixture clusters reconciled in parallel (46/51 files green solo). Four verified product bugs delegated to fix agents: theme boot adoption, history presenter-view re-derivation (terminal + write views), WM narrow-drop sidebar race, opensInline directory routing. Two fixes pre-staged in-tree: worktree runGit classification, tool-card toggle localization.
-6. **Final** — review all working-tree diffs, commit per concern (fixture clusters + each source fix), ONE rebuild, refresh English-page goldens pinned to the old hardcoded Chinese labels, re-verify the four bug tests (settings-chrome theme, navigation-panes terminal card + sidebar, produced-files Show in folder), then the full `pnpm run test:web` replay verdict and the closing report. permission-policy-context re-record stays BLOCKED (no DEEPSEEK_API_KEY on this machine).
+1. Inspect the prior worker-outage evidence and both repositories' current state, preserving unrelated dirty files. Trace the harness build/install composition to verify whether c0ntext plugin source is copied or bundled, and identify the source of truth.
+2. Diagnose the reported 2500ms retrieval soft timeout from worker/auth and request timing evidence. Reproduce through supported authenticated paths where credentials are available; do not mutate durable context data. Fix only a verified cause and add narrow tests.
+3. Finish the c0ntext activity indicator change using the slot's session snapshot, retain engine-health rendering, add focused client tests and concise docs, and keep any extant unrelated plugin changes intact. The session activity was wired into the worker light but it still needs its green pulse animation and a focused mounted-client test.
+4. Ensure the latest plugin code is synchronized into the harness through the normal build pipeline; if no such step exists, add an explicit reliable sync step, test it, and verify copied/built output.
+5. Run narrow plugin/harness tests, keyless snapshot coverage where model-visible behavior changed, build and sync checks, whitespace and quality gates. Commit each completed concern atomically without including unrelated scratch files. For UI-only worker activity feedback, add a mounted client component test; the existing `engine-lights.spec.ts` only tests the status normalizer.
+6. Rebuild/redeploy the affected harness/plugin artifacts, verify the existing GUI and c0ntext health/retrieval, then perform exactly one supported `dsh anton restart` after deploy and assess the app. Report unresolved issues and final git status.
