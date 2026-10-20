@@ -171,16 +171,18 @@ export class TokenMeter extends Service {
       this.states.set(session, state)
     }
 
-    while (state.consumedEvents < session.events.length) {
-      // oxlint-disable-next-line typescript/no-non-null-assertion -- contiguous session seqs index the durable log
-      const event = session.events[state.consumedEvents]!
+    for (let index = state.consumedEvents; ; index += 1) {
+      // The indexed accessor keeps the fold O(new events): reading through the
+      // `events` snapshot here would rebuild the whole frozen array per append.
+      const event = session.eventAt(index)
+      if (event === undefined) break
       // The constructor marker ends a seeded lifecycle even when measurement
       // consumed only a prefix before construction appended it.
       if (event.type === 'session/end-seed' && event.seq <= session.firstLiveSeq) {
         state.stepStart = undefined
       }
       this._foldEvent(session, state, event)
-      state.consumedEvents += 1
+      state.consumedEvents = index + 1
     }
     return state
   }
@@ -304,9 +306,8 @@ export class TokenMeter extends Service {
       seen.add(seq)
       // Session construction validates contiguous seqs, and the explicit
       // earlier-than-assistant check above therefore guarantees existence.
-      const source = session.events[seq]
       // oxlint-disable-next-line typescript/no-non-null-assertion
-      const sourceEvent = source!
+      const sourceEvent = session.eventAt(seq)!
       if (sourceEvent.type !== 'assistant/chunk') {
         throw new Error(`token meter: assistant/message at seq ${event.seq} source seq ${seq} is not assistant/chunk`)
       }

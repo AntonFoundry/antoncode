@@ -41,6 +41,7 @@ Plain class (not a Cordis Service). Create live sessions through `ctx.sessions.c
 - `session.deriveEventMessage(event)` is the canonical per-event projection used by reconstruction and request checks.
 - `session.surface` exposes the readonly `SessionSurface` view owned by the session's single incremental surface manager; `replaceGeneration` changes on every committed rewrite.
 - `session.events` is a cached frozen snapshot invalidated by append; accepted events remain deeply frozen.
+- `session.eventAt(index)` returns the event at a zero-based log position — the same frozen objects as `.events` — in O(1) without building or keeping the snapshot array; `undefined` past the end.
 - `session.seq`, `session.id` — current sequence and readonly typed identity.
 - `session.header: SessionHeader` — detached, deep-frozen creation metadata (`version`, `id`, `createdAt`, optional `cwd`/`parentSession`/`seedLength`/`delegationDepth`). Construction validates the durable record and requires its id to match `session.id`.
 

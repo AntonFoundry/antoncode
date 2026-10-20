@@ -562,6 +562,18 @@ export class Session {
     return this.eventsSnapshot
   }
 
+  /**
+   * Read one event by its zero-based durable log position — the same indexing
+   * and the same frozen event objects as {@link events}, without building or
+   * keeping the cached snapshot array. O(1) per read, so per-event folds avoid
+   * the snapshot's O(log) rebuild after each append.
+   * @param index - zero-based position in the append-only log.
+   * @returns the event at that position, or `undefined` past the log end.
+   */
+  eventAt(index: number): SessionEvent | undefined {
+    return this.log[index]
+  }
+
   /** The next event's sequence number — always the log length (the `seq = log.length` contiguity contract). */
   get seq(): number {
     return this.log.length
