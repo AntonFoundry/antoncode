@@ -61,3 +61,25 @@ vendor/timer/src/*.js
 vendor/timer/src/*.js.map
 vendor/timer/src/*.d.ts
 vendor/timer/src/*.d.ts.map
+
+# Analysis-tool output and exported agent-session residue — never shipped.
+/graphify-out/
+/command-code-session-*.md
+
+# Accidental in-source TS emit over client sources/tests — never shipped.
+packages/client/*/tests/*.client.spec.js
+packages/client/*/tests/*.client.spec.js.map
+packages/client/*/tests/*.client.spec.d.ts
+packages/client/*/tests/*.client.spec.d.ts.map
+packages/client/*/tests/*.client.js
+packages/client/*/tests/*.client.js.map
+packages/client/*/tests/*.client.d.ts
+packages/client/*/tests/*.client.d.ts.map
+packages/client/runtime/tests/*.client.js
+packages/client/runtime/tests/*.client.js.map
+packages/client/runtime/tests/*.client.d.ts
+packages/client/runtime/tests/*.client.d.ts.map
+packages/test-support/client-runtime/src/*.js
+packages/test-support/client-runtime/src/*.js.map
+packages/test-support/client-runtime/src/*.d.ts
+packages/test-support/client-runtime/src/*.d.ts.map
