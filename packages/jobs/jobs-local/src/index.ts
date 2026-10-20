@@ -27,6 +27,9 @@ export const TASK_WAIT_TIMEOUT = 'TASK_WAIT_TIMEOUT'
 /** Default maximum number of active jobs in one exact-owner bucket. */
 const DEFAULT_MAX_CONCURRENT_TASKS_PER_OWNER = 10
 
+/** Default maximum number of terminal job records retained in one exact-owner bucket. */
+const DEFAULT_SETTLED_RETENTION_PER_OWNER = 128
+
 /** Configuration for the process-local job registry. */
 export interface Config {
   /**
@@ -34,6 +37,12 @@ export interface Config {
    * omission defaults to 10.
    */
   maxConcurrentJobsPerOwner?: number
+
+  /**
+   * Maximum terminal job records retained per exact owner or in the shared unowned bucket;
+   * eviction is oldest-finished-first and announces the removals; omission defaults to 128.
+   */
+  settledRetentionPerOwner?: number
 }
 
 /** The registry's mutable per-job record (never handed out — see {@link LocalJobRegistry.snapshot}). */
@@ -95,10 +104,17 @@ export class LocalJobRegistry extends JobRegistry {
       .min(1)
       .max(Number.MAX_SAFE_INTEGER)
       .default(DEFAULT_MAX_CONCURRENT_TASKS_PER_OWNER),
+    settledRetentionPerOwner: z
+      .number()
+      .min(1)
+      .max(Number.MAX_SAFE_INTEGER)
+      .default(DEFAULT_SETTLED_RETENTION_PER_OWNER),
   })
 
   /** Schemastery-defaulted active-job limit. */
   private readonly maxConcurrentJobsPerOwner: number
+  /** Schemastery-defaulted terminal-record retention. */
+  private readonly settledRetentionPerOwner: number
   private store = new Map<JobId, TrackedTask>()
   private counters = new Map<string, number>()
   /**
@@ -124,6 +140,7 @@ export class LocalJobRegistry extends JobRegistry {
     super(ctx)
     // Schemastery validates and fills the default before constructing the service.
     this.maxConcurrentJobsPerOwner = (config as Required<Config>).maxConcurrentJobsPerOwner
+    this.settledRetentionPerOwner = (config as Required<Config>).settledRetentionPerOwner
     this.selfCtx = ctx
     ctx.effect(() => () => this.disposeAll(), 'jobs teardown')
   }
@@ -426,6 +443,7 @@ export class LocalJobRegistry extends JobRegistry {
     for (const resolveWait of waitResolvers) resolveWait()
     job.markSettled()
     this.notifyChanged(job.owner)
+    this.evictSettled(job.owner)
     if (this.listenersClosed) return
     for (const listener of this.listenersFor(job.owner)) {
       try {
@@ -437,6 +455,25 @@ export class LocalJobRegistry extends JobRegistry {
         this.selfCtx.logger.warn(`jobs: onJobDone listener threw for ${job.id}: ${String(error)}`)
       }
     }
+  }
+
+  /**
+   * Drop the oldest terminal records past the per-owner retention cap and
+   * announce the removals. Terminal records carry bounded-size output but
+   * would otherwise accumulate for the registry's whole life. The just-settled
+   * record is the newest terminal record, so oldest-first eviction never
+   * removes it.
+   */
+  private evictSettled(owner: Agent | undefined): void {
+    const settled = [...this.store.values()].filter(job => job.owner === owner && isTerminal(job.status))
+    const excess = settled.length - this.settledRetentionPerOwner
+    if (excess <= 0) return
+    // oxlint-disable-next-line typescript/no-non-null-assertion -- settle() stamps finishedAt before eviction can run
+    settled.sort((a, b) => a.finishedAt! - b.finishedAt!)
+    for (const job of settled.slice(0, excess)) this.store.delete(job.id)
+    // Removal is a visible-set change no per-job record carries; announce it
+    // like disposeOwned does.
+    this.notifyChanged(owner)
   }
 
   /**

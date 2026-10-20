@@ -6,7 +6,7 @@ Process-local implementation of the [`@deepseek-ai/dsh-jobs`](../jobs/README.md)
 
 ## Admission
 
-`maxConcurrentJobsPerOwner` is a positive safe integer and defaults to `10`. Before invoking a producer, `start()` counts the exact owner's `running` and `stopping` records; all unowned jobs share one separate service bucket. Terminal history does not occupy capacity, and only producer `done` settlement releases a stopping job's place.
+`maxConcurrentJobsPerOwner` is a positive safe integer and defaults to `10`. Before invoking a producer, `start()` counts the exact owner's `running` and `stopping` records; all unowned jobs share one separate service bucket. Terminal history does not occupy capacity, and only producer `done` settlement releases a stopping job's place. Terminal records are capped per bucket by `settledRetentionPerOwner` (a positive safe integer defaulting to `128`); settlement past the cap drops the oldest-finished records and announces the removals, so a long-lived agent cannot accumulate terminal history — and its retained outputs — without bound.
 
 At capacity, `start()` fails before producer execution and id allocation with an error that names the limit and tells the model to use `job_kill`, wait for the job to finish stopping, and retry. The registry does not queue, preempt, or maintain a second mutable counter.
 
