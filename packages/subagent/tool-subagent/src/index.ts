@@ -145,7 +145,7 @@ export function splitModelRoute(route: string): AgentOptions {
  * Resolve one delegation's child model route from the swarm defaults: the
  * call's own `model` argument wins, then the parent session's section route,
  * then the section's global default, then the plugin-configured
- * `agentOptions.model`. `undefined` = the child inherits the parent model.
+ * `agentOptions.model`, then the cost-aware `auto` route.
  * @param section - the currently authoritative settings section.
  * @param parentSessionId - the calling session's id (the by-session key).
  * @param callModel - the delegation call's optional `model` argument.
@@ -164,12 +164,15 @@ export function resolveChildModelRoute(
   const sessionRoute = section.bySession[parentSessionId]
   if (typeof sessionRoute === 'string' && sessionRoute.trim().length > 0) return splitModelRoute(sessionRoute.trim())
   if (section.defaultModel.trim().length > 0) {
-    // `auto` consults the model-intel datasheet with the task text; a
-    // resolution failure falls through to parent inheritance.
+    // `auto` consults the model-intel datasheet with the task text; an
+    // unavailable or unmatched route leaves provider inheritance in effect.
     if (section.defaultModel.trim().toLowerCase() === 'auto') return autoRoute?.(taskText)
     return splitModelRoute(section.defaultModel.trim())
   }
-  return configuredModel !== undefined ? { model: configuredModel } : undefined
+  if (configuredModel !== undefined) return { model: configuredModel }
+  // Delegation should reduce cost and keep the parent as task owner by default.
+  // The operator can select another swarm route in Settings or per call.
+  return { model: 'auto' }
 }
 
 /**

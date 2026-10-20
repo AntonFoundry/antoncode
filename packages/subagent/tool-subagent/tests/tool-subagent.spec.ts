@@ -287,16 +287,16 @@ describe('dsh-tool-subagent', () => {
     await ctx.plugin(tool, { provider: 'capture', maxDepth: 'provider-managed' })
 
     await callSubagent(ctx, { description: 'd', prompt: 'p', reasoningEffort: 'high' })
-    expect(seen?.agentOptions).toEqual({ reasoningEffort: 'high' })
+    expect(seen?.agentOptions).toEqual({ model: 'auto', reasoningEffort: 'high' })
     await callSubagent(ctx, { description: 'd', prompt: 'p', model: 'mock/k3', reasoningEffort: 'low' })
     expect(seen?.agentOptions).toEqual({ provider: 'mock', model: 'k3', reasoningEffort: 'low' })
   })
 
-  it('resolves the child model route: call arg > per-session section > global default > config', () => {
+  it('resolves the child model route: call arg > per-session section > global default > config > auto', () => {
     // The swarm default chain, each layer overriding the next; a
     // "provider/model" route names the child provider too.
     const empty = { defaultModel: '', bySession: {} }
-    expect(tool.resolveChildModelRoute(empty, 's1', undefined, undefined)).toBeUndefined()
+    expect(tool.resolveChildModelRoute(empty, 's1', undefined, undefined)).toEqual({ model: 'auto' })
     expect(tool.resolveChildModelRoute(empty, 's1', undefined, 'config-model')).toEqual({ model: 'config-model' })
     expect(tool.resolveChildModelRoute({ defaultModel: 'openrouter/strong', bySession: {} }, 's1', undefined, undefined))
       .toEqual({ provider: 'openrouter', model: 'strong' })
@@ -305,10 +305,10 @@ describe('dsh-tool-subagent', () => {
     // The call's own argument outranks every default; a bare id names the model only.
     expect(tool.resolveChildModelRoute({ defaultModel: 'openrouter/strong', bySession: { s1: 'fallback/other' } }, 's1', 'call-model', 'config-model'))
       .toEqual({ model: 'call-model' })
-    // Blank strings never route.
-    expect(tool.resolveChildModelRoute({ defaultModel: '  ', bySession: { s1: '' } }, 's1', '  ', undefined)).toBeUndefined()
-    // `auto` consults the model-intel resolver with the task text; an
-    // unresolved auto (no datasheet hit) falls through to inheritance.
+    // Blank overrides fall through to the auto route.
+    expect(tool.resolveChildModelRoute({ defaultModel: '  ', bySession: { s1: '' } }, 's1', '  ', undefined)).toEqual({ model: 'auto' })
+    // `auto` consults the model-intel resolver with the task text. An
+    // unavailable or unmatched route leaves provider inheritance in effect.
     expect(tool.resolveChildModelRoute({ defaultModel: 'auto', bySession: {} }, 's1', undefined, undefined, 'fix the bug', () => ({ provider: 'zai', model: 'glm-5.3' })))
       .toEqual({ provider: 'zai', model: 'glm-5.3' })
     expect(tool.resolveChildModelRoute({ defaultModel: 'auto', bySession: {} }, 's1', undefined, undefined, 'fix the bug')).toBeUndefined()
@@ -357,7 +357,7 @@ describe('dsh-tool-subagent', () => {
 
     expect(ctx.tools.schemas().some(s => s.name === 'subagent')).toBe(true)
     await callSubagent(ctx, { description: 'd', prompt: 'p' })
-    expect(seen?.agentOptions).toBeUndefined()
+    expect(seen?.agentOptions).toEqual({ model: 'auto' })
   })
 
   it('fails loud when invoked without a calling agent', async () => {
@@ -780,7 +780,7 @@ describe('dsh-tool-subagent', () => {
     expect(seen?.toolFilter).not.toHaveProperty('allow')
   })
 
-  it('an omitted agentOptions does not materialize an empty object onto the request', async () => {
+  it('an omitted agentOptions still selects the cost-aware auto route', async () => {
     // Same schemastery trap as toolFilter, adjacent field: an omitted
     // `agentOptions` config key materializes `{}` without the forced default,
     // which reads as present and puts a dishonest `agentOptions: {}` on every
@@ -807,7 +807,7 @@ describe('dsh-tool-subagent', () => {
     await ctx.plugin(tool, { provider: 'capture4', maxDepth: 'provider-managed' })
     await callSubagent(ctx, { description: 'd', prompt: 'p' })
     expect(seen).toBeDefined()
-    expect(seen).not.toHaveProperty('agentOptions')
+    expect(seen).toHaveProperty('agentOptions', { model: 'auto' })
   })
 
   it('an explicit empty toolFilter fails at plugin load, not at first delegation', async () => {
@@ -1148,6 +1148,9 @@ describe('dsh-tool-subagent continuable background mode', () => {
     expect(properties.run_in_background?.description).toContain('Defaults to true')
     const assembly = await ctx.systemPrompt.assemble(assembleContextFor(parent))
     const guidance = assembly.sections.find(section => section.name === 'tool:subagent')
+    expect(guidance?.text).toContain('Delegation is the DEFAULT for decomposable work')
+    expect(guidance?.text).toContain('Keep only genuinely single-step or strictly sequential actions inline')
+    expect(guidance?.text).toContain('delegate codebase exploration to a subagent to draft the implementation plan')
     expect(guidance?.text).toContain('Use subagent in the background by default')
     expect(guidance?.text).toContain('runtime sends you a notice containing its outcome')
 
