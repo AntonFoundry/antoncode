@@ -116,6 +116,35 @@ describe('durable agent queue', () => {
     } finally { members.pop() }
   })
 
+  it('delivers direct messages to a cold addressee without subscribing it to broadcasts', async () => {
+    const { queue, agent } = await setup()
+    const root = agent('root'); const cold = agent('alpha')
+    await queue.subscribe(root)
+    await expect(queue.read(cold)).rejects.toThrow('no addressed messages')
+    const direct = await queue.publish(root, { recipients: [cold.id], body: 'cold direct' })
+    expect((await queue.read(cold)).messages).toMatchObject([{ id: direct.id }])
+    expect(await queue.ack(cold, id, direct.seq)).toBe(1)
+    await queue.publish(root, { workspaceWide: true, body: 'topic before opt-in' })
+    expect((await queue.read(cold, { cursor: 0 })).messages).toEqual([]) // fully acked direct mail was compacted
+    await queue.subscribe(cold)
+    await queue.publish(root, { workspaceWide: true, body: 'topic after opt-in' })
+    expect((await queue.read(cold)).messages.map(message => message.body)).toEqual(['topic after opt-in'])
+  })
+
+  it('retains cold direct delivery and its cursor across a service restart', async () => {
+    const pool = new MemoryMediaPool()
+    const first = await setup(pool)
+    const sender = first.agent('root'); const cold = first.agent('alpha')
+    await first.queue.publish(sender, { recipients: [cold.id], body: 'persisted cold' })
+    await first.fiber.dispose(); open.delete(first)
+    const second = await setup(pool)
+    const restored = second.agent('alpha')
+    expect((await second.queue.read(restored)).messages.map(message => message.body)).toEqual(['persisted cold'])
+    await second.queue.ack(restored, id, 1)
+    await second.queue.subscribe(restored)
+    expect((await second.queue.read(restored)).cursor).toBe(1)
+  })
+
   it('rejects an empty topic without advancing the durable stream', async () => {
     const { queue, agent } = await setup()
     const root = agent('root'); const alpha = agent('alpha')
@@ -161,6 +190,6 @@ describe('durable agent queue', () => {
     await expect(queue.unsubscribe(alpha)).rejects.toThrow('acknowledge unread')
     await queue.ack(alpha, id, 3)
     expect(await queue.unsubscribe(alpha)).toBe(true)
-    await expect(queue.read(alpha)).rejects.toThrow('subscribe')
+    expect((await queue.read(alpha)).messages).toEqual([])
   })
 })

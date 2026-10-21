@@ -20,11 +20,13 @@ export const queueMessage = z.object({
 })
 export type QueueMessage = z.infer<typeof queueMessage>
 
-/** Subscription is durable and stores its own last acknowledged stream position. */
+/** Session delivery cursor: direct mail creates it without opting into workspace broadcasts. */
 export const queueSubscription = z.object({
   workspaceId,
   sessionId,
   cursor: z.number().int().nonnegative().safe(),
+  /** Only explicit subscription opts this address into later workspace topic publishes. */
+  workspaceSubscribed: z.boolean().default(true),
 })
 export type QueueSubscription = z.infer<typeof queueSubscription>
 

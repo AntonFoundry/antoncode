@@ -115,7 +115,7 @@ export class AgentQueue extends Service {
     }
   }
 
-  /** Explicit durable subscription. Only messages already directly addressed to this session replay from history. */
+  /** Opt into future workspace broadcasts; direct messages need no topic subscription. */
   async subscribe(agent: Agent, workspaceId?: WorkspaceId, listener?: QueueListener, signal?: AbortSignal): Promise<() => void> {
     const workspace = await this.authorize(agent)
     this.requireWorkspace(workspace, workspaceId)
@@ -125,8 +125,12 @@ export class AgentQueue extends Service {
       if (this.ctx.agents.get(agent.id) !== agent || !workspace.sessionIds.includes(agent.id)) {
         throw new Error('queue membership changed before subscription')
       }
-      if (!this.accounts().get(id)) {
-        await this.accounts().put(id, { workspaceId: workspace.id, sessionId: agent.id, cursor: 0 })
+      const account = this.accounts().get(id)
+      if (!account || !account.workspaceSubscribed) {
+        await this.accounts().put(id, {
+          workspaceId: workspace.id, sessionId: agent.id,
+          cursor: account?.cursor ?? 0, workspaceSubscribed: true,
+        })
       }
     })
     if (signal?.aborted) throw signal.reason ?? new Error('subscription aborted')
@@ -159,17 +163,18 @@ export class AgentQueue extends Service {
       if (this.ctx.agents.get(agent.id) !== agent || !workspace.sessionIds.includes(agent.id)) {
         throw new Error('queue membership changed before unsubscription')
       }
+      const account = this.accounts().get(id)
+      if (!account?.workspaceSubscribed) return false
       // An unsubscription with unread deliveries would strand them indefinitely.
-      const cursor = this.accounts().get(id)?.cursor ?? 0
       if (this.records().get(workspace.id)?.messages.some(message =>
-        message.seq > cursor && this.addressed(message, agent.id))) {
+        message.seq > account.cursor && this.addressed(message, agent.id))) {
         throw new Error('acknowledge unread queue messages before unsubscribing')
       }
-      const deleted = await this.accounts().delete(id)
+      await this.accounts().put(id, { ...account, workspaceSubscribed: false })
       this.listeners.get(id)?.clear()
       this.listeners.delete(id)
       this.activeSubscriptions.delete(id)
-      return deleted
+      return true
     })
   }
 
@@ -197,7 +202,7 @@ export class AgentQueue extends Service {
       // The workspace topic resolves to durable subscriptions now; later subscribers never see this message.
       const frozen = request.workspaceWide
         ? [...this.accounts().entries()]
-          .filter(([, subscription]) => subscription.workspaceId === workspace.id)
+          .filter(([, subscription]) => subscription.workspaceId === workspace.id && subscription.workspaceSubscribed)
           .map(([, subscription]) => subscription.sessionId)
         : []
       const addresses = [...new Set([...recipients, ...frozen])]
@@ -221,10 +226,30 @@ export class AgentQueue extends Service {
         sender: agent.id, recipients: addresses, workspaceWide: !!request.workspaceWide,
         body, createdAt: Date.now(),
       }
-      // Sequence + compaction + message share one durable workspace-domain write.
-      await this.records().put(workspace.id, {
-        nextSeq: current.nextSeq + 1, messages: [...retained, message],
-      })
+      // Direct delivery first creates an independent cursor without opting the address into topics.
+      // If persistence fails, roll back provisional cursors; this method remains the only serialized writer.
+      const provisional: SessionId[] = []
+      try {
+        for (const recipient of recipients) {
+          const address = key(workspace.id, recipient)
+          if (this.accounts().get(address)) continue
+          await this.accounts().put(address, {
+            workspaceId: workspace.id, sessionId: recipient, cursor: 0, workspaceSubscribed: false,
+          })
+          provisional.push(recipient)
+        }
+        // Sequence + compaction + message share one durable workspace-domain write.
+        await this.records().put(workspace.id, {
+          nextSeq: current.nextSeq + 1, messages: [...retained, message],
+        })
+      } catch (error) {
+        const failures: unknown[] = []
+        for (const recipient of provisional) {
+          try { await this.accounts().delete(key(workspace.id, recipient)) } catch (rollbackError) { failures.push(rollbackError) }
+        }
+        if (failures.length) throw new AggregateError([error, ...failures], 'queue publish rollback failed')
+        throw error
+      }
       // Notifications follow durable commit. Listener failure cannot undo or reject the write.
       for (const [id, listeners] of this.listeners) {
         if (!this.activeSubscriptions.has(id)) continue
@@ -259,7 +284,7 @@ export class AgentQueue extends Service {
     if (this.ctx.agents.get(agent.id) !== agent || !workspace.sessionIds.includes(agent.id)) {
       throw new Error('queue membership changed before reading')
     }
-    if (!subscription) throw new Error('queue session must subscribe before reading')
+    if (!subscription) throw new Error('queue session has no addressed messages; subscribe to receive workspace broadcasts')
     const after = options.cursor ?? options.after ?? subscription.cursor
     if (!Number.isSafeInteger(after) || after < 0) throw new RangeError('queue cursor must be a nonnegative safe integer')
     const limit = bounded(options.limit ?? 50)
