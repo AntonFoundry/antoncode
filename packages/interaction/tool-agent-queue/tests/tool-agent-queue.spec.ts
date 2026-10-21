@@ -54,7 +54,8 @@ describe('model-facing agent queue tools', () => {
     expect(queue.identities).not.toHaveBeenCalled()
     expect((await execute('agent_queue_address', {}, agent)).isError).toBe(false)
     expect((await execute('agent_queue_address', {}, otherAgent)).isError).toBe(false)
-    expect(queue.identities.mock.calls.map(([caller]) => caller)).toEqual([agent, otherAgent])
+    expect(queue.identities).toHaveBeenNthCalledWith(1, agent)
+    expect(queue.identities).toHaveBeenNthCalledWith(2, otherAgent)
   })
 
   it('subscribes and sends to multiple recipients without waking recipients', async () => {
