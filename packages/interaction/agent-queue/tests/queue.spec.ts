@@ -116,6 +116,16 @@ describe('durable agent queue', () => {
     } finally { members.pop() }
   })
 
+  it('rejects an empty topic without advancing the durable stream', async () => {
+    const { queue, agent } = await setup()
+    const root = agent('root'); const alpha = agent('alpha')
+    await expect(queue.publish(root, { workspaceWide: true, body: 'nobody' })).rejects.toThrow('no current subscribers')
+    await queue.subscribe(alpha)
+    const delivered = await queue.publish(root, { workspaceWide: true, body: 'now' })
+    expect(delivered).toMatchObject({ seq: 1, recipients: [alpha.id] })
+    expect((await queue.read(alpha)).messages.map(message => message.body)).toEqual(['now'])
+  })
+
   it('bounds unread backlog without dropping it and compacts only after acknowledgment', async () => {
     const { queue, agent } = await setup()
     const root = agent('root'); const alpha = agent('alpha')

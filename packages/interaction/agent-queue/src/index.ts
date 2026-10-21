@@ -115,7 +115,7 @@ export class AgentQueue extends Service {
     }
   }
 
-  /** Explicit durable subscription. By default, existing stream history is available. */
+  /** Explicit durable subscription. Only messages already directly addressed to this session replay from history. */
   async subscribe(agent: Agent, workspaceId?: WorkspaceId, listener?: QueueListener, signal?: AbortSignal): Promise<() => void> {
     const workspace = await this.authorize(agent)
     this.requireWorkspace(workspace, workspaceId)
@@ -201,6 +201,9 @@ export class AgentQueue extends Service {
           .map(([, subscription]) => subscription.sessionId)
         : []
       const addresses = [...new Set([...recipients, ...frozen])]
+      if (addresses.length === 0) {
+        throw new Error('workspace topic has no current subscribers; no recipients to deliver to')
+      }
       const current = this.records().get(workspace.id) ?? { nextSeq: 1, messages: [] }
       // Collect only messages acknowledged by every subscribed addressee. Unsubscribed direct targets
       // cannot acknowledge, so their messages stay retained until an explicit future subscription/ack.
@@ -242,7 +245,7 @@ export class AgentQueue extends Service {
     try { listener(notice) } catch { /* delivery is advisory; durable replay remains available */ }
   }
 
-  /** Read from this subscription's cursor (or a later explicit replay cursor). */
+  /** Read after the ack cursor by default. Explicit cursor/after may replay below ack only while retained. */
   async read(
     agent: Agent,
     options: { workspaceId?: WorkspaceId; cursor?: number; after?: number; limit?: number } = {},
