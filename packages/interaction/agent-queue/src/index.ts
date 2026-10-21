@@ -16,6 +16,8 @@ declare module '@deepseek-ai/cordis' {
 }
 
 export interface PublishRequest {
+  /** Optional workspace guard; when supplied it must equal the caller's workspace. */
+  readonly workspaceId?: WorkspaceId
   /** Deliver to every explicitly subscribed session in the workspace. */
   readonly workspaceWide?: boolean
   /** Durable session addresses within the sender's workspace. */
@@ -94,9 +96,22 @@ export class AgentQueue extends Service {
     return workspace
   }
 
-  /** Explicit durable subscription. By default, existing stream history is available. */
-  async subscribe(agent: Agent, listener?: QueueListener, signal?: AbortSignal): Promise<() => void> {
+  /** Discover the caller's durable session address and workspace peers. */
+  async identities(agent: Agent): Promise<{ workspaceId: WorkspaceId; sessionId: SessionId; sessionIds: readonly SessionId[] }> {
     const workspace = await this.authorize(agent)
+    return { workspaceId: workspace.id, sessionId: agent.id, sessionIds: [...workspace.sessionIds] }
+  }
+
+  private requireWorkspace(workspace: Workspace, requested?: WorkspaceId): void {
+    if (requested !== undefined && requested !== workspace.id) {
+      throw new Error('queue workspace does not match the caller workspace')
+    }
+  }
+
+  /** Explicit durable subscription. By default, existing stream history is available. */
+  async subscribe(agent: Agent, workspaceId?: WorkspaceId, listener?: QueueListener, signal?: AbortSignal): Promise<() => void> {
+    const workspace = await this.authorize(agent)
+    this.requireWorkspace(workspace, workspaceId)
     if (signal?.aborted) throw signal.reason ?? new Error('subscription aborted')
     const id = key(workspace.id, agent.id)
     await this.enqueue(async () => {
@@ -127,8 +142,9 @@ export class AgentQueue extends Service {
   }
 
   /** Remove a session's durable workspace subscription and reset its cursor. */
-  async unsubscribe(agent: Agent): Promise<boolean> {
+  async unsubscribe(agent: Agent, workspaceId?: WorkspaceId): Promise<boolean> {
     const workspace = await this.authorize(agent)
+    this.requireWorkspace(workspace, workspaceId)
     const id = key(workspace.id, agent.id)
     return this.enqueue(async () => {
       if (this.ctx.agents.get(agent.id) !== agent || !workspace.sessionIds.includes(agent.id)) {
@@ -144,6 +160,7 @@ export class AgentQueue extends Service {
   /** Publish one durable fan-out message; direct targets must already belong to the workspace. */
   async publish(agent: Agent, request: PublishRequest): Promise<QueueMessage> {
     const workspace = await this.authorize(agent)
+    this.requireWorkspace(workspace, request?.workspaceId)
     if (!request || !Array.isArray(request.recipients ?? []) || typeof request.workspaceWide !== 'undefined' && typeof request.workspaceWide !== 'boolean') {
       throw new TypeError('invalid queue recipients or workspaceWide')
     }
@@ -191,14 +208,21 @@ export class AgentQueue extends Service {
   }
 
   /** Read from this subscription's cursor (or a later explicit replay cursor). */
-  async read(agent: Agent, options: { after?: number; limit?: number } = {}): Promise<ReadPage> {
+  async read(
+    agent: Agent,
+    options: { workspaceId?: WorkspaceId; cursor?: number; after?: number; limit?: number } = {},
+  ): Promise<ReadPage> {
     const workspace = await this.authorize(agent)
+    this.requireWorkspace(workspace, options.workspaceId)
+    if (options.cursor !== undefined && options.after !== undefined && options.cursor !== options.after) {
+      throw new Error('queue cursor and after disagree')
+    }
     const subscription = this.accounts().get(key(workspace.id, agent.id))
     if (this.ctx.agents.get(agent.id) !== agent || !workspace.sessionIds.includes(agent.id)) {
       throw new Error('queue membership changed before reading')
     }
     if (!subscription) throw new Error('queue session must subscribe before reading')
-    const after = options.after ?? subscription.cursor
+    const after = options.cursor ?? options.after ?? subscription.cursor
     if (!Number.isSafeInteger(after) || after < 0) throw new RangeError('queue cursor must be a nonnegative safe integer')
     const limit = bounded(options.limit ?? 50)
     const visible = (this.records().get(workspace.id)?.messages ?? [])
@@ -207,8 +231,9 @@ export class AgentQueue extends Service {
   }
 
   /** Advance only this session's acknowledged cursor, never beyond committed stream head. */
-  async ack(agent: Agent, throughSeq: number): Promise<number> {
+  async ack(agent: Agent, workspaceId: WorkspaceId, throughSeq: number): Promise<number> {
     const workspace = await this.authorize(agent)
+    this.requireWorkspace(workspace, workspaceId)
     if (!Number.isSafeInteger(throughSeq) || throughSeq < 0) throw new RangeError('queue cursor must be nonnegative')
     const id = key(workspace.id, agent.id)
     return this.enqueue(async () => {
