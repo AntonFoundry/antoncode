@@ -183,6 +183,21 @@ describe('durable agent queue', () => {
     expect((await queue.read(cold)).messages.map(message => message.body)).toEqual(['topic after opt-in'])
   })
 
+  it('keeps direct history when a cold recipient subscribes after an earlier broadcast', async () => {
+    const { queue, agent } = await setup()
+    const sender = agent('root'); const cold = agent('alpha')
+    await queue.subscribe(sender)
+    await queue.publish(sender, { workspaceWide: true, body: 'before direct' })
+    const direct = await queue.publish(sender, { recipients: [cold.id], body: 'addressed before subscribe' })
+    await queue.publish(sender, { workspaceWide: true, body: 'between direct and subscribe' })
+    await queue.subscribe(cold)
+    expect((await queue.read(cold)).messages.map(message => message.body)).toEqual(['addressed before subscribe'])
+    expect((await queue.read(cold)).messages[0]?.seq).toBe(direct.seq)
+    await queue.publish(sender, { workspaceWide: true, body: 'after subscribe' })
+    expect((await queue.read(cold)).messages.map(message => message.body))
+      .toEqual(['addressed before subscribe', 'after subscribe'])
+  })
+
   it('retains cold direct delivery and its cursor across a service restart', async () => {
     const pool = new MemoryMediaPool()
     const first = await setup(pool)
