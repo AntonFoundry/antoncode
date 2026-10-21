@@ -6,13 +6,14 @@ import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 const sessionId = z.string().min(1).transform(SessionId)
 const workspaceId = z.string().min(1).transform(WorkspaceId)
 
-/** A message belongs to one workspace, with optional workspace-wide fan-out. */
+/** A message belongs to one workspace; recipients freeze direct and topic fan-out at publication. */
 export const queueMessage = z.object({
   id: z.string().uuid(),
   workspaceId,
   seq: z.number().int().positive().safe(),
   sender: sessionId,
   recipients: z.array(sessionId),
+  /** Topic marker: workspace-wide means fan-out to subscriptions active at publish, not future subscribers. */
   workspaceWide: z.boolean(),
   body: z.string().min(1).max(65536),
   createdAt: z.number().int().nonnegative().safe(),

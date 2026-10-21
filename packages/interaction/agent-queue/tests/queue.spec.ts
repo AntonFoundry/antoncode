@@ -6,7 +6,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
-import AgentQueue from '../src/index.ts'
+import AgentQueue, { MAX_WORKSPACE_MESSAGES } from '../src/index.ts'
 
 const directory = '/queue/workspace'
 const id = WorkspaceId('ws-one')
@@ -65,11 +65,15 @@ describe('durable agent queue', () => {
     expect(direct.recipients).toEqual([alpha.id, beta.id])
     await queue.publish(beta, { workspaceWide: true, body: 'broadcast' })
     expect((await queue.read(root)).messages.map(x => x.body)).toEqual(['broadcast'])
+    expect((await queue.read(alpha)).messages[1]?.recipients).toEqual([root.id, alpha.id, beta.id])
     expect((await queue.read(alpha)).messages.map(x => x.body)).toEqual(['private', 'broadcast'])
     expect((await queue.read(beta)).messages.map(x => x.body)).toEqual(['private', 'broadcast'])
     expect(await queue.ack(alpha, id, 1)).toBe(1)
     expect((await queue.read(alpha)).messages.map(x => x.seq)).toEqual([2])
     expect((await queue.read(beta)).messages.map(x => x.seq)).toEqual([1, 2])
+    await queue.ack(root, id, 2)
+    await queue.ack(beta, id, 2)
+    expect((await queue.read(alpha, { cursor: 0 })).messages.map(x => x.seq)).toEqual([1, 2])
     expect((await queue.read(alpha, { workspaceId: id, cursor: 0, limit: 1 })).hasMore).toBe(true)
     await expect(queue.read(alpha, { cursor: 0, after: 1 })).rejects.toThrow('disagree')
     await expect(queue.read(alpha, { limit: 101 })).rejects.toThrow('limit')
@@ -92,6 +96,42 @@ describe('durable agent queue', () => {
     expect((await resumed.queue.read(resumedAlpha, { after: 0, limit: 2 })).messages.map(x => x.seq)).toEqual([1, 2])
   })
 
+  it('freezes workspace topic recipients and excludes future subscribers from earlier mail', async () => {
+    const { queue, agent } = await setup()
+    const root = agent('root'); const alpha = agent('alpha'); const beta = agent('beta')
+    await queue.subscribe(root)
+    await queue.subscribe(alpha)
+    const first = await queue.publish(root, { recipients: [beta.id], workspaceWide: true, body: 'before' })
+    expect(first.recipients).toEqual([beta.id, root.id, alpha.id])
+    await queue.subscribe(beta)
+    expect((await queue.read(beta)).messages.map(message => message.body)).toEqual(['before'])
+    // A future subscriber not explicitly addressed must not inherit old topic traffic.
+    const later = agent('later')
+    members.push(later.id)
+    try {
+      await queue.subscribe(later)
+      expect((await queue.read(later)).messages).toEqual([])
+      expect((await queue.publish(root, { workspaceWide: true, body: 'after' })).recipients).toContain(later.id)
+      expect((await queue.read(later)).messages.map(message => message.body)).toEqual(['after'])
+    } finally { members.pop() }
+  })
+
+  it('bounds unread backlog without dropping it and compacts only after acknowledgment', async () => {
+    const { queue, agent } = await setup()
+    const root = agent('root'); const alpha = agent('alpha')
+    await queue.subscribe(alpha)
+    const message = await queue.publish(root, { recipients: [alpha.id], body: 'first' })
+    // Fill the rest with durable addressed messages; no subscriber may silently lose one.
+    for (let i = 1; i < MAX_WORKSPACE_MESSAGES; i++) {
+      await queue.publish(root, { recipients: [alpha.id], body: 'pending' })
+    }
+    await expect(queue.publish(root, { recipients: [alpha.id], body: 'overflow' })).rejects.toThrow('backlog is full')
+    expect((await queue.read(alpha, { cursor: 0, limit: 1 })).messages[0]?.id).toBe(message.id)
+    await queue.ack(alpha, id, message.seq)
+    expect((await queue.publish(root, { recipients: [alpha.id], body: 'now fits' })).seq).toBe(MAX_WORKSPACE_MESSAGES + 1)
+    expect((await queue.read(alpha, { cursor: 0, limit: 1 })).messages[0]?.seq).toBe(2)
+  })
+
   it('notifies after durable publication without waking or failing on callback errors', async () => {
     const { queue, agent } = await setup()
     const root = agent('root'); const alpha = agent('alpha')
@@ -108,6 +148,8 @@ describe('durable agent queue', () => {
     expect(replay).toHaveBeenCalledWith({ workspaceId: id, seq: 2 })
     await expect(queue.publish(root, { workspaceWide: true, body: 'third' })).resolves.toMatchObject({ seq: 3 })
     expect((await queue.read(alpha)).messages).toHaveLength(3)
+    await expect(queue.unsubscribe(alpha)).rejects.toThrow('acknowledge unread')
+    await queue.ack(alpha, id, 3)
     expect(await queue.unsubscribe(alpha)).toBe(true)
     await expect(queue.read(alpha)).rejects.toThrow('subscribe')
   })

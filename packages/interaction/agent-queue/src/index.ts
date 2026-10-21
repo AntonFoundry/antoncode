@@ -11,6 +11,13 @@ import type { QueueMessage, QueueSubscription, QueueWorkspace } from './spec.ts'
 export { agentQueueDomainSpec, queueMessage, queueSubscription } from './spec.ts'
 export type { QueueMessage, QueueSubscription } from './spec.ts'
 
+/** Maximum retained messages per workspace; a full unread backlog rejects new publishes. */
+export const MAX_WORKSPACE_MESSAGES = 1024
+/** Maximum explicitly addressed sessions per publish (topic subscribers are bounded separately). */
+export const MAX_DIRECT_RECIPIENTS = 32
+/** Maximum encoded message body length in UTF-16 code units. */
+export const MAX_BODY_LENGTH = 65536
+
 declare module '@deepseek-ai/cordis' {
   interface Context { agentQueue: AgentQueue }
 }
@@ -18,7 +25,7 @@ declare module '@deepseek-ai/cordis' {
 export interface PublishRequest {
   /** Optional workspace guard; when supplied it must equal the caller's workspace. */
   readonly workspaceId?: WorkspaceId
-  /** Deliver to every explicitly subscribed session in the workspace. */
+  /** Workspace topic: include only the subscriptions present at durable publication. */
   readonly workspaceWide?: boolean
   /** Durable session addresses within the sender's workspace. */
   readonly recipients?: readonly SessionId[]
@@ -135,9 +142,11 @@ export class AgentQueue extends Service {
       signal?.removeEventListener('abort', dispose)
     }
     signal?.addEventListener('abort', dispose, { once: true })
-    // Replay notice after listener installation; read() is authoritative and deduplicates by seq.
-    const latest = this.records().get(workspace.id)?.nextSeq ?? 1
-    if (latest > 1) this.notify(listener, { workspaceId: workspace.id, seq: latest - 1 })
+    // Replay only addressed unread mail after listener installation; read() remains authoritative.
+    const cursor = this.accounts().get(id)?.cursor ?? 0
+    const latest = this.records().get(workspace.id)?.messages.findLast(message =>
+      message.seq > cursor && this.addressed(message, agent.id))
+    if (latest) this.notify(listener, { workspaceId: workspace.id, seq: latest.seq })
     return dispose
   }
 
@@ -150,10 +159,17 @@ export class AgentQueue extends Service {
       if (this.ctx.agents.get(agent.id) !== agent || !workspace.sessionIds.includes(agent.id)) {
         throw new Error('queue membership changed before unsubscription')
       }
+      // An unsubscription with unread deliveries would strand them indefinitely.
+      const cursor = this.accounts().get(id)?.cursor ?? 0
+      if (this.records().get(workspace.id)?.messages.some(message =>
+        message.seq > cursor && this.addressed(message, agent.id))) {
+        throw new Error('acknowledge unread queue messages before unsubscribing')
+      }
+      const deleted = await this.accounts().delete(id)
       this.listeners.get(id)?.clear()
       this.listeners.delete(id)
       this.activeSubscriptions.delete(id)
-      return this.accounts().delete(id)
+      return deleted
     })
   }
 
@@ -165,6 +181,7 @@ export class AgentQueue extends Service {
       throw new TypeError('invalid queue recipients or workspaceWide')
     }
     const recipients = [...new Set(request.recipients ?? [])]
+    if (recipients.length > MAX_DIRECT_RECIPIENTS) throw new RangeError('queue has too many direct recipients')
     if (recipients.some(id => typeof id !== 'string' || id.length === 0)) throw new TypeError('invalid queue recipient')
     if (!request.workspaceWide && recipients.length === 0) throw new Error('queue message needs a recipient or workspaceWide')
     if (recipients.some(id => !workspace.sessionIds.includes(id))) {
@@ -177,15 +194,33 @@ export class AgentQueue extends Service {
         || recipients.some(id => !workspace.sessionIds.includes(id))) {
         throw new Error('queue membership changed before publication')
       }
+      // The workspace topic resolves to durable subscriptions now; later subscribers never see this message.
+      const frozen = request.workspaceWide
+        ? [...this.accounts().entries()]
+          .filter(([, subscription]) => subscription.workspaceId === workspace.id)
+          .map(([, subscription]) => subscription.sessionId)
+        : []
+      const addresses = [...new Set([...recipients, ...frozen])]
       const current = this.records().get(workspace.id) ?? { nextSeq: 1, messages: [] }
+      // Collect only messages acknowledged by every subscribed addressee. Unsubscribed direct targets
+      // cannot acknowledge, so their messages stay retained until an explicit future subscription/ack.
+      const retained = current.messages.filter(message =>
+        message.recipients.some((target) => {
+          const subscription = this.accounts().get(key(workspace.id, target))
+          return !subscription || subscription.cursor < message.seq
+        }))
+      if (retained.length >= MAX_WORKSPACE_MESSAGES) {
+        throw new RangeError('workspace queue backlog is full; acknowledge messages before publishing')
+      }
       if (!Number.isSafeInteger(current.nextSeq + 1)) throw new RangeError('workspace queue sequence exhausted')
       const message: QueueMessage = {
         id: randomUUID(), workspaceId: workspace.id, seq: current.nextSeq,
-        sender: agent.id, recipients, workspaceWide: !!request.workspaceWide,
+        sender: agent.id, recipients: addresses, workspaceWide: !!request.workspaceWide,
         body, createdAt: Date.now(),
       }
+      // Sequence + compaction + message share one durable workspace-domain write.
       await this.records().put(workspace.id, {
-        nextSeq: current.nextSeq + 1, messages: [...current.messages, message],
+        nextSeq: current.nextSeq + 1, messages: [...retained, message],
       })
       // Notifications follow durable commit. Listener failure cannot undo or reject the write.
       for (const [id, listeners] of this.listeners) {
@@ -200,7 +235,7 @@ export class AgentQueue extends Service {
   }
 
   private addressed(message: QueueMessage, sessionId: SessionId): boolean {
-    return message.workspaceWide || message.recipients.includes(sessionId)
+    return message.recipients.includes(sessionId)
   }
 
   private notify(listener: QueueListener, notice: QueueNotice): void {
