@@ -1,0 +1,108 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import Storage from '@deepseek-ai/dsh-storage'
+import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
+import AgentQueue from '../src/index.ts'
+
+const directory = '/queue/workspace'
+const id = WorkspaceId('ws-one')
+const members = [SessionId('root'), SessionId('alpha'), SessionId('beta')]
+const workspace = { id, sessionIds: members, path: directory }
+
+async function harness(pool = new MemoryMediaPool()) {
+  const ctx = new Context()
+  await ctx.plugin(Storage)
+  ctx.storage.backend.register('memory', new MemoryStorageBackend(pool))
+  const facility = new DomainFacility(ctx, { backend: 'memory', routes: {} })
+  ctx.storage.mount('domain', facility)
+  ctx.provide('storageDomain', facility)
+  const live = new Map<string, Agent>()
+  const resolved = vi.fn(async (cwd: string) => cwd === directory ? workspace : undefined)
+  ctx.provide('workspaceRegistry', { resolveByPath: resolved } as never)
+  ctx.provide('agents', { get: (session: string) => live.get(session) } as never)
+  const fiber = await ctx.plugin(AgentQueue)
+  function agent(name: string, cwd = directory) {
+    const session = SessionId(name)
+    const value = { id: session, session: { header: { id: session, cwd } } } as Agent
+    live.set(session, value)
+    return value
+  }
+  return { ctx, fiber, queue: ctx.agentQueue, agent, live, pool, resolved }
+}
+
+const open = new Set<Awaited<ReturnType<typeof harness>>>()
+afterEach(async () => { for (const item of open) await item.fiber.dispose(); open.clear() })
+async function setup(pool?: MemoryMediaPool) { const h = await harness(pool); open.add(h); return h }
+
+describe('durable agent queue', () => {
+  it('requires exact live identity and validated workspace membership', async () => {
+    const { queue, agent, live, resolved } = await setup()
+    const root = agent('root')
+    await queue.subscribe(root)
+    expect(resolved).toHaveBeenCalledWith(directory)
+    await expect(queue.publish({ ...root } as Agent, { workspaceWide: true, body: 'forged' })).rejects.toThrow('exact live')
+    await expect(queue.subscribe(agent('stranger'))).rejects.toThrow('member')
+    await expect(queue.publish(root, { recipients: [SessionId('stranger')], body: 'no' })).rejects.toThrow('recipient')
+    await expect(queue.publish(root, { workspaceWide: true, body: 'ok' })).resolves.toMatchObject({ seq: 1 })
+    live.delete(root.id)
+    await expect(queue.read(root)).rejects.toThrow('exact live')
+  })
+
+  it('fans out direct and workspace messages only to subscribed recipients', async () => {
+    const { queue, agent } = await setup()
+    const root = agent('root'); const alpha = agent('alpha'); const beta = agent('beta')
+    await Promise.all([queue.subscribe(root), queue.subscribe(alpha), queue.subscribe(beta)])
+    const direct = await queue.publish(root, { recipients: [alpha.id, alpha.id, beta.id], body: 'private' })
+    expect(direct.recipients).toEqual([alpha.id, beta.id])
+    await queue.publish(beta, { workspaceWide: true, body: 'broadcast' })
+    expect((await queue.read(root)).messages.map(x => x.body)).toEqual(['broadcast'])
+    expect((await queue.read(alpha)).messages.map(x => x.body)).toEqual(['private', 'broadcast'])
+    expect((await queue.read(beta)).messages.map(x => x.body)).toEqual(['private', 'broadcast'])
+    expect(await queue.ack(alpha, 1)).toBe(1)
+    expect((await queue.read(alpha)).messages.map(x => x.seq)).toEqual([2])
+    expect((await queue.read(beta)).messages.map(x => x.seq)).toEqual([1, 2])
+    expect((await queue.read(alpha, { after: 0, limit: 1 })).hasMore).toBe(true)
+    await expect(queue.read(alpha, { limit: 101 })).rejects.toThrow('limit')
+    await expect(queue.ack(alpha, 3)).rejects.toThrow('head')
+  })
+
+  it('serializes concurrent publication and retains messages and cursors after reopening', async () => {
+    const pool = new MemoryMediaPool()
+    const h = await setup(pool)
+    const root = h.agent('root'); const alpha = h.agent('alpha')
+    await h.queue.subscribe(root); await h.queue.subscribe(alpha)
+    const published = await Promise.all(Array.from({ length: 12 }, (_, i) =>
+      h.queue.publish(root, { recipients: [alpha.id], body: `item ${i}` })))
+    expect(published.map(x => x.seq)).toEqual(Array.from({ length: 12 }, (_, i) => i + 1))
+    await h.queue.ack(alpha, 5)
+    await h.fiber.dispose(); open.delete(h)
+    const resumed = await setup(pool)
+    const resumedAlpha = resumed.agent('alpha')
+    expect((await resumed.queue.read(resumedAlpha)).messages.map(x => x.seq)).toEqual([6, 7, 8, 9, 10, 11, 12])
+    expect((await resumed.queue.read(resumedAlpha, { after: 0, limit: 2 })).messages.map(x => x.seq)).toEqual([1, 2])
+  })
+
+  it('notifies after durable publication without waking or failing on callback errors', async () => {
+    const { queue, agent } = await setup()
+    const root = agent('root'); const alpha = agent('alpha')
+    const notices: number[] = []
+    await queue.subscribe(root)
+    const dispose = await queue.subscribe(alpha, notice => notices.push(notice.seq))
+    await queue.publish(root, { recipients: [alpha.id], body: 'first' })
+    expect(notices).toEqual([1])
+    dispose()
+    await queue.publish(root, { recipients: [alpha.id], body: 'second' })
+    expect(notices).toEqual([1])
+    const replay = vi.fn(() => { throw Error('listener failure') })
+    await queue.subscribe(alpha, replay)
+    expect(replay).toHaveBeenCalledWith({ workspaceId: id, seq: 2 })
+    await expect(queue.publish(root, { workspaceWide: true, body: 'third' })).resolves.toMatchObject({ seq: 3 })
+    expect((await queue.read(alpha)).messages).toHaveLength(3)
+    expect(await queue.unsubscribe(alpha)).toBe(true)
+    await expect(queue.read(alpha)).rejects.toThrow('subscribe')
+  })
+})
