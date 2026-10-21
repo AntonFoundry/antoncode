@@ -12,6 +12,10 @@ const directory = '/queue/workspace'
 const id = WorkspaceId('ws-one')
 const members = [SessionId('root'), SessionId('alpha'), SessionId('beta')]
 const workspace = { id, sessionIds: members, path: directory }
+const otherDirectory = '/queue/other-workspace'
+const otherId = WorkspaceId('ws-two')
+const otherMembers = [SessionId('other-root'), SessionId('other-child')]
+const otherWorkspace = { id: otherId, sessionIds: otherMembers, path: otherDirectory }
 
 async function harness(pool = new MemoryMediaPool()) {
   const ctx = new Context()
@@ -21,7 +25,8 @@ async function harness(pool = new MemoryMediaPool()) {
   ctx.storage.mount('domain', facility)
   ctx.provide('storageDomain', facility)
   const live = new Map<string, Agent>()
-  const resolved = vi.fn(async (cwd: string) => cwd === directory ? workspace : undefined)
+  const resolved = vi.fn(async (cwd: string) =>
+    cwd === directory ? workspace : cwd === otherDirectory ? otherWorkspace : undefined)
   ctx.provide('workspaceRegistry', { resolveByPath: resolved } as never)
   ctx.provide('agents', { get: (session: string) => live.get(session) } as never)
   const fiber = await ctx.plugin(AgentQueue)
@@ -55,6 +60,33 @@ describe('durable agent queue', () => {
     await expect(queue.publish(root, { workspaceWide: true, body: 'ok' })).resolves.toMatchObject({ seq: 1 })
     live.delete(root.id)
     await expect(queue.read(root)).rejects.toThrow('exact live')
+  })
+
+  it('rejects cross-workspace addressing, mismatched scopes, and spoofed membership', async () => {
+    const { queue, agent } = await setup()
+    const sender = agent('root'); const peer = agent('alpha')
+    const foreign = agent('other-root', otherDirectory)
+    const foreignChild = agent('other-child', otherDirectory)
+    await queue.subscribe(sender, id)
+    await queue.subscribe(foreign, otherId)
+    expect(await queue.identities(foreign)).toEqual({
+      workspaceId: otherId, sessionId: foreign.id, sessionIds: otherMembers,
+    })
+    await expect(queue.publish(sender, { recipients: [foreign.id], body: 'escape' })).rejects.toThrow('recipient')
+    await expect(queue.publish(foreign, { recipients: [peer.id], body: 'escape' })).rejects.toThrow('recipient')
+    await expect(queue.publish(foreign, { workspaceId: id, workspaceWide: true, body: 'escape' })).rejects.toThrow('workspace')
+    await expect(queue.read(foreign, { workspaceId: id })).rejects.toThrow('workspace')
+    await expect(queue.ack(foreign, id, 0)).rejects.toThrow('workspace')
+    await expect(queue.subscribe(foreign, id)).rejects.toThrow('workspace')
+    // A valid session id cannot be used with an unrelated header cwd.
+    const spoofed = agent('alpha', otherDirectory)
+    await expect(queue.identities(spoofed)).rejects.toThrow('member')
+    agent('alpha') // Reestablish a valid live identity for this durable address.
+    const delivered = await queue.publish(sender, { recipients: [peer.id], body: 'local' })
+    expect(delivered).toMatchObject({ workspaceId: id, seq: 1 })
+    expect((await queue.read(foreign)).messages).toEqual([])
+    expect((await queue.publish(foreign, { recipients: [foreignChild.id], body: 'foreign local' })).seq).toBe(1)
+    expect((await queue.read(foreignChild)).messages.map(message => message.body)).toEqual(['foreign local'])
   })
 
   it('fans out direct and workspace messages only to subscribed recipients', async () => {
@@ -94,6 +126,26 @@ describe('durable agent queue', () => {
     const resumedAlpha = resumed.agent('alpha')
     expect((await resumed.queue.read(resumedAlpha)).messages.map(x => x.seq)).toEqual([6, 7, 8, 9, 10, 11, 12])
     expect((await resumed.queue.read(resumedAlpha, { after: 0, limit: 2 })).messages.map(x => x.seq)).toEqual([1, 2])
+    const resumedSender = resumed.agent('root')
+    expect((await resumed.queue.publish(resumedSender, { recipients: [resumedAlpha.id], body: 'post-restart' })).seq).toBe(13)
+    expect((await resumed.queue.read(resumedAlpha)).messages.at(-1)?.body).toBe('post-restart')
+  })
+
+  it('serializes concurrent direct, subscribe, and topic operations by committed order', async () => {
+    const { queue, agent } = await setup()
+    const sender = agent('root'); const peer = agent('alpha'); const future = agent('beta')
+    await queue.subscribe(sender)
+    const first = queue.publish(sender, { recipients: [peer.id], body: 'direct' })
+    const optIn = queue.subscribe(peer)
+    const second = queue.publish(sender, { workspaceWide: true, body: 'topic' })
+    const [direct, , topic] = await Promise.all([first, optIn, second])
+    expect([direct.seq, topic.seq]).toEqual([1, 2])
+    expect(topic.recipients).toEqual([sender.id, peer.id])
+    expect((await queue.read(peer)).messages.map(message => message.body)).toEqual(['direct', 'topic'])
+    await queue.subscribe(future)
+    expect((await queue.read(future, { cursor: 0 })).messages).toEqual([])
+    expect((await queue.publish(sender, { workspaceWide: true, body: 'later' })).seq).toBe(3)
+    expect((await queue.read(future)).messages.map(message => message.body)).toEqual(['later'])
   })
 
   it('freezes workspace topic recipients and excludes future subscribers from earlier mail', async () => {
