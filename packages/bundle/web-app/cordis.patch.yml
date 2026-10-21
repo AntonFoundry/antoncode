@@ -60,6 +60,10 @@
     - id: workspace
       name: '@deepseek-ai/dsh-workspace'
 
+    # Shared host-owned workspace queue; tool rows mount in agent presets.
+    - id: agent-queue
+      name: '@deepseek-ai/dsh-agent-queue'
+
     - id: worktree
       name: '@deepseek-ai/dsh-worktree'
 
