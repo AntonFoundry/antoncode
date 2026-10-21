@@ -52,11 +52,15 @@ function notice(decision: PreStepDecision): string {
     .filter(block => block.type === 'text').map(block => block.text).join('\n')
 }
 
-async function propose(ctx: Context, agent: Agent, signal = new AbortController().signal): Promise<PreStepDecision> {
+async function propose(
+  ctx: Context,
+  agent: Agent,
+  signal = new AbortController().signal,
+  position: { turn: number; step: number } = { turn: 1, step: 1 },
+): Promise<PreStepDecision> {
   return ctx.waterfall('agent/pre-step', {
     agent,
-    turn: 1,
-    step: 1,
+    ...position,
     messages: [],
     signal,
   }, async () => ({ kind: 'enter' as const, messages: [{
@@ -67,16 +71,17 @@ async function propose(ctx: Context, agent: Agent, signal = new AbortController(
 }
 
 describe('natural-step agent queue digest', () => {
-  it('appends bounded unread context to accepted steps and replays until explicit ack', async () => {
+  it('injects once per turn, replays next turn until explicit ack, and skips tool steps', async () => {
     const { ctx, root, child } = await setup()
     await ctx.agentQueue.publish(root, { recipients: [child.id], body: 'coordinate this file' })
     const first = notice(await propose(ctx, child))
     expect(first).toContain('coordinate this file')
     expect(first).toContain('replayed until agent_queue_ack')
-    expect(notice(await propose(ctx, child))).toContain('coordinate this file')
+    expect(notice(await propose(ctx, child, undefined, { turn: 1, step: 2 }))).not.toContain('coordinate this file')
     expect((await ctx.agentQueue.read(child)).messages).toHaveLength(1)
+    expect(notice(await propose(ctx, child, undefined, { turn: 2, step: 1 }))).toContain('coordinate this file')
     await ctx.agentQueue.ack(child, id, 1)
-    expect(notice(await propose(ctx, child))).not.toContain('coordinate this file')
+    expect(notice(await propose(ctx, child, undefined, { turn: 3, step: 1 }))).not.toContain('coordinate this file')
   })
 
   it('does not append to rejected or cancelled decisions and leaves unread mail for replay', async () => {

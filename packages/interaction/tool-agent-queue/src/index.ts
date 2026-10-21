@@ -50,9 +50,9 @@ const result = { schema: { type: 'object', additionalProperties: true } as const
  * wake a turn from this listener.
  */
 export function installQueueDigest(ctx: Context): () => void {
-  return ctx.on('agent/pre-step', async ({ agent, signal }, next): Promise<PreStepDecision> => {
+  return ctx.on('agent/pre-step', async ({ agent, step, signal }, next): Promise<PreStepDecision> => {
     const decision = await next()
-    if (decision.kind !== 'enter' || signal.aborted || decision.messages.length === 0) return decision
+    if (decision.kind !== 'enter' || step !== 1 || signal.aborted || decision.messages.length === 0) return decision
     let page: Awaited<ReturnType<typeof ctx.agentQueue.read>>
     try {
       page = await ctx.agentQueue.read(agent, { limit: DIGEST_MESSAGES })
