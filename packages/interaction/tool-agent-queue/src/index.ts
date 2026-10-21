@@ -1,7 +1,8 @@
 /** Model-facing tools for the host-owned workspace agent queue. */
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-queue'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
@@ -12,6 +13,9 @@ export const inject = ['tools', 'agentQueue']
 const MAX_BODY = 65536
 const MAX_RECIPIENTS = 32
 const MAX_READ = 100
+const DIGEST_MESSAGES = 8
+const DIGEST_BODY_CHARS = 400
+const DIGEST_CHARS = 3600
 
 function caller(agent: Agent | undefined): Agent {
   if (!agent) throw new Error('agent queue tools require a calling agent (exec.agent was undefined)')
@@ -40,8 +44,43 @@ function render(value: unknown): { type: 'text'; text: string }[] {
 
 const result = { schema: { type: 'object', additionalProperties: true } as const, render: (_args: unknown, value: unknown) => render(value) }
 
+/**
+ * Keep acknowledgement explicit: the digest is a bounded, replayable view of
+ * unread messages, not a delivery receipt. Never mutate the Agent inbox or
+ * wake a turn from this listener.
+ */
+export function installQueueDigest(ctx: Context): () => void {
+  return ctx.on('agent/pre-step', async ({ agent, signal }, next): Promise<PreStepDecision> => {
+    const decision = await next()
+    if (decision.kind !== 'enter' || signal.aborted || decision.messages.length === 0) return decision
+    let page: Awaited<ReturnType<typeof ctx.agentQueue.read>>
+    try {
+      page = await ctx.agentQueue.read(agent, { limit: DIGEST_MESSAGES })
+    } catch {
+      // An agent without a workspace or addressed messages still keeps the
+      // proposed step. The explicit queue tools surface authorization errors.
+      return decision
+    }
+    if (signal.aborted || page.messages.length === 0) return decision
+    const lines = page.messages.map(message =>
+      `#${message.seq} from ${message.sender}: ${message.body.slice(0, DIGEST_BODY_CHARS)}`)
+    const text = `Unread workspace queue (acknowledged through #${page.cursor}; replayed until agent_queue_ack):\n`
+      + `${lines.join('\n')}\n`
+      + `${page.hasMore ? 'More messages remain; call agent_queue_read for the next page.\n' : ''}`
+      + 'Call agent_queue_read for full messages and agent_queue_ack only after processing them.'
+    return {
+      ...decision,
+      messages: [...decision.messages, createUserMessage({
+        content: [{ type: 'text', text: text.slice(0, DIGEST_CHARS) }],
+        source: { kind: 'plugin', plugin: name, form: 'notice', summary: 'unread agent queue messages' },
+      })],
+    }
+  }, { prepend: true })
+}
+
 /** Register once on the host so both root and child agent tool scopes inherit these names. */
 export function apply(ctx: Context): void {
+  installQueueDigest(ctx)
   ctx.tools.register(defineTool({
     name: 'agent_queue_address',
     description: 'Show your exact session address and available workspace queue identities. Share the session id with agents in the same workspace when addressing a message.',
