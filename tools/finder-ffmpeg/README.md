@@ -1,5 +1,0 @@
-# Finder FFmpeg Encoder
-
-Run `python3 tools/finder-ffmpeg/install.py` on macOS to install **Finder → Services → Encode with FFmpeg**. The installer builds a standalone native settings window in `~/Library/Application Support/Finder FFmpeg Encoder/` and installs an Automator Quick Action in `~/Library/Services/`. Anton is not involved. Re-run the installer after editing the Swift source; remove the workflow and support directory to uninstall.
-
-Select a single local movie file in Finder, open Services, and choose **Encode with FFmpeg**. Select container, video codec and quality, audio codec and bitrate, and an output filename. Defaults are MP4, H.264, AAC, and a new file beside the input. Existing files are never replaced. Cancel terminates encoding and removes the incomplete output. Encoding uses FFmpeg from `/opt/homebrew/bin` or `/usr/local/bin`; install it separately with `brew install ffmpeg`. Progress is shown as activity rather than an estimated percentage. Finder may take a moment to refresh its Services menu after installation.
