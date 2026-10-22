@@ -1,8 +1,17 @@
-# Plan: Synchronize c0ntext plugin, diagnose retrieval, and deploy
+# Fix DeepSeek thinking-mode reasoning passback
 
-1. Inspect the prior worker-outage evidence and both repositories' current state, preserving unrelated dirty files. Trace the harness build/install composition to verify whether c0ntext plugin source is copied or bundled, and identify the source of truth.
-2. Diagnose the reported 2500ms retrieval soft timeout from worker/auth and request timing evidence. Reproduce through supported authenticated paths where credentials are available; do not mutate durable context data. Fix only a verified cause and add narrow tests.
-3. Finish the c0ntext activity indicator change using the slot's session snapshot, retain engine-health rendering, add focused client tests and concise docs, and keep any extant unrelated plugin changes intact. The session activity was wired into the worker light but it still needs its green pulse animation and a focused mounted-client test.
-4. Ensure the latest plugin code is synchronized into the harness through the normal build pipeline; if no such step exists, add an explicit reliable sync step, test it, and verify copied/built output.
-5. Run narrow plugin/harness tests, keyless snapshot coverage where model-visible behavior changed, build and sync checks, whitespace and quality gates. Commit each completed concern atomically without including unrelated scratch files. For UI-only worker activity feedback, add a mounted client component test; the existing `engine-lights.spec.ts` only tests the status normalizer.
-6. Rebuild/redeploy the affected harness/plugin artifacts, verify the existing GUI and c0ntext health/retrieval, then perform exactly one supported `dsh anton restart` after deploy and assess the app. Report unresolved issues and final git status.
+## Symptom
+Turn failed with `invalid_request_error: The reasoning_content in the thinking mode must be passed back to the API` on `deepseek-official` / `deepseek-flash` (V4.1 Flash) with `reasoning_effort: max`.
+
+## Hypothesis under test
+`packages/llm/llm-deepseek/src/serialize.ts` replays `reasoning_content` **only** on assistant turns that carry tool calls, and drops it on tool-call-free turns. DeepSeek's thinking mode requires the reasoning to be passed back on every replayed assistant turn it produced reasoning for, so a later request whose history includes such a turn is rejected with 400.
+
+## Investigation
+1. Locate the concrete session log for the failed turn and read the assistant messages + the failing request to confirm which replayed assistant message lacked `reasoning_content` and whether it had reasoning in the log at all (distinguishes serializer drop from a lossy history source such as compaction).
+2. Check other writers of assistant history for reasoning loss (compaction, projections, retry paths).
+
+## Fix
+3. Change the DeepSeek serializer to carry `reasoning_content` on every assistant turn that has reasoning blocks (not just tool-call turns), keeping the `content: ''` rule.
+4. Update the unit tests for the new passback rule; add a case that a reasoning+text turn keeps `reasoning_content`.
+5. Update `packages/llm/llm-deepseek/README.md` (wire-format notes + Model Experience) and the module JSDoc.
+6. Run the focused tests, typecheck, lint for the package; add an Agent Note if the decision is non-trivial; commit.
