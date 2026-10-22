@@ -89,24 +89,57 @@ export class AgentQueue extends Service {
     return result
   }
 
-  /** Validate exact live Agent identity and immutable canonical workspace membership. */
+  /** Validate exact live Agent identity and canonical membership or a subagent lineage. */
   private async authorize(agent: Agent): Promise<Workspace> {
     if (this.ctx.agents.get(agent.id) !== agent || agent.session.header.id !== agent.id) {
       throw new Error('queue caller must be the exact live agent')
     }
-    const cwd = agent.session.header.cwd
-    if (!cwd) throw new Error('queue caller has no workspace directory')
-    const workspace = await this.ctx.workspaceRegistry.resolveByPath(cwd)
-    if (this.ctx.agents.get(agent.id) !== agent || !workspace || !workspace.sessionIds.includes(agent.id)) {
-      throw new Error('queue caller is not a member of a registered workspace')
-    }
+    const workspace = await this.authorizedWorkspace(agent)
+    if (!workspace) throw new Error('queue caller is not a member of a registered workspace')
     return workspace
+  }
+
+  private async authorizedWorkspace(agent: Agent): Promise<Workspace | undefined> {
+    const visited = new Set<SessionId>()
+    let current: Agent | undefined = agent
+    let expectedWorkspace: Workspace | undefined
+    while (current) {
+      const id = current.id
+      const session = current.session
+      if (visited.has(id) || this.ctx.agents.get(id) !== current || session.header.id !== id) {
+        throw new Error('queue caller must be the exact live agent')
+      }
+      visited.add(id)
+      const cwd = session.header.cwd
+      if (!cwd) return undefined
+      const workspace = await this.ctx.workspaceRegistry.resolveByPath(cwd)
+      if (!workspace
+        || expectedWorkspace && (workspace.id !== expectedWorkspace.id || workspace.path !== expectedWorkspace.path)) return undefined
+      if (session.header.parentSession === undefined) {
+        return workspace.sessionIds.includes(id) ? workspace : undefined
+      }
+      if (session.header.origin !== 'subagent') return undefined
+      expectedWorkspace = workspace
+      current = this.ctx.agents.get(session.header.parentSession)
+    }
+    return undefined
+  }
+
+  private async eligibleRecipient(id: SessionId, workspace: Workspace): Promise<boolean> {
+    const recipient = this.ctx.agents.get(id)
+    if (!recipient) return workspace.sessionIds.includes(id)
+    const authorized = await this.authorizedWorkspace(recipient)
+    return !!authorized && authorized.id === workspace.id && authorized.path === workspace.path
   }
 
   /** Discover the caller's durable session address and workspace peers. */
   async identities(agent: Agent): Promise<{ workspaceId: WorkspaceId; sessionId: SessionId; sessionIds: readonly SessionId[] }> {
     const workspace = await this.authorize(agent)
-    return { workspaceId: workspace.id, sessionId: agent.id, sessionIds: [...workspace.sessionIds] }
+    const children = this.ctx.agents.list()
+      .filter(candidate => candidate.session.header.parentSession !== undefined)
+    const eligible: SessionId[] = []
+    for (const child of children) if (await this.eligibleRecipient(child.id, workspace)) eligible.push(child.id)
+    return { workspaceId: workspace.id, sessionId: agent.id, sessionIds: [...new Set([...workspace.sessionIds, ...eligible])] }
   }
 
   private requireWorkspace(workspace: Workspace, requested?: WorkspaceId): void {
@@ -122,7 +155,8 @@ export class AgentQueue extends Service {
     if (signal?.aborted) throw signal.reason ?? new Error('subscription aborted')
     const id = key(workspace.id, agent.id)
     await this.enqueue(async () => {
-      if (this.ctx.agents.get(agent.id) !== agent || !workspace.sessionIds.includes(agent.id)) {
+      const currentWorkspace = await this.authorizedWorkspace(agent)
+      if (!currentWorkspace || currentWorkspace.id !== workspace.id || currentWorkspace.path !== workspace.path) {
         throw new Error('queue membership changed before subscription')
       }
       const account = this.accounts().get(id)
@@ -160,7 +194,8 @@ export class AgentQueue extends Service {
     this.requireWorkspace(workspace, workspaceId)
     const id = key(workspace.id, agent.id)
     return this.enqueue(async () => {
-      if (this.ctx.agents.get(agent.id) !== agent || !workspace.sessionIds.includes(agent.id)) {
+      const currentWorkspace = await this.authorizedWorkspace(agent)
+      if (!currentWorkspace || currentWorkspace.id !== workspace.id || currentWorkspace.path !== workspace.path) {
         throw new Error('queue membership changed before unsubscription')
       }
       const account = this.accounts().get(id)
@@ -189,22 +224,27 @@ export class AgentQueue extends Service {
     if (recipients.length > MAX_DIRECT_RECIPIENTS) throw new RangeError('queue has too many direct recipients')
     if (recipients.some(id => typeof id !== 'string' || id.length === 0)) throw new TypeError('invalid queue recipient')
     if (!request.workspaceWide && recipients.length === 0) throw new Error('queue message needs a recipient or workspaceWide')
-    if (recipients.some(id => !workspace.sessionIds.includes(id))) {
-      throw new Error('queue recipient does not belong to the sender workspace')
-    }
     const body = queueMessage.shape.body.parse(request.body)
     return this.enqueue(async () => {
-      // Recheck durable membership at the serialized write boundary.
-      if (this.ctx.agents.get(agent.id) !== agent || !workspace.sessionIds.includes(agent.id)
-        || recipients.some(id => !workspace.sessionIds.includes(id))) {
+      // Recheck sender lineage and each target at the serialized write boundary.
+      if (this.ctx.agents.get(agent.id) !== agent) throw new Error('queue caller must be the exact live agent')
+      const currentWorkspace = await this.authorizedWorkspace(agent)
+      if (!currentWorkspace || currentWorkspace.id !== workspace.id || currentWorkspace.path !== workspace.path) {
         throw new Error('queue membership changed before publication')
       }
-      // The workspace topic resolves to durable subscriptions now; later subscribers never see this message.
-      const frozen = request.workspaceWide
-        ? [...this.accounts().entries()]
-          .filter(([, subscription]) => subscription.workspaceId === workspace.id && subscription.workspaceSubscribed)
-          .map(([, subscription]) => subscription.sessionId)
-        : []
+      for (const recipient of recipients) {
+        if (!await this.eligibleRecipient(recipient, workspace)) {
+          throw new Error('queue recipient does not belong to the sender workspace')
+        }
+      }
+      // The workspace topic resolves to eligible durable subscriptions now; later subscribers never see this message.
+      const frozen: SessionId[] = []
+      if (request.workspaceWide) {
+        for (const [, subscription] of this.accounts().entries()) {
+          if (subscription.workspaceId === workspace.id && subscription.workspaceSubscribed
+            && await this.eligibleRecipient(subscription.sessionId, workspace)) frozen.push(subscription.sessionId)
+        }
+      }
       const addresses = [...new Set([...recipients, ...frozen])]
       if (addresses.length === 0) {
         throw new Error('workspace topic has no current subscribers; no recipients to deliver to')
@@ -281,9 +321,8 @@ export class AgentQueue extends Service {
       throw new Error('queue cursor and after disagree')
     }
     const subscription = this.accounts().get(key(workspace.id, agent.id))
-    if (this.ctx.agents.get(agent.id) !== agent || !workspace.sessionIds.includes(agent.id)) {
-      throw new Error('queue membership changed before reading')
-    }
+    const currentWorkspace = await this.authorizedWorkspace(agent)
+    if (!currentWorkspace || currentWorkspace.id !== workspace.id) throw new Error('queue membership changed before reading')
     if (!subscription) throw new Error('queue session has no addressed messages; subscribe to receive workspace broadcasts')
     const after = options.cursor ?? options.after ?? subscription.cursor
     if (!Number.isSafeInteger(after) || after < 0) throw new RangeError('queue cursor must be a nonnegative safe integer')
@@ -300,7 +339,8 @@ export class AgentQueue extends Service {
     if (!Number.isSafeInteger(throughSeq) || throughSeq < 0) throw new RangeError('queue cursor must be nonnegative')
     const id = key(workspace.id, agent.id)
     return this.enqueue(async () => {
-      if (this.ctx.agents.get(agent.id) !== agent || !workspace.sessionIds.includes(agent.id)) {
+      const currentWorkspace = await this.authorizedWorkspace(agent)
+      if (!currentWorkspace || currentWorkspace.id !== workspace.id || currentWorkspace.path !== workspace.path) {
         throw new Error('queue membership changed before acknowledgment')
       }
       const subscription = this.accounts().get(id)

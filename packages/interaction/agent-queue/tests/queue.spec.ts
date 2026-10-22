@@ -25,18 +25,29 @@ async function harness(pool = new MemoryMediaPool()) {
   ctx.storage.mount('domain', facility)
   ctx.provide('storageDomain', facility)
   const live = new Map<string, Agent>()
+  const sessionStore = new Map<string, Agent['session']>()
   const resolved = vi.fn(async (cwd: string) =>
-    cwd === directory ? workspace : cwd === otherDirectory ? otherWorkspace : undefined)
+    cwd === directory ? { ...workspace } : cwd === otherDirectory ? { ...otherWorkspace } : undefined)
   ctx.provide('workspaceRegistry', { resolveByPath: resolved } as never)
-  ctx.provide('agents', { get: (session: string) => live.get(session) } as never)
+  ctx.provide('agents', { get: (session: string) => live.get(session), list: () => [...live.values()] } as never)
+  ctx.provide('sessions', { get: (session: string) => sessionStore.get(session) } as never)
   const fiber = await ctx.plugin(AgentQueue)
   function agent(name: string, cwd = directory) {
     const session = SessionId(name)
     const value = { id: session, session: { header: { id: session, cwd } } } as Agent
     live.set(session, value)
+    sessionStore.set(session, value.session)
     return value
   }
-  return { ctx, fiber, queue: ctx.agentQueue, agent, live, pool, resolved }
+  function subagent(name: string, parent: Agent, cwd = directory, origin: 'subagent' | undefined = 'subagent') {
+    const session = SessionId(name)
+    const header = { id: session, cwd, parentSession: parent.id, ...(origin ? { origin } : {}) }
+    const value = { id: session, session: { header } } as Agent
+    live.set(session, value)
+    sessionStore.set(session, value.session)
+    return value
+  }
+  return { ctx, fiber, queue: ctx.agentQueue, agent, subagent, live, sessionStore, pool, resolved }
 }
 
 const open = new Set<Awaited<ReturnType<typeof harness>>>()
@@ -60,6 +71,36 @@ describe('durable agent queue', () => {
     await expect(queue.publish(root, { workspaceWide: true, body: 'ok' })).resolves.toMatchObject({ seq: 1 })
     live.delete(root.id)
     await expect(queue.read(root)).rejects.toThrow('exact live')
+  })
+
+  it('authorizes live subagent lineage across direct, read, ack, and topic operations', async () => {
+    const { queue, agent, subagent, live } = await setup()
+    const root = agent('root')
+    await expect(queue.publish({ ...root } as Agent, { workspaceWide: true, body: 'forged' })).rejects.toThrow('exact live')
+    const child = subagent('child', root)
+    const grandchild = subagent('grandchild', child)
+    await expect(queue.identities(child)).resolves.toMatchObject({
+      workspaceId: id, sessionId: child.id, sessionIds: expect.arrayContaining([child.id, grandchild.id]),
+    })
+    await expect(queue.identities(root)).resolves.toMatchObject({ sessionIds: expect.arrayContaining([child.id, grandchild.id]) })
+    await queue.subscribe(child)
+    const direct = await queue.publish(child, { recipients: [grandchild.id], body: 'lineage' })
+    await expect(queue.read(grandchild)).resolves.toMatchObject({ messages: [{ body: 'lineage' }] })
+    await expect(queue.ack(grandchild, id, direct.seq)).resolves.toBe(direct.seq)
+    await queue.subscribe(grandchild)
+    const topic = await queue.publish(root, { workspaceWide: true, body: 'subagent topic' })
+    expect(topic.recipients).toContain(grandchild.id)
+    await expect(queue.read(grandchild)).resolves.toMatchObject({ messages: [{ body: 'subagent topic' }] })
+    await expect(queue.ack(grandchild, id, topic.seq)).resolves.toBe(topic.seq)
+    const unattached = agent('unattached')
+    await expect(queue.identities(unattached)).rejects.toThrow('member')
+    const wrongOrigin = subagent('wrong-origin', root, directory)
+    wrongOrigin.session.header = { ...wrongOrigin.session.header, origin: undefined }
+    await expect(queue.identities(wrongOrigin)).rejects.toThrow('member')
+    const foreign = agent('other-root', otherDirectory)
+    const spoof = subagent('spoof-child', foreign, directory)
+    await expect(queue.identities(spoof)).rejects.toThrow('member')
+    live.delete(child.id)
   })
 
   it('rejects cross-workspace addressing, mismatched scopes, and spoofed membership', async () => {

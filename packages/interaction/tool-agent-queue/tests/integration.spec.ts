@@ -32,7 +32,7 @@ async function setup() {
       : undefined,
   } as never)
   const live = new Map<string, Agent>()
-  ctx.provide('agents', { get: (id: string) => live.get(id) } as never)
+  ctx.provide('agents', { get: (id: string) => live.get(id), list: () => [...live.values()] } as never)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
   active.push(await ctx.plugin(AgentQueue))
