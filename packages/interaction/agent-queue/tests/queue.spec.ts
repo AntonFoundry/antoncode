@@ -83,6 +83,10 @@ describe('durable agent queue', () => {
       workspaceId: id, sessionId: child.id, sessionIds: expect.arrayContaining([child.id, grandchild.id]),
     })
     await expect(queue.identities(root)).resolves.toMatchObject({ sessionIds: expect.arrayContaining([child.id, grandchild.id]) })
+    const unrelated = subagent('unrelated-invalid', agent('unattached'))
+    unrelated.session.header = { ...unrelated.session.header, origin: undefined }
+    await expect(queue.identities(root)).resolves.toMatchObject({ sessionIds: expect.arrayContaining([child.id, grandchild.id]) })
+    expect((await queue.identities(root)).sessionIds).not.toContain(unrelated.id)
     await queue.subscribe(child)
     const direct = await queue.publish(child, { recipients: [grandchild.id], body: 'lineage' })
     await expect(queue.read(grandchild)).resolves.toMatchObject({ messages: [{ body: 'lineage' }] })

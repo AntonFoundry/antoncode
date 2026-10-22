@@ -138,7 +138,13 @@ export class AgentQueue extends Service {
     const children = this.ctx.agents.list()
       .filter(candidate => candidate.session.header.parentSession !== undefined)
     const eligible: SessionId[] = []
-    for (const child of children) if (await this.eligibleRecipient(child.id, workspace)) eligible.push(child.id)
+    for (const child of children) {
+      try {
+        if (await this.eligibleRecipient(child.id, workspace)) eligible.push(child.id)
+      } catch {
+        // An unrelated invalid live lineage must not prevent this caller from discovering peers.
+      }
+    }
     return { workspaceId: workspace.id, sessionId: agent.id, sessionIds: [...new Set([...workspace.sessionIds, ...eligible])] }
   }
 
