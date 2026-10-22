@@ -4,7 +4,9 @@
  * empty-root composition, and the installation module-fallback healing.
  */
 
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, unlinkSync, writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -268,5 +270,109 @@ describe('healProfilesModuleFallback', () => {
     healProfilesModuleFallback(anchor, home) // second healer sees the correct link
     const fallback = join(home, 'profiles', 'node_modules')
     expect(lstatSync(join(fallback, 'dsh-app')).isSymbolicLink()).toBe(true)
+  })
+
+  it('reuses the recorded closure and repairs a link that disappeared', () => {
+    const anchor = stageInstallation({ 'bundle-a': {} })
+    const home = tmp()
+    healProfilesModuleFallback(anchor, home)
+    const fallback = join(home, 'profiles', 'node_modules')
+    expect(existsSync(join(fallback, '.dsh-fallback.json'))).toBe(true)
+
+    unlinkSync(join(fallback, 'bundle-a'))
+    healProfilesModuleFallback(anchor, home)
+    expect(readlinkSync(join(fallback, 'bundle-a'))).toContain('bundle-a')
+  })
+
+  it('re-resolves the closure when an installed manifest changes', () => {
+    const anchor = stageInstallation({})
+    const home = tmp()
+    healProfilesModuleFallback(anchor, home)
+    const fallback = join(home, 'profiles', 'node_modules')
+    expect(existsSync(join(fallback, 'late-comer'))).toBe(false)
+
+    // Installing a package rewrites the app manifest; the recorded closure is
+    // stale and the next heal must discover the new dependency.
+    mkdirSync(join(anchor, '..', 'node_modules', 'late-comer'), { recursive: true })
+    writeFileSync(
+      join(anchor, '..', 'node_modules', 'late-comer', 'package.json'),
+      JSON.stringify({ name: 'late-comer', version: '0.0.0' }),
+    )
+    const manifest = JSON.parse(readFileSync(anchor, 'utf8')) as { dependencies: Record<string, string> }
+    manifest.dependencies['late-comer'] = '0.0.0'
+    writeFileSync(anchor, JSON.stringify(manifest))
+    healProfilesModuleFallback(anchor, home)
+    expect(lstatSync(join(fallback, 'late-comer')).isSymbolicLink()).toBe(true)
+  })
+
+  it('ignores a torn or foreign record and heals the whole closure again', () => {
+    const anchor = stageInstallation({ 'bundle-a': {} })
+    const home = tmp()
+    healProfilesModuleFallback(anchor, home)
+    const fallback = join(home, 'profiles', 'node_modules')
+    writeFileSync(join(fallback, '.dsh-fallback.json'), '{"version": 1')
+    unlinkSync(join(fallback, 'bundle-a'))
+    healProfilesModuleFallback(anchor, home)
+    expect(lstatSync(join(fallback, 'bundle-a')).isSymbolicLink()).toBe(true)
+
+    // A record written for another installation never satisfies this anchor.
+    writeFileSync(join(fallback, '.dsh-fallback.json'), JSON.stringify({
+      version: 1,
+      anchor: join(home, 'elsewhere', 'package.json'),
+      anchorMtimeMs: 0,
+      anchorSize: 0,
+      entries: [],
+    }))
+    unlinkSync(join(fallback, 'dsh-app'))
+    healProfilesModuleFallback(anchor, home)
+    expect(lstatSync(join(fallback, 'dsh-app')).isSymbolicLink()).toBe(true)
+  })
+
+  it('rejects every malformed record field and heals from scratch', () => {
+    const anchor = stageInstallation({ 'bundle-a': {} })
+    const home = tmp()
+    healProfilesModuleFallback(anchor, home)
+    const fallback = join(home, 'profiles', 'node_modules')
+    const entry = { name: 'dsh-app', target: '', manifest: anchor, mtimeMs: 0, size: 0 }
+    const base = { version: 1, anchor, anchorMtimeMs: 0, anchorSize: 0, entries: [entry] }
+    const malformed: unknown[] = [
+      null,
+      'record',
+      [],
+      { ...base, version: 2 },
+      { ...base, anchor: 5 },
+      { ...base, anchorMtimeMs: '0' },
+      { ...base, anchorSize: '0' },
+      { ...base, entries: {} },
+      { ...base, entries: [null] },
+      { ...base, entries: [5] },
+      { ...base, entries: [{ ...entry, name: 5 }] },
+      { ...base, entries: [{ ...entry, target: 5 }] },
+      { ...base, entries: [{ ...entry, manifest: 5 }] },
+      { ...base, entries: [{ ...entry, mtimeMs: '0' }] },
+      { ...base, entries: [{ ...entry, size: '0' }] },
+    ]
+    for (const record of malformed) {
+      writeFileSync(join(fallback, '.dsh-fallback.json'), JSON.stringify(record))
+      // Only a full sync recreates this link; trusting the record would leave it gone.
+      unlinkSync(join(fallback, 'bundle-a'))
+      healProfilesModuleFallback(anchor, home)
+      expect(lstatSync(join(fallback, 'bundle-a')).isSymbolicLink(), JSON.stringify(record)).toBe(true)
+    }
+  })
+
+  it('falls back to the full sync when a recorded manifest vanished', () => {
+    const anchor = stageInstallation({ 'bundle-a': { deps: { 'dep-of-a': '0.0.0' } } })
+    const depDir = join(anchor, '..', 'node_modules', 'dep-of-a')
+    mkdirSync(depDir, { recursive: true })
+    writeFileSync(join(depDir, 'package.json'), JSON.stringify({ name: 'dep-of-a', version: '0.0.0' }))
+    const home = tmp()
+    healProfilesModuleFallback(anchor, home)
+
+    // An uninstalled package leaves a dangling link behind; the next heal
+    // re-resolves the closure instead of trusting the record.
+    unlinkSync(join(depDir, 'package.json'))
+    healProfilesModuleFallback(anchor, home)
+    expect(existsSync(join(home, 'profiles', 'node_modules', '.dsh-fallback.json'))).toBe(true)
   })
 })

@@ -24,7 +24,7 @@
 
 import { createRequire } from 'node:module'
 import {
-  existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, unlinkSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, statSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
@@ -217,6 +217,13 @@ function ensureSymlink(link: string, target: string): void {
  * Idempotent: correct links are kept and moved installations are
  * re-pointed; a stale link to a vanished package stays until its name is
  * reused (dangling links are invisible to resolution).
+ *
+ * A resolved closure is recorded beside the links and consulted first on the
+ * next call: 353 links validate with a `readlink` plus one `stat` each
+ * (~5ms), where the full BFS re-resolves, reads, and parses every package
+ * manifest (~30ms). Any mismatch — a moved or missing link, a manifest whose
+ * mtime or size changed, a different install anchor — falls back to the full
+ * sync, which also rewrites the record.
  * @param installAnchor - absolute path of the dsh app's package.json.
  * @param home - the Harness home; defaults to {@link resolveDshHome}.
  */
@@ -224,10 +231,17 @@ export function healProfilesModuleFallback(installAnchor: string, home: string =
   const profilesDir = join(home, PROFILES_DIR)
   const modulesDir = join(profilesDir, 'node_modules')
   mkdirSync(modulesDir, { recursive: true })
+  if (fallbackIsCurrent(modulesDir, installAnchor)) return
   const appManifest = JSON.parse(readFileSync(installAnchor, 'utf8')) as ProfileManifest
   const links = new Map<string, string>()
+  // Each link's declaring/resolved manifest is what the next boot re-checks to
+  // prove the closure itself has not changed.
+  const manifests = new Map<string, string>()
   /* v8 ignore next -- a real app manifest always declares its name */
-  if (appManifest.name !== undefined) links.set(appManifest.name, dirname(installAnchor))
+  if (appManifest.name !== undefined) {
+    links.set(appManifest.name, dirname(installAnchor))
+    manifests.set(appManifest.name, installAnchor)
+  }
   // BFS over the resolvable dependency graph; the visited set is the link
   // map itself (first resolution wins, matching Node's own nearest-wins).
   const queue: { anchor: string; manifest: ProfileManifest }[] = [{ anchor: installAnchor, manifest: appManifest }]
@@ -244,6 +258,7 @@ export function healProfilesModuleFallback(installAnchor: string, home: string =
       if (dir === undefined) continue
       links.set(dep, dir)
       const manifestPath = join(dir, 'package.json')
+      manifests.set(dep, manifestPath)
       queue.push({ anchor: manifestPath, manifest: JSON.parse(readFileSync(manifestPath, 'utf8')) as ProfileManifest })
     }
   }
@@ -251,6 +266,157 @@ export function healProfilesModuleFallback(installAnchor: string, home: string =
     const link = join(modulesDir, packageName)
     mkdirSync(dirname(link), { recursive: true })
     ensureSymlink(link, target)
+  }
+  writeFallbackRecord(modulesDir, installAnchor, links, manifests)
+}
+
+/** Bump when the record's fields or the validity rules change; a mismatch forces a full sync. */
+const FALLBACK_RECORD_VERSION = 1
+
+/** The healed-closure record, stored inside the fallback directory it describes. */
+const FALLBACK_RECORD_FILENAME = '.dsh-fallback.json'
+
+/** One healed link: its target and the manifest whose mtime/size prove the closure is unchanged. */
+interface FallbackRecordEntry {
+  /** Package name; the link basename under the fallback directory. */
+  name: string
+  /** Absolute directory the link points at. */
+  target: string
+  /** Manifest read to place this package in the closure (the app manifest for the app itself). */
+  manifest: string
+  /** Manifest mtime at record time, in milliseconds. */
+  mtimeMs: number
+  /** Manifest size at record time, in bytes. */
+  size: number
+}
+
+/** The persisted healed-closure record. */
+interface FallbackRecord {
+  version: number
+  /** Absolute install anchor whose closure this records. */
+  anchor: string
+  anchorMtimeMs: number
+  anchorSize: number
+  entries: FallbackRecordEntry[]
+}
+
+/** Return whether `value` structurally matches a {@link FallbackRecord}. */
+function isFallbackRecord(value: unknown): value is FallbackRecord {
+  if (value === null || typeof value !== 'object') return false
+  const record = value as Partial<FallbackRecord>
+  if (record.version !== FALLBACK_RECORD_VERSION) return false
+  if (typeof record.anchor !== 'string') return false
+  if (typeof record.anchorMtimeMs !== 'number' || typeof record.anchorSize !== 'number') return false
+  if (!Array.isArray(record.entries)) return false
+  return record.entries.every((entry: unknown) => {
+    if (entry === null || typeof entry !== 'object') return false
+    const candidate = entry as Partial<FallbackRecordEntry>
+    return typeof candidate.name === 'string'
+      && typeof candidate.target === 'string'
+      && typeof candidate.manifest === 'string'
+      && typeof candidate.mtimeMs === 'number'
+      && typeof candidate.size === 'number'
+  })
+}
+
+/**
+ * Read the record, tolerating a missing or corrupt file (both mean "sync the
+ * whole closure again").
+ * @param modulesDir - the fallback directory holding the record.
+ * @returns the record, or `undefined` when it is absent or unreadable as one.
+ */
+function readFallbackRecord(modulesDir: string): FallbackRecord | undefined {
+  let raw: string
+  try {
+    raw = readFileSync(join(modulesDir, FALLBACK_RECORD_FILENAME), 'utf8')
+  } catch {
+    // Absent record (first heal after an upgrade) — the full sync recreates it.
+    return undefined
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    // A torn write from a concurrent heal — the full sync rewrites the record.
+    return undefined
+  }
+  return isFallbackRecord(parsed) ? parsed : undefined
+}
+
+/** Return whether the manifest at `path` still has the recorded mtime and size. */
+function manifestUnchanged(path: string, mtimeMs: number, size: number): boolean {
+  let stat
+  try {
+    stat = statSync(path)
+  } catch {
+    // A vanished manifest removes its package from the closure; resync.
+    return false
+  }
+  return stat.mtimeMs === mtimeMs && stat.size === size
+}
+
+/** Return whether `link` currently points at `target`. */
+function linkPointsAt(link: string, target: string): boolean {
+  try {
+    return readlinkSync(link) === target
+  } catch {
+    // Missing link, or a real directory where a link belongs; both need the
+    // full sync (which repairs the link or reports the directory).
+    return false
+  }
+}
+
+/**
+ * Return whether the recorded closure still describes the filesystem.
+ * @param modulesDir - the fallback directory holding the links and the record.
+ * @param installAnchor - absolute path of the dsh app's package.json.
+ * @returns `true` when every recorded link and manifest matches.
+ */
+function fallbackIsCurrent(modulesDir: string, installAnchor: string): boolean {
+  const record = readFallbackRecord(modulesDir)
+  if (record === undefined) return false
+  if (record.anchor !== installAnchor) return false
+  if (!manifestUnchanged(installAnchor, record.anchorMtimeMs, record.anchorSize)) return false
+  return record.entries.every(entry =>
+    linkPointsAt(join(modulesDir, entry.name), entry.target)
+    && manifestUnchanged(entry.manifest, entry.mtimeMs, entry.size))
+}
+
+/**
+ * Persist the healed closure beside its links. A write failure only costs the
+ * next boot a full sync, so it never fails the heal that already succeeded.
+ * @param modulesDir - the fallback directory holding the links.
+ * @param installAnchor - absolute path of the dsh app's package.json.
+ * @param links - package name to resolved directory, as healed.
+ * @param manifests - package name to the manifest that placed it.
+ */
+function writeFallbackRecord(
+  modulesDir: string,
+  installAnchor: string,
+  links: ReadonlyMap<string, string>,
+  manifests: ReadonlyMap<string, string>,
+): void {
+  const anchorStat = statSync(installAnchor)
+  const entries: FallbackRecordEntry[] = []
+  for (const [name, target] of links) {
+    const manifest = manifests.get(name)
+    /* v8 ignore next -- every link is recorded with its manifest in the same pass */
+    if (manifest === undefined) continue
+    const stat = statSync(manifest)
+    entries.push({ name, target, manifest, mtimeMs: stat.mtimeMs, size: stat.size })
+  }
+  const record: FallbackRecord = {
+    version: FALLBACK_RECORD_VERSION,
+    anchor: installAnchor,
+    anchorMtimeMs: anchorStat.mtimeMs,
+    anchorSize: anchorStat.size,
+    entries,
+  }
+  try {
+    writeFileSync(join(modulesDir, FALLBACK_RECORD_FILENAME), JSON.stringify(record))
+  } catch {
+    /* v8 ignore next 2 -- a home that accepted these symlinks can still reject this file; links are already correct */
+    // Nothing to repair: only the next boot's fast path is lost.
   }
 }
 
