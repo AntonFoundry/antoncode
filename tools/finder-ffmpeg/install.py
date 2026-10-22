@@ -74,6 +74,15 @@ document = {
 with (workflow / "document.wflow").open("wb") as file:
     plistlib.dump(document, file)
 with (workflow / "Info.plist").open("wb") as file:
-    plistlib.dump({"CFBundleIdentifier": "dev.antoncode.finder-ffmpeg", "CFBundleName": "Encode with FFmpeg"}, file)
+    plistlib.dump({
+        "CFBundleIdentifier": "dev.antoncode.finder-ffmpeg",
+        "CFBundleName": "Encode with FFmpeg",
+        "NSServices": [{
+            "NSMenuItem": {"default": "Encode with FFmpeg"},
+            "NSMessage": "runWorkflowAsService",
+            "NSRequiredContext": {"NSApplicationIdentifier": "com.apple.finder"},
+            "NSSendFileTypes": ["public.movie"],
+        }],
+    }, file)
 subprocess.run(["/System/Library/CoreServices/pbs", "-flush"], check=True)
 print("Installed Finder → Services → Encode with FFmpeg. Finder may need a moment to refresh its menu.")
