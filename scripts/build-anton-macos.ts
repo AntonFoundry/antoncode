@@ -235,6 +235,10 @@ run(['codesign', '--force', '--sign', '-', '-i', 'dev.antoncode.anton', '-r=desi
 
 console.log(`Built ${appRoot}`)
 console.log(`Size: use du -sh ${appRoot}`)
+if (process.env.ANTON_BUILD_ONLY === '1') {
+  console.log('Build-only mode: staged app is signed and smoke-tested; installed Anton was not changed')
+  process.exit(0)
+}
 
 // Install: keep the outgoing bundle for rollback, then relaunch. The normal
 // path refuses to touch a running app — quit Anton before rebuilding. The
