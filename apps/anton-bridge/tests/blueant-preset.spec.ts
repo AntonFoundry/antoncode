@@ -97,6 +97,7 @@ it('retains every Creator plugin and configuration, including isolated groups', 
   const ptc = load(readFileSync('apps/cli/config/agent-presets/code/agent.cordis.yml', 'utf8'), { schema }) as Array<{ id: string }>
   expect(actual.slice(expected.length)).toEqual([
     { ...ptc.find(row => row.id === 'tool-presentation'), config: { mode: 'both' } },
+    { id: 'tool-agent-queue', name: '@deepseek-ai/dsh-tool-agent-queue' },
     { id: 'blueant-notify', name: './plugins/notify.js' },
     { id: 'blueant-chrome', name: './plugins/chrome.js' },
   ])
