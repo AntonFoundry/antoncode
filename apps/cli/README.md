@@ -15,6 +15,10 @@ The `dsh` command is the product launcher for profiles: ordered stacks of plugin
 
 The invoking directory is the default workspace root. The `web` and `headless` profiles auto-initialize on first use from shipped templates; any other profile must be created through `dsh plugin`.
 
+## Boot timing
+
+`DSH_BOOT_TIMING=1` prints one stderr line once the tree settles, naming each boot phase's duration measured from process start — `heal`, `profile`, `compose`, `setup`, `mount`, `settle`, `activate`, then `total`. Unset, boot stays quiet. Use it to attribute a slow launch instead of guessing; the [app-boot README](../../packages/boot/app-boot/README.md) owns the recorder.
+
 ## App arguments
 
 The launcher parses only its own flags and hands everything after them to the booted profile, where any injected app plugin may parse the shared immutable snapshot ([`dsh-cmdline`](../../packages/boot/cmdline/README.md)). Launcher flags therefore come first, and the first token the launcher does not recognize starts the app's arguments:

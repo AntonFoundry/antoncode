@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import {
-  addHarnessSourceSection, assertEntriesActivated, assertEntriesLoaded, boot,
+  addHarnessSourceSection, assertEntriesActivated, assertEntriesLoaded, boot, BootTiming,
   FAIL_LOUD_RELEASE_TIMEOUT_MS, HARNESS_SOURCE_SECTION,
   installFailLoud, loadEnv, loadLayeredEnv, loadOverlayPatches, resolveConfigPath, type FailLoudProcess,
 } from '../src/index.ts'
@@ -553,6 +553,20 @@ describe('boot', () => {
     try {
       const entries = [...ctx.loader.entries()]
       expect(entries.some(entry => entry.options.name === './noop.mjs' && entry.fiber !== undefined)).toBe(true)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('records its own boot phases when handed a timing recorder', async () => {
+    const dir = tmp()
+    writeFileSync(join(dir, 'noop.mjs'), 'export const name = "noop"\nexport function apply() {}\n')
+    writeFileSync(join(dir, 'cordis.yml'), '- id: noop\n  name: ./noop.mjs\n')
+    const timing = new BootTiming()
+    const ctx = await boot(NAME, join(dir, 'cordis.yml'), undefined, undefined, undefined, timing)
+    try {
+      expect(timing.phases().map(phase => phase.phase)).toEqual(['setup', 'mount', 'settle', 'activate'])
+      expect(timing.totalMs).toBeGreaterThan(0)
     } finally {
       await ctx.fiber.dispose()
     }

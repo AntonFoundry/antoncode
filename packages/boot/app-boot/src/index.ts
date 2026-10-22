@@ -20,6 +20,7 @@ import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from 
 import type {} from '@deepseek-ai/cordis-plugin-hmr'
 // Side-effect type import: resolves `ctx.get('systemPrompt')` to the service.
 import type {} from '@deepseek-ai/dsh-system-prompt'
+import type { BootTiming } from './boot-timing.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -724,6 +725,9 @@ export async function assertEntriesActivated(ctx: Context, binName: string): Pro
   }
 }
 
+export * from './plugin-state.ts'
+export * from './boot-timing.ts'
+
 /**
  * Boot the Loader against `absoluteConfigPath` and return only after the whole
  * tree settles. Relative entry names resolve against the config directory;
@@ -748,20 +752,21 @@ export async function assertEntriesActivated(ctx: Context, binName: string): Pro
  * @param bareModuleBaseUrl - optional installed-host base for bare package
  * names; use it when the host, rather than the configuration project, owns the
  * complete plugin set.
+ * @param timing - optional recorder for the boot phases this call owns
+ * (`setup`, `mount`, `settle`, `activate`); see {@link BootTiming}.
  * @returns the root context once every entry has started, or as soon as a
  * surface disposed the tree while startup was still in flight.
  * @throws a labelled error after disposing the partial context — `host
  * preparation failed` when `prepare` threw before any config-tree entry
  * mounted, `plugin tree failed to load` afterwards.
  */
-export * from './plugin-state.ts'
-
 export async function boot(
   binName: string,
   absoluteConfigPath: string,
   patches?: PatchOptions[],
   prepare?: (ctx: Context) => Promise<void> | void,
   bareModuleBaseUrl?: string,
+  timing?: BootTiming,
 ): Promise<Context> {
   const ctx = new Context()
   // Two failure labels: `prepare` runs before any config-tree entry mounts,
@@ -772,8 +777,10 @@ export async function boot(
     ctx.provide('dshHomePath', dshHomePath)
     await ctx.plugin(Loader)
     await prepare?.(ctx)
+    timing?.mark('setup')
     stage = 'plugin tree failed to load'
     await mountRootInclude(ctx, absoluteConfigPath, patches, bareModuleBaseUrl)
+    timing?.mark('mount')
     // A surface can finish and dispose the whole tree while startup is still
     // in flight, before the last entry settles. The Loader service goes with
     // it, and the activation audit describes a live tree — reading `ctx.loader`
@@ -783,7 +790,9 @@ export async function boot(
     // re-check after every await.
     await ctx.get('loader')?.await()
     if (ctx.get('loader') === undefined) return ctx
+    timing?.mark('settle')
     await assertEntriesActivated(ctx, binName)
+    timing?.mark('activate')
     return ctx
   } catch (cause) {
     // Root-fiber disposal contains cleanup failures per observer (Cordis

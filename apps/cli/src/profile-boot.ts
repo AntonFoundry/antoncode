@@ -20,6 +20,7 @@ import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import {
   boot,
+  BootTiming,
   composeEntries,
   healProfilesModuleFallback,
   installFailLoud,
@@ -95,12 +96,16 @@ export function resolveTelemetryPatch(disabledEnv: string | undefined, hasRow: b
  * on the same file, so both compose over the identical base).
  * @param name - the profile name.
  * @param userLayer - `false` skips parsing `cordis.patch.yml` (the default dump).
+ * @param timing - optional recorder closed after healing (`heal`) and after the
+ * profile root config write (`profile`).
  * @returns the loaded profile.
  */
-export function prepareProfile(name: string, userLayer = true): Profile {
+export function prepareProfile(name: string, userLayer = true, timing?: BootTiming): Profile {
   healProfilesModuleFallback(INSTALL_ANCHOR)
+  timing?.mark('heal')
   const profile = loadProfile(NAME, name, INSTALL_ANCHOR, undefined, { userLayer })
   writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
+  timing?.mark('profile')
   return profile
 }
 
@@ -150,13 +155,15 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
  * switch.
  * @param name - the profile name.
  * @param patchFiles - `--patch` overlay paths, in argv order.
+ * @param timing - optional recorder closed after the patch stack composes (`compose`).
  * @returns the profile, its patch layers, and the composed row index.
  */
 function composeProfile(
   name: string,
   patchFiles: readonly string[],
+  timing?: BootTiming,
 ): ComposedProfile {
-  const profile = prepareProfile(name)
+  const profile = prepareProfile(name, true, timing)
   const homePatches = loadOptionalPatches(NAME, homePatchPath()) ?? []
   const statePatches = pluginStatePatches()
   const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
@@ -181,6 +188,7 @@ function composeProfile(
   }
   const telemetryPatch = resolveTelemetryPatch(process.env.DSH_TELEMETRY_DISABLED, rows.has(TELEMETRY_ROW_ID))
   if (telemetryPatch !== undefined) composedOverlays.push(telemetryPatch)
+  timing?.mark('compose')
   return { profile, bundlePatches, homePatches, statePatches, overlays: composedOverlays, rows }
 }
 
@@ -246,7 +254,8 @@ const MAX_DEGRADED_RETRIES = 2
  * @returns the settled root context and the shutdown controller.
  */
 export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
-  const composed = composeProfile(options.profile, options.patchFiles)
+  const timing = new BootTiming()
+  const composed = composeProfile(options.profile, options.patchFiles, timing)
   const app: { current?: Context } = {}
   const shutdown = createProcessShutdown(async () => { await app.current?.fiber.dispose() })
   const signalShutdown = new AbortController()
@@ -307,7 +316,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
           args: options.args,
           exit: code => void shutdown.shutdown(code),
         })
-      })
+      }, undefined, timing)
       break
     } catch (error) {
       const entryId = failingEntryId(error)
@@ -320,6 +329,10 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   // The loop only exits through break (context settled) or throw.
   if (ctx === undefined) throw new Error(`${NAME}: boot loop exited without a context`)
   app.current = ctx
+  // Opt-in diagnostic (the default surface is quiet): one line naming every
+  // boot phase, measured from process start, so a slow launch can be
+  // attributed without re-instrumenting.
+  if (process.env.DSH_BOOT_TIMING === '1') console.error(`${NAME}: boot ${timing.format()}`)
   // The load window is over: fail-loud's whole-process exit(1) on any
   // unhandled rejection must not outlive boot. A background task that rejects
   // late (an unresolved model route, a dropped poller) degrades the surface —
