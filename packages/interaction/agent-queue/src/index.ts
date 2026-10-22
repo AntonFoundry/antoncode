@@ -92,11 +92,11 @@ export class AgentQueue extends Service {
   /** Validate exact live Agent identity and canonical membership or a subagent lineage. */
   private async authorize(agent: Agent): Promise<Workspace> {
     if (this.ctx.agents.get(agent.id) !== agent || agent.session.header.id !== agent.id) {
-      throw new Error('queue authorization failed: exact_live_agent_required')
+      throw new Error('queue caller must be the exact live agent (reason: exact_live_agent_required)')
     }
     const failure: { reason?: string } = {}
     const workspace = await this.authorizedWorkspace(agent, failure)
-    if (!workspace) throw new Error(`queue authorization failed: ${failure.reason ?? 'not_a_registered_workspace_member'}`)
+    if (!workspace) throw new Error(`queue caller is not a member of a registered workspace (reason: ${failure.reason ?? 'not_a_registered_workspace_member'})`)
     return workspace
   }
 
@@ -108,7 +108,7 @@ export class AgentQueue extends Service {
       const id = current.id
       const session = current.session
       if (visited.has(id) || this.ctx.agents.get(id) !== current || session.header.id !== id) {
-        throw new Error('queue authorization failed: exact_live_agent_required')
+        throw new Error('queue caller must be the exact live agent (reason: exact_live_agent_required)')
       }
       visited.add(id)
       const cwd = session.header.cwd
