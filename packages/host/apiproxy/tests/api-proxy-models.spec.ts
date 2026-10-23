@@ -334,7 +334,7 @@ describe('Web session model selection', () => {
     await ctx.fiber.dispose()
   })
 
-  it('accepts an advisory-unlisted model, rejects an unavailable provider, and switches only after the next assembly', async () => {
+  it('accepts an advisory-unlisted model, rejects an unavailable provider, and switches the next request in the current step', async () => {
     const { ctx, agent, sessionId } = await harness()
     const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })
     const seed: LlmCallConfig = { provider: 'seed', model: 'seed', temperature: 0.2 }
@@ -356,9 +356,16 @@ describe('Web session model selection', () => {
       model: 'private-preview',
       reasoningEffort: 'max',
     })
+    // The retry of an attempt that opened before the switch must use the new
+    // route, not the assembly snapshot: an exhausted model would otherwise
+    // keep failing until the step ends, and the step never ends.
     await expect(agentEvents(ctx, agent).waterfall(
       'agent/request', { turn: 1, step: 0, signal }, () => Promise.resolve(seed),
-    )).resolves.toMatchObject({ provider: 'deepseek-official', model: 'deepseek-chat' })
+    )).resolves.toMatchObject({
+      provider: 'deepseek-official',
+      model: 'private-preview',
+      reasoningEffort: 'max',
+    })
 
     expect((await ctx.systemPrompt.assemble()).variables)
       .toMatchObject({ provider: 'deepseek-official', model: 'private-preview' })

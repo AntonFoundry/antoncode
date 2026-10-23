@@ -291,7 +291,10 @@ export interface SessionsApi {
   /**
    * Selects the complete model selection for this session. Exact model metadata
    * validates an optional reasoning effort, while catalog membership remains
-   * advisory. Session-backed subagents reject with `agent-busy`.
+   * advisory. The selection applies to the next model request in this step —
+   * including a retry after a failed attempt — so an exhausted route can be
+   * replaced without waiting for the step to end. Session-backed subagents
+   * reject with `agent-busy`.
    */
   selectModel(request: RpcRequest<{
     sessionId: SessionId

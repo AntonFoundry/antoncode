@@ -27,10 +27,13 @@ export interface ModelSelectionRef {
 /**
  * Couple one mutable selection to Agent-scoped prompt assembly and request routing.
  * Prompt assembly snapshots the selected model before delegating, then applies
- * its provider/model pair and effort to request config so a
- * concurrent switch takes effect on a later step instead of splitting the two
- * surfaces. An absent selected effort clears any inherited effort, restoring
- * the selected model's provider/default behavior.
+ * its provider/model pair and effort to request config so a concurrent switch
+ * takes effect on a later step instead of splitting the two surfaces. An entry
+ * point may deliberately advance {@link ModelSelectionRef.assembled} while a
+ * modal request is retrying, so a selection made after the step opened (for
+ * example replacing an exhausted route) reaches the next attempt. An absent
+ * selected effort clears any inherited effort, restoring the selected model's
+ * provider/default behavior.
  *
  * @param agentCtx - The selected Agent's scoped context.
  * @param selection - Mutable selection owned by the calling entry point.

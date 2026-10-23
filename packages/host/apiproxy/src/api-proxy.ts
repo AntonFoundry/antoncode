@@ -2684,7 +2684,14 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
                 ? {}
                 : { reasoningEffort: resolved.reasoningEffort },
             }
-            selectionFor(found.agent).current = selected
+            const selection = selectionFor(found.agent)
+            selection.current = selected
+            // A switch made while this step is failing its model requests must
+            // reach the next attempt, not wait for the next step: the retry
+            // loop reuses the assembly captured when the step opened, so an
+            // exhausted or rate-limited route would otherwise retry until the
+            // user cancels. A later assembly re-captures `current` itself.
+            selection.assembled = selected
             try {
               await defaults.saveDefaultModelSelection?.(selected)
             } catch (error: unknown) {
