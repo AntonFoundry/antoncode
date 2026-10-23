@@ -1,4 +1,5 @@
 import Cocoa
+import Security
 import UserNotifications
 
 @main
@@ -717,6 +718,17 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     environment["ANTON_NODE_BINARY"] = resources.appendingPathComponent("node/bin/node").path
     environment["ANTON_DSH_PROFILE"] = bridgeProfile
     process.environment = environment
+    // The bridge authorization key must never enter argv, environment or a log:
+    // same-user processes can inspect those surfaces. The anonymous pipe is
+    // written once by the native app and then closed, including on spawn error.
+    var consentKey = [UInt8](repeating: 0, count: 32)
+    guard SecRandomCopyBytes(kSecRandomDefault, consentKey.count, &consentKey) == errSecSuccess else {
+      showError("Anton could not create its private consent channel.")
+      return
+    }
+    let keyPipe = Pipe()
+    process.standardInput = keyPipe
+    let keyLine = Data(consentKey).base64EncodedString() + "\n"
     let logURL = support.appendingPathComponent("bridge.log")
     FileManager.default.createFile(atPath: logURL.path, contents: nil)
     if let log = try? FileHandle(forWritingTo: logURL) {
@@ -729,8 +741,11 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     do {
       try process.run()
+      defer { try? keyPipe.fileHandleForWriting.close() }
+      keyPipe.fileHandleForWriting.write(Data(keyLine.utf8))
       bridge = process
     } catch {
+      try? keyPipe.fileHandleForWriting.close()
       showError("Anton could not start its local bridge: \(error.localizedDescription)")
     }
   }

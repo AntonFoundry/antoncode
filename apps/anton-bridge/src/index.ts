@@ -8,6 +8,10 @@ import { startJournalTriage } from './triage.ts'
 import { startJournalConsolidation } from './consolidate.ts'
 import { getBlueantSettings, updateBlueantSettings } from './blueant-settings.ts'
 import { getChromeManager } from './chrome.ts'
+import { readNativeConsentKey } from './consent-key.ts'
+
+// Kept only in process memory. Absent for standalone bridge launches.
+const nativeConsentKey = readNativeConsentKey()
 
 const bridgePort = portFromEnv('ANTON_BRIDGE_PORT', 3742)
 const harnessPort = portFromEnv('ANTON_HARNESS_PORT', 3080)
@@ -492,7 +496,7 @@ async function startHarness(): Promise<{ started: boolean; reused: boolean }> {
     [nodeBinary, ...(harnessLoader === '' ? [] : ['--import', harnessLoader]), harnessEntry, '--profile', profile, '--port', String(harnessPort)],
     {
       cwd: harnessRoot,
-      stdin: 'ignore',
+      stdin: nativeConsentKey === undefined ? 'ignore' : 'pipe',
       stdout: 'inherit',
       stderr: 'inherit',
       env: {
@@ -503,6 +507,10 @@ async function startHarness(): Promise<{ started: boolean; reused: boolean }> {
       },
     },
   )
+  if (nativeConsentKey !== undefined && child.stdin) {
+    child.stdin.write(nativeConsentKey + '\n')
+    child.stdin.end()
+  }
   harnessProcess = child
   void child.exited.then((exitCode) => {
     if (harnessProcess === child) {
