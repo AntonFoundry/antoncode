@@ -63,7 +63,7 @@ describe('Agent Mail Host RPC', () => {
     const handler = toFetchHandler(api)
     const body = { type: 'client-request', rpcId: 'rpc-1', method: 'agentMail.begin',
       payload: { sessionId, operations: ['address'] } }
-    const result = await handler.fetch('http://127.0.0.1:3080/api/agentMail.begin', {
+    const result = await handler.fetch('http://dsh.internal/api/agentMail.begin', {
       method: 'POST', headers: { 'content-type': 'application/json', origin }, body: JSON.stringify(body),
     })
     expect(result.status).toBe(403)

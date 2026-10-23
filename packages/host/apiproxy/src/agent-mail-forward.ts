@@ -20,7 +20,9 @@ export class AgentMailForwardVerifier {
     const target = new URL(request.url)
     if (!this.key || this.key.length !== 32 || request.method !== 'POST'
       || !/^\/api\/agentMail\.[A-Za-z]+$/.test(target.pathname) || target.search !== ''
-      || target.hostname !== '127.0.0.1' || target.port !== '3080') return undefined
+      // The node:http carrier deliberately maps every inbound URL to this
+      // synthetic authority. The MAC, not the request URL, proves the bridge.
+      || target.origin !== 'http://dsh.internal') return undefined
     const origin = request.headers.get(ORIGIN)
     const timestamp = request.headers.get(TIME)
     const nonce = request.headers.get(NONCE)

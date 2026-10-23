@@ -7,7 +7,8 @@ const origin = 'http://antoncode.localhost:3742'
 const path = '/api/agentMail.begin'
 const original = () => new Request(`${origin}${path}`, { method: 'POST', headers: { origin } })
 const target = () => new URL(`http://127.0.0.1:3080${path}`)
-const received = (headers: Headers) => new Request(target(), { method: 'POST', headers })
+// node:http's bridge creates a synthetic URL before calling the fetch handler.
+const received = (headers: Headers) => new Request(`http://dsh.internal${path}`, { method: 'POST', headers })
 
 describe('native bridge Agent Mail origin proof', () => {
   it('accepts one exact signed method, path and origin, rejects replay', () => {
@@ -24,7 +25,8 @@ describe('native bridge Agent Mail origin proof', () => {
     const headers = new Headers(original().headers)
     signForwardedMailRequest(original(), target(), headers, key, 3742, () => 10_000, () => 'b'.repeat(32))
     const verifier = new AgentMailForwardVerifier(key, () => 10_000)
-    expect(verifier.verify(new Request(target(), { method: 'POST', headers: { origin: 'http://127.0.0.1:3080' } }))).toBeUndefined()
+    expect(verifier.verify(new Request(`http://dsh.internal${path}`, { method: 'POST', headers: { origin: 'http://127.0.0.1:3080' } }))).toBeUndefined()
+    expect(verifier.verify(new Request(target(), { method: 'POST', headers }))).toBeUndefined()
     expect(new AgentMailForwardVerifier(undefined, () => 10_000).verify(received(headers))).toBeUndefined()
     expect(new AgentMailForwardVerifier(key, () => 50_001).verify(received(headers))).toBeUndefined()
     headers.set('x-anton-mail-forward-origin', 'http://127.0.0.1:3080')
