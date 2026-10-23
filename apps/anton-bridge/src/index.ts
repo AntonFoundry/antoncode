@@ -10,6 +10,7 @@ import { getBlueantSettings, updateBlueantSettings } from './blueant-settings.ts
 import { getChromeManager } from './chrome.ts'
 import { readNativeConsentKey } from './consent-key.ts'
 import { NativeChallengeInbox } from './consent-challenges.ts'
+import { signForwardedMailRequest } from './consent-forward.ts'
 
 // Kept only in process memory. Absent for standalone bridge launches.
 const nativeConsentKey = readNativeConsentKey()
@@ -679,6 +680,8 @@ async function proxyHarness(request: Request): Promise<Response> {
     const headers = new Headers(request.headers)
     headers.delete('host')
     headers.delete('connection')
+    signForwardedMailRequest(request, target, headers,
+      nativeConsentKey === undefined ? undefined : Buffer.from(nativeConsentKey, 'base64'), bridgePort)
     // Harness deliberately fences its local API to same-origin browser calls.
     // The bridge is the trusted loopback boundary, so translate its public
     // origin back to the private upstream origin rather than leaking the
