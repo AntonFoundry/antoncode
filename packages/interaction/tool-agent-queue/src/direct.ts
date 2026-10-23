@@ -1,8 +1,9 @@
 /**
  * Model-facing direct-message tools over the host `agentDirectQueue` service.
- * These contracts are cross-workspace and session-addressed only: they carry
- * no workspace id, no stream, and no broadcast. The workspace-scoped
- * `agent_queue_*` tools in this package's main entry remain unchanged.
+ * These contracts address sessions in OTHER workspaces only: they carry no
+ * workspace id, no stream, and no broadcast, and a recipient in the caller's
+ * own workspace is rejected in favor of `agent_queue_send`. The
+ * workspace-scoped `agent_queue_*` tools in the main entry are unchanged.
  * @module @deepseek-ai/dsh-tool-agent-queue/direct
  */
 
@@ -38,25 +39,25 @@ const result = {
 export function apply(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'agent_queue_dm_address',
-    description: 'Show your own direct-message address and how many direct messages are unread. Other agents address you by this session id, from any workspace.',
+    description: 'Show your own direct-message address, your direct-inbox position (inboxCursor), and how many cross-workspace direct messages are unread. Agents in other workspaces address you by this session id.',
     parameters: {},
     output: result,
     async execute(_args, exec) {
       const identity = await ctx.agentDirectQueue.address(caller(exec.agent))
       return {
         sessionId: identity.sessionId, workspaceId: identity.workspaceId,
-        cursor: identity.cursor, unread: identity.unread,
+        inboxCursor: identity.inboxCursor, unread: identity.unread,
       }
     },
   }))
 
   ctx.tools.register(defineTool({
     name: 'agent_queue_dm_send',
-    description: 'Send one direct message to up to 32 agent session addresses, including agents working in other workspaces. Delivery is durable and does not wake or interrupt a recipient.',
+    description: 'Send one direct message to up to 32 agent sessions working in OTHER workspaces. For a recipient in your own workspace use agent_queue_send instead. Delivery is durable and does not wake or interrupt a recipient.',
     parameters: {
       recipients: {
         type: 'array', items: { type: 'string' }, required: true,
-        description: 'Session ids to address (maximum 32); recipients may be in any workspace.',
+        description: 'Session ids to address (maximum 32); every recipient must be in a workspace other than yours.',
       },
       body: { type: 'string', required: true, description: 'Message text (maximum 65536 characters).' },
     },
@@ -79,9 +80,9 @@ export function apply(ctx: Context): void {
 
   ctx.tools.register(defineTool({
     name: 'agent_queue_inbox_read',
-    description: 'Read direct messages addressed to you from any workspace, starting after your acknowledged position. Acknowledge only after processing them.',
+    description: 'Read cross-workspace direct messages addressed to you, starting after your direct-inbox position (inboxCursor), which is separate from any workspace queue cursor. Acknowledge only after processing them.',
     parameters: {
-      cursor: { type: 'integer', description: 'Optional nonnegative sequence to read after; defaults to your acknowledged position.' },
+      cursor: { type: 'integer', description: 'Optional nonnegative direct-ledger sequence to read after; defaults to your acknowledged inboxCursor.' },
       limit: { type: 'integer', description: 'Maximum messages, from 1 to 100 (default set by service).' },
     },
     output: result,
@@ -101,7 +102,7 @@ export function apply(ctx: Context): void {
         messages: page.messages.map(message => ({
           ...message, recipients: message.recipients.map(recipient => ({ ...recipient })),
         })),
-        cursor: page.cursor,
+        inboxCursor: page.inboxCursor,
         hasMore: page.hasMore,
       }
     },
@@ -109,9 +110,9 @@ export function apply(ctx: Context): void {
 
   ctx.tools.register(defineTool({
     name: 'agent_queue_inbox_ack',
-    description: 'Advance your durable direct-message position after processing messages. It never removes another agent’s copy and never wakes an agent.',
+    description: 'Advance your durable direct-inbox position (inboxCursor) after processing direct messages. It leaves workspace queue cursors alone, never removes another agent’s copy, and never wakes an agent.',
     parameters: {
-      through_seq: { type: 'integer', required: true, description: 'Last processed nonnegative direct-message sequence.' },
+      through_seq: { type: 'integer', required: true, description: 'Last processed nonnegative direct-ledger sequence.' },
     },
     output: result,
     async execute(args, exec) {
@@ -119,7 +120,7 @@ export function apply(ctx: Context): void {
       if (!Number.isSafeInteger(args.through_seq) || args.through_seq < 0) {
         throw new Error('through_seq must be a nonnegative safe integer')
       }
-      return { cursor: await ctx.agentDirectQueue.ackInbox(agent, args.through_seq) }
+      return { inboxCursor: await ctx.agentDirectQueue.ackInbox(agent, args.through_seq) }
     },
   }))
 }

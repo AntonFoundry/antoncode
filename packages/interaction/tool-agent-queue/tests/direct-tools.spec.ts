@@ -16,14 +16,14 @@ async function setup() {
   // The mock stays behind the service boundary: a tool cannot manufacture a
   // sender, choose a recipient workspace, or move another session's cursor.
   const direct = {
-    address: vi.fn(async (caller: { id: string }) => ({ sessionId: caller.id, workspaceId: 'ws-home', cursor: 2, unread: 1 })),
+    address: vi.fn(async (caller: { id: string }) => ({ sessionId: caller.id, workspaceId: 'ws-home', inboxCursor: 2, unread: 1 })),
     send: vi.fn(async (_agent: unknown, request: { recipients: string[]; body: string }) => ({
       id: 'dm-1', seq: 3, sender: 'session-a', senderWorkspaceId: 'ws-home', body: request.body, createdAt: 0,
       recipients: request.recipients.map(sessionId => ({ sessionId, workspaceId: 'ws-away' })),
     })),
     inbox: vi.fn(async () => ({
       messages: [{ id: 'dm-1', seq: 3, recipients: [{ sessionId: 'session-a', workspaceId: 'ws-home' }] }],
-      cursor: 2, hasMore: false,
+      inboxCursor: 2, hasMore: false,
     })),
     ackInbox: vi.fn(async () => 3),
   }
@@ -49,6 +49,10 @@ describe('model-facing cross-workspace direct message tools', () => {
     expect(schemas.map(tool => tool.name).sort())
       .toEqual(['agent_queue_dm_address', 'agent_queue_dm_send', 'agent_queue_inbox_ack', 'agent_queue_inbox_read'])
     expect(JSON.stringify(schemas)).not.toContain('workspace_id')
+    // The read/ack contracts name the direct position explicitly so a model
+    // cannot confuse it with the per-workspace cursor of agent_queue_read.
+    const names = schemas.map(tool => JSON.stringify(tool))
+    expect(names.filter(schema => schema.includes('inboxCursor'))).toHaveLength(3)
   })
 
   it('rejects an agentless call and passes the exact calling Agent to the service', async () => {
@@ -57,6 +61,7 @@ describe('model-facing cross-workspace direct message tools', () => {
     expect(direct.address).not.toHaveBeenCalled()
     const own = await execute('agent_queue_dm_address', {}, agent)
     expect(own.isError).toBe(false)
+    expect(text(own)).toContain('"inboxCursor":2')
     expect(text(own)).toContain('"unread":1')
     expect((await execute('agent_queue_dm_send', { recipients: ['session-b'], body: 'hi' })).isError).toBe(true)
     expect((await execute('agent_queue_inbox_read', {})).isError).toBe(true)
@@ -97,13 +102,14 @@ describe('model-facing cross-workspace direct message tools', () => {
     const read = await execute('agent_queue_inbox_read', { cursor: 1, limit: 5 }, agent)
     expect(read.isError).toBe(false)
     expect(direct.inbox).toHaveBeenCalledWith(agent, { cursor: 1, limit: 5 })
-    expect(text(read)).toContain('"cursor":2')
+    expect(text(read)).toContain('"inboxCursor":2')
+    expect(text(read)).not.toContain('"cursor"')
     expect((await execute('agent_queue_inbox_read', {}, agent)).isError).toBe(false)
     expect(direct.inbox).toHaveBeenNthCalledWith(2, agent, {})
     const ack = await execute('agent_queue_inbox_ack', { through_seq: 3 }, agent)
     expect(ack.isError).toBe(false)
     expect(direct.ackInbox).toHaveBeenCalledWith(agent, 3)
-    expect(text(ack)).toContain('"cursor":3')
+    expect(text(ack)).toContain('"inboxCursor":3')
     expect((await execute('agent_queue_inbox_read', { limit: 101 }, agent)).isError).toBe(true)
     expect((await execute('agent_queue_inbox_read', { cursor: -1 }, agent)).isError).toBe(true)
     expect((await execute('agent_queue_inbox_ack', { through_seq: -1 }, agent)).isError).toBe(true)

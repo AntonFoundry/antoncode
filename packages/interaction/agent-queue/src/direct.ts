@@ -1,8 +1,9 @@
 /**
  * Cross-workspace direct mailbox (`ctx.agentDirectQueue`). Addressing is
- * session-to-session: a sender authorized in one registered workspace may
- * address a session authorized in another, and no workspace stream, topic, or
- * broadcast exists here. Delivery is durable and never wakes a model,
+ * session-to-session ACROSS workspaces: a sender authorized in one registered
+ * workspace addresses a session authorized in a different one. Mail inside a
+ * single workspace — direct or topic — stays entirely on the v1 `agent_queue`
+ * domain, so nothing here migrates or duplicates existing workspace messages. Delivery is durable and never wakes a model,
  * mutates an Agent inbox, or interrupts an inference.
  * @module @deepseek-ai/dsh-agent-queue/direct
  */
@@ -33,29 +34,40 @@ export const MAX_DIRECT_RECIPIENTS = 32
 export const MAX_DIRECT_BODY_LENGTH = 65536
 /** Retention ceiling: a message older than this is dropped even if unacknowledged. */
 export const DIRECT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
+/**
+ * Hard ceiling on the encoded ledger record. The whole mailbox is one durable
+ * value, so the message, index, and envelope bounds above are not sufficient on
+ * their own: this bound is checked on the complete encoded record at the commit
+ * point, where its final size is known.
+ */
+export const MAX_DIRECT_LEDGER_BYTES = 8 * 1024 * 1024
 
 declare module '@deepseek-ai/cordis' {
   interface Context { agentDirectQueue: AgentDirectQueue }
 }
 
-/** One direct send: addressees are durable session ids in any registered workspace. */
+/** One direct send: addressees are durable session ids in OTHER registered workspaces. */
 export interface DirectSendRequest {
   readonly recipients: readonly SessionId[]
   readonly body: string
 }
 
-/** Bounded inbox page; `cursor` is the caller's durable acknowledged position. */
+/**
+ * Bounded direct-inbox page. `inboxCursor` is deliberately not named `cursor`:
+ * it is the caller's position in the cross-workspace direct ledger and has
+ * nothing to do with the per-workspace `cursor` of `agentQueue.read`.
+ */
 export interface DirectInboxPage {
   readonly messages: readonly DirectMessage[]
-  readonly cursor: number
+  readonly inboxCursor: number
   readonly hasMore: boolean
 }
 
-/** The caller's own cross-workspace address plus its current unread depth. */
+/** The caller's own cross-workspace address, direct-inbox position, and unread depth. */
 export interface DirectIdentity {
   readonly sessionId: SessionId
   readonly workspaceId: WorkspaceId
-  readonly cursor: number
+  readonly inboxCursor: number
   readonly unread: number
 }
 
@@ -78,6 +90,7 @@ export class AgentDirectQueue extends Service {
   static inject = ['storageDomain', 'workspaceRegistry', 'agents']
   private state?: DomainGlobal<DirectQueueState>
   private operationTail: Promise<void> = Promise.resolve()
+  private writing = false
 
   constructor(ctx: Context) { super(ctx, 'agentDirectQueue') }
 
@@ -93,9 +106,22 @@ export class AgentDirectQueue extends Service {
     return this.state.get()
   }
 
+  /**
+   * Commit the complete ledger. This is the only writer: it runs inside the
+   * serialized operation chain, and the reentrancy guard turns any future
+   * unserialized caller into a loud failure instead of a lost update. The size
+   * bound is applied here because only the final encoded record is bounded.
+   * @param next - Full replacement ledger.
+   */
   private async commit(next: DirectQueueState): Promise<void> {
     if (!this.state) throw new Error('agent direct queue is not initialized')
-    await this.state.set(next)
+    if (this.writing) throw new Error('direct mailbox has a concurrent writer; ledger writes must serialize')
+    const bytes = Buffer.byteLength(JSON.stringify(next), 'utf8')
+    if (bytes > MAX_DIRECT_LEDGER_BYTES) {
+      throw new RangeError(`direct mailbox ledger would reach ${bytes} bytes, above the ${MAX_DIRECT_LEDGER_BYTES}-byte bound`)
+    }
+    this.writing = true
+    try { await this.state.set(next) } finally { this.writing = false }
   }
 
   private enqueue<T>(task: () => Promise<T>): Promise<T> {
@@ -125,13 +151,16 @@ export class AgentDirectQueue extends Service {
   async address(agent: Agent): Promise<DirectIdentity> {
     const workspace = await authorizeWorkspaceMember(this.ctx, agent)
     const state = this.record()
-    const cursor = state.inboxes.find(inbox => inbox.sessionId === agent.id)?.cursor ?? 0
-    const unread = state.messages.filter(message => message.seq > cursor && addressed(message, agent.id)).length
-    return { sessionId: agent.id, workspaceId: workspace.id, cursor, unread }
+    const inboxCursor = state.inboxes.find(inbox => inbox.sessionId === agent.id)?.cursor ?? 0
+    const unread = state.messages.filter(message => message.seq > inboxCursor && addressed(message, agent.id)).length
+    return { sessionId: agent.id, workspaceId: workspace.id, inboxCursor, unread }
   }
 
   /**
-   * Send one direct message to session addresses in any registered workspace.
+   * Send one direct message to session addresses in OTHER registered
+   * workspaces. This ledger carries cross-workspace mail only: a recipient in
+   * the sender's own workspace is rejected and belongs to `agentQueue.publish`,
+   * whose v1 domain keeps every local direct message and topic.
    * @param agent - Exact live sending Agent.
    * @param request - Addressees and body.
    * @returns the committed canonical message.
@@ -154,6 +183,10 @@ export class AgentDirectQueue extends Service {
       for (const recipient of recipients) {
         const target = await this.recipientWorkspace(recipient)
         if (!target) throw new Error('direct recipient does not belong to a registered workspace')
+        if (target.id === senderWorkspace.id) {
+          throw new Error('direct mailbox carries cross-workspace mail only; '
+            + 'use agent_queue_send for a recipient in your own workspace')
+        }
         addresses.push({ sessionId: recipient, workspaceId: target.id })
       }
       const state = this.record()
@@ -214,11 +247,12 @@ export class AgentDirectQueue extends Service {
   }
 
   /**
-   * Read direct mail addressed to the caller, from its acknowledged cursor by
-   * default. An explicit lower cursor replays only still-retained messages.
+   * Read cross-workspace direct mail addressed to the caller, from its
+   * acknowledged direct-inbox position by default. An explicit lower cursor
+   * replays only still-retained messages and acknowledges nothing.
    * @param agent - Exact live reading Agent.
    * @param options - Optional explicit cursor and page limit (1–100, default 50).
-   * @returns a bounded page plus the durable acknowledged cursor.
+   * @returns a bounded page plus the caller's durable `inboxCursor`.
    */
   async inbox(agent: Agent, options: { cursor?: number; limit?: number } = {}): Promise<DirectInboxPage> {
     await authorizeWorkspaceMember(this.ctx, agent)
@@ -230,12 +264,12 @@ export class AgentDirectQueue extends Service {
     }
     const limit = bounded(options.limit ?? 50)
     const visible = state.messages.filter(message => message.seq > after && addressed(message, agent.id))
-    return { messages: visible.slice(0, limit), cursor: inbox?.cursor ?? 0, hasMore: visible.length > limit }
+    return { messages: visible.slice(0, limit), inboxCursor: inbox?.cursor ?? 0, hasMore: visible.length > limit }
   }
 
   /**
-   * Advance only the caller's own inbox cursor, monotonically and never past
-   * the committed mailbox head.
+   * Advance only the caller's own direct-inbox cursor, monotonically and never
+   * past the committed ledger head. It does not touch any v1 workspace cursor.
    * @param agent - Exact live acknowledging Agent.
    * @param throughSeq - Last processed sequence.
    * @returns the durable cursor after the acknowledgement.
