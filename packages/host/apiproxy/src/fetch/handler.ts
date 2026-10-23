@@ -432,8 +432,9 @@ export function toFetchHandler(api: ApiProxy): { fetch: typeof fetch } {
       }
       // Only a native-key MAC from the bridge proves the original browser
       // origin; `Origin` alone is spoofable by direct loopback callers.
-      const origin = method.startsWith('agentMail.')
-        ? (api as AgentMailVerifiedApi).verifyAgentMailOrigin(req)
+      const verifier = (api as Partial<AgentMailVerifiedApi>).verifyAgentMailOrigin
+      const origin = method.startsWith('agentMail.') && typeof verifier === 'function'
+        ? verifier(req)
         : undefined
       if (method.startsWith('agentMail.') && origin === undefined) {
         return new Response('Agent Mail requires native browser pairing', { status: 403 })
