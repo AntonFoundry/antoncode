@@ -8,8 +8,8 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import AgentQueue from '../src/index.ts'
 import AgentDirectQueue, {
-  DIRECT_RETENTION_MS, MAX_DIRECT_BODY_LENGTH, MAX_DIRECT_LEDGER_BYTES, MAX_DIRECT_MESSAGES,
-  MAX_DIRECT_RECIPIENTS,
+  DIRECT_RETENTION_MS, MAX_DIRECT_BODY_LENGTH, MAX_DIRECT_INBOXES, MAX_DIRECT_LEDGER_BYTES,
+  MAX_DIRECT_MESSAGES, MAX_DIRECT_RECIPIENTS,
 } from '../src/direct.ts'
 
 const homeDirectory = '/direct/home'
@@ -184,6 +184,72 @@ describe('cross-workspace direct mailbox', () => {
     expect((await queue.inbox(foreign, { cursor: 0 })).messages).toEqual([])
     expect((await queue.inbox(third, { cursor: 0 })).messages).toEqual([])
     expect(await queue.address(foreign)).toMatchObject({ inboxCursor: second.seq, unread: 0 })
+  })
+
+  it('authorizes each read against the current workspace and the frozen address', async () => {
+    const { queue, agent, live } = await setup()
+    const sender = agent('root')
+    const mover = agent('away-root', awayDirectory)
+    const message = await queue.send(sender, { recipients: [mover.id], body: 'addressed in ws-away' })
+    expect((await queue.inbox(mover)).messages.map(entry => entry.body)).toEqual(['addressed in ws-away'])
+    // The same durable session id reappears as a member of a third workspace.
+    // Its direct mail was addressed to (session, ws-away) and must not follow it.
+    thirdMembers.push(mover.id)
+    live.delete(mover.id)
+    const moved = agent('away-root', thirdDirectory)
+    try {
+      expect(await queue.address(moved)).toMatchObject({ workspaceId: thirdId, inboxCursor: 0, unread: 0 })
+      expect((await queue.inbox(moved)).messages).toEqual([])
+      expect((await queue.inbox(moved, { cursor: 0 })).messages).toEqual([])
+      // It cannot retire that mail either; acknowledgment is bounded by what it can read.
+      await expect(queue.ackInbox(moved, message.seq))
+        .rejects.toThrow('readable in your current workspace')
+      // New mail is addressed to its CURRENT workspace and reaches it there.
+      expect((await queue.send(sender, { recipients: [moved.id], body: 'to ws-third' })).seq).toBe(2)
+      expect((await queue.inbox(moved)).messages.map(entry => entry.body)).toEqual(['to ws-third'])
+    } finally { thirdMembers.pop() }
+    live.delete(moved.id)
+    const returned = agent('away-root', awayDirectory)
+    expect((await queue.inbox(returned)).messages.map(entry => entry.seq)).toEqual([message.seq])
+    expect(await queue.ackInbox(returned, message.seq)).toBe(message.seq)
+    // The mail it could not read while away is retained, not silently dropped.
+    expect((await queue.address(returned)).inboxCursor).toBe(message.seq)
+  })
+
+  it('refuses to commit a ledger that breaks its scope, ordering, or bounds', async () => {
+    const { queue, agent } = await setup()
+    const sender = agent('root')
+    const foreign = agent('away-root', awayDirectory)
+    const message = await queue.send(sender, { recipients: [foreign.id], body: 'valid' })
+    const service = queue as unknown as {
+      commit(next: { nextSeq: number; messages: unknown[]; inboxes: unknown[] }): Promise<void>
+    }
+    const ledger = (messages: unknown[]): { nextSeq: number; messages: unknown[]; inboxes: unknown[] } =>
+      ({ nextSeq: 2, messages, inboxes: [{ sessionId: foreign.id, workspaceId: awayId, cursor: 0 }] })
+    // A same-workspace addressee could only arrive through a future bug or a
+    // hand-written record; the ledger must stay disjoint from the v1 queue.
+    await expect(service.commit(ledger([
+      { ...message, recipients: [{ sessionId: SessionId('alpha'), workspaceId: homeId }] },
+    ]))).rejects.toThrow('must not hold same-workspace mail')
+    await expect(service.commit(ledger([{ ...message, recipients: [] }])))
+      .rejects.toThrow('must retain an addressee')
+    await expect(service.commit(ledger([{ ...message, seq: 2 }])))
+      .rejects.toThrow('strictly increasing sequences below its head')
+    await expect(service.commit(ledger([message, message])))
+      .rejects.toThrow('strictly increasing sequences below its head')
+    await expect(service.commit({
+      nextSeq: MAX_DIRECT_MESSAGES + 3,
+      messages: Array.from({ length: MAX_DIRECT_MESSAGES + 1 }, (_, index) => ({ ...message, seq: index + 1 })),
+      inboxes: [],
+    })).rejects.toThrow(`above the ${MAX_DIRECT_MESSAGES}-message bound`)
+    await expect(service.commit({
+      nextSeq: 2,
+      messages: [],
+      inboxes: Array.from({ length: MAX_DIRECT_INBOXES + 1 }, (_, index) =>
+        ({ sessionId: SessionId(`s-${index}`), workspaceId: awayId, cursor: 0 })),
+    })).rejects.toThrow(`above the ${MAX_DIRECT_INBOXES}-inbox bound`)
+    // The rejected candidates never reached the medium.
+    expect((await queue.inbox(foreign)).messages.map(entry => entry.seq)).toEqual([message.seq])
   })
 
   it('bounds the ledger by message count, encoded size, and a single writer', async () => {

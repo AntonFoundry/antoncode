@@ -78,8 +78,43 @@ const bounded = (limit: number): number => {
   return limit
 }
 
-const addressed = (message: DirectMessage, sessionId: SessionId): boolean =>
-  message.recipients.some(recipient => recipient.sessionId === sessionId)
+/**
+ * Delivery test, used for every read: a message reaches a caller only when the
+ * caller's CURRENT authorized workspace still equals the workspace frozen in
+ * its address. A session that moved to another workspace therefore cannot read
+ * mail addressed to it in its former workspace, and a session that moves back
+ * sees that mail again while it is retained.
+ */
+const readableBy = (message: DirectMessage, sessionId: SessionId, workspaceId: WorkspaceId): boolean =>
+  message.recipients.some(recipient =>
+    recipient.sessionId === sessionId && recipient.workspaceId === workspaceId)
+
+/**
+ * Reject any ledger that would violate the domain's own scope or bounds before
+ * it reaches the medium: retained count, index size, ordering, and — the
+ * invariant that keeps this ledger disjoint from the v1 workspace queue — the
+ * absence of any addressee in the sender's own workspace.
+ * @param next - Candidate ledger about to be committed.
+ */
+function verifyLedger(next: DirectQueueState): void {
+  if (next.messages.length > MAX_DIRECT_MESSAGES) {
+    throw new RangeError(`direct mailbox would retain ${next.messages.length} messages, above the ${MAX_DIRECT_MESSAGES}-message bound`)
+  }
+  if (next.inboxes.length > MAX_DIRECT_INBOXES) {
+    throw new RangeError(`direct mailbox would retain ${next.inboxes.length} inboxes, above the ${MAX_DIRECT_INBOXES}-inbox bound`)
+  }
+  let previous = 0
+  for (const message of next.messages) {
+    if (message.seq <= previous || message.seq >= next.nextSeq) {
+      throw new Error('direct mailbox ledger must hold strictly increasing sequences below its head')
+    }
+    previous = message.seq
+    if (message.recipients.length === 0) throw new Error('direct mailbox message must retain an addressee')
+    if (message.recipients.some(recipient => recipient.workspaceId === message.senderWorkspaceId)) {
+      throw new Error('direct mailbox ledger must not hold same-workspace mail; that mail belongs to the v1 workspace queue')
+    }
+  }
+}
 
 /**
  * Host-owned durable direct mailbox. Every write serializes on one chain and
@@ -120,6 +155,7 @@ export class AgentDirectQueue extends Service {
     if (bytes > MAX_DIRECT_LEDGER_BYTES) {
       throw new RangeError(`direct mailbox ledger would reach ${bytes} bytes, above the ${MAX_DIRECT_LEDGER_BYTES}-byte bound`)
     }
+    verifyLedger(next)
     this.writing = true
     try { await this.state.set(next) } finally { this.writing = false }
   }
@@ -152,7 +188,8 @@ export class AgentDirectQueue extends Service {
     const workspace = await authorizeWorkspaceMember(this.ctx, agent)
     const state = this.record()
     const inboxCursor = state.inboxes.find(inbox => inbox.sessionId === agent.id)?.cursor ?? 0
-    const unread = state.messages.filter(message => message.seq > inboxCursor && addressed(message, agent.id)).length
+    const unread = state.messages
+      .filter(message => message.seq > inboxCursor && readableBy(message, agent.id, workspace.id)).length
     return { sessionId: agent.id, workspaceId: workspace.id, inboxCursor, unread }
   }
 
@@ -255,7 +292,7 @@ export class AgentDirectQueue extends Service {
    * @returns a bounded page plus the caller's durable `inboxCursor`.
    */
   async inbox(agent: Agent, options: { cursor?: number; limit?: number } = {}): Promise<DirectInboxPage> {
-    await authorizeWorkspaceMember(this.ctx, agent)
+    const workspace = await authorizeWorkspaceMember(this.ctx, agent)
     const state = this.record()
     const inbox = state.inboxes.find(entry => entry.sessionId === agent.id)
     const after = options.cursor ?? inbox?.cursor ?? 0
@@ -263,7 +300,8 @@ export class AgentDirectQueue extends Service {
       throw new RangeError('direct inbox cursor must be a nonnegative safe integer')
     }
     const limit = bounded(options.limit ?? 50)
-    const visible = state.messages.filter(message => message.seq > after && addressed(message, agent.id))
+    const visible = state.messages
+      .filter(message => message.seq > after && readableBy(message, agent.id, workspace.id))
     return { messages: visible.slice(0, limit), inboxCursor: inbox?.cursor ?? 0, hasMore: visible.length > limit }
   }
 
@@ -289,6 +327,14 @@ export class AgentDirectQueue extends Service {
       const inbox = state.inboxes.find(entry => entry.sessionId === agent.id)
       if (!inbox) throw new Error('direct inbox has no addressed messages to acknowledge')
       if (throughSeq <= inbox.cursor) return inbox.cursor
+      // A caller may acknowledge only mail it can currently read, so a session
+      // that moved workspaces cannot retire mail addressed in its former one.
+      const readable = state.messages
+        .filter(message => readableBy(message, agent.id, current.id))
+        .reduce((highest, message) => Math.max(highest, message.seq), 0)
+      if (throughSeq > readable) {
+        throw new RangeError('cannot acknowledge beyond direct mail readable in your current workspace')
+      }
       const inboxes = state.inboxes.map(entry =>
         entry.sessionId === agent.id ? { ...entry, cursor: throughSeq } : entry)
       // Cursor advance and compaction of fully acknowledged mail commit together.

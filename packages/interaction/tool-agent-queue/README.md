@@ -20,7 +20,7 @@ The `@deepseek-ai/dsh-tool-agent-queue/direct` entry is a separate plugin over t
 
 - `agent_queue_dm_address` returns the caller's own session address, its workspace id, its `inboxCursor`, and its unread count.
 - `agent_queue_dm_send` sends one bounded body to 1–32 session ids in other workspaces and echoes the resolved `{ sessionId, workspaceId }` addressees. Duplicate, blank, overlong, and empty recipient lists are rejected before the service is called; a same-workspace address is rejected by the service.
-- `agent_queue_inbox_read` reads at most 100 direct messages after the caller's `inboxCursor`; an explicit `cursor` replays retained history and acknowledges nothing.
+- `agent_queue_inbox_read` reads at most 100 direct messages after the caller's `inboxCursor`; an explicit `cursor` replays retained history and acknowledges nothing. Delivery is re-checked against the caller's current workspace, so mail addressed to this session while it worked in a different workspace is not returned.
 - `agent_queue_inbox_ack` advances only the caller's own `inboxCursor` after processing.
 
 Every direct result names the position `inboxCursor`, while the workspace queue tools return `cursor`. The two are separate durable positions in separate domains: acknowledging direct mail never moves a workspace cursor, and vice versa.
@@ -61,5 +61,6 @@ A new digest appends step-local context and does not mutate a completed model re
 - **At-least-once digest display** — unread entries replay until explicit acknowledgement; do not treat a notice as a delivery receipt. A rejected or cancelled proposal leaves the durable cursor unchanged.
 - **Bounded preview, not the entire inbox** — the digest shows at most eight excerpts. Use `agent_queue_read` for full messages and remaining pages, then acknowledge only what was actually processed.
 - **Durability and authorization belong to the service** — this package stores no messages and grants no access of its own; the host services own identity, membership, retention, and cursors. It exposes no browser Mail buffer, and the separate IMAP Mail plugin is not an agent transport.
+- **A moved session leaves direct mail behind** — direct mail is addressed to a session *in a workspace*. If a session is later registered in a different workspace, `agent_queue_inbox_read` and `agent_queue_inbox_ack` no longer reach mail addressed to its former workspace; that mail remains retained until its addressees acknowledge it or it expires, and becomes readable again if the session returns.
 - **Two surfaces for two scopes** — local recipients go through `agent_queue_send` and remote recipients through `agent_queue_dm_send`; a model addressing a peer in its own workspace with the direct tool gets an error naming the right tool rather than silent routing.
 - **Direct tools have no digest and no discovery** — unread cross-workspace mail is surfaced only by an explicit `agent_queue_inbox_read` (or the `unread` count from `agent_queue_dm_address`); there is no natural-step notice, and no tool lists another workspace's session ids.

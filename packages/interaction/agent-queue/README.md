@@ -44,10 +44,21 @@ Direct messaging is session-addressed only; there is no workspace id, stream, to
 
 - `address(agent)` → `{ sessionId, workspaceId, inboxCursor, unread }` for the authorized caller.
 - `send(agent, { recipients, body })` → the committed message with `id`, global `seq`, `sender`, `senderWorkspaceId`, frozen `recipients` (each `{ sessionId, workspaceId }`), `body`, and `createdAt`. Up to 32 addressees and 65,536 characters are accepted. An addressee is reachable when it is a live agent whose own lineage authorizes a registered workspace **other than the sender's**, or such a workspace's filtered member session; an unreachable or same-workspace address rejects the whole send.
-- `inbox(agent, { cursor?, limit? })` → `{ messages, inboxCursor, hasMore }` containing only messages addressed to the caller, after its acknowledged direct position by default (1–100 results, default 50). The field is named `inboxCursor`, never `cursor`: it is a position in the cross-workspace ledger and is unrelated to the per-workspace `cursor` returned by `read`. An explicit lower `cursor` argument replays only still-retained messages and acknowledges nothing.
+- `inbox(agent, { cursor?, limit? })` → `{ messages, inboxCursor, hasMore }` containing only messages whose frozen address matches both the caller's session id **and** its current authorized workspace, after its acknowledged direct position by default (1–100 results, default 50). The field is named `inboxCursor`, never `cursor`: it is a position in the cross-workspace ledger and is unrelated to the per-workspace `cursor` returned by `read`. An explicit lower `cursor` argument replays only still-retained messages and acknowledges nothing.
 - `ackInbox(agent, throughSeq)` → the caller's durable `inboxCursor`. It advances monotonically, cannot pass the committed ledger head, touches no v1 workspace cursor, and acknowledges only the caller's own inbox.
 
 Senders and addressees are authorized by the same rule as the workspace queue — exact live Agent identity plus header-derived membership, including live subagent lineage — so knowing a session id grants nothing.
+
+### Session moves between workspaces
+
+An address is the pair `{ sessionId, workspaceId }` frozen at send time, and the recipient-index `workspaceId` is only the last workspace that session was addressed in. Delivery is therefore re-authorized on every read, not trusted from the index: a message reaches a caller only while the caller's **current** authorized workspace equals the workspace frozen in its address. The consequences are explicit:
+
+- A session that moves to another workspace cannot read — or acknowledge — mail addressed to it in its former workspace. `inbox` omits it (including with an explicit replay cursor), `unread` excludes it, and `ackInbox` rejects any sequence above what the caller can currently read, so the mail is retained rather than silently retired.
+- New mail is addressed to the session's current workspace and is delivered there immediately.
+- A session that returns to the original workspace sees that earlier mail again, as long as it is still retained.
+- Mail nobody can read any more is still bounded: it is compacted once every frozen addressee has acknowledged it, and otherwise dropped at the seven-day retention ceiling.
+
+Every candidate ledger is verified at the single commit point before it reaches the medium: retained-message count, index size, strictly increasing sequences below the head, a nonempty addressee list, and the absence of any addressee in the sender's own workspace. That last check is what structurally keeps this ledger disjoint from the v1 workspace queue, so a local direct message can never be duplicated here.
 
 Retention is explicitly bounded four ways: mail older than seven days is dropped; mail acknowledged by every addressee is compacted; 512 retained messages or 2,048 inbox cursors reject a new send with a `RangeError` instead of discarding unread mail; and the complete encoded ledger record is capped at 8 MiB, checked at the commit point where the final size is known. Because 512 maximum-length bodies exceed 8 MiB, the byte bound — not the message count — is the binding limit for large mail.
 
