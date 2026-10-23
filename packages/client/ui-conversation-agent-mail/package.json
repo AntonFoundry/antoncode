@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-conversation-agent-mail",
-  "description": "Read-only Agent Mail view and per-session messaging guidance in conversation",
+  "description": "Host-authorized Agent Mail inbox, pairing and queue compose view in conversation",
   "version": "0.1.0-rc.7",
   "publishConfig": { "access": "public" },
   "repository": { "type": "git", "url": "git+https://github.com/deepseek-ai/deepseek-harness.git", "directory": "packages/client/ui-conversation-agent-mail" },
@@ -20,6 +20,8 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-client-locale": "workspace:^",
+    "@deepseek-ai/dsh-host-apiproxy": "workspace:^",
+    "@deepseek-ai/dsh-session": "workspace:^",
     "@deepseek-ai/dsh-client-ui-conversation": "workspace:^",
     "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
     "react": "^18.2.0"

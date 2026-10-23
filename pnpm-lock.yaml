@@ -1989,6 +1989,13 @@ importers:
         version: 18.3.1
 
   packages/client/ui-conversation-agent-mail:
+    dependencies:
+      '@deepseek-ai/dsh-host-apiproxy':
+        specifier: workspace:^
+        version: link:../../host/apiproxy
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -5318,6 +5325,9 @@ importers:
       '@deepseek-ai/dsh-agent-default-model':
         specifier: workspace:^
         version: link:../../core/agent-default-model
+      '@deepseek-ai/dsh-agent-queue':
+        specifier: workspace:^
+        version: link:../../interaction/agent-queue
       '@deepseek-ai/dsh-api-remotes':
         specifier: workspace:^
         version: link:../../api/remotes

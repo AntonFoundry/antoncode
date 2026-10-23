@@ -1,16 +1,5 @@
 // @vitest-environment jsdom
-/**
- * Read-only contract of the Agent Mail conversation view.
- *
- * Agent Mail inbox, peer selection, compose, and acknowledgement are
- * deliberately NOT implemented: the only browser transport available today is
- * the unauthenticated `/api` surface, whose fence
- * (client-connection `api-request-trust.ts`) is explicitly not an auth layer,
- * and no secure pairing issuer exists yet. Operational queue control must
- * never be reachable from an unauthenticated surface, so this suite pins the
- * absence of every operational affordance in the RENDERED DOM — not merely in
- * the dictionary — and the two safe states the view may show.
- */
+/** Agent Mail stays inert unless an optional Host-authorized gateway says otherwise. */
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
@@ -69,8 +58,7 @@ describe('Agent Mail read-only conversation view', () => {
     expect(entry.component).toBe(AgentMailConversationView)
     expect(entry.options.id).toBe('agent-mail')
     expect(resolveSlotLabel(entry.options.label)).toBe('Agent Mail')
-    // The injected face is empty: the view receives no queue reader, no
-    // sender, and no acknowledger — the gate is closed by construction.
+    // No provider exists in the unauthenticated composition.
     expect(entry.inject?.('session-1' as never)).toEqual({})
     await ctx.fiber.dispose()
     stopRoot()
@@ -87,10 +75,6 @@ describe('Agent Mail read-only conversation view', () => {
     const view = render(<AgentMailConversationView {...props(en, 'session-1')} />)
 
     expect(view.container.querySelectorAll(OPERATIONAL)).toHaveLength(0)
-    // No operational control can hide behind a translated label either.
-    for (const key of ['sendButton', 'acknowledgeButton', 'ackButton', 'inboxList', 'peerSelect'] as const) {
-      expect(Object.keys(en)).not.toContain(key)
-    }
     expect(view.container.textContent).toContain(en.readOnly)
     expect(view.container.textContent).toContain(en.unavailable)
   })
