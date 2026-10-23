@@ -199,6 +199,10 @@
     - id: ui-settings-plugin-inventory
       name: '@deepseek-ai/dsh-client-ui-settings-plugin-inventory'
 
+    # Read-only Agent Mail conversation view until browser authorization is available.
+    - id: ui-conversation-agent-mail
+      name: '@deepseek-ai/dsh-client-ui-conversation-agent-mail'
+
     - id: ui-conversation
       name: '@deepseek-ai/dsh-client-ui-conversation'
 
