@@ -28,8 +28,14 @@ export type { DirectAddress, DirectInbox, DirectMessage, DirectQueueState } from
 export const MAX_DIRECT_MESSAGES = 512
 /** Maximum retained inbox cursors; a full recipient index rejects a send to a new address. */
 export const MAX_DIRECT_INBOXES = 2048
-/** Maximum peers reported by one discovery call; the list is bounded, not paged. */
-export const MAX_DIRECT_PEERS = 128
+/**
+ * Maximum peers reported by ONE discovery page. Discovery is keyset-paged, not
+ * capped: this bounds a single response, never the number of peers a caller can
+ * reach by walking `nextPeerCursor` to exhaustion.
+ */
+export const MAX_DIRECT_PEER_PAGE = 128
+/** Peers per discovery page when the caller names no `peerLimit`. */
+export const DEFAULT_DIRECT_PEER_PAGE = 50
 /** Maximum addressees per direct send. */
 export const MAX_DIRECT_RECIPIENTS = 32
 /** Maximum body length in UTF-16 code units. */
@@ -76,8 +82,10 @@ export interface DirectPeer {
 
 /**
  * The caller's own cross-workspace address, direct-inbox position, unread
- * depth, and the live peers it may address. `truncated` reports that more live
- * peers exist than the bounded list returned.
+ * depth, and ONE keyset page of the live peers it may address.
+ * `hasMorePeers` reports that live peers remain beyond this page, and
+ * `nextPeerCursor` — present exactly when `hasMorePeers` is true — resumes the
+ * walk strictly after the last peer returned.
  */
 export interface DirectIdentity {
   readonly sessionId: SessionId
@@ -85,12 +93,78 @@ export interface DirectIdentity {
   readonly inboxCursor: number
   readonly unread: number
   readonly peers: readonly DirectPeer[]
-  readonly truncated: boolean
+  readonly hasMorePeers: boolean
+  readonly nextPeerCursor?: string
+}
+
+/** Optional peer-page controls of one `address` call. */
+export interface DirectAddressOptions {
+  /** Opaque `nextPeerCursor` of a previous page; the walk resumes after it. */
+  readonly peerCursor?: string
+  /** Peers per page, 1–{@link MAX_DIRECT_PEER_PAGE}. */
+  readonly peerLimit?: number
 }
 
 const bounded = (limit: number): number => {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
     throw new RangeError('direct inbox limit must be an integer between 1 and 100')
+  }
+  return limit
+}
+
+/**
+ * Sort key of one peer. Discovery orders by `(workspaceId, sessionId)`, so the
+ * key that a cursor encodes is exactly the pair that orders the page: the walk
+ * stays stable and gapless even as peers appear and disappear between calls.
+ * @param peer - Peer whose ordering key is needed.
+ * @returns the comparable key of that peer.
+ */
+const peerKey = (peer: { workspaceId: WorkspaceId; sessionId: SessionId }): [string, string] =>
+  [peer.workspaceId, peer.sessionId]
+
+/** Lexicographic comparison of two peer keys; the sole ordering of discovery. */
+const comparePeerKeys = (left: readonly [string, string], right: readonly [string, string]): number =>
+  left[0].localeCompare(right[0]) || left[1].localeCompare(right[1])
+
+/**
+ * Encode one peer position as an opaque resumption token. The encoding is
+ * deliberately opaque so a caller treats it as a position, not as an address it
+ * may synthesize.
+ * @param peer - Last peer of the page just returned.
+ * @returns the cursor resuming strictly after that peer.
+ */
+const encodePeerCursor = (peer: DirectPeer): string =>
+  Buffer.from(JSON.stringify(peerKey(peer)), 'utf8').toString('base64url')
+
+/**
+ * Decode a peer cursor back to its ordering key. Anything that is not a token
+ * this service issued — wrong encoding, wrong shape, empty parts — is rejected
+ * loudly rather than silently restarting the walk at the beginning, which would
+ * make a caller re-read peers it already handled and believe it had finished.
+ * @param cursor - Opaque token from a previous `nextPeerCursor`.
+ * @returns the decoded ordering key.
+ */
+function decodePeerCursor(cursor: string): [string, string] {
+  if (typeof cursor !== 'string' || cursor.length === 0 || cursor.length > 4096) {
+    throw new RangeError('direct peer cursor must be a token returned by a previous discovery page')
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'))
+  } catch {
+    throw new RangeError('direct peer cursor must be a token returned by a previous discovery page')
+  }
+  if (!Array.isArray(parsed) || parsed.length !== 2
+    || parsed.some(part => typeof part !== 'string' || part.length === 0)) {
+    throw new RangeError('direct peer cursor must be a token returned by a previous discovery page')
+  }
+  return [parsed[0] as string, parsed[1] as string]
+}
+
+/** Bound one peer page size; the ceiling bounds a response, never the walk. */
+const boundedPeerPage = (limit: number): number => {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_DIRECT_PEER_PAGE) {
+    throw new RangeError(`direct peer limit must be an integer between 1 and ${MAX_DIRECT_PEER_PAGE}`)
   }
   return limit
 }
@@ -219,14 +293,21 @@ export class AgentDirectQueue extends Service {
    * working directory, transcript, or header detail is exposed. A peer in the
    * caller's own workspace is reported with the `workspace-queue` transport,
    * because its mail belongs to `agentQueue.publish`, not to this ledger.
+   * Discovery is keyset-paged over the `(workspaceId, sessionId)` order: one
+   * page is bounded, the walk is not, so a caller reaches EVERY live peer by
+   * following `nextPeerCursor` instead of silently losing peers past a cap.
    * @param agent - Exact live calling Agent.
    * @param workspaceId - The caller's already authorized workspace.
-   * @returns the bounded peer list and whether live peers were omitted.
+   * @param options - Optional resumption cursor and page size.
+   * @returns one page of peers plus its continuation.
    */
   private async discover(
     agent: Agent,
     workspaceId: WorkspaceId,
-  ): Promise<{ peers: DirectPeer[]; truncated: boolean }> {
+    options: DirectAddressOptions = {},
+  ): Promise<{ peers: DirectPeer[]; hasMorePeers: boolean; nextPeerCursor?: string }> {
+    const limit = boundedPeerPage(options.peerLimit ?? DEFAULT_DIRECT_PEER_PAGE)
+    const after = options.peerCursor === undefined ? undefined : decodePeerCursor(options.peerCursor)
     const found = new Map<SessionId, DirectPeer>()
     for (const candidate of this.ctx.agents.list()) {
       if (candidate.id === agent.id || found.has(candidate.id)) continue
@@ -244,26 +325,39 @@ export class AgentDirectQueue extends Service {
         transport: authorized.id === workspaceId ? 'workspace-queue' : 'direct',
       })
     }
-    const ordered = [...found.values()].sort((left, right) =>
-      left.workspaceId.localeCompare(right.workspaceId) || left.sessionId.localeCompare(right.sessionId))
-    return { peers: ordered.slice(0, MAX_DIRECT_PEERS), truncated: ordered.length > MAX_DIRECT_PEERS }
+    const ordered = [...found.values()]
+      .sort((left, right) => comparePeerKeys(peerKey(left), peerKey(right)))
+      .filter(peer => after === undefined || comparePeerKeys(peerKey(peer), after) > 0)
+    const peers = ordered.slice(0, limit)
+    const hasMorePeers = ordered.length > peers.length
+    const last = peers.at(-1)
+    return {
+      peers,
+      hasMorePeers,
+      ...hasMorePeers && last ? { nextPeerCursor: encodePeerCursor(last) } : {},
+    }
   }
 
   /**
    * Report the caller's own address, unread depth, and the live peers it may
-   * address in every registered workspace.
+   * address in every registered workspace, one keyset page at a time.
    * @param agent - Exact live calling Agent.
-   * @returns the caller's address, cursor, unread count, and bounded peer list.
+   * @param options - Optional peer resumption cursor and page size.
+   * @returns the caller's address, cursor, unread count, and one peer page.
    */
-  async address(agent: Agent): Promise<DirectIdentity> {
+  async address(agent: Agent, options: DirectAddressOptions = {}): Promise<DirectIdentity> {
     const workspace = await authorizeWorkspaceMember(this.ctx, agent)
     const state = this.record()
     const key = addressKey({ sessionId: agent.id, workspaceId: workspace.id })
     const inboxCursor = state.inboxes.find(inbox => addressKey(inbox) === key)?.cursor ?? 0
     const unread = state.messages
       .filter(message => message.seq > inboxCursor && readableBy(message, agent.id, workspace.id)).length
-    const { peers, truncated } = await this.discover(agent, workspace.id)
-    return { sessionId: agent.id, workspaceId: workspace.id, inboxCursor, unread, peers, truncated }
+    const page = await this.discover(agent, workspace.id, options)
+    return {
+      sessionId: agent.id, workspaceId: workspace.id, inboxCursor, unread,
+      peers: page.peers, hasMorePeers: page.hasMorePeers,
+      ...page.nextPeerCursor === undefined ? {} : { nextPeerCursor: page.nextPeerCursor },
+    }
   }
 
   /**

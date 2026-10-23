@@ -20,6 +20,9 @@ const MAX_BODY = 65536
 const MAX_RECIPIENTS = 32
 const MAX_READ = 100
 const MAX_ID = 256
+/** Mirrors the service's one-page peer ceiling; the walk itself is unbounded. */
+const MAX_PEER_PAGE = 128
+const MAX_CURSOR = 4096
 
 function caller(agent: Agent | undefined): Agent {
   if (!agent) throw new Error('direct message tools require a calling agent (exec.agent was undefined)')
@@ -39,16 +42,30 @@ const result = {
 export function apply(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'agent_queue_dm_address',
-    description: 'Discover who you can message: your own session address, your direct-inbox position (inboxCursor), your unread count, and every live agent in every workspace — roots, their subagents, and siblings. Each peer carries its workspace id and the transport that reaches it: use agent_queue_dm_send for a "direct" peer in another workspace and agent_queue_send for a "workspace-queue" peer in your own, so a local message is never duplicated into the cross-workspace ledger.',
-    parameters: {},
+    description: 'Discover who you can message: your own session address, your direct-inbox position (inboxCursor), your unread count, and one page of the live agents in every workspace — roots, their subagents, and siblings. Each peer carries its workspace id and the transport that reaches it: use agent_queue_dm_send for a "direct" peer in another workspace and agent_queue_send for a "workspace-queue" peer in your own, so a local message is never duplicated into the cross-workspace ledger. Peers are ordered by workspace id then session id; when hasMorePeers is true, call again with peer_cursor set to nextPeerCursor to continue the walk.',
+    parameters: {
+      peer_cursor: { type: 'string', description: 'Optional nextPeerCursor from a previous call; discovery resumes strictly after that peer.' },
+      peer_limit: { type: 'integer', description: `Maximum peers in this page, from 1 to ${MAX_PEER_PAGE} (default set by service).` },
+    },
     output: result,
-    async execute(_args, exec) {
-      const identity = await ctx.agentDirectQueue.address(caller(exec.agent))
+    async execute(args, exec) {
+      if (args.peer_cursor !== undefined && (!args.peer_cursor.trim() || args.peer_cursor.length > MAX_CURSOR)) {
+        throw new Error(`peer_cursor must be a nonempty token of at most ${MAX_CURSOR} characters returned as nextPeerCursor`)
+      }
+      if (args.peer_limit !== undefined
+        && (!Number.isSafeInteger(args.peer_limit) || args.peer_limit < 1 || args.peer_limit > MAX_PEER_PAGE)) {
+        throw new Error(`peer_limit must be an integer from 1 to ${MAX_PEER_PAGE}`)
+      }
+      const identity = await ctx.agentDirectQueue.address(caller(exec.agent), {
+        ...(args.peer_cursor === undefined ? {} : { peerCursor: args.peer_cursor }),
+        ...(args.peer_limit === undefined ? {} : { peerLimit: args.peer_limit }),
+      })
       return {
         sessionId: identity.sessionId, workspaceId: identity.workspaceId,
         inboxCursor: identity.inboxCursor, unread: identity.unread,
         peers: identity.peers.map(peer => ({ ...peer })),
-        truncated: identity.truncated,
+        hasMorePeers: identity.hasMorePeers,
+        ...(identity.nextPeerCursor === undefined ? {} : { nextPeerCursor: identity.nextPeerCursor }),
       }
     },
   }))

@@ -9,7 +9,7 @@ import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-
 import AgentQueue from '../src/index.ts'
 import AgentDirectQueue, {
   MAX_DIRECT_BODY_LENGTH, MAX_DIRECT_INBOXES, MAX_DIRECT_LEDGER_BYTES, MAX_DIRECT_MESSAGES,
-  MAX_DIRECT_PEERS, MAX_DIRECT_RECIPIENTS,
+  DEFAULT_DIRECT_PEER_PAGE, MAX_DIRECT_PEER_PAGE, MAX_DIRECT_RECIPIENTS,
 } from '../src/direct.ts'
 
 const homeDirectory = '/direct/home'
@@ -107,7 +107,8 @@ describe('cross-workspace direct mailbox', () => {
     const foreignChild = subagent('away-child', foreign, awayDirectory)
     const third = agent('third-root', thirdDirectory)
     const identity = await queue.address(root)
-    expect(identity).toMatchObject({ sessionId: root.id, workspaceId: homeId, truncated: false })
+    expect(identity).toMatchObject({ sessionId: root.id, workspaceId: homeId, hasMorePeers: false })
+    expect(identity.nextPeerCursor).toBeUndefined()
     // Siblings, children, and other workspaces' roots are all discoverable,
     // each with the transport that actually reaches it; self is never a peer.
     // Deterministic order: workspace id, then session id.
@@ -159,19 +160,86 @@ describe('cross-workspace direct mailbox', () => {
     await expect(queue.address({ ...root } as Agent)).rejects.toThrow('exact live')
   })
 
-  it('bounds the discovered peer list and reports the omission', async () => {
+  it('pages peers by keyset so a caller walks past the one-page bound to every peer', async () => {
     const { queue, agent } = await setup()
     const root = agent('root')
-    for (let index = 0; index <= MAX_DIRECT_PEERS; index++) {
-      homeMembers.push(SessionId(`peer-${index}`))
-      agent(`peer-${index}`)
+    // More live peers than a single page can carry, spread across two
+    // workspaces, so the walk must cross a workspace boundary as well.
+    const total = MAX_DIRECT_PEER_PAGE + 37
+    for (let index = 0; index < total; index++) {
+      const name = `peer-${String(index).padStart(4, '0')}`
+      const away = index % 3 === 0
+      if (away) { awayMembers.push(SessionId(name)); agent(name, awayDirectory) } else {
+        homeMembers.push(SessionId(name)); agent(name)
+      }
     }
     try {
-      const identity = await queue.address(root)
-      expect(identity.peers).toHaveLength(MAX_DIRECT_PEERS)
-      expect(identity.truncated).toBe(true)
-      expect(identity.peers.map(peer => peer.sessionId)).not.toContain(root.id)
-    } finally { homeMembers.splice(2) }
+      const first = await queue.address(root, { peerLimit: MAX_DIRECT_PEER_PAGE })
+      expect(first.peers).toHaveLength(MAX_DIRECT_PEER_PAGE)
+      expect(first.hasMorePeers).toBe(true)
+      expect(typeof first.nextPeerCursor).toBe('string')
+      // Walk the cursor to exhaustion: every live peer is reachable, exactly
+      // once, in one stable (workspaceId, sessionId) order — the old hard cap
+      // would have hidden everything past the first page.
+      const walked: { sessionId: string; workspaceId: string; transport: string }[] = []
+      let cursor: string | undefined
+      let pages = 0
+      do {
+        const page = await queue.address(root, {
+          peerLimit: 40, ...(cursor === undefined ? {} : { peerCursor: cursor }),
+        })
+        expect(page.peers.length).toBeLessThanOrEqual(40)
+        walked.push(...page.peers.map(peer => ({ ...peer })))
+        cursor = page.nextPeerCursor
+        expect(page.hasMorePeers).toBe(cursor !== undefined)
+        pages++
+      } while (cursor !== undefined && pages < 20)
+      expect(cursor).toBeUndefined()
+      expect(walked).toHaveLength(total)
+      expect(new Set(walked.map(peer => peer.sessionId)).size).toBe(total)
+      expect(walked.map(peer => peer.sessionId)).not.toContain(root.id)
+      const keys = walked.map(peer => `${peer.workspaceId}\u0000${peer.sessionId}`)
+      expect(keys).toEqual([...keys].sort())
+      // Local versus cross-workspace transport survives paging unchanged.
+      for (const peer of walked) {
+        expect(peer.transport).toBe(peer.workspaceId === homeId ? 'workspace-queue' : 'direct')
+      }
+      expect(new Set(walked.map(peer => peer.transport))).toEqual(new Set(['workspace-queue', 'direct']))
+      // The first page is a prefix of the same walk, never a different order.
+      expect(walked.slice(0, MAX_DIRECT_PEER_PAGE).map(peer => peer.sessionId))
+        .toEqual(first.peers.map(peer => peer.sessionId))
+      // A default page is bounded without a limit, and still continues.
+      const byDefault = await queue.address(root)
+      expect(byDefault.peers).toHaveLength(DEFAULT_DIRECT_PEER_PAGE)
+      expect(byDefault.hasMorePeers).toBe(true)
+    } finally { homeMembers.splice(2); awayMembers.splice(2) }
+  })
+
+  it('rejects a peer cursor it did not issue and a peer limit outside the page bound', async () => {
+    const { queue, agent } = await setup()
+    const root = agent('root')
+    const away = agent('away-root', awayDirectory)
+    for (const peerCursor of [
+      '', '   ', 'not base64url!!', Buffer.from('null', 'utf8').toString('base64url'),
+      Buffer.from('["only-one"]', 'utf8').toString('base64url'),
+      Buffer.from('["ws","a","b"]', 'utf8').toString('base64url'),
+      Buffer.from('["ws",""]', 'utf8').toString('base64url'),
+      Buffer.from('["ws",7]', 'utf8').toString('base64url'),
+      Buffer.from(JSON.stringify({ workspaceId: awayId, sessionId: away.id }), 'utf8').toString('base64url'),
+      'a'.repeat(5000),
+    ]) {
+      await expect(queue.address(root, { peerCursor })).rejects.toThrow(
+        'direct peer cursor must be a token returned by a previous discovery page')
+    }
+    for (const peerLimit of [0, -1, 1.5, Number.NaN, MAX_DIRECT_PEER_PAGE + 1]) {
+      await expect(queue.address(root, { peerLimit })).rejects.toThrow(
+        `direct peer limit must be an integer between 1 and ${MAX_DIRECT_PEER_PAGE}`)
+    }
+    // A cursor positioned after the last peer ends the walk instead of failing.
+    const page = await queue.address(root, { peerLimit: 1 })
+    expect(page.peers.map(peer => peer.sessionId)).toEqual([away.id])
+    expect(page.hasMorePeers).toBe(false)
+    expect(page.nextPeerCursor).toBeUndefined()
   })
 
   it('refuses same-workspace addressing and leaves local mail to the v1 queue', async () => {

@@ -16,12 +16,15 @@ async function setup() {
   // The mock stays behind the service boundary: a tool cannot manufacture a
   // sender, choose a recipient workspace, or move another session's cursor.
   const direct = {
-    address: vi.fn(async (caller: { id: string }) => ({
-      sessionId: caller.id, workspaceId: 'ws-home', inboxCursor: 2, unread: 1, truncated: false,
+    address: vi.fn(async (caller: { id: string }, options: { peerCursor?: string; peerLimit?: number } = {}) => ({
+      sessionId: caller.id, workspaceId: 'ws-home', inboxCursor: 2, unread: 1,
       peers: [
         { sessionId: 'session-b', workspaceId: 'ws-away', transport: 'direct' },
         { sessionId: 'session-local', workspaceId: 'ws-home', transport: 'workspace-queue' },
       ],
+      ...(options.peerCursor === undefined
+        ? { hasMorePeers: true, nextPeerCursor: 'cursor-page-2' }
+        : { hasMorePeers: false }),
     })),
     send: vi.fn(async (_agent: unknown, request: { recipients: string[]; body: string }) => ({
       id: 'dm-1', seq: 3, sender: 'session-a', senderWorkspaceId: 'ws-home', body: request.body, createdAt: 0,
@@ -73,12 +76,37 @@ describe('model-facing cross-workspace direct message tools', () => {
     // a local peer is routed to the v1 tool instead of the direct ledger.
     expect(text(own)).toContain('"transport":"direct"')
     expect(text(own)).toContain('"transport":"workspace-queue"')
-    expect(text(own)).toContain('"truncated":false')
+    expect(text(own)).toContain('"hasMorePeers":true')
+    expect(text(own)).toContain('"nextPeerCursor":"cursor-page-2"')
     expect((await execute('agent_queue_dm_send', { recipients: ['session-b'], body: 'hi' })).isError).toBe(true)
     expect((await execute('agent_queue_inbox_read', {})).isError).toBe(true)
     expect((await execute('agent_queue_inbox_ack', { through_seq: 1 })).isError).toBe(true)
-    expect(direct.address).toHaveBeenCalledWith(agent)
+    expect(direct.address).toHaveBeenCalledWith(agent, {})
     expect(direct.send).not.toHaveBeenCalled()
+  })
+
+  it('declares peer paging, passes the cursor and limit through, and rejects invalid ones', async () => {
+    const { ctx, direct, execute } = await setup()
+    const schema = ctx.tools.schemas().find(tool => tool.name === 'agent_queue_dm_address')
+    expect(JSON.stringify(schema)).toContain('peer_cursor')
+    expect(JSON.stringify(schema)).toContain('peer_limit')
+    const paged = await execute('agent_queue_dm_address', { peer_cursor: 'cursor-page-2', peer_limit: 128 }, agent)
+    expect(paged.isError).toBe(false)
+    expect(direct.address).toHaveBeenCalledWith(agent, { peerCursor: 'cursor-page-2', peerLimit: 128 })
+    // The final page reports the end of the walk and omits a next cursor.
+    expect(text(paged)).toContain('"hasMorePeers":false')
+    expect(text(paged)).not.toContain('nextPeerCursor')
+    // Only the named controls are forwarded; neither is invented when absent.
+    expect((await execute('agent_queue_dm_address', { peer_limit: 1 }, agent)).isError).toBe(false)
+    expect(direct.address).toHaveBeenNthCalledWith(2, agent, { peerLimit: 1 })
+    direct.address.mockClear()
+    for (const args of [
+      { peer_cursor: '' }, { peer_cursor: '   ' }, { peer_cursor: 'c'.repeat(4097) },
+      { peer_limit: 0 }, { peer_limit: -1 }, { peer_limit: 1.5 }, { peer_limit: 129 },
+    ]) {
+      expect((await execute('agent_queue_dm_address', args, agent)).isError).toBe(true)
+    }
+    expect(direct.address).not.toHaveBeenCalled()
   })
 
   it('sends to session addresses in other workspaces and echoes the resolved addresses', async () => {

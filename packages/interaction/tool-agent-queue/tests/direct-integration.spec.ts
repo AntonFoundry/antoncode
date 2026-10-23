@@ -82,7 +82,8 @@ describe('real direct mailbox through model tools', () => {
     expect(discovered.peers).toEqual([
       { sessionId: root.id, workspaceId: homeId, transport: 'direct' },
     ])
-    expect(discovered.truncated).toBe(false)
+    expect(discovered.hasMorePeers).toBe(false)
+    expect(discovered.nextPeerCursor).toBeUndefined()
     // A live session in an unregistered directory is never discoverable, and
     // a same-workspace peer is reported for the v1 tool instead.
     agent('stranger', '/dm/unregistered')
@@ -98,6 +99,40 @@ describe('real direct mailbox through model tools', () => {
     expect((body(await execute('agent_queue_inbox_read', {}, root)).messages as { body: string }[])
       .map(message => message.body)).toEqual(['pong'])
     expect(ctx.agentDirectQueue).toBeDefined()
+  })
+
+  it('walks every peer one keyset page at a time through the real service', async () => {
+    const { agent, execute } = await setup()
+    const root = agent('root')
+    const local = agent('alpha')
+    const foreign = agent('away-root', awayDirectory)
+    home.sessionIds.push(SessionId('beta'))
+    const other = agent('beta')
+    try {
+      const walked: { sessionId: string; workspaceId: string; transport: string }[] = []
+      let cursor: unknown
+      for (let page = 0; page < 6; page++) {
+        const result = body(await execute('agent_queue_dm_address', {
+          peer_limit: 1, ...(cursor === undefined ? {} : { peer_cursor: cursor }),
+        }, root))
+        walked.push(...result.peers as typeof walked)
+        cursor = result.nextPeerCursor
+        expect(result.hasMorePeers).toBe(cursor !== undefined)
+        if (cursor === undefined) break
+      }
+      expect(cursor).toBeUndefined()
+      // Three distinct peers reached across two workspaces, in one stable
+      // order, with the transport of each preserved page by page.
+      expect(walked).toEqual([
+        { sessionId: foreign.id, workspaceId: awayId, transport: 'direct' },
+        { sessionId: local.id, workspaceId: homeId, transport: 'workspace-queue' },
+        { sessionId: other.id, workspaceId: homeId, transport: 'workspace-queue' },
+      ])
+      // A cursor the service never issued is rejected, not silently restarted.
+      const forged = await execute('agent_queue_dm_address', { peer_cursor: 'not-a-cursor' }, root)
+      expect(forged.isError).toBe(true)
+      expect((await execute('agent_queue_dm_address', { peer_limit: 129 }, root)).isError).toBe(true)
+    } finally { home.sessionIds.pop() }
   })
 
   it('rejects impersonation, same-workspace and unreachable addresses at the real boundary', async () => {
