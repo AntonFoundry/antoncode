@@ -61,10 +61,15 @@ export class NativeConsentVerifier {
       return false
     }
     pending.attempts += 1
+    // Validate before allocating or comparing: this method is reachable from
+    // an untrusted client once the consent transport is mounted.
+    if (typeof submittedCode !== 'string' || !/^[0-9A-HJKMNP-TV-Z]{8}$/i.test(submittedCode)) {
+      if (pending.attempts >= MAX_ATTEMPTS) this.pending.delete(requestId)
+      return false
+    }
     const submitted = Buffer.from(submittedCode.toUpperCase(), 'ascii')
     const expected = Buffer.from(nativeConsentCode(this.key, pending.challenge), 'ascii')
-    const valid = /^[0-9A-HJKMNP-TV-Z]{8}$/.test(submittedCode.toUpperCase())
-      && submitted.length === expected.length && timingSafeEqual(submitted, expected)
+    const valid = timingSafeEqual(submitted, expected)
     if (valid || pending.attempts >= MAX_ATTEMPTS) this.pending.delete(requestId)
     return valid
   }

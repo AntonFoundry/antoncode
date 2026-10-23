@@ -31,6 +31,14 @@ describe('native consent code', () => {
     expect(verifier.verify(challenge.requestId, nativeConsentCode(key, challenge))).toBe(false)
   })
 
+  it('bounds malformed and oversized submissions before conversion', () => {
+    const verifier = new NativeConsentVerifier(key, () => 0)
+    verifier.issue(challenge)
+    expect(verifier.verify(challenge.requestId, 'A'.repeat(1_000_000))).toBe(false)
+    expect(verifier.verify(challenge.requestId, null as unknown as string)).toBe(false)
+    expect(verifier.verify(challenge.requestId, nativeConsentCode(key, challenge))).toBe(true)
+  })
+
   it('expires and revokes pending challenges', () => {
     let now = 0
     const verifier = new NativeConsentVerifier(key, () => now)
