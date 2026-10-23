@@ -5,11 +5,15 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { Workspace, WorkspaceId } from '@deepseek-ai/dsh-workspace'
+import { authorizeWorkspaceMember, resolveAuthorizedWorkspace } from './membership.ts'
+import type { MembershipFailure } from './membership.ts'
 import { agentQueueDomainSpec, queueMessage } from './spec.ts'
 import type { QueueMessage, QueueSubscription, QueueWorkspace } from './spec.ts'
 
 export { agentQueueDomainSpec, queueMessage, queueSubscription } from './spec.ts'
 export type { QueueMessage, QueueSubscription } from './spec.ts'
+export { authorizeWorkspaceMember, resolveAuthorizedWorkspace, forgedCallerError } from './membership.ts'
+export type { MembershipFailure } from './membership.ts'
 
 /** Maximum retained messages per workspace; a full unread backlog rejects new publishes. */
 export const MAX_WORKSPACE_MESSAGES = 1024
@@ -90,56 +94,12 @@ export class AgentQueue extends Service {
   }
 
   /** Validate exact live Agent identity and canonical membership or a subagent lineage. */
-  private async authorize(agent: Agent): Promise<Workspace> {
-    if (this.ctx.agents.get(agent.id) !== agent || agent.session.header.id !== agent.id) {
-      throw new Error('queue caller must be the exact live agent (reason: exact_live_agent_required)')
-    }
-    const failure: { reason?: string } = {}
-    const workspace = await this.authorizedWorkspace(agent, failure)
-    if (!workspace) throw new Error(`queue caller is not a member of a registered workspace (reason: ${failure.reason ?? 'not_a_registered_workspace_member'})`)
-    return workspace
+  private authorize(agent: Agent): Promise<Workspace> {
+    return authorizeWorkspaceMember(this.ctx, agent)
   }
 
-  private async authorizedWorkspace(agent: Agent, failure?: { reason?: string }): Promise<Workspace | undefined> {
-    const visited = new Set<SessionId>()
-    let current: Agent | undefined = agent
-    let expectedWorkspace: Workspace | undefined
-    while (current) {
-      const id = current.id
-      const session = current.session
-      if (visited.has(id) || this.ctx.agents.get(id) !== current || session.header.id !== id) {
-        throw new Error('queue caller must be the exact live agent (reason: exact_live_agent_required)')
-      }
-      visited.add(id)
-      const cwd = session.header.cwd
-      if (!cwd) {
-        if (failure) failure.reason = 'missing_working_directory'
-        return undefined
-      }
-      const workspace = await this.ctx.workspaceRegistry.resolveByPath(cwd)
-      if (!workspace) {
-        if (failure) failure.reason = 'unregistered_working_directory'
-        return undefined
-      }
-      if (expectedWorkspace && (workspace.id !== expectedWorkspace.id || workspace.path !== expectedWorkspace.path)) {
-        if (failure) failure.reason = 'workspace_lineage_mismatch'
-        return undefined
-      }
-      if (session.header.parentSession === undefined) {
-        if (!workspace.sessionIds.includes(id) && failure) failure.reason = 'root_not_registered_member'
-        return workspace.sessionIds.includes(id) ? workspace : undefined
-      }
-      if (session.header.origin !== 'subagent') {
-        if (failure) failure.reason = 'parent_without_subagent_origin'
-        return undefined
-      }
-      expectedWorkspace = workspace
-      const parent = this.ctx.agents.get(session.header.parentSession)
-      if (!parent && failure) failure.reason = 'parent_not_live'
-      current = parent
-    }
-    if (failure && !failure.reason) failure.reason = 'lineage_cycle_or_incomplete'
-    return undefined
+  private authorizedWorkspace(agent: Agent, failure?: MembershipFailure): Promise<Workspace | undefined> {
+    return resolveAuthorizedWorkspace(this.ctx, agent, failure)
   }
 
   private async eligibleRecipient(id: SessionId, workspace: Workspace): Promise<boolean> {

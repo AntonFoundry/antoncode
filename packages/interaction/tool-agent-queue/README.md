@@ -14,17 +14,26 @@ Model-facing tools for the shared host `agentQueue` service. Every tool passes i
 
 A bounded digest of up to eight unread messages is appended to a nonempty accepted `agent/pre-step` decision at the next natural model step. It does not call `agent.inject`, interrupt the current inference, or wake an idle agent. Rejected and aborted decisions receive no digest. The digest reads but never acknowledges; it repeats at later natural steps until the agent explicitly calls `agent_queue_ack`.
 
+## Cross-workspace direct message tools (`./direct`)
+
+The `@deepseek-ai/dsh-tool-agent-queue/direct` entry is a separate plugin over the host `agentDirectQueue` service. Its contracts carry no workspace parameter: addressing is session-to-session and may cross registered workspaces. The five `agent_queue_*` tools above are unchanged, and this entry adds no digest.
+
+- `agent_queue_dm_address` returns the caller's own session address, its workspace id, its acknowledged position, and its unread count.
+- `agent_queue_dm_send` sends one bounded body to 1–32 session ids in any workspace and echoes the resolved `{ sessionId, workspaceId }` addressees. Duplicate, blank, overlong, and empty recipient lists are rejected before the service is called.
+- `agent_queue_inbox_read` reads at most 100 direct messages after the caller's acknowledged position; an explicit `cursor` replays retained history and acknowledges nothing.
+- `agent_queue_inbox_ack` advances only the caller's own direct position after processing.
+
 ## Model Experience
 
 ### Tool calls and results
 
 #### What the model sees
 
-The model sees five `agent_queue_*` tool schemas. Results render bounded JSON text, including session/workspace identity, send receipts, read pages, and acknowledgement cursors. Calling the queue does not make a sibling's transcript visible.
+The model sees five `agent_queue_*` tool schemas, plus four direct-message schemas (`agent_queue_dm_address`, `agent_queue_dm_send`, `agent_queue_inbox_read`, `agent_queue_inbox_ack`) when the `./direct` entry is mounted. Results render bounded JSON text, including session/workspace identity, send receipts, read pages, and acknowledgement cursors. Calling the queue does not make a sibling's transcript visible.
 
 #### Token effect
 
-The five tool definitions add a fixed schema cost when visible. Tool arguments and returned JSON add data-dependent tokens, with each rendered result capped at 16,000 characters.
+The five tool definitions — and the four direct-message definitions when mounted — add a fixed schema cost while visible. Tool arguments and returned JSON add data-dependent tokens, with each rendered result capped at 16,000 characters.
 
 #### KV Cache effect
 
@@ -49,4 +58,5 @@ A new digest appends step-local context and does not mutate a completed model re
 - **Not mid-inference delivery** — models observe a message only through a tool call or a later natural step. Publishing does not schedule another turn or wake the recipient.
 - **At-least-once digest display** — unread entries replay until explicit acknowledgement; do not treat a notice as a delivery receipt. A rejected or cancelled proposal leaves the durable cursor unchanged.
 - **Bounded preview, not the entire inbox** — the digest shows at most eight excerpts. Use `agent_queue_read` for full messages and remaining pages, then acknowledge only what was actually processed.
-- **Durability and authorization belong to the service** — this package does not store messages, provide cross-workspace access, or expose a browser Mail buffer. The separate IMAP Mail plugin is not an agent transport.
+- **Durability and authorization belong to the service** — this package stores no messages and grants no access of its own; the host services own identity, membership, retention, and cursors. It exposes no browser Mail buffer, and the separate IMAP Mail plugin is not an agent transport.
+- **Direct tools have no digest and no discovery** — unread cross-workspace mail is surfaced only by an explicit `agent_queue_inbox_read` (or the `unread` count from `agent_queue_dm_address`); there is no natural-step notice, and no tool lists another workspace's session ids.
