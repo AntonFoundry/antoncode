@@ -9,7 +9,7 @@ import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-
 import AgentQueue from '../src/index.ts'
 import AgentDirectQueue, {
   MAX_DIRECT_BODY_LENGTH, MAX_DIRECT_INBOXES, MAX_DIRECT_LEDGER_BYTES, MAX_DIRECT_MESSAGES,
-  MAX_DIRECT_RECIPIENTS,
+  MAX_DIRECT_PEERS, MAX_DIRECT_RECIPIENTS,
 } from '../src/direct.ts'
 
 const homeDirectory = '/direct/home'
@@ -67,7 +67,7 @@ describe('cross-workspace direct mailbox', () => {
     const foreign = agent('away-root', awayDirectory)
     const foreignChild = subagent('away-child', foreign, awayDirectory)
     const third = agent('third-root', thirdDirectory)
-    expect(await queue.address(sender)).toEqual({
+    expect(await queue.address(sender)).toMatchObject({
       sessionId: sender.id, workspaceId: homeId, inboxCursor: 0, unread: 0,
     })
     // A registered but offline member is not addressable: its durable
@@ -96,6 +96,82 @@ describe('cross-workspace direct mailbox', () => {
     const reply = await queue.send(foreign, { recipients: [sender.id], body: 'reply from away' })
     expect(reply).toMatchObject({ seq: 2, senderWorkspaceId: awayId })
     expect((await queue.inbox(sender)).messages.map(entry => entry.body)).toEqual(['reply from away'])
+  })
+
+  it('discovers every live peer across workspaces with its transport', async () => {
+    const { queue, agent, subagent, live } = await setup()
+    const root = agent('root')
+    const localPeer = agent('alpha')
+    const localChild = subagent('local-child', root)
+    const foreign = agent('away-root', awayDirectory)
+    const foreignChild = subagent('away-child', foreign, awayDirectory)
+    const third = agent('third-root', thirdDirectory)
+    const identity = await queue.address(root)
+    expect(identity).toMatchObject({ sessionId: root.id, workspaceId: homeId, truncated: false })
+    // Siblings, children, and other workspaces' roots are all discoverable,
+    // each with the transport that actually reaches it; self is never a peer.
+    // Deterministic order: workspace id, then session id.
+    expect(identity.peers).toEqual([
+      { sessionId: foreignChild.id, workspaceId: awayId, transport: 'direct' },
+      { sessionId: foreign.id, workspaceId: awayId, transport: 'direct' },
+      { sessionId: localPeer.id, workspaceId: homeId, transport: 'workspace-queue' },
+      { sessionId: localChild.id, workspaceId: homeId, transport: 'workspace-queue' },
+      { sessionId: third.id, workspaceId: thirdId, transport: 'direct' },
+    ])
+    // Discovery is symmetric: the same peer sees this caller as 'direct'.
+    expect((await queue.address(foreign)).peers)
+      .toContainEqual({ sessionId: root.id, workspaceId: homeId, transport: 'direct' })
+    // Only live registry identities are listed: an offline member, a live
+    // session in an unregistered directory, and a broken lineage are invisible.
+    expect(awayMembers).toContain(SessionId('away-offline'))
+    agent('drifter', '/direct/unregistered')
+    const orphan = subagent('orphan', third, thirdDirectory)
+    live.delete(third.id)
+    const listed = (await queue.address(root)).peers.map(peer => peer.sessionId)
+    expect(listed).not.toContain(SessionId('away-offline'))
+    expect(listed).not.toContain(SessionId('drifter'))
+    expect(listed).not.toContain(orphan.id)
+    expect(listed).not.toContain(root.id)
+    // Only session id and authorized workspace id are exposed.
+    for (const peer of (await queue.address(root)).peers) {
+      expect(Object.keys(peer).sort()).toEqual(['sessionId', 'transport', 'workspaceId'])
+    }
+  })
+
+  it('skips a forged registry entry without hiding the peers beside it', async () => {
+    const { queue, agent, live } = await setup()
+    const root = agent('root')
+    const honest = agent('away-root', awayDirectory)
+    // A registry entry whose header claims another session is not the exact
+    // live agent it claims to be. Discovery drops it and keeps enumerating,
+    // so one poisoned entry cannot blind a caller to every real peer.
+    const impostor = SessionId('impostor')
+    live.set(impostor, {
+      id: impostor, session: { header: { id: SessionId('away-root'), cwd: awayDirectory } },
+    } as Agent)
+    const identity = await queue.address(root)
+    expect(identity.peers).toEqual([
+      { sessionId: honest.id, workspaceId: awayId, transport: 'direct' },
+    ])
+    // Forgery remains unaddressable, and a forged CALLER is still rejected outright.
+    await expect(queue.send(root, { recipients: [impostor], body: 'no' }))
+      .rejects.toThrow('exact live')
+    await expect(queue.address({ ...root } as Agent)).rejects.toThrow('exact live')
+  })
+
+  it('bounds the discovered peer list and reports the omission', async () => {
+    const { queue, agent } = await setup()
+    const root = agent('root')
+    for (let index = 0; index <= MAX_DIRECT_PEERS; index++) {
+      homeMembers.push(SessionId(`peer-${index}`))
+      agent(`peer-${index}`)
+    }
+    try {
+      const identity = await queue.address(root)
+      expect(identity.peers).toHaveLength(MAX_DIRECT_PEERS)
+      expect(identity.truncated).toBe(true)
+      expect(identity.peers.map(peer => peer.sessionId)).not.toContain(root.id)
+    } finally { homeMembers.splice(2) }
   })
 
   it('refuses same-workspace addressing and leaves local mail to the v1 queue', async () => {
@@ -373,7 +449,7 @@ describe('cross-workspace direct mailbox', () => {
     const sender = resumed.agent('root')
     const local = resumed.agent('alpha')
     expect((await resumed.queue.inbox(foreign)).messages.map(message => message.seq)).toEqual([4, 5, 6])
-    expect(await resumed.queue.address(foreign)).toEqual({
+    expect(await resumed.queue.address(foreign)).toMatchObject({
       sessionId: foreign.id, workspaceId: awayId, inboxCursor: 3, unread: 3,
     })
     expect((await resumed.queue.send(sender, { recipients: [foreign.id], body: 'after reopen' })).seq).toBe(7)

@@ -28,6 +28,8 @@ export type { DirectAddress, DirectInbox, DirectMessage, DirectQueueState } from
 export const MAX_DIRECT_MESSAGES = 512
 /** Maximum retained inbox cursors; a full recipient index rejects a send to a new address. */
 export const MAX_DIRECT_INBOXES = 2048
+/** Maximum peers reported by one discovery call; the list is bounded, not paged. */
+export const MAX_DIRECT_PEERS = 128
 /** Maximum addressees per direct send. */
 export const MAX_DIRECT_RECIPIENTS = 32
 /** Maximum body length in UTF-16 code units. */
@@ -61,12 +63,29 @@ export interface DirectInboxPage {
   readonly hasMore: boolean
 }
 
-/** The caller's own cross-workspace address, direct-inbox position, and unread depth. */
+/**
+ * One discoverable peer: a live Agent whose own lineage authorizes a registered
+ * workspace. `transport` names the service that actually reaches it, so a
+ * caller never sends a local message through the cross-workspace ledger.
+ */
+export interface DirectPeer {
+  readonly sessionId: SessionId
+  readonly workspaceId: WorkspaceId
+  readonly transport: 'direct' | 'workspace-queue'
+}
+
+/**
+ * The caller's own cross-workspace address, direct-inbox position, unread
+ * depth, and the live peers it may address. `truncated` reports that more live
+ * peers exist than the bounded list returned.
+ */
 export interface DirectIdentity {
   readonly sessionId: SessionId
   readonly workspaceId: WorkspaceId
   readonly inboxCursor: number
   readonly unread: number
+  readonly peers: readonly DirectPeer[]
+  readonly truncated: boolean
 }
 
 const bounded = (limit: number): number => {
@@ -190,9 +209,51 @@ export class AgentDirectQueue extends Service {
   }
 
   /**
-   * Report the caller's own cross-workspace address and unread depth.
+   * Discover every live peer this caller may address, across all registered
+   * workspaces: roots, their subagents, and siblings alike.
+   *
+   * Only live registry identities are reported. A session appears when it is an
+   * exact live Agent whose own lineage authorizes a registered workspace — the
+   * same rule `send` applies — so offline sessions, sessions with an
+   * unregistered working directory, and broken lineages stay invisible, and no
+   * working directory, transcript, or header detail is exposed. A peer in the
+   * caller's own workspace is reported with the `workspace-queue` transport,
+   * because its mail belongs to `agentQueue.publish`, not to this ledger.
    * @param agent - Exact live calling Agent.
-   * @returns the caller's session address, workspace, cursor, and unread count.
+   * @param workspaceId - The caller's already authorized workspace.
+   * @returns the bounded peer list and whether live peers were omitted.
+   */
+  private async discover(
+    agent: Agent,
+    workspaceId: WorkspaceId,
+  ): Promise<{ peers: DirectPeer[]; truncated: boolean }> {
+    const found = new Map<SessionId, DirectPeer>()
+    for (const candidate of this.ctx.agents.list()) {
+      if (candidate.id === agent.id || found.has(candidate.id)) continue
+      let authorized: Workspace | undefined
+      try {
+        authorized = await resolveAuthorizedWorkspace(this.ctx, candidate)
+      } catch {
+        // One forged or half-disposed lineage must not hide every other peer.
+        continue
+      }
+      if (!authorized) continue
+      found.set(candidate.id, {
+        sessionId: candidate.id,
+        workspaceId: authorized.id,
+        transport: authorized.id === workspaceId ? 'workspace-queue' : 'direct',
+      })
+    }
+    const ordered = [...found.values()].sort((left, right) =>
+      left.workspaceId.localeCompare(right.workspaceId) || left.sessionId.localeCompare(right.sessionId))
+    return { peers: ordered.slice(0, MAX_DIRECT_PEERS), truncated: ordered.length > MAX_DIRECT_PEERS }
+  }
+
+  /**
+   * Report the caller's own address, unread depth, and the live peers it may
+   * address in every registered workspace.
+   * @param agent - Exact live calling Agent.
+   * @returns the caller's address, cursor, unread count, and bounded peer list.
    */
   async address(agent: Agent): Promise<DirectIdentity> {
     const workspace = await authorizeWorkspaceMember(this.ctx, agent)
@@ -201,7 +262,8 @@ export class AgentDirectQueue extends Service {
     const inboxCursor = state.inboxes.find(inbox => addressKey(inbox) === key)?.cursor ?? 0
     const unread = state.messages
       .filter(message => message.seq > inboxCursor && readableBy(message, agent.id, workspace.id)).length
-    return { sessionId: agent.id, workspaceId: workspace.id, inboxCursor, unread }
+    const { peers, truncated } = await this.discover(agent, workspace.id)
+    return { sessionId: agent.id, workspaceId: workspace.id, inboxCursor, unread, peers, truncated }
   }
 
   /**

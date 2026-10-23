@@ -39,7 +39,7 @@ const result = {
 export function apply(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'agent_queue_dm_address',
-    description: 'Show your own direct-message address, your direct-inbox position (inboxCursor), and how many cross-workspace direct messages are unread. Agents in other workspaces address you by this session id.',
+    description: 'Discover who you can message: your own session address, your direct-inbox position (inboxCursor), your unread count, and every live agent in every workspace — roots, their subagents, and siblings. Each peer carries its workspace id and the transport that reaches it: use agent_queue_dm_send for a "direct" peer in another workspace and agent_queue_send for a "workspace-queue" peer in your own, so a local message is never duplicated into the cross-workspace ledger.',
     parameters: {},
     output: result,
     async execute(_args, exec) {
@@ -47,6 +47,8 @@ export function apply(ctx: Context): void {
       return {
         sessionId: identity.sessionId, workspaceId: identity.workspaceId,
         inboxCursor: identity.inboxCursor, unread: identity.unread,
+        peers: identity.peers.map(peer => ({ ...peer })),
+        truncated: identity.truncated,
       }
     },
   }))

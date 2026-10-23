@@ -65,7 +65,7 @@ describe('real direct mailbox through model tools', () => {
     const root = agent('root')
     const foreign = agent('away-root', awayDirectory)
     expect(body(await execute('agent_queue_dm_address', {}, foreign)))
-      .toEqual({ sessionId: foreign.id, workspaceId: awayId, inboxCursor: 0, unread: 0 })
+      .toMatchObject({ sessionId: foreign.id, workspaceId: awayId, inboxCursor: 0, unread: 0 })
     const sent = await execute('agent_queue_dm_send', { recipients: [foreign.id], body: 'cross-workspace ping' }, root)
     expect(sent.isError).toBe(false)
     expect(body(sent)).toMatchObject({
@@ -75,8 +75,23 @@ describe('real direct mailbox through model tools', () => {
     const read = await execute('agent_queue_inbox_read', { limit: 10 }, foreign)
     expect((body(read).messages as { body: string }[]).map(message => message.body)).toEqual(['cross-workspace ping'])
     expect(body(await execute('agent_queue_inbox_ack', { through_seq: 1 }, foreign))).toEqual({ inboxCursor: 1 })
-    expect(body(await execute('agent_queue_dm_address', {}, foreign)))
-      .toEqual({ sessionId: foreign.id, workspaceId: awayId, inboxCursor: 1, unread: 0 })
+    const discovered = body(await execute('agent_queue_dm_address', {}, foreign))
+    expect(discovered).toMatchObject({ sessionId: foreign.id, workspaceId: awayId, inboxCursor: 1, unread: 0 })
+    // Discovery crosses the real service boundary: only the live, authorized
+    // root is listed, carrying the transport that actually reaches it.
+    expect(discovered.peers).toEqual([
+      { sessionId: root.id, workspaceId: homeId, transport: 'direct' },
+    ])
+    expect(discovered.truncated).toBe(false)
+    // A live session in an unregistered directory is never discoverable, and
+    // a same-workspace peer is reported for the v1 tool instead.
+    agent('stranger', '/dm/unregistered')
+    const local = agent('alpha')
+    const again = body(await execute('agent_queue_dm_address', {}, root))
+    expect(again.peers).toEqual([
+      { sessionId: foreign.id, workspaceId: awayId, transport: 'direct' },
+      { sessionId: local.id, workspaceId: homeId, transport: 'workspace-queue' },
+    ])
     expect(body(await execute('agent_queue_inbox_read', {}, foreign)).messages).toEqual([])
     const reply = await execute('agent_queue_dm_send', { recipients: [root.id], body: 'pong' }, foreign)
     expect(body(reply)).toMatchObject({ seq: 2, senderWorkspaceId: awayId })

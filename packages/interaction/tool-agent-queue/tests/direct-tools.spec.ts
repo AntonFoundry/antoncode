@@ -16,7 +16,13 @@ async function setup() {
   // The mock stays behind the service boundary: a tool cannot manufacture a
   // sender, choose a recipient workspace, or move another session's cursor.
   const direct = {
-    address: vi.fn(async (caller: { id: string }) => ({ sessionId: caller.id, workspaceId: 'ws-home', inboxCursor: 2, unread: 1 })),
+    address: vi.fn(async (caller: { id: string }) => ({
+      sessionId: caller.id, workspaceId: 'ws-home', inboxCursor: 2, unread: 1, truncated: false,
+      peers: [
+        { sessionId: 'session-b', workspaceId: 'ws-away', transport: 'direct' },
+        { sessionId: 'session-local', workspaceId: 'ws-home', transport: 'workspace-queue' },
+      ],
+    })),
     send: vi.fn(async (_agent: unknown, request: { recipients: string[]; body: string }) => ({
       id: 'dm-1', seq: 3, sender: 'session-a', senderWorkspaceId: 'ws-home', body: request.body, createdAt: 0,
       recipients: request.recipients.map(sessionId => ({ sessionId, workspaceId: 'ws-away' })),
@@ -63,6 +69,11 @@ describe('model-facing cross-workspace direct message tools', () => {
     expect(own.isError).toBe(false)
     expect(text(own)).toContain('"inboxCursor":2')
     expect(text(own)).toContain('"unread":1')
+    // Discovery reaches the model with each peer's workspace and transport, so
+    // a local peer is routed to the v1 tool instead of the direct ledger.
+    expect(text(own)).toContain('"transport":"direct"')
+    expect(text(own)).toContain('"transport":"workspace-queue"')
+    expect(text(own)).toContain('"truncated":false')
     expect((await execute('agent_queue_dm_send', { recipients: ['session-b'], body: 'hi' })).isError).toBe(true)
     expect((await execute('agent_queue_inbox_read', {})).isError).toBe(true)
     expect((await execute('agent_queue_inbox_ack', { through_seq: 1 })).isError).toBe(true)
