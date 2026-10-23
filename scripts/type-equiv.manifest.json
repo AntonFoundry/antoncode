@@ -1272,7 +1272,12 @@
     },
     {
       "doc": "docs/subsystems/subagent.md",
-      "symbol": "SubagentInterruptAuthority",
+      "symbol": "SubagentAncestorAuthority",
+      "source": "packages/subagent/subagent/src/continuation.ts"
+    },
+    {
+      "doc": "docs/subsystems/subagent.md",
+      "symbol": "SubagentControlAuthority",
       "source": "packages/subagent/subagent/src/continuation.ts"
     },
     {

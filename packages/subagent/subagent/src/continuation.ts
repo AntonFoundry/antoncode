@@ -29,6 +29,8 @@ import type {
   AgentOptions,
   AgentSetupCommit,
   CreateAgentOptions,
+  ModelSelection,
+  ModelSelectionRef,
 } from '@deepseek-ai/dsh-agent'
 import { boundContextSummary, createUserMessage, errorChain } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
@@ -52,6 +54,7 @@ import { seedDescriptorTurn } from './descriptor-seed.ts'
 import type { ContinuableCreateRequest, ContinuableCreateSpec, SubagentResult, SubagentStartRequest } from './types.ts'
 import type { ActivationObserver, ActivationTerminal } from './lifecycle.ts'
 import { SubagentError } from './error.ts'
+import { selectChildModel } from './model-control.ts'
 import type SubagentActivationSetupRegistry from './activation-setup-registry.ts'
 
 /** Attribution for a model coordinator's follow-up to one of its children. */
@@ -132,13 +135,23 @@ export interface ContinuableStart {
 }
 
 /**
- * Authority under which one interrupt request is admitted. `user` carries the
- * durable direct-parent address a human client presented; `ancestor` carries
- * the exact live Agent object whose recorded lineage must contain the caller.
+ * Exact live ancestor Agent authorizing one control operation on a child.
+ * `interrupt` additionally admits a human parent address.
  */
-export type SubagentInterruptAuthority =
+export interface SubagentAncestorAuthority {
+  readonly kind: 'ancestor'
+  readonly agent: Agent
+}
+
+/**
+ * Authority under which one control operation on a live child is admitted.
+ * `user` carries the durable direct-parent address a human client presented;
+ * `ancestor` carries the exact live Agent object whose recorded lineage must
+ * contain the caller.
+ */
+export type SubagentControlAuthority =
   | { readonly kind: 'user'; readonly parentSessionId: SessionId }
-  | { readonly kind: 'ancestor'; readonly agent: Agent }
+  | SubagentAncestorAuthority
 
 /** Options for following up with one continuable child. */
 export interface SubagentFollowupOptions {
@@ -361,6 +374,8 @@ export class SubagentContinuationManager {
    * poisoning a later same-id replacement.
    */
   private readonly closingScopes = new Map<Agent, Set<Agent>>()
+  /** Process-local model reassignments for live children, keyed by the exact Agent. */
+  private readonly modelOverrides = new WeakMap<Agent, ModelSelectionRef>()
   private draining = false
 
   constructor(
@@ -525,7 +540,7 @@ export class SubagentContinuationManager {
    *   parent address that is not the live target's durable direct parent, or
    *   an ancestor outside the target's recorded live lineage.
    */
-  interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void {
+  interrupt(targetSessionId: SessionId, authority: SubagentControlAuthority): void {
     if (authority.kind === 'ancestor') {
       const caller = authority.agent
       // A stale caller is rejected even when the target is absent, so a
@@ -565,6 +580,28 @@ export class SubagentContinuationManager {
       authority.kind === 'user' ? { kind: 'user' } : { kind: 'parent' },
       { keepInbox: true },
     )
+  }
+
+  /**
+   * Replace one live child's model route for its next model request.
+   *
+   * The switch installs the child's Agent-scoped model selection, so a step
+   * already failing on its route retries the replacement instead of the
+   * exhausted model, and every later request keeps the selection. The override
+   * is process-local and lives until the Agent is disposed: a cold resume
+   * composes the descriptor's creation route again.
+   *
+   * Unlike {@link interrupt}, an absent target is an error rather than a no-op:
+   * the caller asked to reassign something that is not running.
+   * @param targetSessionId - durable id of the live child whose route changes.
+   * @param selection - complete provider, model, and optional reasoning effort.
+   * @param authority - the exact live ancestor Agent.
+   * @throws {SubagentError} `NOT_LIVE` when no Agent is published under the id.
+   * @throws {SubagentError} `UNAUTHORIZED` when the authority does not own the
+   *   live target.
+   */
+  selectModel(targetSessionId: SessionId, selection: ModelSelection, authority: SubagentAncestorAuthority): void {
+    selectChildModel(this.modelOverrides, this.ctx.agents, targetSessionId, selection, authority)
   }
 
   /**

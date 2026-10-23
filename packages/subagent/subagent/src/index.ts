@@ -36,7 +36,7 @@ import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
 import { assertObjectJsonSchema } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock, MessageId } from '@deepseek-ai/dsh-llm'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Agent, ModelSelection } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type {
   ContinuableCreateRequest,
@@ -57,8 +57,9 @@ import SubagentContinuationManager from './continuation.ts'
 import type {
   ContinuableStart,
   ContinuableStartSpec,
+  SubagentAncestorAuthority,
+  SubagentControlAuthority,
   SubagentFollowupOptions,
-  SubagentInterruptAuthority,
   SubagentReportOptions,
 } from './continuation.ts'
 import SubagentActivationSetupRegistry from './activation-setup-registry.ts'
@@ -114,8 +115,9 @@ export type {
   ContinuableStart,
   ContinuableStartSpec,
   CoordinatorMessageSource,
+  SubagentAncestorAuthority,
+  SubagentControlAuthority,
   SubagentFollowupOptions,
-  SubagentInterruptAuthority,
   SubagentReportDelivery,
   SubagentReportMessageSource,
   SubagentReportOptions,
@@ -252,8 +254,28 @@ export class SubagentRuntime extends Service {
    * @throws {SubagentError} `UNAUTHORIZED` when the authority does not own the
    *   live target.
    */
-  interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void {
+  interrupt(targetSessionId: SessionId, authority: SubagentControlAuthority): void {
     this.continuations?.interrupt(targetSessionId, authority)
+  }
+
+  /**
+   * Replace one live child's model route for its next model request. The
+   * selection applies to the retry of a step whose current route is failing —
+   * an exhausted or rate-limited model does not have to keep retrying itself
+   * until the user cancels — and to every later request the child makes.
+   *
+   * The override is process-local and lasts until the child Agent is disposed;
+   * a cold resume composes the descriptor's creation route again. Unlike
+   * {@link interrupt}, a missing live target is an error, not a no-op.
+   * @param targetSessionId - durable id of the live child whose route changes.
+   * @param selection - complete provider, model, and optional reasoning effort.
+   * @param authority - the exact live ancestor Agent.
+   * @throws {SubagentError} `NOT_LIVE` when no Agent is published under the id.
+   * @throws {SubagentError} `UNAUTHORIZED` when the authority does not own the
+   *   live target.
+   */
+  selectModel(targetSessionId: SessionId, selection: ModelSelection, authority: SubagentAncestorAuthority): void {
+    this.requireContinuations().selectModel(targetSessionId, selection, authority)
   }
 
   /**

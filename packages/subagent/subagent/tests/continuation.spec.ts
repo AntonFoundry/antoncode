@@ -22,6 +22,7 @@ import SubagentRuntime, {
 } from '../src/index.ts'
 import type { SubagentRunEndInfo, SubagentRunInfo } from '../src/index.ts'
 import * as SubagentInvariant from '../src/invariant.ts'
+import * as Retry from '@deepseek-ai/dsh-llm-retry'
 
 type Script = ConstructorParameters<typeof MockAdapter>[0]
 
@@ -2519,5 +2520,138 @@ describe('SubagentRuntime.interrupt', () => {
 
     hold.resolve(undefined)
     await drained
+  })
+})
+
+describe('SubagentRuntime.selectModel', () => {
+  const replacement = { provider: 'alternate', model: 'replacement' }
+
+  it('applies the replacement route to the running child\'s next request', async () => {
+    const release = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([
+      { chunks: textResponse('first turn'), gate: release.promise },
+      { chunks: textResponse('second turn') },
+    ])
+    const { ctx, parent } = await setupWith(adapter)
+    parkParent(ctx, parent)
+    ctx.llm.registerAdapter(['alternate'], adapter)
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+    expect(adapter.requests[0]).toMatchObject({ provider: 'mock', model: 'mock' })
+
+    ctx.subagents.selectModel(started.childId, replacement, { kind: 'ancestor', agent: parent })
+    // A later switch replaces the installed selection instead of adding listeners.
+    ctx.subagents.selectModel(
+      started.childId,
+      { provider: 'alternate', model: 'later-choice' },
+      { kind: 'ancestor', agent: parent },
+    )
+
+    release.resolve(undefined)
+    await followup(ctx, parent, started.childId, message('keep working'))
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(2) })
+    expect(adapter.requests[1]).toMatchObject({ provider: 'alternate', model: 'later-choice' })
+    await waitNoActivation(ctx, started.childId)
+  })
+
+  it('applies the replacement route to a retry of the step that is already failing', async () => {
+    const adapter = new GatedAdapter([
+      {
+        chunks: [{
+          type: 'finish',
+          reason: { kind: 'error', failure: { message: 'quota exhausted', code: 'RATE_LIMIT' } },
+        }],
+      },
+      { chunks: textResponse('recovered on the replacement') },
+    ])
+    const { ctx, parent } = await setupWith(adapter)
+    parkParent(ctx, parent)
+    ctx.llm.registerAdapter(['alternate'], adapter)
+    await ctx.plugin(Retry)
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    const child = await vi.waitFor(() => {
+      const live = ctx.agents.get(started.childId)
+      expect(live).toBeDefined()
+      return live!
+    })
+    await vi.waitFor(() => {
+      expect(child.session.events.some(event => event.type === 'llm/retry')).toBe(true)
+    }, { timeout: 5_000 })
+
+    ctx.subagents.selectModel(started.childId, replacement, { kind: 'ancestor', agent: parent })
+
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(2) }, { timeout: 5_000 })
+    expect(adapter.requests[1]).toMatchObject(replacement)
+    await waitNoActivation(ctx, started.childId)
+  })
+
+  it('rejects a target that is not live instead of accepting a silent no-op', async () => {
+    const { ctx, parent } = await setup([textResponse('done')])
+    expect(() => {
+      ctx.subagents.selectModel(
+        SessionId('missing-subagent'),
+        replacement,
+        { kind: 'ancestor', agent: parent },
+      )
+    }).toThrow(expect.objectContaining({ code: 'NOT_LIVE' }))
+  })
+
+  it('rejects a self-targeting or stale caller', async () => {
+    const release = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([{ chunks: textResponse('working'), gate: release.promise }])
+    const { ctx, parent } = await setupWith(adapter)
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    const child = await vi.waitFor(() => {
+      const live = ctx.agents.get(started.childId)
+      expect(live).toBeDefined()
+      return live!
+    })
+
+    expect(() => {
+      ctx.subagents.selectModel(started.childId, replacement, { kind: 'ancestor', agent: child })
+    }).toThrow(expect.objectContaining({ code: 'UNAUTHORIZED' }))
+
+    const stale = { ...parent } as unknown as Agent
+    expect(() => {
+      ctx.subagents.selectModel(started.childId, replacement, { kind: 'ancestor', agent: stale })
+    }).toThrow(expect.objectContaining({ code: 'UNAUTHORIZED' }))
+
+    release.resolve(undefined)
+    await waitNoActivation(ctx, started.childId)
+  })
+
+  it('rejects an unrelated live caller and accepts a live grandparent', async () => {
+    const releaseOuter = Promise.withResolvers<undefined>()
+    const releaseInner = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([
+      { chunks: textResponse('outer'), gate: releaseOuter.promise },
+      { chunks: textResponse('inner'), gate: releaseInner.promise },
+    ])
+    const { ctx, parent } = await setupWith(adapter)
+    parkParent(ctx, parent)
+    ctx.llm.registerAdapter(['alternate'], adapter)
+    const outer = await ctx.subagents.startContinuable(startSpec(parent))
+    const middle = await vi.waitFor(() => {
+      const live = ctx.agents.get(outer.childId)
+      expect(live).toBeDefined()
+      return live!
+    })
+    const inner = await ctx.subagents.startContinuable(startSpec(middle))
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(2) })
+
+    const stranger = ctx.agentLoop.create(SessionId('stranger'), { provider: 'mock', model: 'mock' })
+    expect(() => {
+      ctx.subagents.selectModel(inner.childId, replacement, { kind: 'ancestor', agent: stranger })
+    }).toThrow(expect.objectContaining({ code: 'UNAUTHORIZED' }))
+    // A top-level session has no parent chain, so no caller can own it.
+    expect(() => {
+      ctx.subagents.selectModel(parent.id, replacement, { kind: 'ancestor', agent: stranger })
+    }).toThrow(expect.objectContaining({ code: 'UNAUTHORIZED' }))
+
+    ctx.subagents.selectModel(inner.childId, replacement, { kind: 'ancestor', agent: parent })
+    releaseInner.resolve(undefined)
+    await waitNoActivation(ctx, inner.childId)
+    releaseOuter.resolve(undefined)
+    await waitNoActivation(ctx, outer.childId)
   })
 })

@@ -11,8 +11,8 @@ import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
-import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
-import { LlmAdapter } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, LlmModelReasoningInfo, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
+import { LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import * as tool from '../src/index.ts'
 import { parkParent } from './park-parent.ts'
@@ -27,8 +27,17 @@ interface GatedEntry {
 class GatedAdapter extends LlmAdapter {
   readonly requests: GenerateOptions[] = []
 
-  constructor(private script: GatedEntry[]) {
+  constructor(private script: GatedEntry[], private readonly reasoning?: LlmModelReasoningInfo) {
     super()
+  }
+
+  override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+    return Promise.resolve({
+      provider,
+      id: model,
+      name: model,
+      ...this.reasoning === undefined ? {} : { reasoning: this.reasoning },
+    })
   }
 
   async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
@@ -211,15 +220,17 @@ describe('dsh-tool-subagent-control', () => {
     const fiber = await ctx.plugin(tool)
     expect(ctx.tools.schemas().some(schema => schema.name === 'send_message')).toBe(true)
     expect(ctx.tools.schemas().some(schema => schema.name === 'interrupt_agent')).toBe(true)
+    expect(ctx.tools.schemas().some(schema => schema.name === 'set_agent_model')).toBe(true)
     await fiber.dispose()
     expect(ctx.tools.schemas().some(schema => schema.name === 'send_message')).toBe(false)
     expect(ctx.tools.schemas().some(schema => schema.name === 'interrupt_agent')).toBe(false)
+    expect(ctx.tools.schemas().some(schema => schema.name === 'set_agent_model')).toBe(false)
   })
 
   it('has the namespace-plugin export shape (no stray default)', () => {
     expect('default' in tool).toBe(false)
     expect(tool.name).toBe('tool-subagent-control')
-    expect(tool.inject).toEqual(['tools', 'subagents'])
+    expect(tool.inject).toEqual(['tools', 'subagents', 'llm'])
     expect(typeof tool.apply).toBe('function')
   })
 })
@@ -386,5 +397,107 @@ describe('dsh-tool-subagent-control interrupt_agent', () => {
     const result = await callTool(ctx, 'interrupt_agent', { agent_id: 'x' })
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('requires a calling agent')
+  })
+})
+
+describe('dsh-tool-subagent-control set_agent_model', () => {
+  it('registers set_agent_model with the route and effort parameters', async () => {
+    const { ctx } = await setup([])
+    const schemas = ctx.tools.schemas().filter(schema => schema.name === 'set_agent_model')
+    expect(schemas).toHaveLength(1)
+    const props = (schemas[0]!.parameters as { properties?: Record<string, unknown> }).properties ?? {}
+    expect(Object.keys(props).sort()).toEqual(['agent_id', 'model', 'provider', 'reasoning_effort'])
+    // The model-visible wording must say the running turn's retry is covered.
+    expect(schemas[0]!.description).toContain('retry')
+    expect(schemas[0]!.description).toContain('running')
+  })
+
+  it('switches a running child to a validated route for its next request', async () => {
+    const release = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([
+      { chunks: textResponse('first turn'), gate: release.promise },
+      { chunks: textResponse('replacement turn') },
+    ], { efforts: [{ id: ReasoningEffortId('low'), name: 'Low' }] })
+    const { ctx, parent } = await setupWith(adapter)
+    ctx.llm.registerAdapter(['alternate'], adapter)
+    const started = await ctx.subagents.startContinuable({
+      provider: 'spawn',
+      label: 'long work',
+      request: { prompt: [{ type: 'text', text: 'long work' }], parent },
+      signal: testToolSignal,
+    })
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+    expect(adapter.requests[0]).toMatchObject({ provider: 'mock', model: 'mock' })
+
+    const result = await callTool(ctx, 'set_agent_model', {
+      agent_id: started.childId,
+      provider: 'alternate',
+      model: 'replacement',
+      reasoning_effort: 'low',
+    }, parent)
+    expect(result.isError).toBe(false)
+    expect(text(result)).toBe(
+      `subagent ${started.childId} now uses alternate/replacement for its next model request`,
+    )
+
+    // Queue the next turn before releasing, so the replacement route is observed
+    // in the same Activation rather than after a cold resume.
+    const queued = await callTool(ctx, 'send_message', {
+      subagent_id: started.childId,
+      message: 'continue on the replacement',
+    }, parent)
+    expect(queued.isError).toBe(false)
+    release.resolve(undefined)
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(2) }, { timeout: 5_000 })
+    expect(adapter.requests[1]).toMatchObject({
+      provider: 'alternate',
+      model: 'replacement',
+      reasoningEffort: 'low',
+    })
+    await waitNoActivation(ctx, started.childId)
+  })
+
+  it('fails loudly for a target that is not running', async () => {
+    const { ctx, parent } = await setup([textResponse('done')])
+    const result = await callTool(ctx, 'set_agent_model', {
+      agent_id: 'missing-subagent',
+      provider: 'mock',
+      model: 'replacement',
+    }, parent)
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('not running')
+  })
+
+  it('rejects an unknown provider before installing the switch', async () => {
+    const release = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([
+      { chunks: textResponse('first turn'), gate: release.promise },
+      { chunks: textResponse('still mock') },
+    ])
+    const { ctx, parent } = await setupWith(adapter)
+    const started = await ctx.subagents.startContinuable({
+      provider: 'spawn',
+      label: 'long work',
+      request: { prompt: [{ type: 'text', text: 'long work' }], parent },
+      signal: testToolSignal,
+    })
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+
+    const result = await callTool(ctx, 'set_agent_model', {
+      agent_id: started.childId,
+      provider: 'ghost',
+      model: 'replacement',
+    }, parent)
+    expect(result.isError).toBe(true)
+
+    const queued = await callTool(ctx, 'send_message', {
+      subagent_id: started.childId,
+      message: 'unchanged route',
+    }, parent)
+    expect(queued.isError).toBe(false)
+    release.resolve(undefined)
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(2) }, { timeout: 5_000 })
+    expect(adapter.requests[1]).toMatchObject({ provider: 'mock', model: 'mock' })
+    await waitNoActivation(ctx, started.childId)
   })
 })

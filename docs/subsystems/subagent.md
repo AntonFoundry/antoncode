@@ -145,14 +145,28 @@ For both operations the caller signal owns lookup, materialization, and admissio
 
 ```ts type-equiv
 /**
- * Authority under which one interrupt request is admitted. `user` carries the
- * durable direct-parent address a human client presented; `ancestor` carries
- * the exact live Agent object whose recorded lineage must contain the caller.
+ * Exact live ancestor Agent authorizing one control operation on a child.
+ * `interrupt` additionally admits a human parent address.
  */
-type SubagentInterruptAuthority =
-  | { readonly kind: 'user'; readonly parentSessionId: SessionId }
-  | { readonly kind: 'ancestor'; readonly agent: Agent }
+interface SubagentAncestorAuthority {
+  readonly kind: 'ancestor'
+  readonly agent: Agent
+}
 ```
+
+```ts type-equiv
+/**
+ * Authority under which one control operation on a live child is admitted.
+ * `user` carries the durable direct-parent address a human client presented;
+ * `ancestor` carries the exact live Agent object whose recorded lineage must
+ * contain the caller.
+ */
+type SubagentControlAuthority =
+  | { readonly kind: 'user'; readonly parentSessionId: SessionId }
+  | SubagentAncestorAuthority
+```
+
+`SubagentRuntime.selectModel(targetSessionId, selection, authority)` replaces one live child's model route under an exact live ancestor Agent. The service installs the child's Agent-scoped model selection, so a step already failing on its route retries the replacement on the next attempt and every later request keeps it until the Agent is disposed; the override is process-local, so a cold resume composes the descriptor's creation route again. Unlike interrupt, a missing live target rejects with `NOT_LIVE` rather than accepting a no-op, and self-targeting or stale ancestor objects reject with `UNAUTHORIZED`.
 
 Every Activation owns its `AgentHandle` and an `ownedChildren: Set<SessionId>`; because one Session has at most one live Activation, the child Session id identifies the live child without another runtime-incarnation reference. Starting a child or submitting parent-originated work registers the child in a continuation-managed parent's set before the child can run, and that parent cannot settle while the set is non-empty. A top-level or other non-continuation Agent has no Activation and stays outside the waiting graph. Child release happens only after the child Agent is quiescent, every child of that child is disposed, the best-effort final session flush settles, and the child's `AgentHandle` completes disposal.
 
@@ -571,7 +585,25 @@ async followup( parent: Agent, childId: SessionId, content: ContentBlock[], opti
  * @throws {SubagentError} `UNAUTHORIZED` when the authority does not own the
  *   live target.
  */
-interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void
+interrupt(targetSessionId: SessionId, authority: SubagentControlAuthority): void
+
+/**
+ * Replace one live child's model route for its next model request. The
+ * selection applies to the retry of a step whose current route is failing —
+ * an exhausted or rate-limited model does not have to keep retrying itself
+ * until the user cancels — and to every later request the child makes.
+ *
+ * The override is process-local and lasts until the child Agent is disposed;
+ * a cold resume composes the descriptor's creation route again. Unlike
+ * {@link interrupt}, a missing live target is an error, not a no-op.
+ * @param targetSessionId - durable id of the live child whose route changes.
+ * @param selection - complete provider, model, and optional reasoning effort.
+ * @param authority - the exact live ancestor Agent.
+ * @throws {SubagentError} `NOT_LIVE` when no Agent is published under the id.
+ * @throws {SubagentError} `UNAUTHORIZED` when the authority does not own the
+ *   live target.
+ */
+selectModel(targetSessionId: SessionId, selection: ModelSelection, authority: SubagentAncestorAuthority): void
 
 /**
  * Deliver selected content from one live continuable child to its durable
@@ -690,9 +722,9 @@ list(): string[]
 async start(name: string, request: SubagentStartRequest): Promise<SubagentRun>
 ```
 
-Types: [Agent](core.md) · [ContentBlock](llm-streaming.md) · [MessageId](llm-streaming.md) · [SessionId](core.md)
+Types: [Agent](core.md) · [ContentBlock](llm-streaming.md) · [MessageId](llm-streaming.md) · [ModelSelection](core.md) · [SessionId](core.md)
 
-Source: [`packages/subagent/subagent/src/index.ts:171`](../../packages/subagent/subagent/src/index.ts)
+Source: [`packages/subagent/subagent/src/index.ts:173`](../../packages/subagent/subagent/src/index.ts)
 
 <a id="subagent-events"></a>
 
@@ -718,7 +750,7 @@ A published child settled. Scope-filtered dispatch uses the same delegating pare
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/subagent/subagent/src/index.ts:166`](../../packages/subagent/subagent/src/index.ts)
+Source: [`packages/subagent/subagent/src/index.ts:168`](../../packages/subagent/subagent/src/index.ts)
 
 <a id="subagentprovider-added--emit"></a>
 
@@ -735,7 +767,7 @@ A provider became resolvable in the registry.
 'subagent/provider-added'(provider: SubagentProvider): void
 ```
 
-Source: [`packages/subagent/subagent/src/index.ts:140`](../../packages/subagent/subagent/src/index.ts)
+Source: [`packages/subagent/subagent/src/index.ts:142`](../../packages/subagent/subagent/src/index.ts)
 
 <a id="subagentprovider-removed--emit"></a>
 
@@ -752,7 +784,7 @@ A provider left the registry. Accepted runs remain holder-owned.
 'subagent/provider-removed'(name: string): void
 ```
 
-Source: [`packages/subagent/subagent/src/index.ts:146`](../../packages/subagent/subagent/src/index.ts)
+Source: [`packages/subagent/subagent/src/index.ts:148`](../../packages/subagent/subagent/src/index.ts)
 
 <a id="subagentstart--emit"></a>
 
@@ -776,5 +808,5 @@ A provider established a published child. For in-process providers, `ctx.agents.
 
 Types: [Scoped](scope.md)
 
-Source: [`packages/subagent/subagent/src/index.ts:157`](../../packages/subagent/subagent/src/index.ts)
+Source: [`packages/subagent/subagent/src/index.ts:159`](../../packages/subagent/subagent/src/index.ts)
 <!-- END GENERATED cordis-surface -->
