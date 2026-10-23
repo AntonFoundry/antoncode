@@ -8,6 +8,7 @@ import { en, zh, type AgentMailLocaleKey } from './locales.ts'
 
 export type { AgentMailConversationViewProps } from './AgentMailConversationView.tsx'
 export type { AgentMailLocaleKey } from './locales.ts'
+export type { AgentMailGateway } from './gateway.ts'
 
 const NS = 'conversation.agentMail'
 
