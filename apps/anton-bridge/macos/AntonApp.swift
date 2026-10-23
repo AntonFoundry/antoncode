@@ -394,6 +394,10 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
   }
 
   private var bridge: Process?
+  private var nativeConsentSeed: Data?
+  private var nativeConsentPanel: NativeConsentPanel?
+  private var nativeConsentExpiresAt: Int64 = 0
+  private var nativeConsentPolling = false
   private var statusItem: NSStatusItem?
   private var startItem: NSMenuItem?
   private var stopItem: NSMenuItem?
@@ -449,6 +453,9 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
   func applicationWillTerminate(_ notification: Notification) {
     pollTimer?.invalidate()
+    nativeConsentPanel?.close()
+    nativeConsentPanel = nil
+    nativeConsentSeed = nil
     hotkeyCenter?.unregister()
     terminatingBridge = true
     bridge?.terminate()
@@ -728,7 +735,8 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     let keyPipe = Pipe()
     process.standardInput = keyPipe
-    let keyLine = Data(consentKey).base64EncodedString() + "\n"
+    let seed = Data(consentKey)
+    let keyLine = seed.base64EncodedString() + "\n"
     let logURL = support.appendingPathComponent("bridge.log")
     FileManager.default.createFile(atPath: logURL.path, contents: nil)
     if let log = try? FileHandle(forWritingTo: logURL) {
@@ -743,8 +751,12 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
       try process.run()
       defer { try? keyPipe.fileHandleForWriting.close() }
       keyPipe.fileHandleForWriting.write(Data(keyLine.utf8))
+      nativeConsentPanel?.close()
+      nativeConsentPanel = nil
+      nativeConsentSeed = seed
       bridge = process
     } catch {
+      nativeConsentSeed = nil
       try? keyPipe.fileHandleForWriting.close()
       showError("Anton could not start its local bridge: \(error.localizedDescription)")
     }
@@ -763,6 +775,9 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
   /// instance onto the same port.
   private func bridgeExited(_ finished: Process) {
     guard !terminatingBridge, bridge === finished else { return }
+    nativeConsentSeed = nil
+    nativeConsentPanel?.close()
+    nativeConsentPanel = nil
     bridge = nil
     bridgeDeaths.append(Date())
     bridgeDeaths.removeAll { Date().timeIntervalSince($0) > 300 }
@@ -895,7 +910,49 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
       self?.refreshHarnessState()
       self?.pollRecoveryState()
       self?.pollNotifications()
+      self?.pollNativeConsent()
     }
+  }
+
+  /// Polling carries a one-use HMAC over a fresh nonce. Browser requests,
+  /// including same-origin loopback traffic, cannot dequeue a challenge.
+  private func pollNativeConsent() {
+    guard !recoveryMode, !nativeConsentPolling, let seed = nativeConsentSeed, let activeBridge = bridge else { return }
+    if nativeConsentExpiresAt > 0, Int64(Date().timeIntervalSince1970 * 1000) >= nativeConsentExpiresAt {
+      nativeConsentPanel?.close()
+      nativeConsentPanel = nil
+      nativeConsentExpiresAt = 0
+    }
+    let timestamp = String(Int64(Date().timeIntervalSince1970 * 1000))
+    var nonceBytes = [UInt8](repeating: 0, count: 16)
+    guard SecRandomCopyBytes(kSecRandomDefault, nonceBytes.count, &nonceBytes) == errSecSuccess else { return }
+    let nonce = nonceBytes.map { String(format: "%02x", $0) }.joined()
+    guard let mac = NativeConsentCode.mac(seed: seed, fields: ["antonmail-native-poll-v1", timestamp, nonce]) else { return }
+    var request = URLRequest(url: bridgeURL.appendingPathComponent("bridge/api/mail/native-pending"))
+    request.timeoutInterval = 5
+    request.setValue(timestamp, forHTTPHeaderField: "x-anton-mail-time")
+    request.setValue(nonce, forHTTPHeaderField: "x-anton-mail-nonce")
+    request.setValue(mac, forHTTPHeaderField: "x-anton-mail-mac")
+    nativeConsentPolling = true
+    URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
+      DispatchQueue.main.async {
+        guard let self else { return }
+        self.nativeConsentPolling = false
+        guard self.bridge === activeBridge, self.nativeConsentSeed == seed,
+              let response = response as? HTTPURLResponse, response.statusCode == 200,
+              let data, data.count <= 2048,
+              let challenge = try? JSONDecoder().decode(NativeConsentChallenge.self, from: data) else { return }
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        guard challenge.expiresAt > now, challenge.expiresAt <= now + 90_000,
+              challenge.summary.utf8.count <= 512,
+              let code = NativeConsentCode.derive(seed: seed, challenge: challenge) else { return }
+        self.nativeConsentPanel?.close()
+        let panel = NativeConsentPanel(challenge: challenge, code: code)
+        self.nativeConsentPanel = panel
+        self.nativeConsentExpiresAt = challenge.expiresAt
+        panel.orderFrontRegardless()
+      }
+    }.resume()
   }
 
   /// Act-tier delivery: pull notifications the bridge inbox queued for us
@@ -1020,6 +1077,10 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
   /// `terminationHandler` is discarded by the identity guard in
   /// `bridgeExited(_:)` rather than by a flag that cannot outlive this call.
   private func swapBridge(profile: String) {
+    nativeConsentPanel?.close()
+    nativeConsentPanel = nil
+    nativeConsentSeed = nil
+    nativeConsentExpiresAt = 0
     bridge?.terminate()
     bridge = nil
     setHarnessState(.transitioning)

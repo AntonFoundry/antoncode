@@ -9,9 +9,12 @@ import { startJournalConsolidation } from './consolidate.ts'
 import { getBlueantSettings, updateBlueantSettings } from './blueant-settings.ts'
 import { getChromeManager } from './chrome.ts'
 import { readNativeConsentKey } from './consent-key.ts'
+import { NativeChallengeInbox } from './consent-challenges.ts'
 
 // Kept only in process memory. Absent for standalone bridge launches.
 const nativeConsentKey = readNativeConsentKey()
+const nativeChallenges = new NativeChallengeInbox(nativeConsentKey === undefined
+  ? undefined : Buffer.from(nativeConsentKey, 'base64'))
 
 const bridgePort = portFromEnv('ANTON_BRIDGE_PORT', 3742)
 const harnessPort = portFromEnv('ANTON_HARNESS_PORT', 3080)
@@ -501,6 +504,7 @@ async function startHarness(): Promise<{ started: boolean; reused: boolean }> {
       stderr: 'inherit',
       env: {
         ...process.env,
+        ANTON_NATIVE_CONSENT_STDIN: nativeConsentKey === undefined ? '' : '1',
         ANTON_CONTEXT_ENDPOINT: contextEndpoint,
         ANTON_CONTEXT_API_KEY: resolveContextApiKey(),
         DSH_HOME: dshHome,
@@ -770,6 +774,27 @@ const server = await serveWithPortRetry(() => Bun.serve<BridgeSocketData>({
     }
 
     if (pathname === '/bridge' || pathname === '/bridge/') return controlPage()
+    if (pathname === '/bridge/api/mail/challenge') {
+      if (request.method !== 'POST') return new Response('method not allowed', { status: 405 })
+      const contentLength = request.headers.get('content-length')
+      if (!contentLength || !/^[1-9][0-9]{0,3}$/.test(contentLength) || Number(contentLength) > 2048) {
+        return new Response('invalid challenge', { status: 400 })
+      }
+      try {
+        const payload: unknown = await request.json()
+        return nativeChallenges.accept(payload) ? json({ queued: true }) : json({ error: 'invalid_challenge' }, { status: 403 })
+      } catch { return json({ error: 'invalid_challenge' }, { status: 400 }) }
+    }
+    if (pathname === '/bridge/api/mail/native-pending') {
+      if (request.method !== 'GET') return new Response('method not allowed', { status: 405 })
+      const time = request.headers.get('x-anton-mail-time') ?? ''
+      const nonce = request.headers.get('x-anton-mail-nonce') ?? ''
+      const mac = request.headers.get('x-anton-mail-mac') ?? ''
+      const challenge = nativeChallenges.takeNative(time, nonce, mac)
+      // Invalid proofs and empty inboxes have identical responses; neither
+      // leaks a challenge to the browser or an origin-less loopback caller.
+      return challenge === undefined ? new Response(null, { status: 204 }) : json(challenge)
+    }
     if (pathname === '/bridge/api/status' && request.method === 'GET') return json(await status())
     if (pathname === '/bridge/api/settings' && request.method === 'GET') {
       if (!sameOrigin(request)) return json({ error: 'cross_origin_request_rejected' }, { status: 403 })

@@ -10,8 +10,24 @@ struct NativeConsentChallenge {
   let summary: String
 }
 
+extension NativeConsentChallenge: Decodable {}
+
 enum NativeConsentCode {
   private static let alphabet = Array("0123456789ABCDEFGHJKMNPQRSTVWXYZ")
+
+  static func mac(seed: Data, fields: [String]) -> String? {
+    guard seed.count == 32 else { return nil }
+    var input = Data()
+    for field in fields {
+      let bytes = Data(field.utf8)
+      guard bytes.count <= Int(UInt32.max) else { return nil }
+      var length = UInt32(bytes.count).bigEndian
+      withUnsafeBytes(of: &length) { input.append(contentsOf: $0) }
+      input.append(bytes)
+    }
+    let digest = HMAC<SHA256>.authenticationCode(for: input, using: SymmetricKey(data: seed))
+    return digest.map { String(format: "%02x", $0) }.joined()
+  }
 
   /// Mirrors native-consent-code.ts: HMAC-SHA256 over four UTF-8 fields,
   /// each prefixed by a 32-bit big-endian byte length, truncated to 40 bits.
