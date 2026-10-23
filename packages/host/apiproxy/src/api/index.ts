@@ -5,6 +5,7 @@
  */
 
 import type { SessionsApi } from './sessions.ts'
+import type { AgentMailApi } from './agent-mail.ts'
 import type { HostApi } from './host.ts'
 import type { OrchestratorApi } from './orchestrator.ts'
 import type { FlowApi } from './flow.ts'
@@ -29,6 +30,7 @@ import type { ClientResponse, RpcReceipt } from './rpc.ts'
 /** Root interface of the unified API. New client-request domain = one new file pair + one field here + one map row. */
 export interface ApiProxy {
   sessions: SessionsApi
+  agentMail: AgentMailApi
   subagents: SubagentsApi
   host: HostApi
   /** Orchestrator board snapshot + run actions (one read composing workspace.list + session.list projections). */
@@ -60,6 +62,8 @@ export interface ApiProxy {
    */
   respond(message: ClientResponse): Promise<RpcReceipt>
 }
+
+export type { AgentMailApi, AgentMailAddress, AgentMailMessage, AgentMailOperation } from './agent-mail.ts'
 
 // ---- Domain interfaces and payload entities ----
 export type {

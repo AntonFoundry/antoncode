@@ -112,6 +112,10 @@ import {
   subagentPromptValueSchema,
 } from '../api/subagents.schema.ts'
 import { jobKillValueSchema } from '../api/jobs.schema.ts'
+import {
+  agentMailBeginValueSchema, agentMailRedeemValueSchema, agentMailRevokeValueSchema,
+  agentMailAddressValueSchema, agentMailInboxValueSchema, agentMailSendValueSchema, agentMailAckValueSchema,
+} from '../api/agent-mail.schema.ts'
 
 /**
  * Client consumption face of the contract (shape a): same domain tree as ApiProxy, but unary
@@ -138,6 +142,15 @@ export type {
 /** The LangFlow sidecar status snapshot (the embed's only wire record). */
 export type LangflowStatusView = ResponseValue<'langflow.status'>['status']
 export interface IApiClient {
+  agentMail: {
+    begin(payload: RequestPayload<'agentMail.begin'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentMail.begin'>>>
+    redeem(payload: RequestPayload<'agentMail.redeem'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentMail.redeem'>>>
+    revoke(payload: RequestPayload<'agentMail.revoke'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentMail.revoke'>>>
+    address(payload: RequestPayload<'agentMail.address'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentMail.address'>>>
+    inbox(payload: RequestPayload<'agentMail.inbox'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentMail.inbox'>>>
+    send(payload: RequestPayload<'agentMail.send'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentMail.send'>>>
+    ack(payload: RequestPayload<'agentMail.ack'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentMail.ack'>>>
+  }
   sessions: {
     list(payload: RequestPayload<'session.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.list'>>>
     search(payload: RequestPayload<'session.search'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'session.search'>>>
@@ -275,6 +288,13 @@ export interface IApiClient {
  * mirror of the handler's request table; key coverage compiler-enforced against RpcMethodMap).
  */
 const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseValue<K>>> } = {
+  'agentMail.begin': agentMailBeginValueSchema,
+  'agentMail.redeem': agentMailRedeemValueSchema,
+  'agentMail.revoke': agentMailRevokeValueSchema,
+  'agentMail.address': agentMailAddressValueSchema,
+  'agentMail.inbox': agentMailInboxValueSchema,
+  'agentMail.send': agentMailSendValueSchema,
+  'agentMail.ack': agentMailAckValueSchema,
   'session.list': sessionListValueSchema,
   'session.search': sessionSearchValueSchema,
   'session.create': sessionCreateValueSchema,
@@ -549,6 +569,16 @@ export abstract class AbstractApiClient implements IApiClient {
   }
 
   // ---- IApiClient API (arrow properties so destructured/passed references stay bound) ----
+
+  readonly agentMail: IApiClient['agentMail'] = {
+    begin: (payload, signal) => this.callUnary('agentMail.begin', payload, signal),
+    redeem: (payload, signal) => this.callUnary('agentMail.redeem', payload, signal),
+    revoke: (payload, signal) => this.callUnary('agentMail.revoke', payload, signal),
+    address: (payload, signal) => this.callUnary('agentMail.address', payload, signal),
+    inbox: (payload, signal) => this.callUnary('agentMail.inbox', payload, signal),
+    send: (payload, signal) => this.callUnary('agentMail.send', payload, signal),
+    ack: (payload, signal) => this.callUnary('agentMail.ack', payload, signal),
+  }
 
   readonly sessions: IApiClient['sessions'] = {
     list: (payload, signal) => this.callUnary('session.list', payload, signal),

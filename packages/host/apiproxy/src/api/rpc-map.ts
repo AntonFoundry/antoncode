@@ -5,6 +5,7 @@
  */
 
 import type { SessionsApi } from './sessions.ts'
+import type { AgentMailApi } from './agent-mail.ts'
 import type { HostApi } from './host.ts'
 import type { OrchestratorApi } from './orchestrator.ts'
 import type { FlowApi } from './flow.ts'
@@ -30,6 +31,13 @@ import type { RpcResponse } from './rpc.ts'
  * request (command.execute): the carrier passes its request signal, never a wire field.
  */
 export interface RpcMethodMap {
+  'agentMail.begin': AgentMailApi['begin']
+  'agentMail.redeem': AgentMailApi['redeem']
+  'agentMail.revoke': AgentMailApi['revoke']
+  'agentMail.address': AgentMailApi['address']
+  'agentMail.inbox': AgentMailApi['inbox']
+  'agentMail.send': AgentMailApi['send']
+  'agentMail.ack': AgentMailApi['ack']
   'session.list': SessionsApi['list']
   'session.search': SessionsApi['search']
   'session.create': SessionsApi['create']

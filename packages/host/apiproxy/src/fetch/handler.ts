@@ -9,6 +9,7 @@
 import { randomUUID } from 'node:crypto'
 import type { z } from 'zod'
 import type { ApiProxy, MuxFrame, HostFrame } from '../api/index.ts'
+import type { AgentMailVerifiedApi } from '../agent-mail-forward.ts'
 import { sessionLogQuerySchema } from '../api/downloads.schema.ts'
 import type { RequestPayload, ResponseValue, RpcMethodMap } from '../api/rpc-map.ts'
 import type { ClientRequest, RpcError, RpcRequest, RpcResponse, ServerRequest, ServerResponse } from '../api/rpc.ts'
@@ -111,6 +112,10 @@ import {
   subagentPromptRequestSchema,
 } from '../api/subagents.schema.ts'
 import { jobKillRequestSchema } from '../api/jobs.schema.ts'
+import {
+  agentMailBeginRequestSchema, agentMailRedeemRequestSchema, agentMailRevokeRequestSchema,
+  agentMailAddressRequestSchema, agentMailInboxRequestSchema, agentMailSendRequestSchema, agentMailAckRequestSchema,
+} from '../api/agent-mail.schema.ts'
 
 /**
  * Unary dispatch table, keyed by (and compiler-locked to) RpcMethodMap: a map row without a
@@ -124,11 +129,20 @@ import { jobKillRequestSchema } from '../api/jobs.schema.ts'
 type UnaryRoutes = {
   [K in keyof RpcMethodMap]: {
     schema: z.ZodType<Wire<RequestPayload<K>>>
-    invoke(api: ApiProxy, request: RpcRequest<RequestPayload<K>>, signal: AbortSignal): Promise<RpcResponse<ResponseValue<K>>>
+    invoke(
+      api: ApiProxy, request: RpcRequest<RequestPayload<K>>, signal: AbortSignal, origin?: string,
+    ): Promise<RpcResponse<ResponseValue<K>>>
   }
 }
 
 const UNARY_ROUTES: UnaryRoutes = {
+  'agentMail.begin': { schema: agentMailBeginRequestSchema, invoke: (api, r, _signal, origin) => api.agentMail.begin(r, origin) },
+  'agentMail.redeem': { schema: agentMailRedeemRequestSchema, invoke: (api, r, _signal, origin) => api.agentMail.redeem(r, origin) },
+  'agentMail.revoke': { schema: agentMailRevokeRequestSchema, invoke: (api, r, _signal, origin) => api.agentMail.revoke(r, origin) },
+  'agentMail.address': { schema: agentMailAddressRequestSchema, invoke: (api, r, _signal, origin) => api.agentMail.address(r, origin) },
+  'agentMail.inbox': { schema: agentMailInboxRequestSchema, invoke: (api, r, _signal, origin) => api.agentMail.inbox(r, origin) },
+  'agentMail.send': { schema: agentMailSendRequestSchema, invoke: (api, r, _signal, origin) => api.agentMail.send(r, origin) },
+  'agentMail.ack': { schema: agentMailAckRequestSchema, invoke: (api, r, _signal, origin) => api.agentMail.ack(r, origin) },
   'session.list': { schema: sessionListRequestSchema, invoke: (api, r) => api.sessions.list(r) },
   'session.search': { schema: sessionSearchRequestSchema, invoke: (api, r, signal) => api.sessions.search(r, signal) },
   'session.create': { schema: sessionCreateRequestSchema, invoke: (api, r) => api.sessions.create(r) },
@@ -254,7 +268,7 @@ function fullResponse(narrow: RpcResponse<unknown>): Response {
  * absent ones are indistinguishable after JSON transport).
  */
 async function handleUnary<K extends keyof RpcMethodMap>(
-  api: ApiProxy, method: K, message: ClientRequest, signal: AbortSignal,
+  api: ApiProxy, method: K, message: ClientRequest, signal: AbortSignal, origin?: string,
 ): Promise<Response> {
   const route = UNARY_ROUTES[method]
   const payload = route.schema.safeParse(message.payload)
@@ -264,7 +278,7 @@ async function handleUnary<K extends keyof RpcMethodMap>(
     })
   }
   try {
-    return fullResponse(await route.invoke(api, { rpcId: message.rpcId, payload: payload.data }, signal))
+    return fullResponse(await route.invoke(api, { rpcId: message.rpcId, payload: payload.data }, signal, origin))
   } catch (error: unknown) {
     // The impl never throws business errors; reaching here means the implementation itself crashed — 500, carrier layer.
     return new Response(`handler failure: ${String(error)}`, { status: 500 })
@@ -416,7 +430,15 @@ export function toFetchHandler(api: ApiProxy): { fetch: typeof fetch } {
           code: 'bad-request', message: `method "${message.method}" does not match path "${method}"`, details: { issues: [] },
         })
       }
-      return handleUnary(api, method, message, req.signal)
+      // Only a native-key MAC from the bridge proves the original browser
+      // origin; `Origin` alone is spoofable by direct loopback callers.
+      const origin = method.startsWith('agentMail.')
+        ? (api as AgentMailVerifiedApi).verifyAgentMailOrigin(req)
+        : undefined
+      if (method.startsWith('agentMail.') && origin === undefined) {
+        return new Response('Agent Mail requires native browser pairing', { status: 403 })
+      }
+      return handleUnary(api, method, message, req.signal, origin)
     },
   }
 }

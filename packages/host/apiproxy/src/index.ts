@@ -13,6 +13,8 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
+import { AgentMailForwardVerifier } from './agent-mail-forward.ts'
+import { readNativeConsentSeed } from './native-consent-stdin.ts'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import { installSettingsSection } from '@deepseek-ai/dsh-settings'
@@ -83,6 +85,8 @@ export class ApiProxyService extends Service implements ApiProxy {
     coldBlankProbeMaxBytes: z.natural().default(DEFAULT_COLD_BLANK_PROBE_MAX_BYTES),
   })
 
+  readonly agentMail: ApiProxy['agentMail']
+  readonly verifyAgentMailOrigin: (request: Request) => string | undefined
   readonly sessions: ApiProxy['sessions']
   readonly subagents: ApiProxy['subagents']
   readonly orchestrator: ApiProxy['orchestrator']
@@ -115,10 +119,16 @@ export class ApiProxyService extends Service implements ApiProxy {
       setSource: () => {},
       onChange: () => {},
     })
+    const nativeSeedRequested = process.env.ANTON_NATIVE_CONSENT_STDIN === '1'
+    delete process.env.ANTON_NATIVE_CONSENT_STDIN
+    const nativeSeed = nativeSeedRequested ? readNativeConsentSeed() : undefined
+    const originVerifier = new AgentMailForwardVerifier(nativeSeed)
+    this.verifyAgentMailOrigin = request => originVerifier.verify(request)
     const api = createApiProxy(ctx, {
       defaultModelSelection: () => ctx.agentDefaultModel.currentSelection(),
       saveDefaultModelSelection: selection => ctx.agentDefaultModel.saveSelection(selection),
       cwd: process.cwd(),
+      ...(nativeSeed === undefined ? {} : { nativeConsentSeed: nativeSeed }),
       ...config.nativeOpen === undefined ? {} : { canOpenPath: () => config.nativeOpen as boolean },
       ...(config.sessionExportCompressionLevel === undefined
         ? {}
@@ -127,6 +137,7 @@ export class ApiProxyService extends Service implements ApiProxy {
         ? {}
         : { coldBlankProbeMaxBytes: config.coldBlankProbeMaxBytes }),
     })
+    this.agentMail = api.agentMail
     this.sessions = api.sessions
     this.subagents = api.subagents
     this.orchestrator = api.orchestrator

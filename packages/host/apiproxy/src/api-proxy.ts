@@ -4,6 +4,10 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { AgentMailConsent, type MailOperation } from './agent-mail-consent.ts'
+import { deliverNativeChallenge } from './agent-mail-display.ts'
+import type {} from '@deepseek-ai/dsh-agent-queue'
+import type {} from '@deepseek-ai/dsh-agent-queue/direct'
 import { mkdir, readFile, stat } from 'node:fs/promises'
 import { basename, dirname } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -733,6 +737,10 @@ export interface ApiProxyDefaults {
   saveDefaultModelSelection?: (selection: ModelSelection) => Promise<void>
   /** Default project directory for new sessions whose create request carries no cwd. */
   cwd: string
+  /** Absent outside native-started Anton. Never log, persist or return this seed. */
+  nativeConsentSeed?: Uint8Array
+  /** Private signed bridge transport; injectable for focused Host RPC tests. */
+  deliverAgentMailChallenge?: typeof deliverNativeChallenge
   /** Native open-with-default-application; injectable for carrier tests. */
   openPath?: (path: string, signal: AbortSignal) => Promise<void>
   /** Native text-editor handoff; injectable for settings-document tests. */
@@ -1313,6 +1321,9 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   const pendingApprovals = new Map<RpcId, PendingApproval>()
   const muxQueues = new Set<FrameQueue<RpcRequest<MuxFrame>>>()
   const imageAdmissionChains = new WeakMap<Agent, Promise<void>>()
+  const mailConsent = new AgentMailConsent(defaults.nativeConsentSeed)
+  ctx.on('agent/disposed', ({ agent }) => { mailConsent.revokeAgent(agent) })
+  ctx.effect(() => () => { mailConsent.dispose() }, 'apiproxy: agent-mail-consent')
 
   /** Serialize image admission with model selection for one agent. */
   function serializeImageAdmission<T>(agent: Agent, operation: () => Promise<T>): Promise<T> {
@@ -2236,7 +2247,150 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return ok(request, namespaceView(descriptor))
   }
 
+  const mailAgent = (sessionId: SessionId): Agent | undefined => ctx.agents.get(sessionId)
+  const mailOrigin = (origin: string | undefined): origin is string =>
+    typeof origin === 'string' && /^http:\/\/(antoncode\.localhost|localhost|127\.0\.0\.1):3742$/.test(origin)
+  const mailDenied = <T>(request: RpcRequest<unknown>): RpcResponse<T> =>
+    err(request, { code: 'internal', message: 'Agent Mail requires native browser authorization', details: {} })
+  const mailContext = async (sessionId: SessionId, origin: string | undefined): Promise<{
+    agent: Agent
+    workspaceId: WorkspaceId
+  } | undefined> => {
+    if (!mailOrigin(origin)) return undefined
+    const agent = mailAgent(sessionId)
+    const direct = ctx.get('agentDirectQueue')
+    if (!agent || !direct) return undefined
+    try {
+      const own = await direct.address(agent, { peerLimit: 1 })
+      if (ctx.agents.get(sessionId) !== agent) return undefined
+      return { agent, workspaceId: own.workspaceId }
+    } catch { return undefined }
+  }
+  const allowedMail = async (
+    sessionId: SessionId, grant: string, origin: string | undefined, operation: MailOperation,
+  ): Promise<{ agent: Agent; workspaceId: WorkspaceId } | undefined> => {
+    const current = await mailContext(sessionId, origin)
+    return current && origin && mailConsent.allows(grant, current.agent, origin, current.workspaceId, operation)
+      ? current : undefined
+  }
+
   return {
+    agentMail: {
+      async begin(request, origin) {
+        const current = await mailContext(request.payload.sessionId, origin)
+        const seed = defaults.nativeConsentSeed
+        if (!current || !seed || !origin) return mailDenied(request)
+        const operations = request.payload.operations
+        const challenge = mailConsent.begin({ ...current, origin, operations })
+        if (!challenge) return mailDenied(request)
+        const summary = `Allow Agent Mail ${operations.join(', ')} for session ${current.agent.id} in workspace ${current.workspaceId}`
+        const delivered = await (defaults.deliverAgentMailChallenge ?? deliverNativeChallenge)(seed, { ...challenge, summary })
+        if (!delivered || ctx.agents.get(current.agent.id) !== current.agent) {
+          mailConsent.revokeAgent(current.agent)
+          return mailDenied(request)
+        }
+        return ok(request, { requestId: challenge.requestId, expiresAt: challenge.expiresAt })
+      },
+      async redeem(request, origin) {
+        const current = await mailContext(request.payload.sessionId, origin)
+        if (!current || !origin) return mailDenied(request)
+        const grant = mailConsent.redeem(request.payload.requestId, request.payload.code,
+          current.agent, origin, current.workspaceId)
+        return grant ? ok(request, { grant }) : mailDenied(request)
+      },
+      async revoke(request, origin) {
+        const current = await allowedMail(request.payload.sessionId, request.payload.grant, origin, 'address')
+        if (!current) return mailDenied(request)
+        mailConsent.revokeToken(request.payload.grant)
+        return ok(request, { revoked: true as const })
+      },
+      async address(request, origin) {
+        const current = await allowedMail(request.payload.sessionId, request.payload.grant, origin, 'address')
+        const direct = ctx.get('agentDirectQueue')
+        if (!current || !direct) return mailDenied(request)
+        try {
+          return ok(request, await direct.address(current.agent, {
+            ...request.payload.peerCursor === undefined ? {} : { peerCursor: request.payload.peerCursor },
+            ...request.payload.peerLimit === undefined ? {} : { peerLimit: request.payload.peerLimit },
+          }))
+        } catch { return mailDenied(request) }
+      },
+      async inbox(request, origin) {
+        const operation = request.payload.channel === 'local' ? 'local-read' : 'direct-read'
+        const current = await allowedMail(request.payload.sessionId, request.payload.grant, origin, operation)
+        if (!current) return mailDenied(request)
+        try {
+          const options = {
+            ...request.payload.cursor === undefined ? {} : { cursor: request.payload.cursor },
+            ...request.payload.limit === undefined ? {} : { limit: request.payload.limit },
+          }
+          if (request.payload.channel === 'local') {
+            const queue = ctx.get('agentQueue')
+            if (!queue) return mailDenied(request)
+            const page = await queue.read(current.agent, { ...options, workspaceId: current.workspaceId })
+            return ok(request, {
+              messages: page.messages.map(message => ({
+                seq: message.seq, sender: message.sender, senderWorkspaceId: message.workspaceId,
+                body: message.body, createdAt: message.createdAt,
+              })), cursor: page.cursor, hasMore: page.hasMore,
+            })
+          }
+          const direct = ctx.get('agentDirectQueue')
+          if (!direct) return mailDenied(request)
+          const page = await direct.inbox(current.agent, options)
+          return ok(request, { messages: page.messages.map(message => ({
+            seq: message.seq, sender: message.sender, senderWorkspaceId: message.senderWorkspaceId,
+            body: message.body, createdAt: message.createdAt,
+          })), cursor: page.inboxCursor, hasMore: page.hasMore })
+        } catch (error) {
+          // A valid address with no local deliveries has no subscription row
+          // yet. Do not force an unrelated workspace broadcast subscription.
+          if (request.payload.channel === 'local' && error instanceof Error
+            && error.message.includes('queue session has no addressed messages')) {
+            return ok(request, { messages: [], cursor: 0, hasMore: false })
+          }
+          return mailDenied(request)
+        }
+      },
+      async send(request, origin) {
+        const operation = request.payload.channel === 'local' ? 'local-send' : 'direct-send'
+        const current = await allowedMail(request.payload.sessionId, request.payload.grant, origin, operation)
+        if (!current) return mailDenied(request)
+        try {
+          if (request.payload.channel === 'local') {
+            const queue = ctx.get('agentQueue')
+            if (!queue) return mailDenied(request)
+            const sent = await queue.publish(current.agent, {
+              workspaceId: current.workspaceId, recipients: request.payload.recipients,
+              body: request.payload.body, workspaceWide: request.payload.workspaceWide ?? false,
+            })
+            return ok(request, { seq: sent.seq })
+          }
+          if (request.payload.workspaceWide !== undefined) return mailDenied(request)
+          const direct = ctx.get('agentDirectQueue')
+          if (!direct) return mailDenied(request)
+          const sent = await direct.send(current.agent, {
+            recipients: request.payload.recipients, body: request.payload.body,
+          })
+          return ok(request, { seq: sent.seq })
+        } catch { return mailDenied(request) }
+      },
+      async ack(request, origin) {
+        const operation = request.payload.channel === 'local' ? 'local-ack' : 'direct-ack'
+        const current = await allowedMail(request.payload.sessionId, request.payload.grant, origin, operation)
+        if (!current) return mailDenied(request)
+        try {
+          if (request.payload.channel === 'local') {
+            const queue = ctx.get('agentQueue')
+            if (!queue) return mailDenied(request)
+            return ok(request, { cursor: await queue.ack(current.agent, current.workspaceId, request.payload.throughSeq) })
+          }
+          const direct = ctx.get('agentDirectQueue')
+          if (!direct) return mailDenied(request)
+          return ok(request, { cursor: await direct.ackInbox(current.agent, request.payload.throughSeq) })
+        } catch { return mailDenied(request) }
+      },
+    },
     sessions: {
       // Attached sessions summarize from memory; persisted-but-unattached (cold)
       // sessions merge in from the persistence store so history survives restarts.
