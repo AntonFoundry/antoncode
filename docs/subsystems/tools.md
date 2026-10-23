@@ -555,6 +555,19 @@ guard(guard: ToolGuard): () => void
 get(name: string, scope?: ScopeKey): ToolDefinition | undefined
 
 /**
+ * Look up a tool for PRESENTATION only (event render intent, transcript
+ * replay): the pre-paging capability view. A `paged` grant is one agent's
+ * session-lifetime state, so the model-facing {@link get} hides a granted
+ * tool from every cold reader — a history page or replayed session would
+ * lose its presenter views for exactly the calls it records. Restrictions
+ * and scoped shadowing still apply; only the grant filter does not.
+ * @param name - the tool name as registered.
+ * @param scope - the viewing scope (the agent); omitted = the global view.
+ * @returns the definition the scope resolves for rendering, or undefined when none exists.
+ */
+getPresentable(name: string, scope?: ScopeKey): ToolDefinition | undefined
+
+/**
  * Project visible definitions onto the allowlisted model-facing schema fields,
  * excluding execution and presentation callbacks.
  * @param scope - the viewing scope (the agent); omitted = the global view.

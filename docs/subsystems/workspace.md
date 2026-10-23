@@ -295,6 +295,21 @@ async pref(repoPath: string): Promise<WorktreeModePref | undefined>
 async setPref(repoPath: string, pref: WorktreeModePref): Promise<void>
 
 /**
+ * Claim or update a worktree's display alias from a titled session. The
+ * first titled session running inside the worktree claims the alias; later
+ * titles from that same session refine it (fallback → provider → user
+ * rename), and other sessions never rename it — a reused worktree keeps
+ * the name of the session that first titled it. The alias is display-only:
+ * the directory path and branch never move.
+ * @param sessionId - The titled session.
+ * @param cwd - The session's working directory; must be a registered
+ *   worktree path for any effect.
+ * @param title - The normalized session title; slugified for display.
+ * @returns resolution after durability, or immediately when nothing applies.
+ */
+async aliasFromTitle(sessionId: string, cwd: string | undefined, title: string): Promise<void>
+
+/**
  * Remove one worktree: `git worktree remove` (refuses a dirty tree unless
  * forced) plus the durable record deletion. The branch is never deleted —
  * merge-back keeps it. A git removal of an already-missing worktree
@@ -306,5 +321,5 @@ async setPref(repoPath: string, pref: WorktreeModePref): Promise<void>
 async remove(id: WorktreeId, opts: { force?: boolean } = {}): Promise<void>
 ```
 
-Source: [`packages/workspace/worktree/src/index.ts:83`](../../packages/workspace/worktree/src/index.ts)
+Source: [`packages/workspace/worktree/src/index.ts:84`](../../packages/workspace/worktree/src/index.ts)
 <!-- END GENERATED cordis-surface -->

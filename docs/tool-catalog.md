@@ -16,6 +16,7 @@ This table connects model-visible tool names to the plugin package and service s
 | Tool package | Model-visible names | Requires | Writes / affects | Shipped aliases | Deployment note |
 | --- | --- | --- | --- | --- | --- |
 | `@deepseek-ai/dsh-tool-ask-user` | `ask_user_question` | `ctx.tools`, `ctx.userQuestions` | `tool/call`, `tool/result after a UI/provider answers the question` | - | ask_user_question pauses the tool call until the active UI provider returns a human answer. |
+| `@deepseek-ai/dsh-tool-agent-queue` | `agent_queue_ack`, `agent_queue_address`, `agent_queue_dm_address`, `agent_queue_dm_send`, `agent_queue_inbox_ack`, `agent_queue_inbox_read`, `agent_queue_read`, `agent_queue_send`, `agent_queue_subscribe` | `ctx.tools`, `ctx.agentQueue`, `ctx.agentDirectQueue (direct inbox tools only)`, `an owning Agent at execution time` | `tool/call`, `durable workspace queue records through ctx.agentQueue`, `tool/result` | - | Workspace addressing, delivery, and cursors are the host-owned durable queue (`@deepseek-ai/dsh-agent-queue`), not an Agent inbox: publishing never sends inbox input or wakes a model. The `agent_queue_dm_*` and `agent_queue_inbox_*` tools belong to the separately loaded `@deepseek-ai/dsh-tool-agent-queue/direct` plugin and cover cross-workspace direct messages. |
 | `@deepseek-ai/dsh-tools` | `run_code` | `ctx.tools`, `ctx.codeRuntime (execution time)`, `ctx.systemPrompt` | `tool/call`, `one tool/code-dispatch-start + tool/code-dispatch pair per bridged sub-call`, `tool/result` | - | Owned by the tool registry as a reserved transport outside filterable capability layers under `mode: code` / `mode: both` (see the Code Mode Agent Note). Under `code` it is the registry's only wire contribution; the other visible capabilities are declared in a generated SDK section in the loaded runtime's language, and a program calls them through bindings scheduled under the native concurrency contract (submission-ordered starts and policy; concurrency-safe bodies overlap up to `maxParallelSubCalls`) that re-enter the complete guarded tool pipeline and link each nested execution to this outer result. |
 | `@deepseek-ai/dsh-plan-mode` | `exit_plan_mode`, `plan_write` | `ctx.tools`, `ctx.systemPrompt`, `ctx.userQuestions (execution time, opportunistic)` | `tool/call`, `plan/mode inactive on an approved review`, `tool/result` | - | exit_plan_mode stays in the model-facing schema while planning is inactive so transitions add no tool-catalog churn on top of the plan-policy change. Its execute path rejects calls outside plan mode; in plan mode it presents the plan over the user-questions seam (approve / keep planning with feedback), and approval logs plan mode inactive at the step boundary. |
 | `@deepseek-ai/dsh-tool-bash` | `bash` | `ctx.tools`, `ctx.shell`, `ctx.systemPrompt`, `ctx.shellEnv`, `ctx.jobs at call time for run_in_background` | `tool/call`, `tool/result` | - | The bash tool is the model-facing consumer of the bash executor seam. A `run_in_background` run registers with the generic `ctx.jobs` runtime and is collected/stopped through the `job_*` tools from `@deepseek-ai/dsh-tool-jobs`; the `enableRunInBackground` config (default true) removes the parameter entirely when disabled. |
@@ -33,7 +34,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-skill` | `skill` | `ctx.tools`, `ctx.agents`, `ctx.skills` | `tool/call`, `tool/result`, `user/message replacement catalogs via agent.inject()` | - | - |
 | `@deepseek-ai/dsh-tool-session-query` | `session_event_read`, `session_event_search`, `session_event_trace`, `session_search`, `session_trace` | `ctx.tools`, `ctx.systemPrompt`, `ctx.sessionQuery`, `a calling Agent for workspace authority` | `tool/call`, `tool/result` | - | The five read-only tools hide provider cursors and authorize every result from the immutable calling agent session. The package is opt-in; compositions that need enforced deadlines or bounded inline output also mount the generic timeout or spill policies. |
 | `@deepseek-ai/dsh-tool-subagent` | `subagent` | `ctx.tools`, `ctx.subagents`, `ctx.systemPrompt` | `tool/call`, `tool/result`, `child session events through the chosen provider` | `subagent`, `subagent_fork` | The registered tool name is the load-time `toolName` config (default `subagent`); the schema above is that default. The shipped compositions load this package once per subagent backend, so the model additionally sees `subagent_fork` bound to the fork backend. Each instance's description, `run_in_background` parameter, and system-prompt policy follow its own `backgroundMode` and `enableRunInBackground`, so the two shipped schemas are not identical: `subagent` is `continuable` and defaults omitted calls to background with automatic settlement delivery, while `subagent_fork` stays `one-shot` and defaults them to foreground — see `packages/bundle/base/cordis.patch.yml` and `examples/acp-agent/cordis.yml`. |
-| `@deepseek-ai/dsh-tool-subagent-control` | `interrupt_agent`, `list_agents`, `send_message` | `ctx.tools`, `ctx.subagents`, `ctx.agents and ctx.sessionProjections (list_agents only)` | `tool/call`, `tool/result`, `child session events through ctx.subagents` | - | The globally named control tools over continuable background subagents: provider-bound `tool-subagent` instances register distinct delegation tools, while this package registers `send_message` and `interrupt_agent` once, plus `list_agents` from its separately loaded `/list-agents` plugin (whose catalog rows use the sessionProjections and live Agent registries). |
+| `@deepseek-ai/dsh-tool-subagent-control` | `interrupt_agent`, `list_agents`, `send_message`, `set_agent_model` | `ctx.tools`, `ctx.subagents`, `ctx.llm (set_agent_model only)`, `ctx.agents and ctx.sessionProjections (list_agents only)` | `tool/call`, `tool/result`, `child session events through ctx.subagents` | - | The globally named control tools over continuable background subagents: provider-bound `tool-subagent` instances register distinct delegation tools, while this package registers `send_message`, `interrupt_agent`, and `set_agent_model` once, plus `list_agents` from its separately loaded `/list-agents` plugin (whose catalog rows use the sessionProjections and live Agent registries). `set_agent_model` resolves the replacement route through `ctx.llm` before installing it; the other root tools do not touch the model runtime. |
 | `@deepseek-ai/dsh-tool-subagent-report` | `report` | `ctx.subagents`, `ctx.systemPrompt`, `a live continuable in-process child Agent` | `tool/call`, `tool/result`, `a user-role message in the direct parent session` | - | Registered per continuable in-process child rather than globally, so this schema is visible only inside such a child and survives its global `toolFilter`. The same contribution installs the child-scoped `tool:report` prompt section, which this catalog does not render. The parent-facing `send_message` tool is installed independently. |
 | `@deepseek-ai/dsh-tool-jobs` | `job_kill`, `job_list`, `job_output` | `ctx.tools`, `ctx.jobs`, `ctx.systemPrompt` | `tool/call`, `tool/result`, `user/message via agent.inject() for background completion notices` | - | The kind-agnostic background-job controller: background bash commands, PTY sends, and subagents are read, listed, and killed through the same three tools. Loading the plugin attaches the controller that arms producers' `ctx.jobs.start()`. |
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`, `owning Agent session` | `tool/call`, `todo/write`, `tool/result` | - | todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task. |
@@ -41,6 +42,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
 | `@deepseek-ai/dsh-tool-flowbuilder` | `flow_block_save`, `flow_get`, `flow_library_search`, `flow_list`, `flow_run`, `flow_run_status`, `flow_save` | `ctx.tools`, `ctx.flowBuilder`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | flow.* tools author, inspect, and search workflow definitions and the reusable block library behind ctx.flowBuilder. |
+| `@deepseek-ai/dsh-tool-zai` | `analyze_data_visualization`, `analyze_image`, `analyze_video`, `diagnose_error_screenshot`, `extract_text_from_screenshot`, `get_repo_structure`, `read_file`, `search_doc`, `ui_diff_check`, `ui_to_artifact`, `understand_technical_diagram`, `web_search_prime`, `webReader` | `ctx.tools`, `ctx.credentials with ambient-environment fallback at call time`, `outbound network at call time` | `tool/call`, `tool/result` | - | Opt-in native ports of four Z.AI MCP servers (`zai-vision`, `zai-web-search`, `zai-web-reader`, `zai-read-github`): remote calls reuse the MCP Streamable HTTP endpoints per call and vision calls the same `chat/completions` endpoint as `@z_ai/mcp-server`. `enabledTools` (default: all) selects the registered set; `apiKeyEnv` (default `Z_AI_API_KEY`) is resolved through `ctx.credentials` on every call. |
 
 <a id="deepseek-aidsh-tool-ask-user"></a>
 
@@ -115,6 +117,228 @@ Ask the user a concise question when you need confirmation, a choice, or missing
 Source: [`packages/interaction/tool-ask-user/src/index.ts`](../packages/interaction/tool-ask-user/src/index.ts)
 
 ask_user_question pauses the tool call until the active UI provider returns a human answer.
+
+<a id="deepseek-aidsh-tool-agent-queue"></a>
+
+## `@deepseek-ai/dsh-tool-agent-queue`
+
+### `agent_queue_ack`
+
+Advance your durable subscription cursor after reading messages. Does not remove another recipient’s messages or wake agents.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "description": "Workspace id for your subscription."
+    },
+    "through_seq": {
+      "type": "integer",
+      "description": "Last processed nonnegative stream sequence."
+    }
+  },
+  "required": [
+    "workspace_id",
+    "through_seq"
+  ]
+}
+```
+
+Source: [`packages/interaction/tool-agent-queue/src/index.ts`](../packages/interaction/tool-agent-queue/src/index.ts)
+
+### `agent_queue_address`
+
+Show your exact session address and available workspace queue identities. Share the session id with agents in the same workspace when addressing a message.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/interaction/tool-agent-queue/src/index.ts`](../packages/interaction/tool-agent-queue/src/index.ts)
+
+### `agent_queue_dm_address`
+
+Discover who you can message: your own session address, your direct-inbox position (inboxCursor), your unread count, and one page of the live agents in every workspace — roots, their subagents, and siblings. Each peer carries its workspace id and the transport that reaches it: use agent_queue_dm_send for a "direct" peer in another workspace and agent_queue_send for a "workspace-queue" peer in your own, so a local message is never duplicated into the cross-workspace ledger. Peers are ordered by workspace id then session id; when hasMorePeers is true, call again with peer_cursor set to nextPeerCursor to continue the walk.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "peer_cursor": {
+      "type": "string",
+      "description": "Optional nextPeerCursor from a previous call; discovery resumes strictly after that peer."
+    },
+    "peer_limit": {
+      "type": "integer",
+      "description": "Maximum peers in this page, from 1 to 128 (default set by service)."
+    }
+  }
+}
+```
+
+Source: [`packages/interaction/tool-agent-queue/src/direct.ts`](../packages/interaction/tool-agent-queue/src/direct.ts)
+
+### `agent_queue_dm_send`
+
+Send one direct message to up to 32 agent sessions working in OTHER workspaces. For a recipient in your own workspace use agent_queue_send instead. Delivery is durable and does not wake or interrupt a recipient.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "recipients": {
+      "type": "array",
+      "description": "Session ids to address (maximum 32); every recipient must be in a workspace other than yours.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "body": {
+      "type": "string",
+      "description": "Message text (maximum 65536 characters)."
+    }
+  },
+  "required": [
+    "recipients",
+    "body"
+  ]
+}
+```
+
+Source: [`packages/interaction/tool-agent-queue/src/direct.ts`](../packages/interaction/tool-agent-queue/src/direct.ts)
+
+### `agent_queue_inbox_ack`
+
+Advance your durable direct-inbox position (inboxCursor) after processing direct messages. It leaves workspace queue cursors alone, never removes another agent’s copy, and never wakes an agent.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "through_seq": {
+      "type": "integer",
+      "description": "Last processed nonnegative direct-ledger sequence."
+    }
+  },
+  "required": [
+    "through_seq"
+  ]
+}
+```
+
+Source: [`packages/interaction/tool-agent-queue/src/direct.ts`](../packages/interaction/tool-agent-queue/src/direct.ts)
+
+### `agent_queue_inbox_read`
+
+Read cross-workspace direct messages addressed to you, starting after your direct-inbox position (inboxCursor), which is separate from any workspace queue cursor. Acknowledge only after processing them.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "cursor": {
+      "type": "integer",
+      "description": "Optional nonnegative direct-ledger sequence to read after; defaults to your acknowledged inboxCursor."
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Maximum messages, from 1 to 100 (default set by service)."
+    }
+  }
+}
+```
+
+Source: [`packages/interaction/tool-agent-queue/src/direct.ts`](../packages/interaction/tool-agent-queue/src/direct.ts)
+
+### `agent_queue_read`
+
+Read addressed and subscribed workspace messages from a cursor, without waking another agent. Acknowledge only after consuming the results.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "description": "Optional workspace id; defaults to your current workspace."
+    },
+    "cursor": {
+      "type": "integer",
+      "description": "Optional nonnegative stream sequence; defaults to your acknowledged cursor."
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Maximum messages, from 1 to 100 (default set by service)."
+    }
+  }
+}
+```
+
+Source: [`packages/interaction/tool-agent-queue/src/index.ts`](../packages/interaction/tool-agent-queue/src/index.ts)
+
+### `agent_queue_send`
+
+Publish a message within your workspace to up to 32 session addresses, the workspace stream, or both. Durable delivery does not wake or interrupt recipients.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "description": "Optional workspace id; defaults to your current workspace."
+    },
+    "recipients": {
+      "type": "array",
+      "description": "Optional session ids of recipients in this workspace (maximum 32).",
+      "items": {
+        "type": "string"
+      }
+    },
+    "workspace_wide": {
+      "type": "boolean",
+      "description": "Publish to all subscribed workspace sessions as well as any direct recipients."
+    },
+    "body": {
+      "type": "string",
+      "description": "Message text (maximum 65536 characters)."
+    }
+  },
+  "required": [
+    "body"
+  ]
+}
+```
+
+Source: [`packages/interaction/tool-agent-queue/src/index.ts`](../packages/interaction/tool-agent-queue/src/index.ts)
+
+### `agent_queue_subscribe`
+
+Subscribe your session to a workspace queue. This stores an independent durable read cursor; it does not wake or interrupt model turns.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "description": "Workspace id from agent_queue_address."
+    }
+  },
+  "required": [
+    "workspace_id"
+  ]
+}
+```
+
+Source: [`packages/interaction/tool-agent-queue/src/index.ts`](../packages/interaction/tool-agent-queue/src/index.ts)
+
+Workspace addressing, delivery, and cursors are the host-owned durable queue (`@deepseek-ai/dsh-agent-queue`), not an Agent inbox: publishing never sends inbox input or wakes a model. The `agent_queue_dm_*` and `agent_queue_inbox_*` tools belong to the separately loaded `@deepseek-ai/dsh-tool-agent-queue/direct` plugin and cover cross-workspace direct messages.
 
 <a id="deepseek-aidsh-tools"></a>
 
@@ -1629,7 +1853,51 @@ Send a message to a background subagent by its subagent id, continuing the same 
 
 Source: [`packages/subagent/tool-subagent-control/src/index.ts`](../packages/subagent/tool-subagent-control/src/index.ts)
 
-The globally named control tools over continuable background subagents: provider-bound `tool-subagent` instances register distinct delegation tools, while this package registers `send_message` and `interrupt_agent` once, plus `list_agents` from its separately loaded `/list-agents` plugin (whose catalog rows use the sessionProjections and live Agent registries).
+### `set_agent_model`
+
+Switch a running subagent to another model. Use it when the subagent is stuck because its current model is exhausted, rate-limited, or otherwise failing: the switch applies to its next model request, including the retry of the turn already in progress, and to every later request until the subagent stops. The subagent must still be running. This changes no queued work; use send_message to give it another task. Prefer a model from the same or a cheaper provider that the subagent can reach.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "agent_id": {
+      "type": "string",
+      "description": "The agent id of the running subagent whose model should change."
+    },
+    "provider": {
+      "type": "string",
+      "description": "Provider route of the replacement model, as shown in the available models list."
+    },
+    "model": {
+      "type": "string",
+      "description": "Provider-owned model id of the replacement model."
+    },
+    "reasoning_effort": {
+      "type": "string",
+      "description": "Optional reasoning effort for the replacement model. Omit to use that model's default.",
+      "enum": [
+        "off",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
+    }
+  },
+  "required": [
+    "agent_id",
+    "provider",
+    "model"
+  ]
+}
+```
+
+Source: [`packages/subagent/tool-subagent-control/src/index.ts`](../packages/subagent/tool-subagent-control/src/index.ts)
+
+The globally named control tools over continuable background subagents: provider-bound `tool-subagent` instances register distinct delegation tools, while this package registers `send_message`, `interrupt_agent`, and `set_agent_model` once, plus `list_agents` from its separately loaded `/list-agents` plugin (whose catalog rows use the sessionProjections and live Agent registries). `set_agent_model` resolves the replacement route through `ctx.llm` before installing it; the other root tools do not touch the model runtime.
 
 <a id="deepseek-aidsh-tool-subagent-report"></a>
 
@@ -2314,3 +2582,420 @@ Create or update one workflow definition (it appears on the Dag Flow canvas). No
 Source: [`packages/flowbuilder/tool-flowbuilder/src/index.ts`](../packages/flowbuilder/tool-flowbuilder/src/index.ts)
 
 flow.* tools author, inspect, and search workflow definitions and the reusable block library behind ctx.flowBuilder.
+
+<a id="deepseek-aidsh-tool-zai"></a>
+
+## `@deepseek-ai/dsh-tool-zai`
+
+### `analyze_data_visualization`
+
+Analyze data visualizations, charts, graphs, and dashboards to extract insights and trends. Use this tool ONLY when the user has a data visualization image and wants to understand the data patterns or metrics. This tool specializes in interpreting visual data representations. Do NOT use for: UI mockups, error messages, or technical architecture diagrams.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "image_source": {
+      "type": "string",
+      "description": "Local file path or remote URL to the image"
+    },
+    "prompt": {
+      "type": "string",
+      "description": "What insights or metrics to surface."
+    },
+    "analysis_focus": {
+      "type": "string",
+      "description": "Focus area: trends, anomalies, comparisons, summary."
+    }
+  },
+  "required": [
+    "image_source",
+    "prompt"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
+
+### `analyze_image`
+
+General-purpose image analysis for scenarios not covered by specialized tools. Use this tool as a FALLBACK when none of the other specialized tools (ui_to_artifact, extract_text_from_screenshot, diagnose_error_screenshot, understand_technical_diagram, analyze_data_visualization, ui_diff_check) fit the user's need. This tool provides flexible image understanding for any visual content.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "image_source": {
+      "type": "string",
+      "description": "Local file path or remote URL to the image"
+    },
+    "prompt": {
+      "type": "string",
+      "description": "Detailed description of what you want to analyze, extract, or understand from the image. Be specific about your requirements."
+    }
+  },
+  "required": [
+    "image_source",
+    "prompt"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
+
+### `analyze_video`
+
+Analyze video content using advanced AI vision models. Use this tool when the user wants to: understand what happens in a video, extract key moments or actions from video, analyze video content, scenes, or sequences, get descriptions of video footage, identify objects, people, or activities in video. Supports both local files and remote URL. Maximum file size: 8MB. Supports MP4, MOV, M4V formats.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "video_source": {
+      "type": "string",
+      "description": "Local file path or remote URL to the video (supports MP4, MOV, M4V)"
+    },
+    "prompt": {
+      "type": "string",
+      "description": "Detailed text prompt describing what to analyze, extract, or understand from the video"
+    }
+  },
+  "required": [
+    "video_source",
+    "prompt"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
+
+### `diagnose_error_screenshot`
+
+Diagnose and analyze error messages, stack traces, and exception screenshots. Use this tool ONLY when the user has an error screenshot and needs help understanding or fixing it. This tool specializes in error analysis and provides actionable solutions. Do NOT use for: code extraction, UI analysis, or diagram understanding.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "image_source": {
+      "type": "string",
+      "description": "Local file path or remote URL to the image"
+    },
+    "prompt": {
+      "type": "string",
+      "description": "What the user was doing and what help is needed."
+    },
+    "context": {
+      "type": "string",
+      "description": "Additional context: environment, versions, recent changes."
+    }
+  },
+  "required": [
+    "image_source",
+    "prompt"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
+
+### `extract_text_from_screenshot`
+
+Extract and recognize text from screenshots using advanced OCR capabilities. Use this tool ONLY when the user has a screenshot containing text and wants to extract it. This tool specializes in OCR for code, terminal output, documentation, and general text extraction. Do NOT use for: UI design conversion, error diagnosis, or diagram understanding.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "image_source": {
+      "type": "string",
+      "description": "Local file path or remote URL to the image"
+    },
+    "prompt": {
+      "type": "string",
+      "description": "What text to extract and any formatting requirements."
+    },
+    "programming_language": {
+      "type": "string",
+      "description": "Programming language of code in the screenshot, when applicable."
+    }
+  },
+  "required": [
+    "image_source",
+    "prompt"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
+
+### `get_repo_structure`
+
+Get the directory structure and file list of a GitHub repository.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "repo_name": {
+      "type": "string",
+      "description": "GitHub repository: owner/repo (e.g. \"vitejs/vite\")"
+    },
+    "dir_path": {
+      "type": "string",
+      "description": "The directory path to inspect (default: root \"/\")"
+    }
+  },
+  "required": [
+    "repo_name"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
+
+### `read_file`
+
+Read the full code content of a specific file in a GitHub repository.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "repo_name": {
+      "type": "string",
+      "description": "GitHub repository: owner/repo (e.g. \"vitejs/vite\")"
+    },
+    "file_path": {
+      "type": "string",
+      "description": "The relative path to the file (e.g. \"src/index.ts\")."
+    }
+  },
+  "required": [
+    "repo_name",
+    "file_path"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
+
+### `search_doc`
+
+Search documentation, issues, and commits of a GitHub repository.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "repo_name": {
+      "type": "string",
+      "description": "GitHub repository: owner/repo (e.g. \"vitejs/vite\")"
+    },
+    "query": {
+      "type": "string",
+      "description": "The search keywords or question about the repository."
+    },
+    "language": {
+      "type": "string",
+      "description": "'zh' or 'en' (choose according to context language)."
+    }
+  },
+  "required": [
+    "repo_name",
+    "query"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
+
+### `ui_diff_check`
+
+Compare two UI screenshots to identify visual differences and implementation discrepancies. Use this tool ONLY when the user wants to compare an expected/reference UI with an actual implementation. This tool is specialized for UI quality assurance and design-to-implementation verification. Do NOT use for: general image comparison, error diagnosis, or analyzing single UIs.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "expected_image_source": {
+      "type": "string",
+      "description": "Local file path or remote URL to the image"
+    },
+    "actual_image_source": {
+      "type": "string",
+      "description": "Local file path or remote URL to the image"
+    },
+    "prompt": {
+      "type": "string",
+      "description": "Instructions for the comparison. Specify what aspects to focus on or what level of detail is needed."
+    }
+  },
+  "required": [
+    "expected_image_source",
+    "actual_image_source",
+    "prompt"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
+
+### `ui_to_artifact`
+
+Convert UI screenshots into various artifacts: code, prompts, design specifications, or descriptions. Use this tool ONLY when the user wants to: generate frontend code from UI design (output_type='code'), create AI prompts for UI generation (output_type='prompt'), extract design specifications (output_type='spec'), get natural language description of the UI (output_type='description'). Do NOT use for: screenshots containing text/code to extract, error messages, diagrams, or data visualizations.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "image_source": {
+      "type": "string",
+      "description": "Local file path or remote URL to the image"
+    },
+    "output_type": {
+      "type": "string",
+      "description": "Type of output to generate. Options: 'code' (generate frontend code), 'prompt' (generate AI prompt for recreating this UI), 'spec' (generate design specification document), 'description' (natural language description of the UI).",
+      "enum": [
+        "code",
+        "prompt",
+        "spec",
+        "description"
+      ]
+    },
+    "prompt": {
+      "type": "string",
+      "description": "Detailed instructions describing what to generate from this UI image. Should clearly state the desired output and any specific requirements."
+    }
+  },
+  "required": [
+    "image_source",
+    "output_type",
+    "prompt"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
+
+### `understand_technical_diagram`
+
+Analyze and explain technical diagrams including architecture diagrams, flowcharts, UML, ER diagrams, and system design diagrams. Use this tool ONLY when the user has a technical diagram and wants to understand its structure or components. This tool specializes in interpreting visual technical documentation. Do NOT use for: UI screenshots, error messages, or data visualizations/charts.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "image_source": {
+      "type": "string",
+      "description": "Local file path or remote URL to the image"
+    },
+    "prompt": {
+      "type": "string",
+      "description": "What to explain about the diagram."
+    },
+    "diagram_type": {
+      "type": "string",
+      "description": "Diagram kind (architecture, flowchart, UML, ER, system design)."
+    }
+  },
+  "required": [
+    "image_source",
+    "prompt"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
+
+### `web_search_prime`
+
+Search web information, returns results including web page title, web page URL, web page summary, website name, website icon, etc.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "search_query": {
+      "type": "string",
+      "description": "Content to be searched, it is recommended that the search query not exceed 70 characters"
+    },
+    "search_domain_filter": {
+      "type": "string",
+      "description": "Used to limit the scope of search results, only return content from specified whitelist domains, such as: www.example.com."
+    },
+    "search_recency_filter": {
+      "type": "string",
+      "description": "Search for web pages within a specified time range. Default is noLimit Available values:- oneDay, within one day- oneWeek, within one week- oneMonth, within one month- oneYear, within one year- noLimit, no limit (default)"
+    },
+    "content_size": {
+      "type": "string",
+      "description": "Control the number of words in the web page summary; default value is medium - medium: balanced mode, suitable for most queries. 400-600 words.- high: maximize context to provide more comprehensive answers, but higher cost, 2500 words."
+    },
+    "location": {
+      "type": "string",
+      "description": "Guess which region the user is from based on user input. Default is cn Available values: - cn, Chinese region- us, non-Chinese region"
+    }
+  },
+  "required": [
+    "search_query"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
+
+### `webReader`
+
+Fetch and Convert URL to Large Model Friendly Input.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "url": {
+      "type": "string",
+      "description": "The URL of the website to fetch and read"
+    },
+    "timeout": {
+      "type": "integer",
+      "description": "Request timeout(unit is second), default is 20"
+    },
+    "no_cache": {
+      "type": "boolean",
+      "description": "Disable cache(true/false), default is false"
+    },
+    "return_format": {
+      "type": "string",
+      "description": "Reader response content type (markdown or text), default is markdown"
+    },
+    "retain_images": {
+      "type": "boolean",
+      "description": "Retain images (true/false), default is true"
+    },
+    "no_gfm": {
+      "type": "boolean",
+      "description": "Disable GitHub Flavored Markdown (true/false), default is false"
+    },
+    "keep_img_data_url": {
+      "type": "boolean",
+      "description": "Keep image data URL (true/false), default is false"
+    },
+    "with_images_summary": {
+      "type": "boolean",
+      "description": "Include images summary (true/false), default is false"
+    },
+    "with_links_summary": {
+      "type": "boolean",
+      "description": "Include links summary (true/false), default is false"
+    }
+  },
+  "required": [
+    "url"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
+
+Opt-in native ports of four Z.AI MCP servers (`zai-vision`, `zai-web-search`, `zai-web-reader`, `zai-read-github`): remote calls reuse the MCP Streamable HTTP endpoints per call and vision calls the same `chat/completions` endpoint as `@z_ai/mcp-server`. `enabledTools` (default: all) selects the registered set; `apiKeyEnv` (default `Z_AI_API_KEY`) is resolved through `ctx.credentials` on every call.

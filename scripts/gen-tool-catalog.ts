@@ -13,6 +13,7 @@ import { Context } from '@deepseek-ai/cordis'
 import type { ToolSchema } from '@deepseek-ai/dsh-llm'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import LlmRuntime from '@deepseek-ai/dsh-llm'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
@@ -37,6 +38,9 @@ import type { SubagentProvider, SubagentReportDelivery } from '@deepseek-ai/dsh-
 import * as ToolSubagentControl from '@deepseek-ai/dsh-tool-subagent-control'
 import * as ToolSubagentListAgents from '@deepseek-ai/dsh-tool-subagent-control/list-agents'
 import * as ToolSubagentReport from '@deepseek-ai/dsh-tool-subagent-report'
+import * as ToolAgentQueue from '@deepseek-ai/dsh-tool-agent-queue'
+import * as ToolAgentQueueDirect from '@deepseek-ai/dsh-tool-agent-queue/direct'
+import * as ToolZai from '@deepseek-ai/dsh-tool-zai'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import * as SkillFileSystem from '@deepseek-ai/dsh-skill-filesystem'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
@@ -204,6 +208,39 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'ask_user_question pauses the tool call until the active UI provider returns a human answer.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-agent-queue',
+    dir: 'tool-agent-queue',
+    source: {
+      agent_queue_address: 'packages/interaction/tool-agent-queue/src/index.ts',
+      agent_queue_subscribe: 'packages/interaction/tool-agent-queue/src/index.ts',
+      agent_queue_send: 'packages/interaction/tool-agent-queue/src/index.ts',
+      agent_queue_read: 'packages/interaction/tool-agent-queue/src/index.ts',
+      agent_queue_ack: 'packages/interaction/tool-agent-queue/src/index.ts',
+      agent_queue_dm_address: 'packages/interaction/tool-agent-queue/src/direct.ts',
+      agent_queue_dm_send: 'packages/interaction/tool-agent-queue/src/direct.ts',
+      agent_queue_inbox_read: 'packages/interaction/tool-agent-queue/src/direct.ts',
+      agent_queue_inbox_ack: 'packages/interaction/tool-agent-queue/src/direct.ts',
+    },
+    requires: [
+      'ctx.tools', 'ctx.agentQueue', 'ctx.agentDirectQueue (direct inbox tools only)',
+      'an owning Agent at execution time',
+    ],
+    writes: [
+      'tool/call', 'durable workspace queue records through ctx.agentQueue',
+      'tool/result',
+    ],
+    async mount(ctx) {
+      // Schema registration never reaches the durable queue, so both shipped
+      // plugins activate over provided seams instead of opening storage.
+      ctx.provide('agentQueue', {} as never)
+      ctx.provide('agentDirectQueue', {} as never)
+      await ctx.plugin(ToolAgentQueue)
+      await ctx.plugin(ToolAgentQueueDirect)
+    },
+    note:
+      'Workspace addressing, delivery, and cursors are the host-owned durable queue (`@deepseek-ai/dsh-agent-queue`), not an Agent inbox: publishing never sends inbox input or wakes a model. The `agent_queue_dm_*` and `agent_queue_inbox_*` tools belong to the separately loaded `@deepseek-ai/dsh-tool-agent-queue/direct` plugin and cover cross-workspace direct messages.',
   },
   {
     pkg: '@deepseek-ai/dsh-tools',
@@ -467,10 +504,15 @@ const TOOL_PACKAGES: ToolPackage[] = [
       interrupt_agent: 'packages/subagent/tool-subagent-control/src/index.ts',
       list_agents: 'packages/subagent/tool-subagent-control/src/list-agents.ts',
       send_message: 'packages/subagent/tool-subagent-control/src/index.ts',
+      set_agent_model: 'packages/subagent/tool-subagent-control/src/index.ts',
     },
-    requires: ['ctx.tools', 'ctx.subagents', 'ctx.agents and ctx.sessionProjections (list_agents only)'],
+    requires: [
+      'ctx.tools', 'ctx.subagents', 'ctx.llm (set_agent_model only)',
+      'ctx.agents and ctx.sessionProjections (list_agents only)',
+    ],
     writes: ['tool/call', 'tool/result', 'child session events through ctx.subagents'],
     async mount(ctx) {
+      await ctx.plugin(LlmRuntime)
       await ctx.plugin(SubagentRuntime)
       await ctx.plugin(LocalJobRegistry)
       await ctx.plugin(AgentRegistry)
@@ -480,7 +522,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
       await ctx.plugin(ToolSubagentListAgents)
     },
     note:
-      'The globally named control tools over continuable background subagents: provider-bound `tool-subagent` instances register distinct delegation tools, while this package registers `send_message` and `interrupt_agent` once, plus `list_agents` from its separately loaded `/list-agents` plugin (whose catalog rows use the sessionProjections and live Agent registries).',
+      'The globally named control tools over continuable background subagents: provider-bound `tool-subagent` instances register distinct delegation tools, while this package registers `send_message`, `interrupt_agent`, and `set_agent_model` once, plus `list_agents` from its separately loaded `/list-agents` plugin (whose catalog rows use the sessionProjections and live Agent registries). `set_agent_model` resolves the replacement route through `ctx.llm` before installing it; the other root tools do not touch the model runtime.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-subagent-report',
@@ -592,6 +634,21 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'flow.* tools author, inspect, and search workflow definitions and the reusable block library behind ctx.flowBuilder.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-zai',
+    dir: 'tool-zai',
+    source: 'packages/zai/tool-zai/src/index.ts',
+    requires: [
+      'ctx.tools', 'ctx.credentials with ambient-environment fallback at call time',
+      'outbound network at call time',
+    ],
+    writes: ['tool/call', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(ToolZai)
+    },
+    note:
+      'Opt-in native ports of four Z.AI MCP servers (`zai-vision`, `zai-web-search`, `zai-web-reader`, `zai-read-github`): remote calls reuse the MCP Streamable HTTP endpoints per call and vision calls the same `chat/completions` endpoint as `@z_ai/mcp-server`. `enabledTools` (default: all) selects the registered set; `apiKeyEnv` (default `Z_AI_API_KEY`) is resolved through `ctx.credentials` on every call.',
   },
 ]
 

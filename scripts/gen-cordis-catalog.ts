@@ -153,6 +153,11 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   theme: 'client-side interface-typed browser service — packages/client/ui-theme/README.md owns the API',
   font: 'client-side interface-typed font service — packages/client/ui-theme/README.md owns the API',
   workspaces: 'client-side interface-typed browser service — packages/client/runtime/README.md owns the API',
+  agentMailGateway: 'client-side optional gateway accessor (AgentMailGateway | undefined) — packages/client/ui-conversation-agent-mail/README.md owns the API',
+  agentQueue: 'host-owned durable workspace queue service (AgentQueue) — packages/interaction/agent-queue/README.md owns the API; no subsystems page renders it',
+  agentDirectQueue: 'host-owned cross-workspace direct-message service (AgentDirectQueue) — packages/interaction/agent-queue/README.md owns the API; no subsystems page renders it',
+  claudeOAuth: 'optional host login-flow service (ClaudeLoginFlow | undefined) — packages/llm/llm-claude/README.md owns the API',
+  opencodeOAuth: 'optional host login-flow service (ZenLoginFlow | undefined) — packages/llm/llm-opencode/README.md owns the API',
 }
 
 /**
@@ -403,8 +408,9 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ContinuableStartSpec: 'subagent.md',
   CoordinatorMessageSource: 'subagent.md',
   SubagentDescendantListEntry: 'subagent.md',
+  SubagentAncestorAuthority: 'subagent.md',
+  SubagentControlAuthority: 'subagent.md',
   SubagentFollowupOptions: 'subagent.md',
-  SubagentInterruptAuthority: 'subagent.md',
   SubagentListEntry: 'subagent.md',
   SubagentProvider: 'subagent.md',
   SubagentReportDelivery: 'subagent.md',
