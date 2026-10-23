@@ -8,8 +8,8 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import AgentQueue from '../src/index.ts'
 import AgentDirectQueue, {
-  DIRECT_RETENTION_MS, MAX_DIRECT_BODY_LENGTH, MAX_DIRECT_INBOXES, MAX_DIRECT_LEDGER_BYTES,
-  MAX_DIRECT_MESSAGES, MAX_DIRECT_RECIPIENTS,
+  MAX_DIRECT_BODY_LENGTH, MAX_DIRECT_INBOXES, MAX_DIRECT_LEDGER_BYTES, MAX_DIRECT_MESSAGES,
+  MAX_DIRECT_RECIPIENTS,
 } from '../src/direct.ts'
 
 const homeDirectory = '/direct/home'
@@ -61,25 +61,30 @@ afterEach(async () => { for (const item of open) await item.fiber.dispose(); ope
 async function setup(pool?: MemoryMediaPool) { const h = await harness(pool); open.add(h); return h }
 
 describe('cross-workspace direct mailbox', () => {
-  it('delivers to other workspaces: live peers, offline members, and subagents', async () => {
-    const { queue, agent, subagent } = await setup()
+  it('delivers to live agents and live subagents in other workspaces only', async () => {
+    const { queue, agent, subagent, live } = await setup()
     const sender = agent('root')
     const foreign = agent('away-root', awayDirectory)
     const foreignChild = subagent('away-child', foreign, awayDirectory)
     const third = agent('third-root', thirdDirectory)
-    const offline = SessionId('away-offline')
     expect(await queue.address(sender)).toEqual({
       sessionId: sender.id, workspaceId: homeId, inboxCursor: 0, unread: 0,
     })
+    // A registered but offline member is not addressable: its durable
+    // membership can outlive the permissions its live lineage would prove.
+    const offline = SessionId('away-offline')
+    expect(awayMembers).toContain(offline)
+    expect(live.get(offline)).toBeUndefined()
+    await expect(queue.send(sender, { recipients: [foreign.id, offline], body: 'half offline' }))
+      .rejects.toThrow('must be a live agent authorized in a registered workspace')
     const message = await queue.send(sender, {
-      recipients: [foreign.id, foreignChild.id, offline, third.id, foreign.id],
+      recipients: [foreign.id, foreignChild.id, third.id, foreign.id],
       body: 'cross-workspace handoff',
     })
     expect(message).toMatchObject({ seq: 1, sender: sender.id, senderWorkspaceId: homeId })
     expect(message.recipients).toEqual([
       { sessionId: foreign.id, workspaceId: awayId },
       { sessionId: foreignChild.id, workspaceId: awayId },
-      { sessionId: offline, workspaceId: awayId },
       { sessionId: third.id, workspaceId: thirdId },
     ])
     expect((await queue.inbox(foreign)).messages.map(entry => entry.body)).toEqual(['cross-workspace handoff'])
@@ -133,7 +138,11 @@ describe('cross-workspace direct mailbox', () => {
     await expect(queue.send(stranger, { recipients: [foreign.id], body: 'no' }))
       .rejects.toThrow('unregistered_working_directory')
     await expect(queue.send(sender, { recipients: [SessionId('ghost')], body: 'no' }))
-      .rejects.toThrow('does not belong to a registered workspace')
+      .rejects.toThrow('must be a live agent authorized in a registered workspace')
+    // A live agent whose own lineage is unauthorized is equally unaddressable.
+    const unregistered = agent('drifter', '/direct/unregistered')
+    await expect(queue.send(sender, { recipients: [unregistered.id], body: 'no' }))
+      .rejects.toThrow('must be a live agent authorized in a registered workspace')
     await expect(queue.send(sender, { recipients: [], body: 'no' })).rejects.toThrow('at least one recipient')
     await expect(queue.send(sender, { recipients: undefined as never, body: 'no' }))
       .rejects.toThrow('invalid direct recipients')
@@ -174,6 +183,10 @@ describe('cross-workspace direct mailbox', () => {
     expect((await queue.inbox(foreign)).messages.map(entry => entry.seq)).toEqual([second.seq])
     expect(await queue.address(third)).toMatchObject({ inboxCursor: 0, unread: 1 })
     expect((await queue.inbox(third)).messages.map(entry => entry.seq)).toEqual([first.seq])
+    // The second message was addressed to the other workspace only, so this
+    // addressee cannot acknowledge past the mail it can actually read.
+    await expect(queue.ackInbox(third, second.seq))
+      .rejects.toThrow('readable in your current workspace')
     // An explicit cursor replays retained mail without acknowledging anything.
     expect((await queue.inbox(foreign, { cursor: 0 })).messages.map(entry => entry.seq)).toEqual([1, 2])
     expect(await queue.inbox(foreign, { cursor: 0, limit: 1 }))
@@ -201,19 +214,48 @@ describe('cross-workspace direct mailbox', () => {
       expect(await queue.address(moved)).toMatchObject({ workspaceId: thirdId, inboxCursor: 0, unread: 0 })
       expect((await queue.inbox(moved)).messages).toEqual([])
       expect((await queue.inbox(moved, { cursor: 0 })).messages).toEqual([])
-      // It cannot retire that mail either; acknowledgment is bounded by what it can read.
+      // It cannot retire that mail either: at this address it holds no inbox at all.
       await expect(queue.ackInbox(moved, message.seq))
-        .rejects.toThrow('readable in your current workspace')
+        .rejects.toThrow('no addressed messages to acknowledge')
       // New mail is addressed to its CURRENT workspace and reaches it there.
-      expect((await queue.send(sender, { recipients: [moved.id], body: 'to ws-third' })).seq).toBe(2)
+      const here = await queue.send(sender, { recipients: [moved.id], body: 'to ws-third' })
+      expect(here.seq).toBe(2)
       expect((await queue.inbox(moved)).messages.map(entry => entry.body)).toEqual(['to ws-third'])
+      // Acknowledging at the new address must not move the old address's cursor.
+      expect(await queue.ackInbox(moved, here.seq)).toBe(here.seq)
+      expect(await queue.address(moved)).toMatchObject({ inboxCursor: here.seq, unread: 0 })
     } finally { thirdMembers.pop() }
     live.delete(moved.id)
     const returned = agent('away-root', awayDirectory)
+    // The cursor is keyed by the frozen address pair, so the higher sequence
+    // acknowledged in ws-third cannot hide this older unacknowledged message.
+    expect(await queue.address(returned)).toMatchObject({ workspaceId: awayId, inboxCursor: 0, unread: 1 })
     expect((await queue.inbox(returned)).messages.map(entry => entry.seq)).toEqual([message.seq])
     expect(await queue.ackInbox(returned, message.seq)).toBe(message.seq)
-    // The mail it could not read while away is retained, not silently dropped.
-    expect((await queue.address(returned)).inboxCursor).toBe(message.seq)
+    expect((await queue.inbox(returned, { cursor: 0 })).messages).toEqual([])
+  })
+
+  it('keeps one cursor per frozen address, not one per session', async () => {
+    const { queue, agent, live } = await setup()
+    const sender = agent('root')
+    const shared = agent('away-root', awayDirectory)
+    const first = await queue.send(sender, { recipients: [shared.id], body: 'to ws-away' })
+    // The same session id is addressed again after moving, while the first
+    // message stays unacknowledged at its original address.
+    thirdMembers.push(shared.id)
+    live.delete(shared.id)
+    const elsewhere = agent('away-root', thirdDirectory)
+    const second = await queue.send(sender, { recipients: [elsewhere.id], body: 'to ws-third' })
+    await queue.ackInbox(elsewhere, second.seq)
+    const state = (queue as unknown as { record(): { inboxes: { sessionId: string; workspaceId: string; cursor: number }[] } }).record()
+    expect(state.inboxes.filter(inbox => inbox.sessionId === shared.id)).toEqual([
+      { sessionId: shared.id, workspaceId: awayId, cursor: 0 },
+      { sessionId: shared.id, workspaceId: thirdId, cursor: second.seq },
+    ])
+    thirdMembers.pop()
+    live.delete(elsewhere.id)
+    const back = agent('away-root', awayDirectory)
+    expect((await queue.inbox(back)).messages.map(entry => entry.seq)).toEqual([first.seq])
   })
 
   it('refuses to commit a ledger that breaks its scope, ordering, or bounds', async () => {
@@ -285,18 +327,25 @@ describe('cross-workspace direct mailbox', () => {
     })).rejects.toThrow('above the')
   })
 
-  it('expires mail past the retention ceiling without consuming the backlog', async () => {
+  it('never expires unacknowledged mail: a durable ack is the only exit', async () => {
     const { queue, agent } = await setup()
     const sender = agent('root')
     const foreign = agent('away-root', awayDirectory)
     vi.useFakeTimers()
     try {
       vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
-      const stale = await queue.send(sender, { recipients: [foreign.id], body: 'stale' })
-      vi.setSystemTime(new Date(Date.now() + DIRECT_RETENTION_MS + 1))
-      const fresh = await queue.send(sender, { recipients: [foreign.id], body: 'fresh' })
-      expect((await queue.inbox(foreign)).messages.map(entry => entry.seq)).toEqual([fresh.seq])
-      expect(fresh.seq).toBe(stale.seq + 1)
+      const old = await queue.send(sender, { recipients: [foreign.id], body: 'unacknowledged' })
+      // Years later, with further writes landing, the unacknowledged message is
+      // still readable: no age ceiling may destroy durable mail.
+      vi.setSystemTime(new Date('2029-01-01T00:00:00Z'))
+      const recent = await queue.send(sender, { recipients: [foreign.id], body: 'recent' })
+      expect((await queue.inbox(foreign)).messages.map(entry => entry.seq)).toEqual([old.seq, recent.seq])
+      expect(await queue.address(foreign)).toMatchObject({ unread: 2 })
+      // Only the acknowledgement compacts it.
+      await queue.ackInbox(foreign, old.seq)
+      expect((await queue.inbox(foreign, { cursor: 0 })).messages.map(entry => entry.seq)).toEqual([recent.seq])
+      await queue.ackInbox(foreign, recent.seq)
+      expect((await queue.inbox(foreign, { cursor: 0 })).messages).toEqual([])
     } finally { vi.useRealTimers() }
   })
 

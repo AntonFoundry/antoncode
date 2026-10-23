@@ -32,8 +32,6 @@ export const MAX_DIRECT_INBOXES = 2048
 export const MAX_DIRECT_RECIPIENTS = 32
 /** Maximum body length in UTF-16 code units. */
 export const MAX_DIRECT_BODY_LENGTH = 65536
-/** Retention ceiling: a message older than this is dropped even if unacknowledged. */
-export const DIRECT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
 /**
  * Hard ceiling on the encoded ledger record. The whole mailbox is one durable
  * value, so the message, index, and envelope bounds above are not sufficient on
@@ -88,6 +86,15 @@ const bounded = (limit: number): number => {
 const readableBy = (message: DirectMessage, sessionId: SessionId, workspaceId: WorkspaceId): boolean =>
   message.recipients.some(recipient =>
     recipient.sessionId === sessionId && recipient.workspaceId === workspaceId)
+
+/**
+ * Index key of one address. Cursors are keyed by the same `(sessionId,
+ * workspaceId)` pair the address freezes, never by the session alone: a
+ * session-global position would let an acknowledgement earned in one workspace
+ * hide older unacknowledged mail addressed to it in another.
+ */
+const addressKey = (address: { sessionId: SessionId; workspaceId: WorkspaceId }): string =>
+  JSON.stringify([address.sessionId, address.workspaceId])
 
 /**
  * Reject any ledger that would violate the domain's own scope or bounds before
@@ -167,16 +174,19 @@ export class AgentDirectQueue extends Service {
   }
 
   /**
-   * Resolve the workspace of a prospective addressee. A live agent must pass
-   * the same lineage rules as a sender; a session that is not live is eligible
-   * only as a filtered member of some registered workspace.
+   * Resolve the workspace of a prospective addressee. The addressee must be an
+   * exact live Agent that passes the same lineage rules as a sender, so sender
+   * and recipient authorization are identical. Registry membership alone is
+   * deliberately not accepted: a durable member list can outlive the session's
+   * real permissions, and mail no live agent can currently receive would only
+   * occupy the bounded ledger.
    * @param id - Durable session id being addressed.
-   * @returns the addressee's workspace, or `undefined` when unreachable.
+   * @returns the addressee's authorized workspace, or `undefined` when unreachable.
    */
   private async recipientWorkspace(id: SessionId): Promise<Workspace | undefined> {
     const recipient = this.ctx.agents.get(id)
-    if (recipient) return await resolveAuthorizedWorkspace(this.ctx, recipient)
-    return this.ctx.workspaceRegistry.list().find(workspace => workspace.sessionIds.includes(id))
+    if (!recipient) return undefined
+    return await resolveAuthorizedWorkspace(this.ctx, recipient)
   }
 
   /**
@@ -187,7 +197,8 @@ export class AgentDirectQueue extends Service {
   async address(agent: Agent): Promise<DirectIdentity> {
     const workspace = await authorizeWorkspaceMember(this.ctx, agent)
     const state = this.record()
-    const inboxCursor = state.inboxes.find(inbox => inbox.sessionId === agent.id)?.cursor ?? 0
+    const key = addressKey({ sessionId: agent.id, workspaceId: workspace.id })
+    const inboxCursor = state.inboxes.find(inbox => addressKey(inbox) === key)?.cursor ?? 0
     const unread = state.messages
       .filter(message => message.seq > inboxCursor && readableBy(message, agent.id, workspace.id)).length
     return { sessionId: agent.id, workspaceId: workspace.id, inboxCursor, unread }
@@ -219,7 +230,9 @@ export class AgentDirectQueue extends Service {
       const addresses: DirectAddress[] = []
       for (const recipient of recipients) {
         const target = await this.recipientWorkspace(recipient)
-        if (!target) throw new Error('direct recipient does not belong to a registered workspace')
+        if (!target) {
+          throw new Error('direct recipient must be a live agent authorized in a registered workspace')
+        }
         if (target.id === senderWorkspace.id) {
           throw new Error('direct mailbox carries cross-workspace mail only; '
             + 'use agent_queue_send for a recipient in your own workspace')
@@ -247,38 +260,46 @@ export class AgentDirectQueue extends Service {
   }
 
   /**
-   * Retained messages: expired mail is dropped, and mail acknowledged by every
-   * addressee is compacted. Unacknowledged mail is never silently dropped
-   * before its retention ceiling.
+   * Retained messages. A durable acknowledgement by every frozen addressee is
+   * the ONLY way a message leaves this ledger: there is no age ceiling, so no
+   * unacknowledged mail is ever silently destroyed. Growth is bounded by
+   * rejecting the send instead — by retained count, index size, and encoded
+   * record bytes — exactly as the v1 workspace queue rejects on a full backlog.
+   * @param state - Ledger to compact.
+   * @returns the messages that must still be retained.
    */
-  private retain(state: DirectQueueState, now = Date.now()): DirectMessage[] {
-    const cursors = new Map(state.inboxes.map(inbox => [inbox.sessionId, inbox.cursor] as const))
+  private retain(state: DirectQueueState): DirectMessage[] {
+    const cursors = new Map(state.inboxes.map(inbox => [addressKey(inbox), inbox.cursor] as const))
     return state.messages.filter(message =>
-      now - message.createdAt < DIRECT_RETENTION_MS
-      && message.recipients.some(recipient => (cursors.get(recipient.sessionId) ?? 0) < message.seq))
+      message.recipients.some(recipient => (cursors.get(addressKey(recipient)) ?? 0) < message.seq))
   }
 
   /**
-   * Recipient index after a send: existing cursors are preserved, new
-   * addressees gain a cursor at zero, and entries with no retained mail and no
-   * acknowledged position are dropped.
+   * Recipient index after a send, keyed by the frozen address pair: existing
+   * cursors are preserved, a newly addressed pair gains a cursor at zero, and
+   * pairs with neither retained mail nor an acknowledged position are dropped.
+   * @param inboxes - Current recipient index.
+   * @param retained - Messages that survive compaction.
+   * @param addresses - Addressees of the message being committed.
+   * @returns the next recipient index.
    */
   private index(
     inboxes: readonly DirectInbox[],
     retained: readonly DirectMessage[],
     addresses: readonly DirectAddress[],
   ): DirectInbox[] {
-    const live = new Set<SessionId>(retained.flatMap(message => message.recipients.map(entry => entry.sessionId)))
-    const next = new Map<SessionId, DirectInbox>()
+    const live = new Set<string>(retained.flatMap(message => message.recipients.map(addressKey)))
+    const next = new Map<string, DirectInbox>()
     for (const inbox of inboxes) {
-      if (inbox.cursor === 0 && !live.has(inbox.sessionId)) continue
-      next.set(inbox.sessionId, inbox)
+      const key = addressKey(inbox)
+      if (inbox.cursor === 0 && !live.has(key)) continue
+      next.set(key, inbox)
     }
     for (const address of addresses) {
-      const existing = next.get(address.sessionId)
-      next.set(address.sessionId, existing
-        ? { ...existing, workspaceId: address.workspaceId }
-        : { sessionId: address.sessionId, workspaceId: address.workspaceId, cursor: 0 })
+      const key = addressKey(address)
+      if (!next.has(key)) {
+        next.set(key, { sessionId: address.sessionId, workspaceId: address.workspaceId, cursor: 0 })
+      }
     }
     return [...next.values()]
   }
@@ -294,7 +315,8 @@ export class AgentDirectQueue extends Service {
   async inbox(agent: Agent, options: { cursor?: number; limit?: number } = {}): Promise<DirectInboxPage> {
     const workspace = await authorizeWorkspaceMember(this.ctx, agent)
     const state = this.record()
-    const inbox = state.inboxes.find(entry => entry.sessionId === agent.id)
+    const key = addressKey({ sessionId: agent.id, workspaceId: workspace.id })
+    const inbox = state.inboxes.find(entry => addressKey(entry) === key)
     const after = options.cursor ?? inbox?.cursor ?? 0
     if (!Number.isSafeInteger(after) || after < 0) {
       throw new RangeError('direct inbox cursor must be a nonnegative safe integer')
@@ -306,8 +328,9 @@ export class AgentDirectQueue extends Service {
   }
 
   /**
-   * Advance only the caller's own direct-inbox cursor, monotonically and never
-   * past the committed ledger head. It does not touch any v1 workspace cursor.
+   * Advance the cursor of the caller's own `(session, current workspace)`
+   * address, monotonically and never past the committed ledger head or the mail
+   * it can currently read. It touches no other address and no v1 workspace cursor.
    * @param agent - Exact live acknowledging Agent.
    * @param throughSeq - Last processed sequence.
    * @returns the durable cursor after the acknowledgement.
@@ -324,7 +347,8 @@ export class AgentDirectQueue extends Service {
       }
       const state = this.record()
       if (throughSeq > state.nextSeq - 1) throw new RangeError('cannot acknowledge beyond committed direct mailbox head')
-      const inbox = state.inboxes.find(entry => entry.sessionId === agent.id)
+      const key = addressKey({ sessionId: agent.id, workspaceId: current.id })
+      const inbox = state.inboxes.find(entry => addressKey(entry) === key)
       if (!inbox) throw new Error('direct inbox has no addressed messages to acknowledge')
       if (throughSeq <= inbox.cursor) return inbox.cursor
       // A caller may acknowledge only mail it can currently read, so a session
@@ -336,7 +360,7 @@ export class AgentDirectQueue extends Service {
         throw new RangeError('cannot acknowledge beyond direct mail readable in your current workspace')
       }
       const inboxes = state.inboxes.map(entry =>
-        entry.sessionId === agent.id ? { ...entry, cursor: throughSeq } : entry)
+        addressKey(entry) === key ? { ...entry, cursor: throughSeq } : entry)
       // Cursor advance and compaction of fully acknowledged mail commit together.
       const retained = this.retain({ ...state, inboxes })
       await this.commit({ ...state, messages: retained, inboxes })
