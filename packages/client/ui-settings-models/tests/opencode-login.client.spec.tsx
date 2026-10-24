@@ -344,4 +344,41 @@ describe('ClaudeLoginDialog', () => {
     const buttons = screen.getAllByRole('button', { name: 'Log out' })
     expect(buttons.length).toBeGreaterThan(0)
   })
+
+  it('reopens the login dialog from the row of a configured subscription', async () => {
+    mountFace({ claudeConfigured: true })
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: en.claudeLoginRelogin })).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('button', { name: en.claudeLoginRelogin }))
+    await waitFor(() => {
+      expect(screen.getByText(en.claudeLoginActive)).toBeTruthy()
+    })
+    // The dialog's own re-login restarts the paste-back flow without logging out first.
+    const relogin = screen.getAllByRole('button', { name: en.claudeLoginRelogin })
+    fireEvent.click(relogin[relogin.length - 1])
+    await waitFor(() => {
+      expect(screen.getByText(en.claudeLoginCodeHint)).toBeTruthy()
+    })
+    expect(screen.getByRole('link', { name: en.claudeLoginOpenLink }).getAttribute('href'))
+      .toBe('https://platform.claude.com/oauth/authorize?response_type=code')
+    fireEvent.change(screen.getByLabelText(en.claudeLoginPasteLabel), { target: { value: 'past-ed' } })
+    fireEvent.click(screen.getByRole('button', { name: en.claudeLoginSubmit }))
+    await waitFor(() => {
+      expect(screen.getByText(en.claudeLoginDone)).toBeTruthy()
+    })
+  })
+})
+
+describe('OpenCode session row', () => {
+  it('reopens the login dialog from the row of a configured workspace session', async () => {
+    mountFace({ oauthConfigured: true })
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: en.opencodeLoginRelogin })).toBeTruthy()
+    })
+    fireEvent.click(screen.getByRole('button', { name: en.opencodeLoginRelogin }))
+    await waitFor(() => {
+      expect(screen.getByText(en.opencodeLoginActive)).toBeTruthy()
+    })
+  })
 })

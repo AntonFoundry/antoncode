@@ -371,6 +371,10 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
       })
   }
 
+  /** Row label reopening the login dialog of an already configured OAuth route. */
+  const reloginCopy = (target: EditorTarget): string =>
+    target.settingsNs === 'llm-claude' ? t('claudeLoginRelogin') : t('opencodeLoginRelogin')
+
   const closeDelete = (): void => {
     if (deleting) return
     setDeleteTarget(undefined)
@@ -540,17 +544,35 @@ function Loaded({ injected }: { injected: ModelsSectionInjected }): ReactNode {
                     ? null
                     : row.oauthSession?.configured === true
                       ? (
-                        <button
-                          type="button"
-                          className={styles['secondaryButton']}
-                          aria-label={providerCopy(t('logout'), target)}
-                          disabled={!state.writable}
-                          onClick={() => {
-                            if (row.oauthRef !== undefined) logoutSession(target, row.oauthRef)
-                          }}
-                        >
-                          {t('logout')}
-                        </button>
+                        <>
+                          {/* A stored session can still be unusable (expired or
+                              revoked refresh token), and the login dialog owns the
+                              paste-back flow, so the row keeps a direct way back
+                              into it instead of forcing a log out first. */}
+                          <button
+                            type="button"
+                            className={styles['secondaryButton']}
+                            aria-label={providerCopy(reloginCopy(target), target)}
+                            disabled={!state.writable}
+                            onClick={() => {
+                              setSavedTarget(undefined)
+                              setLoginTarget(target)
+                            }}
+                          >
+                            {reloginCopy(target)}
+                          </button>
+                          <button
+                            type="button"
+                            className={styles['secondaryButton']}
+                            aria-label={providerCopy(t('logout'), target)}
+                            disabled={!state.writable}
+                            onClick={() => {
+                              if (row.oauthRef !== undefined) logoutSession(target, row.oauthRef)
+                            }}
+                          >
+                            {t('logout')}
+                          </button>
+                        </>
                       )
                       : (
                         <button
