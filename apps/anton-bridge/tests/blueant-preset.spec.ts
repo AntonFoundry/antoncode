@@ -98,6 +98,7 @@ it('retains every Creator plugin and configuration, including isolated groups', 
   expect(actual.slice(expected.length)).toEqual([
     { ...ptc.find(row => row.id === 'tool-presentation'), config: { mode: 'both' } },
     { id: 'tool-agent-queue', name: '@deepseek-ai/dsh-tool-agent-queue' },
+    { id: 'tool-agent-queue-direct', name: '@deepseek-ai/dsh-tool-agent-queue/direct' },
     { id: 'blueant-notify', name: './plugins/notify.js' },
     { id: 'blueant-chrome', name: './plugins/chrome.js' },
   ])

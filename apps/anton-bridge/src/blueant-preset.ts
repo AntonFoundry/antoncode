@@ -152,7 +152,7 @@ export function ensureBlueantPreset({ dshHome, harnessRoot }: EnsureBlueantPrese
   const ymlContent = `${marker}\n${creator
     .replace('You are a coding agent powered by', "You are Blueant, the user's personal desktop and coding agent, powered by")
     .replace("new URL('skills/', baseUrl)", "new URL('creator-skills/', baseUrl)")
-    .trimEnd()}\n\n${presentation}\n\n- id: tool-agent-queue\n  name: '@deepseek-ai/dsh-tool-agent-queue'\n\n- id: blueant-notify\n  name: ./plugins/notify.js\n\n- id: blueant-chrome\n  name: ./plugins/chrome.js\n`
+    .trimEnd()}\n\n${presentation}\n\n- id: tool-agent-queue\n  name: '@deepseek-ai/dsh-tool-agent-queue'\n\n- id: tool-agent-queue-direct\n  name: '@deepseek-ai/dsh-tool-agent-queue/direct'\n\n- id: blueant-notify\n  name: ./plugins/notify.js\n\n- id: blueant-chrome\n  name: ./plugins/chrome.js\n`
   const existing = existsSync(ymlPath) ? readFileSync(ymlPath, 'utf8') : undefined
   if (existing !== undefined && !existing.startsWith(marker)) {
     const backup = join(presetDir, 'agent.before-creator.cordis.yml')
