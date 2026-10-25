@@ -1286,6 +1286,18 @@ describe('strips and variants', () => {
     }
   })
 
+  it('shows the prompt rejection reason rather than claiming the agent is busy', () => {
+    const { view } = bench({ promptError: {
+      op: 'send', error: {
+        code: 'agent-busy', message: 'prompt rejected',
+        details: { reason: 'Error: session append cannot reenter while another append is being published' },
+      },
+    } })
+    expect(view.getByRole('alert').textContent)
+      .toContain('session append cannot reenter while another append is being published')
+    expect(view.getByRole('alert').textContent).not.toContain('(agent-busy)')
+  })
+
   it('renders the notice strip from the machine notice store', () => {
     const { view, shell } = bench()
     act(() => { shell.notify('error', '命令失败了') })

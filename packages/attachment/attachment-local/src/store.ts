@@ -139,16 +139,18 @@ export async function saveImageFile(root: string, input: SaveImageAttachment, li
   const sha256 = digest(input.data)
   const bucket = join(root, 'objects', sha256.slice(0, 2))
   const staging = join(root, 'tmp')
-  // Establish DSH_HOME itself against the filesystem root once per process.
-  // Every process performs that proof independently, so observing a directory
-  // another process created can never be mistaken for durable publication.
-  const boundary = await ensureDurableHome(dirname(dirname(resolve(root))))
-  await ensureDurableDirectory(bucket, boundary)
-  await ensureDurableDirectory(staging, boundary)
   const temporary = join(staging, randomUUID())
   const target = objectPath(root, sha256)
   let handle
+  let directoriesReady = false
   try {
+    // Establish DSH_HOME itself against the filesystem root once per process.
+    // Every process performs that proof independently, so observing a directory
+    // another process created can never be mistaken for durable publication.
+    const boundary = await ensureDurableHome(dirname(dirname(resolve(root))))
+    await ensureDurableDirectory(bucket, boundary)
+    await ensureDurableDirectory(staging, boundary)
+    directoriesReady = true
     handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600)
     await handle.writeFile(input.data)
     await handle.sync()
@@ -175,7 +177,7 @@ export async function saveImageFile(root: string, input: SaveImageAttachment, li
       /* v8 ignore next -- Close failure is superseded by the storage operation that entered cleanup. */
       () => {},
     )
-    await unlink(temporary).catch(
+    if (directoriesReady) await unlink(temporary).catch(
       /* v8 ignore next -- The callback requires a second independent staging-unlink failure. */
       (cleanupError: unknown) => {
         /* v8 ignore next -- Cleanup is best-effort only for a staging file already removed by a failed operation. */

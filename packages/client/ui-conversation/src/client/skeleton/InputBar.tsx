@@ -116,13 +116,16 @@ export function InputBar({
   // and the user resubmits. A remount over a session whose machine still holds
   // an unresolved promptError deliberately re-announces it once — the failure
   // is still pending, and a transient banner is its only surface. Attachment
-  // rejections show product copy keyed by the wire reason; other codes are
-  // developer-facing and keep the raw message plus code.
+  // rejections show product copy keyed by the wire reason; prompt-admission
+  // rejections show the Host's reason rather than the generic busy label.
   useEffect(() => {
     if (promptError === null) return
-    showToast(promptError.error.code === 'attachment-error'
-      ? attachmentErrorText(t, promptError.error.details.reason, imageLimits)
-      : `${promptError.error.message} (${promptError.error.code})`)
+    const { error } = promptError
+    showToast(error.code === 'attachment-error'
+      ? attachmentErrorText(t, error.details.reason, imageLimits)
+      : error.code === 'agent-busy' && error.message === 'prompt rejected'
+        ? error.details.reason
+        : `${error.message} (${error.code})`)
   }, [promptError, showToast, t, imageLimits])
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const cardRef = useRef<HTMLDivElement | null>(null)

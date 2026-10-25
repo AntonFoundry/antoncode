@@ -142,7 +142,7 @@ Composer thumbnails and each `MessageImage` own ephemeral original-preview state
 
 Version one accepts PNG, JPEG, WebP, and GIF only. SVG and remote URLs are excluded. Default limits are 5 MiB per image, 20 images and 100 MiB aggregate image bytes per message, and 40 million intrinsic pixels per image. These deployment-varying limits are validated backend configuration and enforced by the host before persistence. The client connection carrier has an independent configurable `maxRequestBodyBytes` cap (160 MiB by default) for every API request and fails load if it cannot hold the attachment service's aggregate image limit after base64 and envelope expansion; lowering image policy therefore never silently lowers the carrier limit for valid text or other RPCs. A body without a declared length is rejected the moment it crosses the cap rather than drained to its end.
 
-Malformed base64, unsupported or mismatched media, truncated image payloads, excess bytes, excess image count, excess pixels, missing objects, and integrity mismatches return stable structured failures. Original filenames are reduced to a display basename, control characters are removed, and no local path is logged or returned to the browser.
+Malformed base64, unsupported or mismatched media, truncated image payloads, excess bytes, excess image count, excess pixels, missing objects, and integrity mismatches return stable structured failures. Directory creation and publication failures are `ATTACHMENT_WRITE_FAILED`, including an attachment root whose symlink target is unavailable; they never indicate a busy Agent. Original filenames are reduced to a display basename, control characters are removed, and no local attachment path is returned to the browser.
 
 ### Package and surface changes
 
@@ -209,7 +209,7 @@ Rejected because tool renderers are pure, synchronous, and replayable. MCP prepa
 
 ## Testing
 
-- Storage tests cover content-addressed deduplication, private permissions, admission failures, corruption/missing-object failures, and reading history after deployment limits are lowered.
+- Storage tests cover content-addressed deduplication, private permissions, admission failures, an unavailable storage directory, corruption/missing-object failures, and reading history after deployment limits are lowered.
 - Host and protocol tests cover persist-before-event ordering, absence of base64 in logs, session-scoped authorization, capability rejection, upload limits, bounded HTTP request bodies, image-admission/model-selection races (queued and steering placements), pending publication, idle release without publication, text-only queue edits, and selection against current derived history after compaction.
 - Client unit tests cover paste and drop, mixed clipboard text, image-only send, draft restoration, ordering, draft/session-scope/application object-URL cleanup, and a deferred historical read that completes after disposal; the keyless assembled built-client lane (`apps/web/tests/image-display.snapshot.ts`, `DSH_EXAMPLE_MODE=lib pnpm run test:snapshot`) covers the historical user and assistant galleries over the authorized attachment route, the original-size lightbox, and the composer paste rail.
 - Adapter and compaction tests cover native Pi-AI image conversion, late attachment-service composition, text-only rejection, recursively nested tool-result images, preserved summary input, and explicit image-output rejection.

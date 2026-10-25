@@ -230,4 +230,12 @@ describe('local attachment store', () => {
     await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
       .rejects.toMatchObject({ code: 'ATTACHMENT_WRITE_FAILED' })
   })
+
+  it('classifies an unavailable attachment directory before creating a staging file', async () => {
+    const storageRoot = await root()
+    await writeFile(dirname(storageRoot), 'not a directory')
+
+    await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
+      .rejects.toMatchObject({ code: 'ATTACHMENT_WRITE_FAILED' })
+  })
 })

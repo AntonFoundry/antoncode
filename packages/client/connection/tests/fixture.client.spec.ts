@@ -999,6 +999,16 @@ describe('FixtureApiClient (protocol-level fake carrier)', () => {
     expect(request?.rpcId).toBe(reply?.rpcId) // echo discipline holds through the fake carrier
   })
 
+  it('refuses Agent Mail mutations without a native authorization issuer', async () => {
+    const client = new FixtureApiClient()
+    const response = await client.agentMail.begin({
+      sessionId: sid('fx-alpha'), operations: ['address', 'local-read'],
+    })
+    expect(response.result).toMatchObject({ ok: false, error: {
+      code: 'internal', message: 'Agent Mail native authorization is unavailable in the fixture',
+    } })
+  })
+
   it('covers the whole unary dispatch table', async () => {
     const client = new FixtureApiClient()
     expect((await client.sessions.search(
