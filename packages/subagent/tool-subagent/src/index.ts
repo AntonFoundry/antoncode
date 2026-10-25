@@ -693,6 +693,11 @@ export function apply(ctx: Context, config: Config): void {
           + `exploration to a ${toolName} to draft the implementation plan — but the plan never waits on `
           + 'delegation: if the subagent fails or is unavailable, author the plan from current knowledge and '
           + 'record it with plan_write before writing the todo tree or mutating code.'
+          // The route is already an operator choice (settings section, then this
+          // plugin's agentOptions). Saying so stops the model from pinning a
+          // model per call and silently overriding that selection.
+          + ' Leave `model` and `reasoningEffort` unset: a delegation that omits them runs on the '
+          + 'configured child-model default, and naming either one overrides that selection for this call only.'
           + (backgroundEnabled && continuable
             ? ` Use ${toolName} in the background by default: start the independent delegations together and `
               + 'continue useful work while they run. Set `run_in_background: false` only when your next action '

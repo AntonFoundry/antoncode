@@ -1153,6 +1153,10 @@ describe('dsh-tool-subagent continuable background mode', () => {
     expect(guidance?.text).toContain('delegate codebase exploration to a subagent to draft the implementation plan')
     expect(guidance?.text).toContain('Use subagent in the background by default')
     expect(guidance?.text).toContain('runtime sends you a notice containing its outcome')
+    // The swarm route is the operator's selection; the section must not invite
+    // the model to pin one per call.
+    expect(guidance?.text).toContain('Leave `model` and `reasoningEffort` unset')
+    expect(guidance?.text).toContain('configured child-model default')
 
     const started = await callSubagent(
       ctx,
