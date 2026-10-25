@@ -148,11 +148,45 @@ export function ensureBlueantPreset({ dshHome, harnessRoot }: EnsureBlueantPrese
     '',
   ].join('\n'))
 
+  // Delegation policy as a prompt section of its own. `tool-subagent` states
+  // the same intent at order 116.5, inside the tool-documentation band and
+  // repeated once per delegation tool, where it reads as a property of one
+  // tool rather than as operating procedure. Order 5 puts it directly after
+  // the persona and above every tool section. The section resolves to empty
+  // text while no `subagent` tool is registered, so a scope without delegation
+  // never sees a policy naming tools it cannot call.
+  const delegationPath = join(presetDir, 'plugins', 'delegation.js')
+  writeFileSync(delegationPath, [
+    "export const name = 'blueant-delegation'",
+    "export const inject = ['tools', 'systemPrompt']",
+    '',
+    'const POLICY = [',
+    "  'Delegation is how you work by default, not an escalation of it. Decide the split before you act: a request that touches two or more independent pieces — separate files, packages, questions, or checks — is a fan-out, and you run those pieces as parallel `subagent` calls in one assistant message instead of working through them yourself in sequence.',",
+    "  '',",
+    "  '- Delegate every codebase exploration: locating an implementation, tracing a flow, comparing two designs, reading a package end to end. Keep the conclusions here, not the reading.',",
+    "  '- Delegate independent edits, verifications, and reviews to separate children. Keep inline only single-step actions and steps that genuinely depend on the one before them.',",
+    "  '- Use `subagent_fork` when the child needs the history of this conversation; use `subagent` for standalone work, and give it a complete prompt because a fresh child cannot see this conversation.',",
+    "  '- Never pass `model` or `reasoningEffort` to a delegation. The configured subagent model and effort are the swarm default, and naming either one overrides the route selected in Settings.',",
+    "  '- Ask each child for its answer, not its transcript: concrete findings with file:line references and the decision to make. Report what came back in your own words rather than replaying a narration.',",
+    "  '',",
+    "  'Working alone is a choice to justify, not the fallback. Reserve it for a single-step task, or for a sequence where each step needs the result of the previous one.',",
+    "].join('\\n')",
+    '',
+    'export function apply(ctx) {',
+    '  ctx.effect(() => ctx.systemPrompt.section({',
+    "    name: 'blueant:delegation',",
+    '    order: 5,',
+    "    text: context => ctx.tools.get('subagent', context.scope) === undefined ? '' : POLICY,",
+    "  }), 'blueant.delegation.section()')",
+    '}',
+    '',
+  ].join('\n'))
+
   const marker = '# Managed Blueant preset: Creator capabilities, PTC mode, and desktop tools.'
   const ymlContent = `${marker}\n${creator
     .replace('You are a coding agent powered by', "You are Blueant, the user's personal desktop and coding agent, powered by")
     .replace("new URL('skills/', baseUrl)", "new URL('creator-skills/', baseUrl)")
-    .trimEnd()}\n\n${presentation}\n\n- id: tool-agent-queue\n  name: '@deepseek-ai/dsh-tool-agent-queue'\n\n- id: tool-agent-queue-direct\n  name: '@deepseek-ai/dsh-tool-agent-queue/direct'\n\n- id: blueant-notify\n  name: ./plugins/notify.js\n\n- id: blueant-chrome\n  name: ./plugins/chrome.js\n`
+    .trimEnd()}\n\n${presentation}\n\n- id: tool-agent-queue\n  name: '@deepseek-ai/dsh-tool-agent-queue'\n\n- id: tool-agent-queue-direct\n  name: '@deepseek-ai/dsh-tool-agent-queue/direct'\n\n- id: blueant-delegation\n  name: ./plugins/delegation.js\n\n- id: blueant-notify\n  name: ./plugins/notify.js\n\n- id: blueant-chrome\n  name: ./plugins/chrome.js\n`
   const existing = existsSync(ymlPath) ? readFileSync(ymlPath, 'utf8') : undefined
   if (existing !== undefined && !existing.startsWith(marker)) {
     const backup = join(presetDir, 'agent.before-creator.cordis.yml')

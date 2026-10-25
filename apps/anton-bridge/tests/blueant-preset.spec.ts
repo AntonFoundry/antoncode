@@ -84,6 +84,34 @@ it('returns Chrome action output without requesting or polling a decision', asyn
   ])
 })
 
+interface GeneratedSection {
+  name: string
+  order: number
+  text: (context: { scope?: unknown }) => string
+}
+
+it('states the delegation policy above the tool sections, and only where delegation exists', () => {
+  ensure()
+  const source = readFileSync(join(preset, 'plugins', 'delegation.js'), 'utf8')
+  const apply = new Function(`${source.replaceAll('export ', '')}; return apply`)()
+  const sectionWith = (delegation: boolean): GeneratedSection => {
+    const sections: GeneratedSection[] = []
+    apply({
+      effect: (register: () => void) => register(),
+      systemPrompt: { section: (section: GeneratedSection) => sections.push(section) },
+      tools: { get: (name: string) => (delegation && name === 'subagent' ? {} : undefined) },
+    })
+    return sections[0]
+  }
+  const section = sectionWith(true)
+  expect(section.name).toBe('blueant:delegation')
+  // Above the 98+ tool band and below the persona at 0.
+  expect(section.order).toBe(5)
+  expect(section.text({})).toContain('Delegation is how you work by default')
+  expect(section.text({})).toContain('Never pass `model` or `reasoningEffort`')
+  expect(sectionWith(false).text({})).toBe('')
+})
+
 const schema = DEFAULT_SCHEMA.extend(new Type('tag:yaml.org,2002:js', { kind: 'scalar' }))
 
 it('retains every Creator plugin and configuration, including isolated groups', () => {
@@ -99,6 +127,7 @@ it('retains every Creator plugin and configuration, including isolated groups', 
     { ...ptc.find(row => row.id === 'tool-presentation'), config: { mode: 'both' } },
     { id: 'tool-agent-queue', name: '@deepseek-ai/dsh-tool-agent-queue' },
     { id: 'tool-agent-queue-direct', name: '@deepseek-ai/dsh-tool-agent-queue/direct' },
+    { id: 'blueant-delegation', name: './plugins/delegation.js' },
     { id: 'blueant-notify', name: './plugins/notify.js' },
     { id: 'blueant-chrome', name: './plugins/chrome.js' },
   ])
