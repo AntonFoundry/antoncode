@@ -1597,3 +1597,136 @@ describe('built-in path-addressed provider families', () => {
   })
 })
 
+/** The llm-opengateway section shape: one flat route, defaults resolved. */
+const OpenGatewayConfig = Schema.object({
+  baseURL: Schema.string().default('https://apis.opengateway.ai/v1'),
+  apiKeyEnv: Schema.string().role('credential-ref').default('OPENGATEWAY_API_KEY'),
+  displayName: Schema.string().default('OpenGateway'),
+  maxTokens: Schema.number(),
+  defaultContextWindow: Schema.number(),
+})
+
+/** The section's resolved value, as the host serializes it for a fresh home. */
+const OPEN_GATEWAY_DEFAULTS = {
+  baseURL: 'https://apis.opengateway.ai/v1',
+  apiKeyEnv: 'OPENGATEWAY_API_KEY',
+  displayName: 'OpenGateway',
+}
+
+/** A scripted wire face standing in for the OpenGateway route. */
+function gatewayFace(options: {
+  /** The user layer; its presence is what the card edits. */
+  user?: Record<string, unknown>
+  storedCredentials?: readonly string[]
+} = {}) {
+  const user = options.user ?? {}
+  const namespace: SettingsNamespaceView = {
+    ns: 'llm-opengateway',
+    schema: JSON.parse(JSON.stringify(OpenGatewayConfig.toJSON())) as unknown,
+    value: { ...OPEN_GATEWAY_DEFAULTS, ...user },
+    base: {},
+    user,
+    applies: 'live',
+    secrets: [],
+    revision: 1,
+  }
+  const mutate = vi.fn(() => Promise.resolve(ok(JSON.parse(JSON.stringify(namespace)) as SettingsNamespaceView)))
+  const set = vi.fn(() => Promise.resolve(ok({})))
+  const face = {
+    llm: {
+      providers: vi.fn(() => Promise.resolve(ok({
+        providers: [{
+          provider: 'opengateway',
+          displayName: 'OpenGateway',
+          settingsNs: 'llm-opengateway',
+          settingsPath: [],
+          active: true,
+        }],
+      }))),
+      models: vi.fn(() => Promise.resolve(ok({ groups: [], failures: [] }))),
+      discoverModels: vi.fn(() => Promise.resolve(ok({ models: [] }))),
+    },
+    settings: {
+      describe: vi.fn(() => Promise.resolve(ok({ writable: true, namespaces: [namespace] }))),
+      update: vi.fn(),
+      replace: vi.fn(),
+      mutate,
+    },
+    credentials: {
+      describe: vi.fn((payload: { refs: string[] }) => Promise.resolve(ok({
+        credentials: Object.fromEntries(payload.refs.map(ref => [
+          ref,
+          { configured: options.storedCredentials?.includes(ref) ?? false, writable: true },
+        ])),
+      }))),
+      set,
+      unset: vi.fn(),
+    },
+  }
+  return { face, mutate, set, namespace }
+}
+
+async function mountGateway(options: Parameters<typeof gatewayFace>[0] = {}) {
+  const scripted = gatewayFace(options)
+  const controller = new ModelsSettingsStore(scripted.face as unknown as WireFace)
+  await controller.load()
+  const injected: ModelsSectionInjected = {
+    controller,
+    useSnapshot: bindSnapshotSelector(controller.store),
+    api: scripted.face as never,
+    t,
+  }
+  render(<ModelsSection {...injected} />)
+  return { ...scripted, controller }
+}
+
+describe('the OpenGateway route card', () => {
+  it('takes a key on a fresh home and stores it under the reference the section names', async () => {
+    const { mutate, set } = await mountGateway()
+
+    // First run with nothing usable: the setup card is the route's presence,
+    // and it carries the same key field every other family does.
+    expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
+    expect(screen.queryAllByText(content => content.includes(en.advancedHint))).toHaveLength(0)
+    expect(buttonNamed(en.apply).disabled).toBe(false)
+
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'gw-key-e2e' } })
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(set).toHaveBeenCalled() })
+    expect(set).toHaveBeenCalledWith({ ref: 'OPENGATEWAY_API_KEY', value: 'gw-key-e2e' })
+    // The section default already names the reference, so the key alone
+    // leaves `settings.yaml` untouched.
+    expect(mutate).not.toHaveBeenCalled()
+  })
+
+  it('edits the endpoint as a path op against the section', async () => {
+    const { mutate, set } = await mountGateway({ storedCredentials: ['OPENGATEWAY_API_KEY'] })
+
+    openEditor('OpenGateway')
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://relay.example/v1' } })
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate)).toMatchObject({
+      ns: 'llm-opengateway',
+      ops: [{ op: 'set', path: ['baseURL'], value: 'https://relay.example/v1' }],
+    })
+    expect(set).not.toHaveBeenCalled()
+  })
+
+  it('rotates a key under the reference a stored profile named', async () => {
+    const { set } = await mountGateway({
+      user: { apiKeyEnv: 'MY_GATEWAY_KEY' },
+      storedCredentials: ['MY_GATEWAY_KEY'],
+    })
+
+    openEditor('OpenGateway')
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'rotated' } })
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(set).toHaveBeenCalled() })
+    expect(set).toHaveBeenCalledWith({ ref: 'MY_GATEWAY_KEY', value: 'rotated' })
+  })
+})
+

@@ -6,7 +6,8 @@
  * has none. The pi-ai profile records that derivation as `apiKeyEnv` only when
  * a key is entered; a blank key materializes a reference-free profile for
  * provider-native authentication — as does the OpenAI family, whose routes
- * then fall back to their derived-reference default);
+ * then fall back to their derived-reference default, and the OpenGateway
+ * route, whose section default already names `OPENGATEWAY_API_KEY`);
  * the collapsed custom-settings area carries the per-family extras (`baseURL` for
  * the deepseek, pi-ai, and OpenAI families, DeepSeek's id/name/context-window
  * model catalog, and the display name and wire protocol of a pi-ai route the
@@ -123,11 +124,17 @@ export function pathOps(
   return ops
 }
 
-/** The editor layout the owning namespace selects. */
+/**
+ * The editor layout the owning namespace selects. OpenGateway shares the
+ * OpenAI family's card because it is the same route shape — one section, one
+ * key, one endpoint, and a catalog the adapter discovers rather than the
+ * profile listing — and its section default already names the reference the
+ * card stores under, so that card adds nothing to `settings.yaml` for a key.
+ */
 function layoutOf(ns: string): EditorLayout {
   if (ns === 'llm-deepseek') return 'deepseek'
   if (ns === 'llm-pi-ai') return 'pi-ai'
-  if (ns === 'llm-openai') return 'openai'
+  if (ns === 'llm-openai' || ns === 'llm-opengateway') return 'openai'
   if (ns === 'llm-models-dev') return 'models-dev'
   if (ns === 'llm-codex') return 'codex'
   if (ns === 'llm-antigravity') return 'antigravity'
