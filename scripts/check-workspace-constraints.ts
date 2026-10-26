@@ -145,6 +145,8 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-sandbox-windows-acl': ['lib/runner.js', 'lib/types-*.js'],
   '@deepseek-ai/dsh-skill-badge': ['assets'],
   '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
+  // The bundled free-model pool is the package's offline default document.
+  '@deepseek-ai/dsh-llm-vazhi': ['pool.json'],
 }
 
 function sameStringList(actual: readonly string[] | undefined, expected: readonly string[]): boolean {

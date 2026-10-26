@@ -206,6 +206,7 @@
     { "path": "./packages/llm/llm-openai" },
     { "path": "./packages/llm/llm-models-dev" },
     { "path": "./packages/llm/llm-opengateway" },
+    { "path": "./packages/llm/llm-vazhi" },
     { "path": "./packages/llm/llm-opencode" },
     { "path": "./packages/llm/llm-claude" },
     { "path": "./packages/llm/llm-codex" },

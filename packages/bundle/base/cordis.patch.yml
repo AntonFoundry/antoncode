@@ -586,6 +586,15 @@
     - id: llm-opengateway
       name: '@deepseek-ai/dsh-llm-opengateway'
 
+    # Vazhi's free-model pool: one `vazhi` route over anonymous and keyed
+    # OpenAI-compatible upstreams, with free-model admission, cooldowns, and
+    # failover. `vazhi/auto` lets the router choose; `vazhi/<upstream>/<model>`
+    # pins one entry. Cooldowns and the pool cache live under
+    # $DSH_HOME/vazhi/; a `llm-vazhi:` settings section overrides the directory,
+    # pool URL, attempt budget, or slow-start policy without a restart.
+    - id: llm-vazhi
+      name: '@deepseek-ai/dsh-llm-vazhi'
+
     # Weekly model-strength datasheet + the `auto` child-model resolver for
     # the subagent tool: a persisted fetchedAt marker gives restart-surviving
     # cron semantics, a cheap effect-owned interval checks staleness, and the
