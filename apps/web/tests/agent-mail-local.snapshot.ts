@@ -18,9 +18,9 @@ it('authorizes the local Agent Mail tab silently and exposes the queue surfaces'
 
   fireEvent.click(await screen.findByRole('tab', { name: 'Agent Mail' }))
   await waitFor(() => {
-    expect(screen.getByText('Workspace inbox')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'general' })).toBeTruthy()
   })
-  expect(screen.getByText('Cross-workspace inbox')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'direct' })).toBeTruthy()
   expect(screen.getByText('Send')).toBeTruthy()
   expect(screen.queryByText('Native authorization code')).toBeNull()
   expect(screen.queryByRole('button', { name: 'Request native code' })).toBeNull()

@@ -2247,19 +2247,28 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return ok(request, namespaceView(descriptor))
   }
 
-  const mailAgent = (sessionId: SessionId): Agent | undefined => ctx.agents.get(sessionId)
   const mailOrigin = (origin: string | undefined): origin is string =>
     typeof origin === 'string' && /^http:\/\/(antoncode\.localhost|localhost|127\.0\.0\.1):3742$/.test(origin)
   const mailDenied = <T>(request: RpcRequest<unknown>): RpcResponse<T> =>
-    err(request, { code: 'internal', message: 'Agent Mail requires native browser authorization', details: {} })
+    err(request, { code: 'internal', message: 'Agent Mail is unavailable for this session', details: {} })
   const mailContext = async (sessionId: SessionId, origin: string | undefined): Promise<{
     agent: Agent
     workspaceId: WorkspaceId
   } | undefined> => {
     if (!mailOrigin(origin)) return undefined
-    const agent = mailAgent(sessionId)
     const direct = ctx.get('agentDirectQueue')
-    if (!agent || !direct) return undefined
+    if (!direct) return undefined
+    // A viewed session may be cold after a restart: resume it exactly like the
+    // session RPCs do, then authorize the live Agent the mailbox addresses.
+    const live = ctx.agents.get(sessionId)
+    let agent: Agent
+    if (live !== undefined) {
+      agent = live
+    } else {
+      const found = await agentFor(sessionId)
+      if ('error' in found) return undefined
+      agent = found.agent
+    }
     try {
       const own = await direct.address(agent, { peerLimit: 1 })
       if (ctx.agents.get(sessionId) !== agent) return undefined

@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
+import type { CSSProperties } from 'react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AgentMailGateway } from './gateway.ts'
+import { agentDisplayName, agentInitials } from './agent-names.ts'
+import styles from './AgentMailConversationView.module.css'
 
 export type AgentMailConversationViewProps = ConvViewProps & PropsLocale<'conversation.agentMail'> & {
   gateway?: AgentMailGateway
@@ -75,11 +78,40 @@ export function AgentMailConversationView(props: AgentMailConversationViewProps)
   return <AuthorizedMail {...props} gateway={gateway} workspaceId={authorization.value.workspaceId} />
 }
 
+/** Short display id for an agent session (`9718a95c`). */
+function shortId(id: string): string {
+  return id.replace(/^session-/, '').slice(0, 8)
+}
+
+/** Deterministic avatar hue per agent id, so an agent keeps its color. */
+function avatarHue(id: string): number {
+  let hue = 0
+  for (const character of id) hue = (hue * 31 + (character.codePointAt(0) ?? 0)) % 360
+  return hue
+}
+
+function AgentAvatar({ id, small }: { id: string; small?: boolean }): React.JSX.Element {
+  return (
+    <span
+      className={small === true ? styles.avatarSmall : styles.avatar}
+      style={{ background: `hsl(${avatarHue(id)} 42% 40%)` } satisfies CSSProperties}
+      aria-hidden="true"
+    >
+      {agentInitials(id)}
+    </span>
+  )
+}
+
+function clockText(at: number): string {
+  return new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+}
+
 function AuthorizedMail({ gateway, sessionId, workspaceId, t }: AgentMailConversationViewProps & {
   gateway: AgentMailGateway
   sessionId: NonNullable<AgentMailConversationViewProps['sessionId']>
   workspaceId: string
 }): React.JSX.Element {
+  const [channel, setChannel] = useState<'local' | 'direct'>('local')
   const [inbox, setInbox] = useState<Inbox>(() => gateway.inbox(sessionId))
   const [peer, setPeer] = useState('')
   const [body, setBody] = useState('')
@@ -94,10 +126,14 @@ function AuthorizedMail({ gateway, sessionId, workspaceId, t }: AgentMailConvers
     return unsubscribe
   }, [gateway, sessionId])
 
+  const page = inbox[channel]
+  const messages = page.messages
   const peers = gateway.peers(sessionId).filter(candidate => candidate.sessionId !== sessionId)
-  const target = peers.find(candidate => candidate.sessionId === peer)
+  const activePeers = peers.filter(candidate => (candidate.workspaceId === workspaceId) === (channel === 'local'))
+  const target = activePeers.find(candidate => candidate.sessionId === peer)
   const ready = (): boolean => gateway.authorization(sessionId).state === 'authorized'
     && gateway.authorization(sessionId).workspaceId === workspaceId
+
   const perform = async (operation: () => Promise<void>, success: string): Promise<boolean> => {
     if (!ready() || busy) return false
     setBusy(true)
@@ -117,79 +153,130 @@ function AuthorizedMail({ gateway, sessionId, workspaceId, t }: AgentMailConvers
       setBusy(false)
     }
   }
+
   const submit = (event: React.FormEvent<HTMLFormElement>): void => {
     event.preventDefault()
     const text = body.trim()
-    if (!text || (!workspaceWide && !target)) return
+    if (!text) return
     const operation = (): Promise<void> => {
+      if (channel === 'direct') {
+        return target === undefined ? Promise.resolve() : gateway.sendDirect({
+          sessionId, workspaceId, recipient: target.sessionId, body: text,
+        })
+      }
       if (workspaceWide) return gateway.sendLocal({ sessionId, workspaceId, recipients: [], body: text, workspaceWide: true })
-      if (!target) return Promise.resolve()
-      return target.workspaceId === workspaceId
-        ? gateway.sendLocal({ sessionId, workspaceId, recipients: [target.sessionId], body: text, workspaceWide: false })
-        : gateway.sendDirect({ sessionId, workspaceId, recipient: target.sessionId, body: text })
+      return target === undefined ? Promise.resolve() : gateway.sendLocal({
+        sessionId, workspaceId, recipients: [target.sessionId], body: text, workspaceWide: false,
+      })
     }
     void perform(operation, t('sent')).then((sent) => {
       if (sent && ready()) setBody('')
     })
   }
-  const acknowledge = (channel: 'local' | 'direct', throughSeq: number): void => {
+
+  const acknowledge = (): void => {
+    const throughSeq = messages.reduce((highest, message) => Math.max(highest, message.seq), page.cursor)
     void perform(() => gateway.acknowledge({ sessionId, workspaceId, channel, throughSeq }), t('acknowledged'))
   }
+
+  const switchChannel = (next: 'local' | 'direct'): void => {
+    setChannel(next)
+    setPeer('')
+    setWorkspaceWide(false)
+    setBody('')
+    setError('')
+    setStatus('')
+  }
+  const canSend = body.trim() !== '' && (channel === 'direct'
+    ? target !== undefined
+    : workspaceWide || target !== undefined)
+
   return (
-    <section aria-labelledby="agent-mail-title" data-agent-mail="authorized">
-      <header><h2 id="agent-mail-title">{t('title')}</h2><span>{t('authorized')}</span></header>
-      <button type="button" disabled={busy}
-        onClick={() => { void perform(() => gateway.refresh(sessionId), t('refreshed')) }}>
-        {t('refreshButton')}
-      </button>
-      <section aria-labelledby="agent-mail-address-title">
-        <h3 id="agent-mail-address-title">{t('addressLabel')}</h3><code>{sessionId}</code>
-        <p>{t('workspaceLabel')}: <code>{workspaceId}</code></p>
-      </section>
-      {(['local', 'direct'] as const).map((channel) => {
-        const page = inbox[channel]
-        const throughSeq = page.messages.reduce((highest, message) => Math.max(highest, message.seq), page.cursor)
-        return (
-          <section key={channel} aria-label={t(channel === 'local' ? 'localInbox' : 'directInbox')}>
-            <h3>{t(channel === 'local' ? 'localInbox' : 'directInbox')}</h3>
-            <p>{t('cursorLabel')}: {page.cursor}</p>
-            <ol>{page.messages.map(message => (
-              <li key={message.seq}>
-                <strong>{message.from}</strong> <span>{message.workspaceId}</span>
-                <p>{message.body}</p>
-                <time dateTime={new Date(message.at).toISOString()}>{new Date(message.at).toLocaleString()}</time>
-              </li>
-            ))}</ol>
-            <button type="button" disabled={busy || throughSeq <= page.cursor}
-              onClick={() => { acknowledge(channel, throughSeq) }}>
-              {t('acknowledgeButton')}
+    <div className={styles.shell} data-agent-mail="authorized">
+      <aside className={styles.sidebar} aria-label={t('title')}>
+        <div className={styles.brand}><span className={styles.brandMark}>✦</span>{t('title')}</div>
+        <nav className={styles.channels} aria-label={t('channelsLabel')}>
+          {(['local', 'direct'] as const).map(candidate => (
+            <button
+              key={candidate}
+              type="button"
+              className={channel === candidate ? styles.channelActive : styles.channel}
+              aria-current={channel === candidate ? 'page' : undefined}
+              aria-label={t(candidate === 'local' ? 'channelGeneral' : 'channelDirect')}
+              onClick={() => { switchChannel(candidate) }}
+            >
+              <span className={styles.hash}>#</span>
+              <span className={styles.channelName}>{t(candidate === 'local' ? 'channelGeneral' : 'channelDirect')}</span>
+              {inbox[candidate].messages.length > 0 && <span className={styles.badge}>{inbox[candidate].messages.length}</span>}
             </button>
-          </section>
-        )
-      })}
-      <form onSubmit={submit} aria-label={t('composeTitle')}>
-        <h3>{t('composeTitle')}</h3>
-        <label htmlFor="agent-mail-peer">{t('peerLabel')}</label>
-        <select id="agent-mail-peer" value={peer} disabled={busy || workspaceWide}
-          onChange={(event) => { setPeer(event.target.value) }}>
-          <option value="">{t('selectPeer')}</option>
-          {peers.map(candidate => (
-            <option key={candidate.sessionId} value={candidate.sessionId}>
-              {candidate.sessionId} ({candidate.workspaceId === workspaceId ? t('localPeer') : t('directPeer')})
-            </option>
           ))}
-        </select>
-        <label htmlFor="agent-mail-wide">{t('workspaceWide')}</label>
-        <input id="agent-mail-wide" type="checkbox" checked={workspaceWide} disabled={busy}
-          onChange={(event) => { setWorkspaceWide(event.target.checked) }} />
-        <label htmlFor="agent-mail-body">{t('messageLabel')}</label>
-        <textarea id="agent-mail-body" value={body} disabled={busy} maxLength={65536}
-          onChange={(event) => { setBody(event.target.value) }} />
-        <button type="submit" disabled={busy || !body.trim() || (!workspaceWide && !target)}>{t('sendButton')}</button>
-      </form>
-      {error && <p role="alert">{error}</p>}
-      {status && <p role="status">{status}</p>}
-      <p>{t('noEmail')}</p>
-    </section>
+        </nav>
+        <div className={styles.me}>
+          <AgentAvatar id={sessionId} small />
+          <div className={styles.meText}>
+            <strong title={sessionId}>{agentDisplayName(sessionId)}</strong>
+            <span>{shortId(sessionId)} · {t('you')} · {workspaceId}</span>
+          </div>
+        </div>
+      </aside>
+      <section className={styles.main}>
+        <header className={styles.header}>
+          <div className={styles.headerTitle}>
+            <span className={styles.hash}>#</span>{t(channel === 'local' ? 'channelGeneral' : 'channelDirect')}
+            <span className={styles.headerHelp}>{t(channel === 'local' ? 'channelGeneralHelp' : 'channelDirectHelp')}</span>
+          </div>
+          <button type="button" className={styles.readButton} disabled={busy || messages.length === 0}
+            onClick={acknowledge}>{t('markRead')}</button>
+        </header>
+        <ol className={styles.feed} aria-label={t(channel === 'local' ? 'localInbox' : 'directInbox')}>
+          {messages.length === 0 && <li className={styles.empty}>{t('emptyChannel')}</li>}
+          {messages.map((message, index) => {
+            const previous = messages[index - 1]
+            const grouped = previous !== undefined && previous.from === message.from
+              && message.at - previous.at < 5 * 60_000
+            return (
+              <li key={message.seq} className={grouped ? styles.grouped : styles.message}>
+                {grouped ? <span className={styles.avatarSpacer} /> : <AgentAvatar id={message.from} />}
+                <div className={styles.messageBody}>
+                  {!grouped && (
+                    <div className={styles.messageHead}>
+                      <strong className={styles.author} title={message.from}>{agentDisplayName(message.from)}</strong>
+                      <time className={styles.time} dateTime={new Date(message.at).toISOString()}>{clockText(message.at)}</time>
+                      <span className={styles.workspace}>{message.workspaceId}</span>
+                    </div>
+                  )}
+                  <p className={styles.text}>{message.body}</p>
+                </div>
+              </li>
+            )
+          })}
+        </ol>
+        <form className={styles.composer} onSubmit={submit}>
+          <label className={styles.srOnly} htmlFor="agent-mail-peer">{t('peerLabel')}</label>
+          <select id="agent-mail-peer" className={styles.peer} value={peer}
+            disabled={busy || (channel === 'local' && workspaceWide)}
+            onChange={(event) => { setPeer(event.target.value) }}>
+            <option value="">{channel === 'local' ? t('channelEveryone') : t('selectPeer')}</option>
+            {activePeers.map(candidate => (
+              <option key={candidate.sessionId} value={candidate.sessionId}>{agentDisplayName(candidate.sessionId)}</option>
+            ))}
+          </select>
+          {channel === 'local' && (
+            <label className={styles.wide}>
+              <input type="checkbox" checked={workspaceWide} disabled={busy}
+                onChange={(event) => { setWorkspaceWide(event.target.checked) }} />
+              {t('workspaceWide')}
+            </label>
+          )}
+          <label className={styles.srOnly} htmlFor="agent-mail-body">{t('messageLabel')}</label>
+          <textarea id="agent-mail-body" className={styles.input} value={body} disabled={busy} maxLength={65536}
+            placeholder={t('composePlaceholder')}
+            onChange={(event) => { setBody(event.target.value) }} />
+          <button type="submit" className={styles.send} disabled={busy || !canSend}>{t('sendButton')}</button>
+        </form>
+        {error && <p className={styles.error} role="alert">{error}</p>}
+        {status && <p className={styles.status} role="status">{status}</p>}
+      </section>
+    </div>
   )
 }

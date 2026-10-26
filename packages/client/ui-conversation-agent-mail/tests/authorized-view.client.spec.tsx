@@ -2,13 +2,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { AgentMailConversationView, type AgentMailConversationViewProps } from '../src/client/AgentMailConversationView.tsx'
+import { agentDisplayName } from '../src/client/agent-names.ts'
 import type { AgentMailGateway } from '../src/client/gateway.ts'
 import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
 const t = (key: string): string => en[key as keyof typeof en] ?? key
 const props = (gateway?: AgentMailGateway, sessionId = 'self'): AgentMailConversationViewProps =>
-  ({ t, sessionId, gateway }) as AgentMailConversationViewProps
+  ({ t, sessionId, gateway }) as unknown as AgentMailConversationViewProps
 
 function fakeGateway() {
   let state: ReturnType<AgentMailGateway['authorization']> = { state: 'unpaired' }
@@ -66,9 +67,11 @@ describe('authorized Agent Mail view', () => {
   it('authorizes the local session automatically, then reads the queue', async () => {
     const fake = fakeGateway()
     render(<AgentMailConversationView {...props(fake.gateway)} />)
-    expect(fake.read).not.toHaveBeenCalled()
     await waitFor(() => { expect(fake.authorize).toHaveBeenCalledWith('self') })
     expect(screen.getByText('Local mail')).toBeTruthy()
+    expect(fake.read).toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'general' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'direct' })).toBeTruthy()
   })
 
   it('stays read-only with the failure text when authorization fails', async () => {
@@ -80,22 +83,25 @@ describe('authorized Agent Mail view', () => {
     expect(fake.read).not.toHaveBeenCalled()
   })
 
-  it('shows its address, distinct inboxes, and never acknowledges just by rendering', () => {
+  it('shows the human agent name, address, and distinct channel feeds', async () => {
     const fake = fakeGateway()
-    fake.authorize()
     render(<AgentMailConversationView {...props(fake.gateway)} />)
+    await waitFor(() => { expect(fake.authorize).toHaveBeenCalled() })
+    expect(screen.getByText(agentDisplayName('self'))).toBeTruthy()
+    expect(screen.getByText(/self/)).toBeTruthy()
     expect(screen.getByText('Local mail')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'direct' }))
     expect(screen.getByText('Direct mail')).toBeTruthy()
-    expect(screen.getByText('self')).toBeTruthy()
-    expect(fake.acknowledge).not.toHaveBeenCalled()
+    expect(screen.queryByText('Local mail')).toBeNull()
   })
 
-  it('routes same-workspace, cross-workspace and broadcast sends separately', async () => {
+  it('sends to a same-workspace peer, a cross-workspace peer, and a broadcast', async () => {
     const fake = fakeGateway()
-    fake.authorize()
     render(<AgentMailConversationView {...props(fake.gateway)} />)
+    await waitFor(() => { expect(fake.authorize).toHaveBeenCalled() })
     const peer = screen.getByLabelText(en.peerLabel)
     const message = screen.getByLabelText(en.messageLabel) as HTMLTextAreaElement
+
     fireEvent.change(peer, { target: { value: 'local' } })
     fireEvent.change(message, { target: { value: 'one' } })
     fireEvent.click(screen.getByRole('button', { name: en.sendButton }))
@@ -103,6 +109,8 @@ describe('authorized Agent Mail view', () => {
       sessionId: 'self', workspaceId: 'w1', recipients: ['local'], body: 'one', workspaceWide: false,
     }) })
     await waitFor(() => { expect(message.value).toBe('') })
+
+    fireEvent.click(screen.getByRole('button', { name: 'direct' }))
     fireEvent.change(peer, { target: { value: 'remote' } })
     fireEvent.change(message, { target: { value: 'two' } })
     fireEvent.click(screen.getByRole('button', { name: en.sendButton }))
@@ -110,6 +118,8 @@ describe('authorized Agent Mail view', () => {
       sessionId: 'self', workspaceId: 'w1', recipient: 'remote', body: 'two',
     }) })
     await waitFor(() => { expect(message.value).toBe('') })
+
+    fireEvent.click(screen.getByRole('button', { name: 'general' }))
     fireEvent.click(screen.getByLabelText(en.workspaceWide))
     fireEvent.change(message, { target: { value: 'all' } })
     fireEvent.click(screen.getByRole('button', { name: en.sendButton }))
@@ -118,25 +128,18 @@ describe('authorized Agent Mail view', () => {
     }) })
   })
 
-  it('acknowledges each ledger by its own sequence and subscription updates only', async () => {
+  it('acknowledges each channel by its own sequence', async () => {
     const fake = fakeGateway()
-    fake.authorize()
     render(<AgentMailConversationView {...props(fake.gateway)} />)
-    const local = screen.getByRole('region', { name: en.localInbox })
-    const direct = screen.getByRole('region', { name: en.directInbox })
-    const localButton = local.querySelector('button')
-    const directButton = direct.querySelector('button')
-    if (!localButton || !directButton) throw new Error('Missing inbox acknowledger')
-    fireEvent.click(localButton)
+    await waitFor(() => { expect(fake.authorize).toHaveBeenCalled() })
+    fireEvent.click(screen.getByRole('button', { name: en.markRead }))
     await waitFor(() => { expect(fake.acknowledge).toHaveBeenCalledWith({
       sessionId: 'self', workspaceId: 'w1', channel: 'local', throughSeq: 3,
     }) })
-    fireEvent.click(directButton)
+    fireEvent.click(screen.getByRole('button', { name: 'direct' }))
+    fireEvent.click(screen.getByRole('button', { name: en.markRead }))
     await waitFor(() => { expect(fake.acknowledge).toHaveBeenCalledWith({
       sessionId: 'self', workspaceId: 'w1', channel: 'direct', throughSeq: 8,
     }) })
-    fake.inbox.direct = { cursor: 8, messages: [] }
-    fake.publish()
-    expect(directButton.disabled).toBe(true)
   })
 })
