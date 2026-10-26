@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agentDisplayName, agentInitials } from '../src/client/agent-names.ts'
+import { agentDisplayName, agentInitials, agentNameTag } from '../src/client/agent-names.ts'
 
 describe('agent display names', () => {
   it('derives a stable human name from a session id', () => {
@@ -11,6 +11,12 @@ describe('agent display names', () => {
   it('gives different sessions different names', () => {
     const ids = ['session-a', 'session-b', 'session-c', 'session-d']
     expect(new Set(ids.map(agentDisplayName)).size).toBeGreaterThan(1)
+  })
+
+  it('gives every agent in a large roster a distinct name+tag label', () => {
+    const ids = Array.from({ length: 500 }, (_, index) => `session-${String(index)}-agent`)
+    const labels = ids.map(id => `${agentDisplayName(id)} #${agentNameTag(id)}`)
+    expect(new Set(labels).size).toBe(ids.length)
   })
 
   it('derives the avatar mark from the generated name', () => {

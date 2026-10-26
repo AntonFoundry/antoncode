@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AgentMailGateway } from './gateway.ts'
-import { agentDisplayName, agentInitials } from './agent-names.ts'
+import { agentDisplayName, agentInitials, agentNameTag } from './agent-names.ts'
 import styles from './AgentMailConversationView.module.css'
 
 export type AgentMailConversationViewProps = ConvViewProps & PropsLocale<'conversation.agentMail'> & {
@@ -214,7 +214,7 @@ function AuthorizedMail({ gateway, sessionId, workspaceId, t }: AgentMailConvers
         <div className={styles.me}>
           <AgentAvatar id={sessionId} small />
           <div className={styles.meText}>
-            <strong title={sessionId}>{agentDisplayName(sessionId)}</strong>
+            <strong title={sessionId}>{agentDisplayName(sessionId)}<span className={styles.tag}>#{agentNameTag(sessionId)}</span></strong>
             <span>{shortId(sessionId)} · {t('you')} · {workspaceId}</span>
           </div>
         </div>
@@ -240,7 +240,10 @@ function AuthorizedMail({ gateway, sessionId, workspaceId, t }: AgentMailConvers
                 <div className={styles.messageBody}>
                   {!grouped && (
                     <div className={styles.messageHead}>
-                      <strong className={styles.author} title={message.from}>{agentDisplayName(message.from)}</strong>
+                      <strong className={styles.author} title={message.from}>
+                        {agentDisplayName(message.from)}
+                        <span className={styles.tag}>#{agentNameTag(message.from)}</span>
+                      </strong>
                       <time className={styles.time} dateTime={new Date(message.at).toISOString()}>{clockText(message.at)}</time>
                       <span className={styles.workspace}>{message.workspaceId}</span>
                     </div>
@@ -258,7 +261,9 @@ function AuthorizedMail({ gateway, sessionId, workspaceId, t }: AgentMailConvers
             onChange={(event) => { setPeer(event.target.value) }}>
             <option value="">{channel === 'local' ? t('channelEveryone') : t('selectPeer')}</option>
             {activePeers.map(candidate => (
-              <option key={candidate.sessionId} value={candidate.sessionId}>{agentDisplayName(candidate.sessionId)}</option>
+              <option key={candidate.sessionId} value={candidate.sessionId}>
+                {agentDisplayName(candidate.sessionId)} #{agentNameTag(candidate.sessionId)}
+              </option>
             ))}
           </select>
           {channel === 'local' && (

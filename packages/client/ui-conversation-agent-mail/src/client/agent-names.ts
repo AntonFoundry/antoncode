@@ -50,6 +50,18 @@ export function agentDisplayName(id: string): string {
 }
 
 /**
+ * Stable discriminator that makes two identically named agents distinguishable
+ * (the Discord `#1234` convention). Six hex digits keep collisions negligible
+ * for a session or workspace roster while staying short enough for a feed.
+ * @param id - the durable session id used as the address.
+ * @returns a six-character lowercase hex tag.
+ */
+export function agentNameTag(id: string): string {
+  const hash = hashOf(`tag:${id}`)
+  return (hash % 0x1000000).toString(16).padStart(6, '0')
+}
+
+/**
  * Two-letter avatar mark derived from the display name.
  * @param id - the durable session id used as the address.
  * @returns uppercase initials of the generated name.

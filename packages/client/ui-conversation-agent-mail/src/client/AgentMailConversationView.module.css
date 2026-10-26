@@ -240,6 +240,13 @@
   color: var(--dsw-alias-label-primary);
 }
 
+.tag {
+  margin-left: 4px;
+  color: var(--dsw-alias-label-tertiary);
+  font-weight: 400;
+  font-size: 11px;
+}
+
 .time,
 .workspace {
   color: var(--dsw-alias-label-tertiary);
