@@ -576,6 +576,16 @@
     - id: llm-opencode
       name: '@deepseek-ai/dsh-llm-opencode'
 
+    # OpenGateway's OpenAI-compatible gateway: model discovery reads the
+    # gateway's own `/models` document (context window, output cap, and wire
+    # protocol per model), and generation rides the llm-openai transport.
+    # The `opengateway` route ships live; requests fail MISSING_CREDENTIAL
+    # until OPENGATEWAY_API_KEY is stored. A `llm-opengateway:` settings
+    # section overrides the endpoint, key reference, or catalog cadence
+    # without a restart.
+    - id: llm-opengateway
+      name: '@deepseek-ai/dsh-llm-opengateway'
+
     # Weekly model-strength datasheet + the `auto` child-model resolver for
     # the subagent tool: a persisted fetchedAt marker gives restart-surviving
     # cron semantics, a cheap effect-owned interval checks staleness, and the
