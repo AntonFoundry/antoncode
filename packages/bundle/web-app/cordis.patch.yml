@@ -291,9 +291,6 @@
     - id: ui-trajectory
       name: '@deepseek-ai/dsh-client-ui-trajectory'
 
-    - id: ui-orchestrator
-      name: '@deepseek-ai/dsh-client-ui-orchestrator'
-
     # Workflows tab: the editable flow canvas owning the `dagflow` view id.
     - id: ui-flowbuilder
       name: '@deepseek-ai/dsh-client-ui-flowbuilder'

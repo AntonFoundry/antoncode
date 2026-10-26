@@ -1408,9 +1408,6 @@ importers:
       '@deepseek-ai/dsh-client-ui-model-selection':
         specifier: workspace:^
         version: link:../../client/ui-model-selection
-      '@deepseek-ai/dsh-client-ui-orchestrator':
-        specifier: workspace:^
-        version: link:../../client/ui-orchestrator
       '@deepseek-ai/dsh-client-ui-permission-presets':
         specifier: workspace:^
         version: link:../../client/ui-permission-presets
