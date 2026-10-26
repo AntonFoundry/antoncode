@@ -12,6 +12,8 @@ Model-facing tools for the shared host `agentQueue` service. Every tool passes i
 - `agent_queue_read` reads at most 100 messages after the caller's acknowledged cursor by default; an explicit `cursor` permits a retained-history replay. It does not acknowledge.
 - `agent_queue_ack` advances only the caller's durable cursor through a specified stream sequence after processing. It never acknowledges another session's messages.
 
+When the prompt service is mounted, a `tool:agent-queue` section tells the model to subscribe once, read unread mail before starting new work, announce what it is taking on with a workspace broadcast, publish findings so the group shares one context, and acknowledge only after processing. The guidance is omitted when no prompt service exists; the tools remain usable.
+
 A bounded digest of up to eight unread messages is appended to a nonempty accepted `agent/pre-step` decision at the next natural model step. It does not call `agent.inject`, interrupt the current inference, or wake an idle agent. Rejected and aborted decisions receive no digest. The digest reads but never acknowledges; it repeats at later natural steps until the agent explicitly calls `agent_queue_ack`.
 
 ## Cross-workspace direct message tools (`./direct`)

@@ -1544,6 +1544,35 @@ describe('continuable settlement delivery', () => {
     )
   })
 
+  it('publishes reports to the workspace mailbox and enrolls child and parent', async () => {
+    const { ctx, parent } = await setup([textResponse('the answer'), textResponse('parent ack')])
+    const publish = vi.fn(async () => ({ seq: 1 }))
+    const subscribe = vi.fn(async () => () => undefined)
+    ctx.provide('agentQueue', { publish, subscribe } as never)
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    const child = await vi.waitFor(() => {
+      const live = ctx.agents.get(started.childId)
+      expect(live).toBeDefined()
+      return live!
+    })
+    await ctx.subagents.reportFrom(child, message('shared finding'), {
+      delivery: 'quiet',
+      signal: testSignal,
+    })
+    await vi.waitFor(() => { expect(publish).toHaveBeenCalledTimes(1) })
+    expect(publish).toHaveBeenCalledWith(child, {
+      recipients: [parent.id],
+      workspaceWide: true,
+      body: 'shared finding',
+    })
+    expect(subscribe).toHaveBeenCalledWith(child)
+    expect(subscribe).toHaveBeenCalledWith(parent)
+    // The parent's private inbox no longer receives the report; the mailbox does.
+    expect(parent.session.events.filter(event => event.type === 'user/message'
+      && (event.data as { source?: { kind?: string } }).source?.kind === 'subagent-report')).toHaveLength(0)
+    await waitNoActivation(ctx, started.childId)
+  })
+
   it('delivers even when the child already reported for itself', async () => {
     const { ctx, parent } = await setup([textResponse('the answer'), textResponse('parent ack')])
     const started = await ctx.subagents.startContinuable(startSpec(parent))

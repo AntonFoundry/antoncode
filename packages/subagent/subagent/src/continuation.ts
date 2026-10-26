@@ -201,6 +201,16 @@ interface ContinuationHost {
  * owns the published `AgentHandle`; the manager's private activation-owner
  * scope is its structural Cordis owner.
  */
+/** Structural view of the optional workspace mailbox consumed here. */
+interface WorkspaceMailbox {
+  subscribe(agent: Agent): Promise<unknown>
+  publish(agent: Agent, request: {
+    recipients?: readonly SessionId[]
+    workspaceWide?: boolean
+    body: string
+  }): Promise<unknown>
+}
+
 interface Activation {
   /** The durable child this Activation is an epoch of. */
   readonly childId: SessionId
@@ -616,7 +626,6 @@ export class SubagentContinuationManager {
    * @throws {SubagentError} when the sender is unauthorized, the parent is not
    *   live, or continuation admission is closing.
    */
-  // oxlint-disable-next-line typescript/require-await -- keep rejection semantics without yielding during admission
   async reportFrom(
     child: Agent,
     content: ContentBlock[],
@@ -626,7 +635,65 @@ export class SubagentContinuationManager {
     this.assertAdmitting(child)
     const activation = this.authorizeReporter(child)
     const parent = this.resolveReportParent(child)
-    return this.deliverReport(activation, parent, content, options.delivery)
+    return this.publishReport(activation, parent, content, options.delivery)
+  }
+
+  /**
+   * Publish one report to the shared workspace mailbox, where every subscribed
+   * agent can see it and the parent is always an explicit recipient. A
+   * composition without the mailbox keeps the direct parent delivery, so the
+   * subagent package remains usable on its own.
+   * @param activation - the authorized reporting Activation.
+   * @param parent - the exact live direct parent.
+   * @param content - selected model-facing content.
+   * @param delivery - parent scheduling preset used only by the fallback path.
+   * @returns the stable model-facing message identity used as the report receipt.
+   */
+  private async publishReport(
+    activation: Activation,
+    parent: Agent,
+    content: ContentBlock[],
+    delivery: SubagentReportDelivery,
+  ): Promise<MessageId> {
+    const message = createUserMessage({
+      content: [
+        { type: 'text' as const, text: `Background subagent ${activation.childId} reported:` },
+        ...content,
+      ],
+      source: {
+        kind: 'subagent-report' as const,
+        form: 'relay' as const,
+        senderSessionId: activation.childId,
+      },
+    })
+    const mailbox = this.workspaceMailbox()
+    if (mailbox === undefined) {
+      if (delivery === 'wakeup') {
+        this.sendWaking(parent, message, () => { this.sendReport(parent, message, delivery) })
+      } else {
+        this.sendReport(parent, message, delivery)
+      }
+      return message.id
+    }
+    const body = content
+      .flatMap(block => block.type === 'text' ? [block.text] : [])
+      .join('\n')
+      .trim()
+    if (body === '') return message.id
+    try {
+      await mailbox.publish(activation.handle.agent, {
+        recipients: [parent.id],
+        workspaceWide: true,
+        body,
+      })
+    } catch (error: unknown) {
+      throw new SubagentError(
+        'workspace mailbox rejected the report; it was not delivered',
+        'REPORT_UNDELIVERED',
+        { cause: error },
+      )
+    }
+    return message.id
   }
 
   /** Authorize only the exact Agent of one resident Activation. */
@@ -661,32 +728,6 @@ export class SubagentContinuationManager {
       )
     }
     return parent
-  }
-
-  /** Deliver one framed report through the selected parent scheduling preset. */
-  private deliverReport(
-    activation: Activation,
-    parent: Agent,
-    content: ContentBlock[],
-    delivery: SubagentReportDelivery,
-  ): MessageId {
-    const message = createUserMessage({
-      content: [
-        { type: 'text' as const, text: `Background subagent ${activation.childId} reported:` },
-        ...content,
-      ],
-      source: {
-        kind: 'subagent-report' as const,
-        form: 'relay' as const,
-        senderSessionId: activation.childId,
-      },
-    })
-    if (delivery === 'wakeup') {
-      this.sendWaking(parent, message, () => { this.sendReport(parent, message, delivery) })
-    } else {
-      this.sendReport(parent, message, delivery)
-    }
-    return message.id
   }
 
   /**
@@ -1100,6 +1141,9 @@ export class SubagentContinuationManager {
       // Publish the start edge before any turn can run, so observers see this
       // epoch before its first request.
       observer.start(handle.agent)
+      // Transparency: every continuable child and its parent join the durable
+      // workspace mailbox, so reports and announcements reach the whole swarm.
+      this.subscribeMailbox(handle.agent, parent)
     } catch (error: unknown) {
       // Listener exceptions are contained by the lifecycle emitter; a start
       // publication throw therefore leaves no residency edge to pair.
@@ -1110,6 +1154,29 @@ export class SubagentContinuationManager {
     }
     this.watchSettlement(activation)
     return activation
+  }
+
+  /**
+   * Best-effort mailbox enrollment for a newly live child and its parent.
+   * Subscription is durable but not part of child admission: a missing queue
+   * or a membership change never fails the delegation itself.
+   * @param child - the newly created or resumed child Agent.
+   * @param parent - the exact live parent that will also receive reports.
+   */
+  private subscribeMailbox(child: Agent, parent: Agent): void {
+    const mailbox = this.workspaceMailbox()
+    if (mailbox === undefined) return
+    void mailbox.subscribe(child).catch((error: unknown) => {
+      this.ctx.logger.warn(`subagent "${child.id}" mailbox subscription failed: ${errorChain(error)}`)
+    })
+    void mailbox.subscribe(parent).catch((error: unknown) => {
+      this.ctx.logger.warn(`parent "${parent.id}" mailbox subscription failed: ${errorChain(error)}`)
+    })
+  }
+
+  /** The optional workspace mailbox (`ctx.agentQueue`), resolved without importing it. */
+  private workspaceMailbox(): WorkspaceMailbox | undefined {
+    return this.ctx.get('agentQueue' as never) as unknown as WorkspaceMailbox | undefined
   }
 
   /**

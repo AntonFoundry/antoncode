@@ -169,6 +169,23 @@ export function apply(ctx: Context): void {
     },
   }))
 
+  // Token economy: the mailbox exists so agents share one context instead of
+  // rediscovering the same work. Guidance is registered only when the prompt
+  // service is mounted; the tools remain usable without it.
+  const prompt = ctx.get('systemPrompt' as never) as unknown as {
+    section(options: { name: string; order: number; text: string }): unknown
+  } | undefined
+  prompt?.section({
+    name: 'tool:agent-queue',
+    order: 116.6,
+    text: 'Workspace mailbox: subscribe once with agent_queue_subscribe, then read unread mail with '
+      + 'agent_queue_read before starting new work; acknowledge with agent_queue_ack only after processing. '
+      + 'Announce what you are about to take on with agent_queue_send (workspace_wide: true) so another agent '
+      + 'does not duplicate it, and publish findings there so the group shares one context instead of '
+      + 'rediscovering them. Address one agent directly with recipients. Mail is durable and never interrupts '
+      + 'a turn; do not poll it in a loop.',
+  })
+
   ctx.tools.register(defineTool({
     name: 'agent_queue_ack',
     description: 'Advance your durable subscription cursor after reading messages. Does not remove another recipient’s messages or wake agents.',
