@@ -1141,6 +1141,7 @@ describe('dsh-tool-subagent continuable background mode', () => {
     expect(schema.description).not.toContain('job_kill')
     expect(schema.description).toContain('send_message')
     expect(schema.description).toContain('runs in the background by default')
+    expect(schema.description).toContain('Prefer that continuation over a new child')
     expect(schema.description).not.toContain('never poll or wait on it')
     const properties = (schema.parameters as {
       properties: Record<string, { description?: string }>
@@ -1157,6 +1158,11 @@ describe('dsh-tool-subagent continuable background mode', () => {
     // the model to pin one per call.
     expect(guidance?.text).toContain('Leave `model` and `reasoningEffort` unset')
     expect(guidance?.text).toContain('configured child-model default')
+    // Reuse beats restating context; labels are the durable selection key.
+    expect(guidance?.text).toContain('list_agents')
+    expect(guidance?.text).toContain('continue an idle or ready child')
+    expect(guidance?.text).toContain('Name each new child for the durable domain it owns')
+    expect((properties.description?.description ?? '')).toContain('durable label naming the domain this child owns')
 
     const started = await callSubagent(
       ctx,

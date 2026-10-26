@@ -483,14 +483,16 @@ export function apply(ctx: Context, config: Config): void {
         // a separately installed capability, so this promise holds whenever the
         // continuable background path is reachable at all.
         ? continuable
-          ? ' This tool runs in the background by default, immediately returns a durable subagent id, and keeps the child conversation available for later turns. When that run settles, the runtime sends the parent a notice containing its outcome and any final assistant message; `send_message` starts a later turn in the same child conversation. Set `run_in_background: false` only when your next action depends on receiving the result.'
+          ? ' This tool runs in the background by default, immediately returns a durable subagent id, and keeps the child conversation available for later turns. When that run settles, the runtime sends the parent a notice containing its outcome and any final assistant message; `send_message` starts a later turn in the same child conversation. Prefer that continuation over a new child when an existing idle child already owns the task context. Set `run_in_background: false` only when your next action depends on receiving the result.'
           : ' This call waits for the result by default. Set `run_in_background: true` to return a job id; collect with `job_output` and stop with `job_kill`.'
         : ' This call waits for the subagent and returns its result.'),
       parameters: {
         description: {
           type: 'string',
           required: true,
-          description: 'A short (3-5 word) description of the delegated task, for display.',
+          description: continuable
+            ? 'A short (3-5 word) durable label naming the domain this child owns (subsystem, surface, or responsibility), not the one-off request. Later tasks match this label to decide whether to continue this child instead of starting a new one.'
+            : 'A short (3-5 word) description of the delegated task, for display.',
         },
         prompt: {
           type: 'string',
@@ -698,6 +700,15 @@ export function apply(ctx: Context, config: Config): void {
           // model per call and silently overriding that selection.
           + ' Leave `model` and `reasoningEffort` unset: a delegation that omits them runs on the '
           + 'configured child-model default, and naming either one overrides that selection for this call only.'
+          // Reuse is cheaper than restating context, but only the model can tell
+          // whether an existing child's domain still covers the new task.
+          + ' Before starting a new child, when `list_agents` and `send_message` are available, list your '
+          + 'continuable children and continue an idle or ready child whose label and domain already cover '
+          + 'this task with `send_message`; its conversation prefix is largely cached, so continuing it costs '
+          + 'far less than restating the context. Start a new child only when no existing child fits, when the '
+          + 'work must run independently, or when the old context would contaminate the task. Name each new '
+          + 'child for the durable domain it owns (subsystem, surface, or responsibility), never for the one-off '
+          + 'request, so later tasks can recognize it.'
           + (backgroundEnabled && continuable
             ? ` Use ${toolName} in the background by default: start the independent delegations together and `
               + 'continue useful work while they run. Set `run_in_background: false` only when your next action '
