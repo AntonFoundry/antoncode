@@ -2,7 +2,8 @@ export const zh = {
   tab: 'Agent Mail',
   title: 'Agent Mail',
   readOnly: '只读预览',
-  unavailable: 'Agent Mail 收件箱、发送和确认功能尚未连接。浏览器授权架构就绪前，这些操作不可用。',
+  unavailable: 'Agent Mail 会为本会话自动连接本地 Agent 队列。如果持续不可用，说明 Host 无法授权此会话。',
+  connecting: '正在连接本地 Agent 队列…',
   addressLabel: '会话地址',
   noAddress: '会话地址是 Agent 的会话 ID；此视图显示当前会话 ID，但不读取或写入队列。',
   composeTitle: '如何联系其他会话',
@@ -26,11 +27,6 @@ export const zh = {
   acknowledged: '消息已确认',
   refreshed: '已刷新收件箱及会话',
   failed: '操作失败',
-  pairingTitle: '配对 Agent Mail',
-  pairingHelp: '从 Anton 原生窗口取得仅用于此会话的授权码。输入授权码之前，队列操作不可用。',
-  beginPairing: '请求原生授权码',
-  codeLabel: '原生授权码',
-  redeemPairing: '确认配对',
 } satisfies Record<string, string>
 
 export type AgentMailLocaleKey = keyof typeof zh
@@ -39,7 +35,8 @@ export const en = {
   tab: 'Agent Mail',
   title: 'Agent Mail',
   readOnly: 'Read-only preview',
-  unavailable: 'Agent Mail inbox, send, and acknowledgement are not connected. These actions are unavailable until browser authorization is in place.',
+  unavailable: 'Agent Mail connects to the local agent queue automatically for this session. If it stays unavailable, the Host could not authorize this session.',
+  connecting: 'Connecting to the local agent queue…',
   addressLabel: 'Agent session address',
   noAddress: 'An address is an Agent session ID. This conversation view shows the current session ID only; it does not read or write the queue.',
   composeTitle: 'How to contact another session',
@@ -63,9 +60,4 @@ export const en = {
   acknowledged: 'Messages acknowledged',
   refreshed: 'Inbox and peers refreshed',
   failed: 'Operation failed',
-  pairingTitle: 'Pair Agent Mail',
-  pairingHelp: 'Get a session-specific authorization code from the native Anton window. Queue operations stay unavailable until paired.',
-  beginPairing: 'Request native code',
-  codeLabel: 'Native authorization code',
-  redeemPairing: 'Complete pairing',
 } satisfies Record<AgentMailLocaleKey, string>

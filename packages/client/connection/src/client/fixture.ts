@@ -3274,13 +3274,19 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       }
     })(),
     agentMail: {
+      // The fixture ships one empty authorized mailbox so the composed UI can
+      // exercise its real read/write surfaces without a native display.
+      authorize: request => ok(request, { grant: '00000000-0000-4000-8000-000000000001' }),
       begin: request => err(request, { code: 'internal', message: 'Agent Mail native authorization is unavailable in the fixture', details: {} }),
       redeem: request => err(request, { code: 'internal', message: 'Agent Mail native authorization is unavailable in the fixture', details: {} }),
-      revoke: request => err(request, { code: 'internal', message: 'Agent Mail native authorization is unavailable in the fixture', details: {} }),
-      address: request => err(request, { code: 'internal', message: 'Agent Mail native authorization is unavailable in the fixture', details: {} }),
-      inbox: request => err(request, { code: 'internal', message: 'Agent Mail native authorization is unavailable in the fixture', details: {} }),
-      send: request => err(request, { code: 'internal', message: 'Agent Mail native authorization is unavailable in the fixture', details: {} }),
-      ack: request => err(request, { code: 'internal', message: 'Agent Mail native authorization is unavailable in the fixture', details: {} }),
+      revoke: request => ok(request, { revoked: true as const }),
+      address: request => ok(request, {
+        sessionId: request.payload.sessionId, workspaceId: 'fixture-workspace' as never,
+        inboxCursor: 0, unread: 0, peers: [], hasMorePeers: false,
+      }),
+      inbox: request => ok(request, { messages: [], cursor: 0, hasMore: false }),
+      send: request => ok(request, { seq: 1 }),
+      ack: request => ok(request, { cursor: 0 }),
     },
     llm: {
       providers: request => ok(request, {
@@ -3507,6 +3513,7 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'claudeOAuth.submit': return this.api.claudeOAuth.submit(request)
       case 'claudeOAuth.cancel': return this.api.claudeOAuth.cancel(request)
       case 'agentMail.begin': return this.api.agentMail.begin(request)
+      case 'agentMail.authorize': return this.api.agentMail.authorize(request)
       case 'agentMail.redeem': return this.api.agentMail.redeem(request)
       case 'agentMail.revoke': return this.api.agentMail.revoke(request)
       case 'agentMail.address': return this.api.agentMail.address(request)

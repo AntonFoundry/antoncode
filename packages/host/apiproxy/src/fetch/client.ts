@@ -113,7 +113,7 @@ import {
 } from '../api/subagents.schema.ts'
 import { jobKillValueSchema } from '../api/jobs.schema.ts'
 import {
-  agentMailBeginValueSchema, agentMailRedeemValueSchema, agentMailRevokeValueSchema,
+  agentMailBeginValueSchema, agentMailAuthorizeValueSchema, agentMailRedeemValueSchema, agentMailRevokeValueSchema,
   agentMailAddressValueSchema, agentMailInboxValueSchema, agentMailSendValueSchema, agentMailAckValueSchema,
 } from '../api/agent-mail.schema.ts'
 
@@ -144,6 +144,7 @@ export type LangflowStatusView = ResponseValue<'langflow.status'>['status']
 export interface IApiClient {
   agentMail: {
     begin(payload: RequestPayload<'agentMail.begin'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentMail.begin'>>>
+    authorize(payload: RequestPayload<'agentMail.authorize'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentMail.authorize'>>>
     redeem(payload: RequestPayload<'agentMail.redeem'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentMail.redeem'>>>
     revoke(payload: RequestPayload<'agentMail.revoke'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentMail.revoke'>>>
     address(payload: RequestPayload<'agentMail.address'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentMail.address'>>>
@@ -289,6 +290,7 @@ export interface IApiClient {
  */
 const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseValue<K>>> } = {
   'agentMail.begin': agentMailBeginValueSchema,
+  'agentMail.authorize': agentMailAuthorizeValueSchema,
   'agentMail.redeem': agentMailRedeemValueSchema,
   'agentMail.revoke': agentMailRevokeValueSchema,
   'agentMail.address': agentMailAddressValueSchema,
@@ -572,6 +574,7 @@ export abstract class AbstractApiClient implements IApiClient {
 
   readonly agentMail: IApiClient['agentMail'] = {
     begin: (payload, signal) => this.callUnary('agentMail.begin', payload, signal),
+    authorize: (payload, signal) => this.callUnary('agentMail.authorize', payload, signal),
     redeem: (payload, signal) => this.callUnary('agentMail.redeem', payload, signal),
     revoke: (payload, signal) => this.callUnary('agentMail.revoke', payload, signal),
     address: (payload, signal) => this.callUnary('agentMail.address', payload, signal),

@@ -4,6 +4,7 @@ import { createAgentMailGateway } from '../src/client/api-gateway.ts'
 
 const ok = <T>(value: T) => ({ result: { ok: true as const, value } })
 function fakeClient() {
+  const authorize = vi.fn(async () => ok({ grant: 'grant-1' }))
   const begin = vi.fn(async () => ok({ requestId: 'req-1', expiresAt: 10000 }))
   const redeem = vi.fn(async () => ok({ grant: 'grant-1' }))
   const revoke = vi.fn(async () => ok({ revoked: true }))
@@ -19,12 +20,12 @@ function fakeClient() {
   }))
   const send = vi.fn(async () => ok({ seq: 2 }))
   const ack = vi.fn(async () => ok({ cursor: 2 }))
-  const api = { agentMail: { begin, redeem, revoke, address, inbox, send, ack } } as unknown as IApiClient
-  return { api, begin, redeem, revoke, address, inbox, send, ack }
+  const api = { agentMail: { authorize, begin, redeem, revoke, address, inbox, send, ack } } as unknown as IApiClient
+  return { api, authorize, begin, redeem, revoke, address, inbox, send, ack }
 }
 
 describe('Agent Mail typed client gateway', () => {
-  it('has no queue access before redeeming a native code', async () => {
+  it('has no queue access before the Host authorizes this session', async () => {
     const fake = fakeClient()
     const gateway = createAgentMailGateway(fake.api)
     expect(gateway.authorization('session-1').state).toBe('unpaired')
@@ -37,15 +38,15 @@ describe('Agent Mail typed client gateway', () => {
     expect(fake.send).not.toHaveBeenCalled()
   })
 
-  it('passes grant on each operation and keeps local/direct ack cursors separate', async () => {
+  it('authorizes locally, then passes the grant on each operation and keeps cursors separate', async () => {
     const fake = fakeClient()
     const gateway = createAgentMailGateway(fake.api)
-    expect(await gateway.beginPairing('session-1')).toEqual({ requestId: 'req-1', expiresAt: 10000 })
-    expect(fake.begin).toHaveBeenCalledWith({ sessionId: 'session-1', operations: [
+    await gateway.authorize('session-1')
+    expect(fake.authorize).toHaveBeenCalledWith({ sessionId: 'session-1', operations: [
       'address', 'local-read', 'local-send', 'local-ack', 'direct-read', 'direct-send', 'direct-ack',
     ] })
-    await gateway.redeemPairing('session-1', 'req-1', 'AB12CD34')
-    expect(fake.redeem).toHaveBeenCalledWith({ sessionId: 'session-1', requestId: 'req-1', code: 'AB12CD34' })
+    expect(fake.begin).not.toHaveBeenCalled()
+    expect(fake.redeem).not.toHaveBeenCalled()
     expect(gateway.authorization('session-1')).toEqual({ state: 'authorized', address: 'session-1', workspaceId: 'workspace-1' })
     expect(gateway.peers('session-1')).toEqual([{ sessionId: 'peer-1', workspaceId: 'workspace-2' }])
     expect(gateway.inbox('session-1').local.messages[0]).toEqual({
@@ -64,12 +65,11 @@ describe('Agent Mail typed client gateway', () => {
     await expect(gateway.refresh('session-1')).rejects.toThrow('not authorized')
   })
 
-  it('fails closed if address verification fails after redeem', async () => {
+  it('fails closed if address verification fails after authorization', async () => {
     const fake = fakeClient()
     fake.address.mockRejectedValueOnce(new Error('origin refused'))
     const gateway = createAgentMailGateway(fake.api)
-    await gateway.beginPairing('session-1')
-    await expect(gateway.redeemPairing('session-1', 'req-1', 'AB12CD34')).rejects.toThrow('origin refused')
+    await expect(gateway.authorize('session-1')).rejects.toThrow('origin refused')
     expect(gateway.authorization('session-1').state).toBe('unpaired')
   })
 })

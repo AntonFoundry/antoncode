@@ -2276,6 +2276,12 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
 
   return {
     agentMail: {
+      async authorize(request, origin) {
+        const current = await mailContext(request.payload.sessionId, origin)
+        if (!current || !origin) return mailDenied(request)
+        const grant = mailConsent.grantLocal({ ...current, origin, operations: request.payload.operations })
+        return grant === undefined ? mailDenied(request) : ok(request, { grant })
+      },
       async begin(request, origin) {
         const current = await mailContext(request.payload.sessionId, origin)
         const seed = defaults.nativeConsentSeed

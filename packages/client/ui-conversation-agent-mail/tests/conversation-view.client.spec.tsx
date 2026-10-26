@@ -105,7 +105,7 @@ describe('Agent Mail read-only conversation view', () => {
   })
 
   it('directs messaging at the Agent tools and disclaims consumer mail', () => {
-    expect(en.unavailable).toContain('until browser authorization is in place')
+    expect(en.unavailable).toContain('local agent queue')
     expect(en.composeHelp).toContain('agent_queue_send')
     expect(en.composeHelp).toContain('does not send a message')
     expect(en.noAddress).toContain('does not read or write the queue')

@@ -10,15 +10,17 @@ export type AgentMailConversationViewProps = ConvViewProps & PropsLocale<'conver
 type Authorization = ReturnType<AgentMailGateway['authorization']>
 type Inbox = ReturnType<AgentMailGateway['inbox']>
 
-/** The absent and unauthorized states deliberately use the original inert DOM. */
-function ReadOnlyMail({ t, sessionId }: AgentMailConversationViewProps): React.JSX.Element {
+/** The absent, connecting, and unauthorized states deliberately use the original inert DOM. */
+function ReadOnlyMail({ t, sessionId, statusText }: AgentMailConversationViewProps & {
+  statusText: string
+}): React.JSX.Element {
   return (
     <section aria-labelledby="agent-mail-title" data-agent-mail="">
       <header>
         <h2 id="agent-mail-title">{t('title')}</h2>
         <span>{t('readOnly')}</span>
       </header>
-      <p>{t('unavailable')}</p>
+      <p role="status">{statusText}</p>
       <section aria-labelledby="agent-mail-address-title">
         <h3 id="agent-mail-address-title">{t('addressLabel')}</h3>
         {sessionId ? <code>{sessionId}</code> : <p>{t('noAddress')}</p>}
@@ -32,15 +34,16 @@ function ReadOnlyMail({ t, sessionId }: AgentMailConversationViewProps): React.J
   )
 }
 
-/** No queue reader, peer discovery or mutator is called until authorization is confirmed. */
+/** No queue reader, peer discovery or mutator is called until the Host grants this session. */
 export function AgentMailConversationView(props: AgentMailConversationViewProps): React.JSX.Element {
-  const { gateway, sessionId } = props
+  const { gateway, sessionId, t } = props
   const [authorization, setAuthorization] = useState<{
     gateway: AgentMailGateway
     sessionId: string
     value: Authorization
   } | undefined>(() => gateway && sessionId
     ? { gateway, sessionId, value: gateway.authorization(sessionId) } : undefined)
+  const [connectError, setConnectError] = useState<string>()
   useEffect(() => {
     if (!gateway || !sessionId) {
       setAuthorization(undefined)
@@ -51,66 +54,25 @@ export function AgentMailConversationView(props: AgentMailConversationViewProps)
     refresh() // close the race between initial snapshot and listener registration
     return unsubscribe
   }, [gateway, sessionId])
-
+  // The local harness UI authorizes itself: the Host mints the grant from the
+  // bridge-proven loopback origin, so there is no code or confirmation step.
+  useEffect(() => {
+    if (!gateway || !sessionId) return
+    if (gateway.authorization(sessionId).state === 'authorized') return
+    let cancelled = false
+    setConnectError(undefined)
+    void gateway.authorize(sessionId).catch((cause: unknown) => {
+      if (!cancelled) setConnectError(cause instanceof Error ? cause.message : t('failed'))
+    })
+    return () => { cancelled = true }
+  }, [gateway, sessionId, t])
   if (!gateway || !sessionId || authorization?.gateway !== gateway || authorization.sessionId !== sessionId
     || authorization.value.state !== 'authorized' || !authorization.value.workspaceId
     || gateway.authorization(sessionId).state !== 'authorized') {
-    return <>
-      <ReadOnlyMail {...props} />
-      {gateway && sessionId && <PairingMail gateway={gateway} sessionId={sessionId} t={props.t} />}
-    </>
+    return <ReadOnlyMail {...props} statusText={!gateway || !sessionId
+      ? t('unavailable') : connectError ?? t('connecting')} />
   }
   return <AuthorizedMail {...props} gateway={gateway} workspaceId={authorization.value.workspaceId} />
-}
-
-function PairingMail({ gateway, sessionId, t }: {
-  gateway: AgentMailGateway
-  sessionId: string
-  t: AgentMailConversationViewProps['t']
-}): React.JSX.Element {
-  const [challenge, setChallenge] = useState<{ requestId: string; expiresAt: number }>()
-  const [code, setCode] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const begin = (): void => {
-    if (busy) return
-    setBusy(true)
-    setError('')
-    void gateway.beginPairing(sessionId).then((next) => {
-      setChallenge(next)
-      setCode('')
-    }).catch((cause: unknown) => {
-      setError(cause instanceof Error ? cause.message : t('failed'))
-    }).finally(() => { setBusy(false) })
-  }
-  const redeem = (event: React.FormEvent<HTMLFormElement>): void => {
-    event.preventDefault()
-    if (busy || !challenge || code.length !== 8 || Date.now() >= challenge.expiresAt) return
-    setBusy(true)
-    setError('')
-    void gateway.redeemPairing(sessionId, challenge.requestId, code).then(() => {
-      setChallenge(undefined)
-      setCode('')
-    }).catch((cause: unknown) => {
-      setError(cause instanceof Error ? cause.message : t('failed'))
-    }).finally(() => { setBusy(false) })
-  }
-  return (
-    <section aria-label={t('pairingTitle')} data-agent-mail-pairing="">
-      <h3>{t('pairingTitle')}</h3>
-      <p>{t('pairingHelp')}</p>
-      <button type="button" disabled={busy} onClick={begin}>{t('beginPairing')}</button>
-      {challenge && Date.now() < challenge.expiresAt && (
-        <form onSubmit={redeem}>
-          <label htmlFor="agent-mail-code">{t('codeLabel')}</label>
-          <input id="agent-mail-code" value={code} autoComplete="off" maxLength={8}
-            onChange={(event) => { setCode(event.target.value.toUpperCase()) }} />
-          <button type="submit" disabled={busy || code.length !== 8}>{t('redeemPairing')}</button>
-        </form>
-      )}
-      {error && <p role="alert">{error}</p>}
-    </section>
-  )
 }
 
 function AuthorizedMail({ gateway, sessionId, workspaceId, t }: AgentMailConversationViewProps & {

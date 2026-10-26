@@ -113,7 +113,7 @@ import {
 } from '../api/subagents.schema.ts'
 import { jobKillRequestSchema } from '../api/jobs.schema.ts'
 import {
-  agentMailBeginRequestSchema, agentMailRedeemRequestSchema, agentMailRevokeRequestSchema,
+  agentMailBeginRequestSchema, agentMailAuthorizeRequestSchema, agentMailRedeemRequestSchema, agentMailRevokeRequestSchema,
   agentMailAddressRequestSchema, agentMailInboxRequestSchema, agentMailSendRequestSchema, agentMailAckRequestSchema,
 } from '../api/agent-mail.schema.ts'
 
@@ -137,6 +137,7 @@ type UnaryRoutes = {
 
 const UNARY_ROUTES: UnaryRoutes = {
   'agentMail.begin': { schema: agentMailBeginRequestSchema, invoke: (api, r, _signal, origin) => api.agentMail.begin(r, origin) },
+  'agentMail.authorize': { schema: agentMailAuthorizeRequestSchema, invoke: (api, r, _signal, origin) => api.agentMail.authorize(r, origin) },
   'agentMail.redeem': { schema: agentMailRedeemRequestSchema, invoke: (api, r, _signal, origin) => api.agentMail.redeem(r, origin) },
   'agentMail.revoke': { schema: agentMailRevokeRequestSchema, invoke: (api, r, _signal, origin) => api.agentMail.revoke(r, origin) },
   'agentMail.address': { schema: agentMailAddressRequestSchema, invoke: (api, r, _signal, origin) => api.agentMail.address(r, origin) },

@@ -23,6 +23,14 @@ export interface AgentMailMessage {
 }
 
 export interface AgentMailApi {
+  /**
+   * Authorizes the loopback harness UI for this exact live Agent without a
+   * native code. The HTTP carrier already proves the request came through the
+   * bridge for the accepted local origin; the returned grant is scoped to
+   * this Agent, origin, workspace, and operation set.
+   */
+  authorize(request: RpcRequest<{ sessionId: SessionId; operations: AgentMailOperation[] }>, origin?: string):
+  Promise<RpcResponse<{ grant: string }>>
   /** Starts a private native-display challenge; no code or binding returned to the browser. */
   begin(request: RpcRequest<{ sessionId: SessionId; operations: AgentMailOperation[] }>, origin?: string):
   Promise<RpcResponse<{ requestId: string; expiresAt: number }>>

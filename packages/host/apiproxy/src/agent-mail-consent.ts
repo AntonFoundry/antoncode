@@ -39,10 +39,35 @@ export class AgentMailConsent {
     this.verifier = new NativeConsentVerifier(key, now)
   }
 
+  /** Validate a caller's operation set before it can back a grant. */
+  private validOperations(operations: readonly MailOperation[]): boolean {
+    return operations.length > 0 && operations.length <= MAIL_OPERATIONS.length
+      && new Set(operations).size === operations.length
+      && operations.every(operation => MAIL_OPERATIONS.includes(operation))
+  }
+
+  /**
+   * Mint a grant for the loopback harness UI without a native code. The HTTP
+   * carrier already proved the request reached the Host through the bridge for
+   * the accepted local origin, so the native display ceremony adds no proof
+   * for this same-machine UI. The grant keeps the same Agent, origin,
+   * workspace, operation, and 30-minute expiry scope as a redeemed one.
+   * @param scope - the exact live Agent, origin, workspace, and operations.
+   * @returns the bearer grant, or undefined for an invalid operation set.
+   */
+  grantLocal(scope: MailScope): string | undefined {
+    if (!this.validOperations(scope.operations)) return undefined
+    this.prune()
+    const token = randomUUID()
+    this.grants.set(token, {
+      scope: { ...scope, operations: [...scope.operations] },
+      expiresAt: this.now() + 30 * 60_000,
+    })
+    return token
+  }
+
   begin(scope: MailScope): { requestId: string; binding: string; expiresAt: number } | undefined {
-    if (scope.operations.length === 0 || scope.operations.length > MAIL_OPERATIONS.length
-      || new Set(scope.operations).size !== scope.operations.length
-      || scope.operations.some(operation => !MAIL_OPERATIONS.includes(operation))) return undefined
+    if (!this.validOperations(scope.operations)) return undefined
     this.prune()
     if (this.pending.size >= 16) return undefined
     const requestId = randomUUID()

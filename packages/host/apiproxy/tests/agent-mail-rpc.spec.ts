@@ -52,6 +52,21 @@ async function setup(seed?: Uint8Array, deliver?: (challenge: {
 }
 
 describe('Agent Mail Host RPC', () => {
+  it('authorizes the loopback UI without a native seed, then accepts the grant', async () => {
+    const { api } = await setup()
+    const response = await api.agentMail.authorize(request({ sessionId, operations: ['address', 'local-read'] }), origin)
+    expect(response.result.ok).toBe(true)
+    if (!response.result.ok) throw new Error('authorize failed')
+    const addressed = await api.agentMail.address(request({ sessionId, grant: response.result.value.grant }), origin)
+    expect(addressed.result.ok).toBe(true)
+  })
+
+  it('refuses local authorization for an operation set outside the queue vocabulary', async () => {
+    const { api } = await setup()
+    const response = await api.agentMail.authorize(request({ sessionId, operations: ['address', 'address'] }), origin)
+    expect(response.result.ok).toBe(false)
+  })
+
   it('fails closed without native seed, even when a live Agent exists', async () => {
     const { api } = await setup()
     const response = await api.agentMail.begin(request({ sessionId, operations: ['address'] }), origin)

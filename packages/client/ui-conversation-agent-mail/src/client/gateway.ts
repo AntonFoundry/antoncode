@@ -9,13 +9,18 @@ export interface AgentMailMessage {
 /** Optional authorized capability: absence or non-authorized status means zero queue operations. */
 export interface AgentMailGateway {
   authorization(sessionId: string): {
-    state: 'unpaired' | 'pairing' | 'authorized' | 'revoked'
+    state: 'unpaired' | 'authorized' | 'revoked'
     address?: string
     workspaceId?: string
   }
   subscribeAuthorization(listener: () => void): () => void
-  beginPairing(sessionId: string): Promise<{ requestId: string; expiresAt: number }>
-  redeemPairing(sessionId: string, requestId: string, code: string): Promise<void>
+  /**
+   * Authorize the local harness UI for this session's live Agent. The Host
+   * mints the grant from the bridge-proven loopback origin; no native code or
+   * user confirmation is involved.
+   * @param sessionId - the session whose Agent the UI acts as.
+   */
+  authorize(sessionId: string): Promise<void>
   inbox(sessionId: string): {
     local: { messages: readonly AgentMailMessage[]; cursor: number }
     direct: { messages: readonly AgentMailMessage[]; cursor: number }

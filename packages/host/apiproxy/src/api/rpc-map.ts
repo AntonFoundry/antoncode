@@ -32,6 +32,7 @@ import type { RpcResponse } from './rpc.ts'
  */
 export interface RpcMethodMap {
   'agentMail.begin': AgentMailApi['begin']
+  'agentMail.authorize': AgentMailApi['authorize']
   'agentMail.redeem': AgentMailApi['redeem']
   'agentMail.revoke': AgentMailApi['revoke']
   'agentMail.address': AgentMailApi['address']

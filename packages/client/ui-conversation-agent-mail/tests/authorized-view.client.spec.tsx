@@ -18,8 +18,6 @@ function fakeGateway() {
     local: { cursor: 0, messages: [{ seq: 3, from: 'local', workspaceId: 'w1', body: 'Local mail', at: 0 }] },
     direct: { cursor: 0, messages: [{ seq: 8, from: 'remote', workspaceId: 'w2', body: 'Direct mail', at: 0 }] },
   }
-  const beginPairing = vi.fn(async () => ({ requestId: 'req-1', expiresAt: Date.now() + 90_000 }))
-  const redeemPairing = vi.fn(async () => {})
   const refresh = vi.fn(async () => {})
   const read = vi.fn(() => inbox)
   const peers = vi.fn(() => [
@@ -30,65 +28,56 @@ function fakeGateway() {
   const sendLocal = vi.fn(async () => {})
   const sendDirect = vi.fn(async () => {})
   const acknowledge = vi.fn(async () => {})
+  const revoke = vi.fn(async () => {
+    state = { state: 'revoked' }
+    act(() => { for (const listener of authorizationListeners) listener() })
+  })
+  const authorize = vi.fn(async () => {
+    state = { state: 'authorized', address: 'self', workspaceId: 'w1' }
+    act(() => { for (const listener of authorizationListeners) listener() })
+  })
   const gateway: AgentMailGateway = {
     authorization: () => state,
     subscribeAuthorization: (listener: () => void) => {
       authorizationListeners.add(listener)
       return () => { authorizationListeners.delete(listener) }
     },
-    beginPairing, redeemPairing,
+    authorize,
     inbox: read,
     subscribeInbox: (listener: () => void) => {
       inboxListeners.add(listener)
       return () => { inboxListeners.delete(listener) }
     },
-    peers, refresh,
+    peers, refresh, revoke,
     sendLocal, sendDirect, acknowledge,
   }
   return {
-    gateway, inbox, read, peers, beginPairing, redeemPairing, sendLocal, sendDirect, acknowledge,
-    authorize: () => {
-      state = { state: 'authorized', address: 'self', workspaceId: 'w1' }
-      act(() => { for (const listener of authorizationListeners) listener() })
-    },
-    revoke: () => {
-      state = { state: 'revoked' }
-      act(() => { for (const listener of authorizationListeners) listener() })
-    },
+    gateway, inbox, read, peers, authorize, sendLocal, sendDirect, acknowledge,
     publish: () => { act(() => { for (const listener of inboxListeners) listener() }) },
   }
 }
 
 describe('authorized Agent Mail view', () => {
-  it('never reads queues or mounts controls while absent, unpaired, or revoked', () => {
-    const fake = fakeGateway()
-    const view = render(<AgentMailConversationView {...props(fake.gateway)} />)
+  it('mounts no operational controls when no gateway exists', () => {
+    const view = render(<AgentMailConversationView {...props(undefined)} />)
     expect(view.container.querySelectorAll('[data-agent-mail] button,[data-agent-mail] input,[data-agent-mail] select,[data-agent-mail] textarea,[data-agent-mail] form')).toHaveLength(0)
-    expect(screen.getByRole('button', { name: en.beginPairing })).toBeTruthy()
-    expect(fake.read).not.toHaveBeenCalled()
-    expect(fake.peers).not.toHaveBeenCalled()
-    fake.authorize()
-    expect(screen.getByText('Local mail')).toBeTruthy()
-    fake.revoke()
-    expect(view.container.querySelectorAll('[data-agent-mail] button,[data-agent-mail] input,[data-agent-mail] select,[data-agent-mail] textarea,[data-agent-mail] form')).toHaveLength(0)
-    expect(fake.sendLocal).not.toHaveBeenCalled()
-    expect(fake.acknowledge).not.toHaveBeenCalled()
   })
 
-  it('pairs only through explicit native-code request and redemption', async () => {
+  it('authorizes the local session automatically, then reads the queue', async () => {
     const fake = fakeGateway()
     render(<AgentMailConversationView {...props(fake.gateway)} />)
-    expect(fake.beginPairing).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: en.beginPairing }))
-    await waitFor(() => { expect(fake.beginPairing).toHaveBeenCalledWith('self') })
-    const code = await screen.findByLabelText(en.codeLabel)
     expect(fake.read).not.toHaveBeenCalled()
-    fireEvent.change(code, { target: { value: 'ab12cd34' } })
-    fireEvent.click(screen.getByRole('button', { name: en.redeemPairing }))
-    await waitFor(() => { expect(fake.redeemPairing).toHaveBeenCalledWith('self', 'req-1', 'AB12CD34') })
-    expect(fake.read).not.toHaveBeenCalled()
-    fake.authorize()
+    await waitFor(() => { expect(fake.authorize).toHaveBeenCalledWith('self') })
     expect(screen.getByText('Local mail')).toBeTruthy()
+  })
+
+  it('stays read-only with the failure text when authorization fails', async () => {
+    const fake = fakeGateway()
+    fake.authorize.mockRejectedValueOnce(new Error('origin refused'))
+    const view = render(<AgentMailConversationView {...props(fake.gateway)} />)
+    await waitFor(() => { expect(screen.getByRole('status').textContent).toBe('origin refused') })
+    expect(view.container.querySelectorAll('[data-agent-mail] button,[data-agent-mail] input,[data-agent-mail] select,[data-agent-mail] textarea,[data-agent-mail] form')).toHaveLength(0)
+    expect(fake.read).not.toHaveBeenCalled()
   })
 
   it('shows its address, distinct inboxes, and never acknowledges just by rendering', () => {

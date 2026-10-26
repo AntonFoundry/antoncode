@@ -16,6 +16,8 @@ const message = z.object({
 })
 export const agentMailBeginRequestSchema = session.extend({ operations: z.array(operation).min(1).max(7) }) satisfies z.ZodType<Wire<RequestPayload<'agentMail.begin'>>>
 export const agentMailBeginValueSchema = z.object({ requestId: z.string(), expiresAt: z.number() }) satisfies z.ZodType<Wire<ResponseValue<'agentMail.begin'>>>
+export const agentMailAuthorizeRequestSchema = session.extend({ operations: z.array(operation).min(1).max(7) }) satisfies z.ZodType<Wire<RequestPayload<'agentMail.authorize'>>>
+export const agentMailAuthorizeValueSchema = z.object({ grant: z.string().uuid() }) satisfies z.ZodType<Wire<ResponseValue<'agentMail.authorize'>>>
 export const agentMailRedeemRequestSchema = session.extend({ requestId: z.string().uuid(), code: z.string().max(8) }) satisfies z.ZodType<Wire<RequestPayload<'agentMail.redeem'>>>
 export const agentMailRedeemValueSchema = z.object({ grant: z.string().uuid() }) satisfies z.ZodType<Wire<ResponseValue<'agentMail.redeem'>>>
 export const agentMailRevokeRequestSchema = access satisfies z.ZodType<Wire<RequestPayload<'agentMail.revoke'>>>

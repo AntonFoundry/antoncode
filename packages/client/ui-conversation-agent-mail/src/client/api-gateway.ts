@@ -8,7 +8,7 @@ const operations = [
 const id = (sessionId: string): SessionId => sessionId as SessionId
 
 type Snapshot = {
-  state: 'unpaired' | 'pairing' | 'authorized' | 'revoked'
+  state: 'unpaired' | 'authorized' | 'revoked'
   grant?: string
   workspaceId?: string
   peers: readonly { sessionId: string; workspaceId: string }[]
@@ -111,15 +111,10 @@ export function createAgentMailGateway(api: IApiClient): AgentMailGateway {
       authorizations.add(listener)
       return () => { authorizations.delete(listener) }
     },
-    beginPairing: async (sessionId) => {
+    authorize: async (sessionId) => {
       const current = snapshot(sessionId)
-      if (current.state === 'authorized') throw new Error('Agent Mail is already authorized')
-      const value = await unwrap(api.agentMail.begin({ sessionId: id(sessionId), operations: [...operations] }))
-      update(sessionId, { ...blank(), state: 'pairing' })
-      return value
-    },
-    redeemPairing: async (sessionId, requestId, code) => {
-      const value = await unwrap(api.agentMail.redeem({ sessionId: id(sessionId), requestId, code }))
+      if (current.state === 'authorized') return
+      const value = await unwrap(api.agentMail.authorize({ sessionId: id(sessionId), operations: [...operations] }))
       update(sessionId, { ...blank(), state: 'authorized', grant: value.grant })
       try { await refresh(sessionId) } catch (error) {
         update(sessionId, blank())
