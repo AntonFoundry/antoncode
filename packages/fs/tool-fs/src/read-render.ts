@@ -187,6 +187,17 @@ const LANG_BY_EXTENSION: Readonly<Record<string, string>> = {
   md: 'md', markdown: 'md', mdx: 'mdx',
   html: 'html', htm: 'html', css: 'css', scss: 'scss', less: 'less',
   sql: 'sql', xml: 'xml', lua: 'lua',
+  janet: 'janet', lisp: 'common-lisp', cl: 'common-lisp', lsp: 'common-lisp',
+  el: 'emacs-lisp', fnl: 'fennel', clj: 'clojure', cljs: 'clojure',
+  cljc: 'clojure', edn: 'clojure', scm: 'scheme', rkt: 'racket',
+  hy: 'hy', elm: 'elm', cr: 'crystal', f90: 'fortran', f95: 'fortran',
+  f03: 'fortran', f08: 'fortran', cob: 'cobol', cbl: 'cobol', ada: 'ada',
+  adb: 'ada', ads: 'ada', hx: 'haxe', d: 'd', di: 'd', purs: 'purescript',
+  gleam: 'gleam', gd: 'gdscript', glsl: 'glsl', hlsl: 'hlsl', wgsl: 'wgsl',
+  wat: 'wasm', vh: 'verilog', vhd: 'vhdl', asm: 'asm', nasm: 'asm', s: 'asm',
+  pro: 'prolog', raku: 'raku', tcl: 'tcl', awk: 'awk', bat: 'bat', just: 'just',
+  cue: 'cue', jsonnet: 'jsonnet', prisma: 'prisma', pug: 'pug', styl: 'stylus',
+  sass: 'sass', hbs: 'handlebars', twig: 'twig', liquid: 'liquid', cshtml: 'razor',
 }
 
 /**

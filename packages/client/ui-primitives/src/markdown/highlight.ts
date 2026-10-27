@@ -25,12 +25,13 @@ import { createJavaScriptRegexEngine, defaultJavaScriptRegexConstructor } from '
 import langTs from '@shikijs/langs/typescript'
 import langBash from '@shikijs/langs/shellscript'
 import langJson from '@shikijs/langs/json'
-import type { HighlighterCore } from 'shiki/core'
+import { janetGrammar } from './janet-grammar.ts'
+import type { HighlighterCore, LanguageRegistration } from 'shiki/core'
 import type { CSSProperties } from 'react'
 
 /** A shiki grammar module's default export (a `LanguageRegistration[]`), taken
- *  from a boot grammar so no direct `@shikijs/types` dependency is needed. */
-type LangModule = { default: typeof langTs }
+ *  from a boot grammar so no direct language module needs its own type import. */
+type LangModule = { default: LanguageRegistration[] }
 
 /**
  * Grammars the singleton loads at boot; each entry's own `name` is the id
@@ -85,6 +86,9 @@ const LAZY_GRAMMARS = new Map<string, () => Promise<LangModule>>([
   ['clojure', () => import('@shikijs/langs/clojure')],
   ['racket', () => import('@shikijs/langs/racket')],
   ['scheme', () => import('@shikijs/langs/scheme')],
+  ['common-lisp', () => import('@shikijs/langs/common-lisp')],
+  ['emacs-lisp', () => import('@shikijs/langs/emacs-lisp')],
+  ['fennel', () => import('@shikijs/langs/fennel')],
   ['ocaml', () => import('@shikijs/langs/ocaml')],
   ['fsharp', () => import('@shikijs/langs/fsharp')],
   ['julia', () => import('@shikijs/langs/julia')],
@@ -118,6 +122,51 @@ const LAZY_GRAMMARS = new Map<string, () => Promise<LangModule>>([
   ['terraform', () => import('@shikijs/langs/terraform')],
   ['pascal', () => import('@shikijs/langs/pascal')],
   ['http', () => import('@shikijs/langs/http')],
+  ['hy', () => import('@shikijs/langs/hy')],
+  ['elm', () => import('@shikijs/langs/elm')],
+  ['crystal', () => import('@shikijs/langs/crystal')],
+  ['fortran-free-form', () => import('@shikijs/langs/fortran-free-form')],
+  ['cobol', () => import('@shikijs/langs/cobol')],
+  ['ada', () => import('@shikijs/langs/ada')],
+  ['haxe', () => import('@shikijs/langs/haxe')],
+  ['d', () => import('@shikijs/langs/d')],
+  ['purescript', () => import('@shikijs/langs/purescript')],
+  ['gleam', () => import('@shikijs/langs/gleam')],
+  ['gdscript', () => import('@shikijs/langs/gdscript')],
+  ['glsl', () => import('@shikijs/langs/glsl')],
+  ['hlsl', () => import('@shikijs/langs/hlsl')],
+  ['wgsl', () => import('@shikijs/langs/wgsl')],
+  ['wasm', () => import('@shikijs/langs/wasm')],
+  ['verilog', () => import('@shikijs/langs/verilog')],
+  ['v', () => import('@shikijs/langs/v')],
+  ['vhdl', () => import('@shikijs/langs/vhdl')],
+  ['asm', () => import('@shikijs/langs/asm')],
+  ['prolog', () => import('@shikijs/langs/prolog')],
+  ['raku', () => import('@shikijs/langs/raku')],
+  ['tcl', () => import('@shikijs/langs/tcl')],
+  ['awk', () => import('@shikijs/langs/awk')],
+  ['bat', () => import('@shikijs/langs/bat')],
+  ['just', () => import('@shikijs/langs/just')],
+  ['cue', () => import('@shikijs/langs/cue')],
+  ['jsonnet', () => import('@shikijs/langs/jsonnet')],
+  ['prisma', () => import('@shikijs/langs/prisma')],
+  ['pug', () => import('@shikijs/langs/pug')],
+  ['stylus', () => import('@shikijs/langs/stylus')],
+  ['sass', () => import('@shikijs/langs/sass')],
+  ['handlebars', () => import('@shikijs/langs/handlebars')],
+  ['twig', () => import('@shikijs/langs/twig')],
+  ['liquid', () => import('@shikijs/langs/liquid')],
+  ['razor', () => import('@shikijs/langs/razor')],
+])
+
+/**
+ * Grammars the client defines itself because no `@shikijs/langs` package ships
+ * one. They register synchronously on first use, so their first render is
+ * highlighted rather than showing the plain fallback. Janet is the first such
+ * grammar: its Lisp-family structure is covered by a local TextMate grammar.
+ */
+const SPECIAL_GRAMMARS = new Map<string, LanguageRegistration>([
+  ['janet', janetGrammar],
 ])
 
 /**
@@ -192,6 +241,16 @@ const LANG_ALIASES = new Map<string, string>([
   ['cljs', 'clojure'],
   ['cljc', 'clojure'],
   ['edn', 'clojure'],
+  ['common-lisp', 'common-lisp'],
+  ['lisp', 'common-lisp'],
+  ['lsp', 'common-lisp'],
+  ['cl', 'common-lisp'],
+  ['emacs-lisp', 'emacs-lisp'],
+  ['elisp', 'emacs-lisp'],
+  ['el', 'emacs-lisp'],
+  ['fennel', 'fennel'],
+  ['fnl', 'fennel'],
+  ['janet', 'janet'],
   ['racket', 'racket'],
   ['rkt', 'racket'],
   ['scheme', 'scheme'],
@@ -256,6 +315,69 @@ const LANG_ALIASES = new Map<string, string>([
   ['pascal', 'pascal'],
   ['pas', 'pascal'],
   ['http', 'http'],
+  ['hy', 'hy'],
+  ['elm', 'elm'],
+  ['crystal', 'crystal'],
+  ['cr', 'crystal'],
+  ['fortran', 'fortran-free-form'],
+  ['fortran-free-form', 'fortran-free-form'],
+  ['f90', 'fortran-free-form'],
+  ['f95', 'fortran-free-form'],
+  ['f03', 'fortran-free-form'],
+  ['f08', 'fortran-free-form'],
+  ['cobol', 'cobol'],
+  ['cob', 'cobol'],
+  ['ada', 'ada'],
+  ['adb', 'ada'],
+  ['ads', 'ada'],
+  ['haxe', 'haxe'],
+  ['hx', 'haxe'],
+  ['d', 'd'],
+  ['dlang', 'd'],
+  ['purescript', 'purescript'],
+  ['purs', 'purescript'],
+  ['gleam', 'gleam'],
+  ['gdscript', 'gdscript'],
+  ['gd', 'gdscript'],
+  ['glsl', 'glsl'],
+  ['vert', 'glsl'],
+  ['frag', 'glsl'],
+  ['hlsl', 'hlsl'],
+  ['wgsl', 'wgsl'],
+  ['wasm', 'wasm'],
+  ['wat', 'wasm'],
+  ['verilog', 'verilog'],
+  ['v', 'v'],
+  ['vlang', 'v'],
+  ['vhdl', 'vhdl'],
+  ['vhd', 'vhdl'],
+  ['asm', 'asm'],
+  ['assembly', 'asm'],
+  ['nasm', 'asm'],
+  ['prolog', 'prolog'],
+  ['pro', 'prolog'],
+  ['raku', 'raku'],
+  ['perl6', 'raku'],
+  ['tcl', 'tcl'],
+  ['awk', 'awk'],
+  ['bat', 'bat'],
+  ['batch', 'bat'],
+  ['just', 'just'],
+  ['justfile', 'just'],
+  ['cue', 'cue'],
+  ['jsonnet', 'jsonnet'],
+  ['prisma', 'prisma'],
+  ['pug', 'pug'],
+  ['jade', 'pug'],
+  ['stylus', 'stylus'],
+  ['styl', 'stylus'],
+  ['sass', 'sass'],
+  ['handlebars', 'handlebars'],
+  ['hbs', 'handlebars'],
+  ['twig', 'twig'],
+  ['liquid', 'liquid'],
+  ['razor', 'razor'],
+  ['cshtml', 'razor'],
 ])
 
 /** All token colors resolve through `--shiki-*` custom properties (theme package sheets). */
@@ -352,6 +474,11 @@ export function grammarLoadCount(): number {
  * @returns whether the grammar is registered and ready to tokenize now.
  */
 function ensureGrammar(resolved: string): boolean {
+  const special = SPECIAL_GRAMMARS.get(resolved)
+  if (special !== undefined) {
+    if (!highlighter().getLoadedLanguages().includes(resolved)) highlighter().loadLanguageSync(special)
+    return true
+  }
   const load = LAZY_GRAMMARS.get(resolved)
   // A boot grammar (already registered) has no lazy loader; it is always ready.
   if (load === undefined) return true

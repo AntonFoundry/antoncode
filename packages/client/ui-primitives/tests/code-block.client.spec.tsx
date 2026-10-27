@@ -28,8 +28,19 @@ describe('highlightToHtml', () => {
   })
 
   it('returns undefined for unknown or absent languages', () => {
-    expect(highlightToHtml('x', 'cobol')).toBeUndefined()
+    expect(highlightToHtml('x', 'invented-lang')).toBeUndefined()
     expect(highlightToHtml('x', undefined)).toBeUndefined()
+  })
+
+  it('highlights Janet synchronously through the local grammar', () => {
+    const code = '# greet\n(defn greet [name]\n  (print (string "hi, " name)))\n'
+    const html = highlightToHtml(code, 'janet')
+    expect(html).toContain('pre class="shiki css-variables"')
+    expect(html).toContain('var(--shiki-token-comment)')
+    expect(html).toContain('var(--shiki-token-string-expression)')
+    expect(html).toContain('var(--shiki-token-keyword)')
+    expect(html).toContain('var(--shiki-token-function)')
+    expect(highlightToHtml('(defn f [] nil)', 'Janet')).toContain('shiki')
   })
 
   // Every read-tool language hint whose grammar loads lazily (the boot set —
@@ -45,7 +56,11 @@ describe('highlightToHtml', () => {
     'fs', 'jl', 'm', 'r', 'ps1', 'gradle', 'cmake', 'dockerfile', 'mk',
     'conf', 'diff', 'gql', 'vim', 'zig', 'nim', 'nix', 'sol', 'vue',
     'svelte', 'astro', 'tex', 'properties', 'json5', 'vb', 'coffee', 'reg',
-    'proto', 'hcl', 'tf', 'pas', 'http',
+    'proto', 'hcl', 'tf', 'pas', 'http', 'lisp', 'elisp', 'fnl',
+    'hy', 'elm', 'crystal', 'fortran', 'cobol', 'ada', 'haxe', 'd', 'purs',
+    'gleam', 'gd', 'glsl', 'hlsl', 'wgsl', 'wat', 'verilog', 'v', 'vhdl',
+    'asm', 'prolog', 'raku', 'tcl', 'awk', 'bat', 'just', 'cue', 'jsonnet',
+    'prisma', 'pug', 'styl', 'sass', 'hbs', 'twig', 'liquid', 'cshtml',
   ]
 
   it('lazily loads every read-card grammar: plain first, highlighted after load', { timeout: 60_000 }, async () => {
@@ -70,7 +85,7 @@ describe('CodeBlock', () => {
   })
 
   it('renders the plain arm for an unknown language with the text verbatim', () => {
-    const view = render(<CodeBlock code={'IDENTIFICATION DIVISION.'} lang="cobol" />)
+    const view = render(<CodeBlock code={'IDENTIFICATION DIVISION.'} lang="invented-lang" />)
     expect(view.container.querySelector('pre.shiki')).toBeNull()
     expect(view.getByText('IDENTIFICATION DIVISION.')).toBeTruthy()
   })

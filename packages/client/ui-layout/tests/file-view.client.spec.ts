@@ -66,6 +66,10 @@ describe('viewerLanguageFor', () => {
     expect(viewerLanguageFor('/w/App.vue')).toBe('vue')
     expect(viewerLanguageFor('/w/paper.tex')).toBe('tex')
     expect(viewerLanguageFor('/w/view.m')).toBe('objc')
+    expect(viewerLanguageFor('/w/core.janet')).toBe('janet')
+    expect(viewerLanguageFor('/w/init.el')).toBe('elisp')
+    expect(viewerLanguageFor('/w/app.hy')).toBe('hy')
+    expect(viewerLanguageFor('/w/main.purs')).toBe('purescript')
     expect(viewerLanguageFor('/w/notes.unknownext')).toBeUndefined()
   })
 
