@@ -134,8 +134,46 @@ const DepthSection: z<{ maxDepth?: number }> = z.object({
   maxDepth: z.number().step(1).min(0).max(Number.MAX_SAFE_INTEGER),
 })
 
-/** Split a `provider/model` (or bare `model`) route string into agent options. */
-export function splitModelRoute(route: string): AgentOptions {
+/**
+ * Split a `provider/model` (or bare `model`) route string into agent options.
+ *
+ * A route handed to this function comes from a human's Settings field or a
+ * model's `model` argument, so it must survive two shapes at once:
+ *
+ * - `openrouter/strong` — provider `openrouter`, model `strong`.
+ * - `opengateway/deepseek/deepseek-v4.1-flash-ultrafast` — provider
+ *   `opengateway`, model `deepseek/deepseek-v4.1-flash-ultrafast`.
+ *
+ * A bare last-slash split cannot express the second: it produces provider
+ * `opengateway/deepseek`, which no adapter answers, so EVERY delegation on such
+ * a route fails with `NO_ADAPTER` on its first model request. That is a real
+ * misconfiguration trap, not a hypothetical — the shipped default route has a
+ * slash-bearing model id.
+ *
+ * Resolution therefore prefers the provider registry when one is available:
+ * the LONGEST registered provider prefix that leaves a non-empty model id wins,
+ * which is the only split the adapter can actually route. `knownProviders` is
+ * optional so the pure split stays usable (and testable) without a live `llm`
+ * service, and the last-slash behavior remains the fallback so an unregistered
+ * or camel-cased route keeps its historical meaning.
+ *
+ * @param route - the configured route string.
+ * @param knownProviders - registered provider ids, or undefined to split blindly.
+ * @returns the agent-options override naming provider and model.
+ */
+export function splitModelRoute(route: string, knownProviders?: Iterable<string>): AgentOptions {
+  if (knownProviders !== undefined) {
+    let best: { provider: string; model: string } | undefined
+    for (const provider of knownProviders) {
+      if (provider.length === 0 || !route.startsWith(`${provider}/`)) continue
+      const model = route.slice(provider.length + 1)
+      if (model.length === 0) continue
+      // Longest prefix wins: `opengateway/deepseek` must lose to `opengateway`
+      // when both are registered and the remainder is a usable model id.
+      if (best === undefined || provider.length > best.provider.length) best = { provider, model }
+    }
+    if (best !== undefined) return best
+  }
   const slash = route.lastIndexOf('/')
   if (slash <= 0 || slash === route.length - 1) return { model: route }
   return { provider: route.slice(0, slash), model: route.slice(slash + 1) }
@@ -150,6 +188,11 @@ export function splitModelRoute(route: string): AgentOptions {
  * @param parentSessionId - the calling session's id (the by-session key).
  * @param callModel - the delegation call's optional `model` argument.
  * @param configuredModel - the plugin config's `agentOptions.model`.
+ * @param taskText - the delegation prompt, for the cost-aware `auto` route.
+ * @param autoRoute - the `auto` route resolver, when model-intel is mounted.
+ * @param knownProviders - registered provider ids, so a slash-bearing model id
+ *   (e.g. `opengateway/deepseek/deepseek-v4.1-flash-ultrafast`) resolves to the
+ *   adapter that actually answers instead of a provider no adapter serves.
  * @returns the agent-options override naming the route, when one applies.
  */
 export function resolveChildModelRoute(
@@ -159,15 +202,16 @@ export function resolveChildModelRoute(
   configuredModel: string | undefined,
   taskText = '',
   autoRoute?: (task: string) => AgentOptions | undefined | Promise<AgentOptions | undefined>,
+  knownProviders?: Iterable<string>,
 ): AgentOptions | undefined | Promise<AgentOptions | undefined> {
-  if (callModel !== undefined && callModel.trim().length > 0) return splitModelRoute(callModel.trim())
+  if (callModel !== undefined && callModel.trim().length > 0) return splitModelRoute(callModel.trim(), knownProviders)
   const sessionRoute = section.bySession[parentSessionId]
-  if (typeof sessionRoute === 'string' && sessionRoute.trim().length > 0) return splitModelRoute(sessionRoute.trim())
+  if (typeof sessionRoute === 'string' && sessionRoute.trim().length > 0) return splitModelRoute(sessionRoute.trim(), knownProviders)
   if (section.defaultModel.trim().length > 0) {
     // `auto` consults the model-intel datasheet with the task text; an
     // unavailable or unmatched route leaves provider inheritance in effect.
     if (section.defaultModel.trim().toLowerCase() === 'auto') return autoRoute?.(taskText)
-    return splitModelRoute(section.defaultModel.trim())
+    return splitModelRoute(section.defaultModel.trim(), knownProviders)
   }
   if (configuredModel !== undefined) return { model: configuredModel }
   // Delegation should reduce cost and keep the parent as task owner by default.
@@ -454,6 +498,26 @@ export function apply(ctx: Context, config: Config): void {
     const intel = ctx.get('model-intel')
     return intel === undefined ? undefined : (task: string) => intel.resolveAutoRoute(task)
   }
+  /**
+   * Registered provider ids, read per call from the optional `llm` service.
+   *
+   * `splitModelRoute` needs these to resolve a slash-bearing model id
+   * (`opengateway/deepseek/deepseek-v4.1-flash-ultrafast`) to the provider an
+   * adapter actually serves; splitting blindly yields the unregistered
+   * `opengateway/deepseek` and every delegation dies on `NO_ADAPTER`. The lookup
+   * is lazy and optional: a deployment without `llm` mounted keeps the
+   * historical last-slash split rather than failing to compose this tool.
+   */
+  const knownProvidersSource = (): Iterable<string> | undefined => {
+    const llm = ctx.get('llm')
+    if (llm === undefined) return undefined
+    try {
+      return llm.listProviders().map(provider => provider.id)
+    } catch {
+      // A partially-initialized adapter registry must not break delegation.
+      return undefined
+    }
+  }
   const backgroundEnabled = config.enableRunInBackground !== false
   const continuable = (config.backgroundMode ?? 'one-shot') === 'continuable'
   const toolName = config.toolName ?? 'subagent'
@@ -586,6 +650,9 @@ export function apply(ctx: Context, config: Config): void {
           // datasheet; an unmounted (or disabled) service resolves nothing
           // and the delegation inherits the parent model.
           autoRouteSource(),
+          // Registered provider ids so a slash-bearing model id resolves to the
+          // provider an adapter serves.
+          knownProvidersSource(),
         )
         // The call's `reasoningEffort` argument rides the agent options: it is
         // per-child request configuration, not a route field. The swarm

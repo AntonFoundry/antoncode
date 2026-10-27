@@ -317,6 +317,45 @@ describe('dsh-tool-subagent', () => {
       .toEqual({ provider: 'mine', model: 'model' })
   })
 
+  it('resolves a slash-bearing model id against the provider registry', () => {
+    // Regression: the shipped default route has a slash-bearing MODEL id.
+    // A blind last-slash split yields provider "opengateway/deepseek", which no
+    // adapter serves, so every delegation died on NO_ADAPTER at its first model
+    // request. The registry decides the split instead.
+    const route = 'opengateway/deepseek/deepseek-v4.1-flash-ultrafast'
+
+    // Without registry knowledge the historical last-slash split still applies.
+    expect(tool.splitModelRoute(route))
+      .toEqual({ provider: 'opengateway/deepseek', model: 'deepseek-v4.1-flash-ultrafast' })
+
+    // With the registry, the longest registered prefix wins.
+    expect(tool.splitModelRoute(route, ['opengateway']))
+      .toEqual({ provider: 'opengateway', model: 'deepseek/deepseek-v4.1-flash-ultrafast' })
+    expect(tool.splitModelRoute(route, ['openrouter-free', 'opengateway']))
+      .toEqual({ provider: 'opengateway', model: 'deepseek/deepseek-v4.1-flash-ultrafast' })
+
+    // A longest-prefix match beats a shorter registered one that also matches.
+    expect(tool.splitModelRoute('a/b/c', ['a', 'a/b']))
+      .toEqual({ provider: 'a/b', model: 'c' })
+
+    // Unregistered providers fall back to the last-slash split rather than
+    // inventing a bare model id.
+    expect(tool.splitModelRoute('unknown/thing', ['opengateway']))
+      .toEqual({ provider: 'unknown', model: 'thing' })
+
+    // A registered provider whose remainder is empty is not a usable split.
+    expect(tool.splitModelRoute('opengateway/', ['opengateway']))
+      .toEqual({ model: 'opengateway/' })
+
+    // The resolver threads the registry through every precedence layer.
+    expect(tool.resolveChildModelRoute(
+      { defaultModel: route, bySession: {} }, 's1', undefined, undefined, '', undefined, ['opengateway'],
+    )).toEqual({ provider: 'opengateway', model: 'deepseek/deepseek-v4.1-flash-ultrafast' })
+    expect(tool.resolveChildModelRoute(
+      { defaultModel: '', bySession: {} }, 's1', route, undefined, '', undefined, ['opengateway'],
+    )).toEqual({ provider: 'opengateway', model: 'deepseek/deepseek-v4.1-flash-ultrafast' })
+  })
+
   it('resolves the child effort: call arg > section default > config', () => {
     expect(tool.resolveChildEffort({ defaultEffort: '' }, undefined, undefined)).toBeUndefined()
     expect(tool.resolveChildEffort({ defaultEffort: '' }, undefined, 'low')).toBe('low')
