@@ -18,9 +18,9 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import { foldConsumedWork } from '@deepseek-ai/dsh-agent'
-import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import { finalAssistantOutput } from './assistant-output.ts'
+import { epochStopReason } from './stop-reason.ts'
 import { SubagentRunId } from './types.ts'
 import type { SubagentResult, SubagentRun, SubagentRunEndInfo, SubagentRunInfo } from './types.ts'
 
@@ -213,49 +213,6 @@ export function createActivationObserver(
         ...output === undefined ? {} : { lastAssistantMessage: output },
       }, parent)
     },
-  }
-}
-
-/**
- * Why this child's epoch ended, for the terminal lifecycle edge and the
- * manager's own parent delivery. The child's own log is authoritative:
- * teardown succeeding says nothing about whether the model errored, hit its
- * token ceiling, or was cancelled, so deriving the reason from disposal would
- * report failed work as completed.
- *
- * {@link foldConsumedWork} supplies both halves the raw turn sequence cannot:
- * which turn accounts for the work this epoch consumed, and whether accepted
- * work was cancelled after it without any turn opening over it. A recorded
- * failure still wins over a cancellation — stopping a child that had already
- * failed does not turn its failure into a cancellation.
- * @param events - this epoch's own event suffix.
- * @returns its terminal stop reason; `completed` only for an epoch that both
- *   closed cleanly and had nothing left to run.
- */
-function epochStopReason(events: readonly SessionEvent[]): SubagentResult['stopReason'] {
-  const { end, droppedUnrun } = foldConsumedWork(events)
-  switch (end?.data.reason.kind) {
-    case 'max-tokens':
-      return 'max-tokens'
-    case 'aborted':
-    case 'interrupted':
-      return 'aborted'
-    case 'error':
-      return 'error'
-    // A pre-step rejection — a hook deny, a policy plugin — discarded input
-    // this epoch had claimed: the work was declined, not done.
-    case 'blocked':
-      return 'refusal'
-    // A clean ending and no accounting turn at all share one rule: the epoch
-    // finished what it was given unless a cancelled queue says otherwise.
-    case undefined:
-    case 'completed':
-      return droppedUnrun ? 'aborted' : 'completed'
-    /* v8 ignore next 3 -- `TurnEndReason` is merge-extensible, so this arm needs a
-     * backend that adds a variant; treating an unnameable reason as success would
-     * report failed work as completed. */
-    default:
-      return 'error'
   }
 }
 

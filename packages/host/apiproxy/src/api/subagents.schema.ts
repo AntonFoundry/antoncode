@@ -16,6 +16,11 @@ export const subagentListEntrySchema = z.union([
     id: sessionIdSchema,
     mode: z.literal('one-shot'),
     activity: z.union([z.literal('running'), z.literal('inactive')]),
+    status: z.union([
+      z.literal('running'), z.literal('idle'), z.literal('failed'), z.literal('completed'),
+    ]),
+    stopReason: z.string().optional(),
+    stopReasonDetail: z.string().optional(),
     hasChildren: z.boolean(),
     label: z.string().optional(),
   }),
@@ -24,6 +29,11 @@ export const subagentListEntrySchema = z.union([
     id: sessionIdSchema,
     mode: z.literal('continuable'),
     activity: z.union([z.literal('running'), z.literal('inactive')]),
+    status: z.union([
+      z.literal('running'), z.literal('idle'), z.literal('failed'), z.literal('completed'),
+    ]),
+    stopReason: z.string().optional(),
+    stopReasonDetail: z.string().optional(),
     hasChildren: z.boolean(),
     label: z.string(),
   }),

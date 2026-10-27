@@ -10,7 +10,10 @@ import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { foldSubagentDescriptor } from './descriptor.ts'
 import type { SubagentDescriptorData } from './descriptor.ts'
-import type { SubagentIdentityProjection, SubagentTimingProjection } from './projection-types.ts'
+import { epochStopReason } from './stop-reason.ts'
+import type {
+  SubagentIdentityProjection, SubagentOutcomeProjection, SubagentTimingProjection,
+} from './projection-types.ts'
 
 interface TimingState {
   /** Milliseconds accumulated across completed post-descriptor turns. */
@@ -153,4 +156,79 @@ ProjectionDefinition<'subagent', IdentityState> = {
   // Bumped when the identity gained its `seq` field: an older checkpoint row
   // would replay into a value the schema rejects, so it must refold instead.
   stateVersion: 2,
+}
+
+interface OutcomeState {
+  /** The turn whose steps are being observed; absent between turns. */
+  openTurn?: number
+  /** Whether the open turn entered a model step. */
+  openStepped?: boolean
+  /** Outcome from the last accounting `turn/end`; absent before one. */
+  outcome?: SubagentOutcomeProjection
+}
+
+const outcomeSchema = z.object({
+  stopReason: z.string(),
+  error: z.string().optional(),
+  seq: z.number().int().nonnegative(),
+}).strict().nullable() as unknown as z.ZodType<SubagentOutcomeProjection | null>
+
+/**
+ * Fold the durable terminal outcome from the child's own turn events.
+ *
+ * The projection answers a different question than the live `subagent/end`
+ * event: that edge is dispatched once, to whoever is listening, and is gone. A
+ * master agent inspecting a catalog later needs the reason to still be there,
+ * and a human needs the dropdown to know a crashed child is not merely idle.
+ * Folding it into the session log makes it readable from persistence without
+ * resuming the child at all.
+ *
+ * It folds the TURN STRUCTURE rather than a single ending, because
+ * `foldConsumedWork` — the one authority on which `turn/end` accounts for work
+ * — needs the turn's steps to answer. Reading an ending in isolation cannot
+ * distinguish a turn that computed something from a balanced no-op, so it
+ * would either credit cut-short work as finished or invent failures.
+ *
+ * Each new epoch's outcome replaces the previous one: a child resumed after a
+ * failure reports its latest result, which is what a reader deciding whether to
+ * resume it again needs.
+ */
+export const subagentOutcomeProjectionDefinition:
+ProjectionDefinition<'subagentOutcome', OutcomeState> = {
+  key: 'subagentOutcome',
+  schema: outcomeSchema,
+  init: () => ({}),
+  apply: (state, event) => {
+    if (event.type === 'turn/start') {
+      return { ...state, openTurn: event.data.turn, openStepped: false }
+    }
+    if (event.type === 'step/start') {
+      if (state.openTurn !== event.data.turn) return state
+      return { ...state, openStepped: true }
+    }
+    if (event.type !== 'turn/end') return state
+    const { turn, reason } = event.data
+    // The accounting turn is the one that stepped; a turn that never reached a
+    // model step accounts for no work and must not overwrite a real outcome.
+    const accounting = state.openTurn === turn && state.openStepped === true
+    const next: OutcomeState = state.openTurn === turn
+      ? { ...(state.outcome === undefined ? {} : { outcome: state.outcome }) }
+      : state
+    if (!accounting) return next
+    const stopReason = epochStopReason([
+      { type: 'turn/start', seq: event.seq, time: event.time, data: { turn } },
+      { type: 'step/start', seq: event.seq, time: event.time, data: { turn, step: 1 } },
+      event,
+    ] as SessionEvent[])
+    const error = reason.kind === 'error' && typeof reason.error?.message === 'string'
+      && reason.error.message.length > 0
+      ? reason.error.message
+      : undefined
+    return {
+      ...next,
+      outcome: { stopReason, ...(error === undefined ? {} : { error }), seq: event.seq },
+    }
+  },
+  view: state => state.outcome ?? null,
+  stateVersion: 1,
 }

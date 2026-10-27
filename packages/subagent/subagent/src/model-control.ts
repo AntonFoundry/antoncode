@@ -45,6 +45,27 @@ export function selectChildModel(
       'NOT_LIVE',
     )
   }
+  applyLiveSelection(overrides, agents, target, selection, authority)
+}
+
+/**
+ * Apply a selection to one already-resolved live target.
+ *
+ * Split out so the durable path below can reuse the exact same installation
+ * once it has materialized a child, instead of duplicating the listener wiring.
+ * @param overrides - caller-owned override store, keyed by the exact live Agent.
+ * @param agents - the live Agent registry.
+ * @param target - the exact live child whose route changes.
+ * @param selection - complete provider, model, and optional reasoning effort.
+ * @param authority - the exact live ancestor Agent.
+ */
+export function applyLiveSelection(
+  overrides: WeakMap<Agent, ModelSelectionRef>,
+  agents: AgentRegistry,
+  target: Agent,
+  selection: ModelSelection,
+  authority: SubagentAncestorAuthority,
+): void {
   assertAncestor(agents, target, authority)
   let ref = overrides.get(target)
   if (ref === undefined) {

@@ -7,6 +7,7 @@ import {
 } from '@deepseek-ai/dsh-client-runtime/client'
 import {
   IconChevronDownOutline14, IconChevronRightOutline14, IconRefreshOutline14, StateDot,
+  type StateDotState,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { NS } from './locales.ts'
@@ -78,6 +79,22 @@ function tokenTotal(
     ? undefined
     : usage.uncachedInputTokens + usage.outputTokens
       + usage.cacheReadTokens + usage.cacheWriteTokens
+}
+
+/**
+ * Map a served child status to its dot.
+ *
+ * `failed` must be visually unmistakable: before this the dropdown rendered one
+ * green "done" dot for every non-running child, so a crashed subagent was
+ * indistinguishable from a completed one. `error` is the primitive's red state.
+ */
+function stateDotFor(status: 'running' | 'idle' | 'failed' | 'completed'): StateDotState {
+  switch (status) {
+    case 'running': return 'ongoing'
+    case 'failed': return 'error'
+    case 'completed': return 'done'
+    default: return 'done'
+  }
 }
 
 /** Exact whole-second active-turn duration for one catalog row. */
@@ -272,10 +289,18 @@ function CatalogRows({
         const summary = summaries[entry.id]
         const label = entry.label ?? entry.id
         const mode = entry.mode === 'one-shot' ? t('mode.oneShot') : t('mode.continuable')
-        const activity = entry.activity === 'running' ? t('activity.running') : t('activity.inactive')
+        // The status line reflects the DURABLE outcome, not residency alone: a
+        // crashed child leaves the live registry exactly like a finished one,
+        // so residency turned every failure into "not running".
+        const activity = t(`status.${entry.status}` as 'status.running')
         const secondary = [summary?.title, mode, activity]
           .filter(value => value !== undefined)
           .join(' · ')
+        // A failure reason is worth showing inline; it is the whole reason the
+        // master (or the human) can decide whether to resume.
+        const failure = entry.status === 'failed' && entry.stopReasonDetail !== undefined
+          ? entry.stopReasonDetail
+          : undefined
         const totalTokens = tokenTotal(summary?.projectionValues?.tokenUsage)
         const durationMs = activityDuration(
           summary,
@@ -345,10 +370,11 @@ function CatalogRows({
                   </button>
                 )}
               <div className={css.clickarea}>
-                <StateDot state={entry.activity === 'running' ? 'ongoing' : 'done'} />
+                <StateDot state={stateDotFor(entry.status)} />
                 <span className={css.content}>
                   <span className={css.label}>{label}</span>
                   <span className={css.summary}>{secondary}</span>
+                  {failure !== undefined && <span className={css.failure}>{failure}</span>}
                 </span>
                 {metrics !== '' && (
                   <span className={css.metrics}>

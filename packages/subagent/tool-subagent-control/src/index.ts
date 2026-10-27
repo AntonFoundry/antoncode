@@ -129,16 +129,19 @@ export function apply(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'set_agent_model',
     description:
-      'Switch a running subagent to another model. Use it when the subagent is stuck because its current '
-      + 'model is exhausted, rate-limited, or otherwise failing: the switch applies to its next model request, '
-      + 'including the retry of the turn already in progress, and to every later request until the subagent '
-      + 'stops. The subagent must still be running. This changes no queued work; use send_message to give it '
-      + 'another task. Prefer a model from the same or a cheaper provider that the subagent can reach.',
+      'Switch a subagent to another model. Use it when a subagent is stuck or has FAILED because its current '
+      + 'model is exhausted, rate-limited, or otherwise unavailable. A running subagent switches immediately: '
+      + 'the change reaches its next model request, including the retry of the turn in progress. A failed or '
+      + 'interrupted subagent is no longer running, and the switch is recorded so the next send_message resumes '
+      + 'it on the replacement model — this is the usual recovery for a child that died on a bad route. Check '
+      + 'list_agents for the child\'s last outcome and stop reason first. This changes no queued work; use '
+      + 'send_message to give it another task. Prefer a model from the same or a cheaper provider that the '
+      + 'subagent can reach.',
     parameters: {
       agent_id: {
         type: 'string',
         required: true,
-        description: 'The agent id of the running subagent whose model should change.',
+        description: 'The agent id of the subagent whose model should change. A failed or interrupted child is accepted: the route is applied when it next resumes.',
       },
       provider: {
         type: 'string',

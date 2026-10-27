@@ -54,7 +54,7 @@ import { seedDescriptorTurn } from './descriptor-seed.ts'
 import type { ContinuableCreateRequest, ContinuableCreateSpec, SubagentResult, SubagentStartRequest } from './types.ts'
 import type { ActivationObserver, ActivationTerminal } from './lifecycle.ts'
 import { SubagentError } from './error.ts'
-import { selectChildModel } from './model-control.ts'
+import { applyLiveSelection } from './model-control.ts'
 import type SubagentActivationSetupRegistry from './activation-setup-registry.ts'
 
 /** Attribution for a model coordinator's follow-up to one of its children. */
@@ -386,6 +386,22 @@ export class SubagentContinuationManager {
   private readonly closingScopes = new Map<Agent, Set<Agent>>()
   /** Process-local model reassignments for live children, keyed by the exact Agent. */
   private readonly modelOverrides = new WeakMap<Agent, ModelSelectionRef>()
+  /**
+   * Model routes chosen for children that are NOT live, keyed by their durable
+   * session id and applied when a later cold resume materializes them.
+   *
+   * A failed or interrupted child leaves the Agent registry, so the live
+   * `modelOverrides` entry — keyed by the exact Agent — is gone with it. That is
+   * precisely the moment a human or a master agent needs to retarget it: the
+   * old route is exhausted, rate-limited, or broken. Without this map the only
+   * supported switch was the one case that never needed it, and a dead child
+   * could only be retried on the route that just failed.
+   *
+   * The entry is consumed by {@link coldResume}, so it applies to exactly the
+   * next Activation; a child that resumes and fails again keeps whatever route
+   * it actually ran on, and a stale intent never silently outlives its use.
+   */
+  private readonly pendingModelOverrides = new Map<SessionId, ModelSelection>()
   private draining = false
 
   constructor(
@@ -610,8 +626,47 @@ export class SubagentContinuationManager {
    * @throws {SubagentError} `UNAUTHORIZED` when the authority does not own the
    *   live target.
    */
-  selectModel(targetSessionId: SessionId, selection: ModelSelection, authority: SubagentAncestorAuthority): void {
-    selectChildModel(this.modelOverrides, this.ctx.agents, targetSessionId, selection, authority)
+  selectModel(
+    targetSessionId: SessionId,
+    selection: ModelSelection,
+    authority: SubagentAncestorAuthority,
+  ): void {
+    const target = this.ctx.agents.get(targetSessionId)
+    if (target !== undefined) {
+      applyLiveSelection(this.modelOverrides, this.ctx.agents, target, selection, authority)
+      // A live switch supersedes any stale intent recorded while it was cold.
+      this.pendingModelOverrides.delete(targetSessionId)
+      return
+    }
+    // Not live: record the intent so the next cold resume materializes the
+    // child on the replacement route. Authorization here cannot use the target
+    // Agent (there is none), so it validates the caller and defers the lineage
+    // check on the durable child to cold resume, which already refuses a
+    // non-ancestor parent.
+    this.assertSelectAuthority(authority)
+    this.pendingModelOverrides.set(targetSessionId, selection)
+  }
+
+  /**
+   * Validate the caller of a model switch aimed at a child it cannot currently
+   * address as a live Agent.
+   *
+   * A cold target has no Agent to walk a lineage from, so this proves the
+   * caller is the exact live ancestor it claims to be and leaves the durable
+   * parent check to cold resume. It deliberately does NOT imply the caller owns
+   * this particular child: `coldResume` re-authorizes the persisted header and
+   * is the only path that can read that relationship.
+   * @param authority - the presented ancestor Agent.
+   * @throws {SubagentError} `UNAUTHORIZED` when the caller is stale.
+   */
+  private assertSelectAuthority(authority: SubagentAncestorAuthority): void {
+    const caller = authority.agent
+    if (this.ctx.agents.get(caller.id) !== caller) {
+      throw new SubagentError(
+        'changing the model of a child requires the exact live ancestor agent',
+        'UNAUTHORIZED',
+      )
+    }
   }
 
   /**
@@ -988,16 +1043,25 @@ export class SubagentContinuationManager {
         'NOT_RESUMABLE',
       )
     }
+    // A model switch requested while this child was cold outranks the route the
+    // descriptor recorded: the whole reason to retarget a dead child is that
+    // its recorded route is the one that just failed. Consuming it here makes
+    // the intent apply to exactly this next Activation.
+    const pending = this.pendingModelOverrides.get(childId)
+    this.pendingModelOverrides.delete(childId)
+    const selection = pending ?? (descriptor.agentProvider !== undefined || descriptor.agentModel !== undefined
+      ? {
+        ...descriptor.agentProvider !== undefined ? { provider: descriptor.agentProvider } : {},
+        ...descriptor.agentModel !== undefined ? { model: descriptor.agentModel } : {},
+      } as ModelSelection
+      : undefined)
     let activation: Activation
     try {
       activation = await this.materialize({
         childId,
         provider: descriptor.provider,
         parent,
-        agentOptions: {
-          ...descriptor.agentProvider !== undefined ? { provider: descriptor.agentProvider } : {},
-          ...descriptor.agentModel !== undefined ? { model: descriptor.agentModel } : {},
-        },
+        agentOptions: selection ?? {},
         composition: { persona: descriptor.persona, toolFilter: descriptor.toolFilter },
         signal: options.signal,
       })

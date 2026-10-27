@@ -15,8 +15,31 @@ export type SubagentListEntry =
   | {
     kind: 'child'
     id: SessionId
-    /** Whether the child Agent driver is running at the Host sampling boundary. */
+    /**
+     * Whether the child Agent driver is running at the Host sampling boundary.
+     * Residency only — it never encodes a durable outcome, so it must not be
+     * used to decide whether a child SUCCEEDED. Use `status` for that.
+     */
     activity: 'running' | 'inactive'
+    /**
+     * The child's served disposition, combining live residency with the
+     * durable terminal outcome:
+     *
+     * - `running` — the Agent is working right now.
+     * - `idle` — live or resumable, with no outcome recorded yet.
+     * - `failed` — its last closed epoch ended in `error`/`max-tokens`/
+     *   `refusal`; `stopReason` carries which.
+     * - `completed` — its last closed epoch completed.
+     *
+     * A crashed child must never render as a finished one: before this field
+     * existed every non-running child, including a failed one, was presented as
+     * a green "done".
+     */
+    status: 'running' | 'idle' | 'failed' | 'completed'
+    /** How the child's last closed epoch ended; absent until one has. */
+    stopReason?: string
+    /** The failure message the child's closing turn carried, when it carried one. */
+    stopReasonDetail?: string
     /** Whether a direct descendant has durable `origin: 'subagent'`. */
     hasChildren: boolean
   } & (

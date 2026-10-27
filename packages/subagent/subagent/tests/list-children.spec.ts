@@ -115,6 +115,21 @@ function childEvents(descriptor: unknown): SessionEvent[] {
   ] as SessionEvent[]
 }
 
+/**
+ * Strip the durable `outcome` from listed rows.
+ *
+ * These assertions are about which children exist and how they are classified;
+ * `outcome` is a separate fold with its own cases at the end of this spec.
+ * Removing it keeps identity assertions exact instead of tolerating whatever the
+ * projection reports.
+ */
+function withoutOutcome<T extends { outcome?: unknown }>(entries: readonly T[]): Omit<T, 'outcome'>[] {
+  return entries.map((entry) => {
+    const { outcome: _outcome, ...rest } = entry
+    return rest
+  })
+}
+
 function descriptorPayload(label: string, version = SUBAGENT_DESCRIPTOR_VERSION) {
   return { version, mode: 'continuable' as const, provider: 'spawn', label }
 }
@@ -195,7 +210,7 @@ describe('SubagentRuntime.listChildren', () => {
   it('lists a persisted continuable child as inactive with its durable label', async () => {
     const { ctx, parent } = await setup([textResponse('done')])
     const childId = await startChild(ctx, parent, 'summarize the doc')
-    const entries = await ctx.subagents.listChildren(parent.id)
+    const entries = withoutOutcome(await ctx.subagents.listChildren(parent.id))
     expect(entries).toEqual([
       {
         kind: 'child', id: childId, label: 'summarize the doc', mode: 'continuable',
@@ -216,7 +231,7 @@ describe('SubagentRuntime.listChildren', () => {
     await oneShot.dispose()
     const continuableId = await startChild(ctx, parent, 'continuable child')
 
-    const entries = await ctx.subagents.listChildren(parent.id)
+    const entries = withoutOutcome(await ctx.subagents.listChildren(parent.id))
     expect(entries).toHaveLength(2)
     expect(entries).toContainEqual({
       kind: 'child',
@@ -281,7 +296,7 @@ describe('SubagentRuntime.listChildren', () => {
     // An ordinary session fork shares parentSession but has no subagent origin.
     const fork = ctx.sessions.fork(parent.session, undefined, SessionId('plain-fork'))
     await ctx.sessions.flush(fork)
-    const entries = await ctx.subagents.listChildren(parent.id)
+    const entries = withoutOutcome(await ctx.subagents.listChildren(parent.id))
     expect(entries.map(entry => entry.id)).toEqual([tieA, tieB, late])
     expect(entries.every(entry => entry.kind === 'child')).toBe(true)
   })
@@ -294,7 +309,7 @@ describe('SubagentRuntime.listChildren', () => {
     pending.append('turn/start', { turn: 1 })
     // The creation window: the establishing provider has not appended the
     // descriptor yet, so the row is omitted rather than diagnosed.
-    await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([])
+    expect(withoutOutcome(await ctx.subagents.listChildren(parent.id))).toEqual([])
   })
 
   it('lists a one-shot child with its durable creation label', async () => {
@@ -308,7 +323,7 @@ describe('SubagentRuntime.listChildren', () => {
       provider: 'spawn',
       label: 'labeled one-shot',
     }))
-    await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([
+    expect(withoutOutcome(await ctx.subagents.listChildren(parent.id))).toEqual([
       {
         kind: 'child', id: labeled, mode: 'one-shot', label: 'labeled one-shot',
         activity: 'inactive', hasChildren: false,
@@ -339,7 +354,7 @@ describe('SubagentRuntime.listChildren', () => {
       },
       { ...events[3], seq: 4, time: 5 },
     ] as SessionEvent[])
-    await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([
+    expect(withoutOutcome(await ctx.subagents.listChildren(parent.id))).toEqual([
       {
         kind: 'child', id: childId, mode: 'continuable', label: 'summarize the doc',
         activity: 'inactive', hasChildren: false,
@@ -357,7 +372,7 @@ describe('SubagentRuntime.listChildren', () => {
       parentSession: parent.id,
       origin: 'subagent',
     }, childEvents(descriptorPayload('quiet child')))
-    await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([
+    expect(withoutOutcome(await ctx.subagents.listChildren(parent.id))).toEqual([
       {
         kind: 'child', id: childId, mode: 'continuable', label: 'quiet child',
         activity: 'inactive', hasChildren: false,
@@ -378,7 +393,7 @@ describe('SubagentRuntime.listChildren', () => {
       step: 1,
       chunk: { type: 'usage', usage: { inputTokens: 0, outputTokens: 2, cacheReadTokens: 500 } },
     })
-    await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([
+    expect(withoutOutcome(await ctx.subagents.listChildren(parent.id))).toEqual([
       {
         kind: 'child', id: liveId, mode: 'continuable', label: 'live child',
         activity: 'running', hasChildren: false,
@@ -401,7 +416,7 @@ describe('SubagentRuntime.listChildren', () => {
     })
     live.append('turn/start', { turn: 1 })
     live.append('subagent/descriptor', descriptorPayload('live child'))
-    const entries = await ctx.subagents.listChildren(parent.id)
+    const entries = withoutOutcome(await ctx.subagents.listChildren(parent.id))
     expect(entries).toContainEqual({
       kind: 'child', id: settled, label: 'settled child', mode: 'continuable',
       activity: 'inactive', hasChildren: false,
@@ -429,7 +444,7 @@ describe('SubagentRuntime.listChildren', () => {
     }, events)
     // The last-wins projection fold serves the final descriptor's identity; a
     // repeated descriptor is not a per-child corruption diagnostic.
-    const entries = await ctx.subagents.listChildren(parent.id)
+    const entries = withoutOutcome(await ctx.subagents.listChildren(parent.id))
     expect(entries).toContainEqual({
       kind: 'child', id: doubled, label: 'twice again', mode: 'continuable',
       activity: 'inactive', hasChildren: false,
@@ -463,7 +478,7 @@ describe('SubagentRuntime.listChildren', () => {
     expect('subagent' in wired).toBe(true)
     expect(wired['subagent']).toBeNull()
     // The listing reads the same null as no value: running → omitted.
-    await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([])
+    expect(withoutOutcome(await ctx.subagents.listChildren(parent.id))).toEqual([])
   })
 
   it('diagnoses a settled child whose later descriptor invalidated the identity as corrupt', async () => {
@@ -480,7 +495,7 @@ describe('SubagentRuntime.listChildren', () => {
       parentSession: parent.id,
       origin: 'subagent',
     }, events)
-    await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([
+    expect(withoutOutcome(await ctx.subagents.listChildren(parent.id))).toEqual([
       { kind: 'diagnostic', id: invalidated, reason: 'corrupt' },
     ])
   })
@@ -499,7 +514,7 @@ describe('SubagentRuntime.listChildren', () => {
       values: { subagent: { mode: 'continuable', label: 'cached own', seq: 2 } },
     })
     const inspect = vi.spyOn(ctx.sessionPersistence, 'inspect')
-    await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([{
+    expect(withoutOutcome(await ctx.subagents.listChildren(parent.id))).toEqual([{
       kind: 'child', id: child, label: 'cached own', mode: 'continuable',
       activity: 'inactive', hasChildren: false,
     }])
@@ -529,7 +544,7 @@ describe('SubagentRuntime.listChildren', () => {
       values: { subagent: { mode: 'continuable', label: 'ancestor label', seq: 2 } },
     })
     const inspect = vi.spyOn(ctx.sessionPersistence, 'inspect')
-    await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([{
+    expect(withoutOutcome(await ctx.subagents.listChildren(parent.id))).toEqual([{
       kind: 'child', id: forkChild, label: 'own label', mode: 'continuable',
       activity: 'inactive', hasChildren: false,
     }])
@@ -558,7 +573,7 @@ describe('SubagentRuntime.listChildren', () => {
       // The id was re-published as a different lifecycle after enumeration.
       return { ...result, meta: mutate(result.meta) }
     }
-    const entries = await ctx.subagents.listChildren(parent.id)
+    const entries = withoutOutcome(await ctx.subagents.listChildren(parent.id))
     expect(entries).toContainEqual({ kind: 'diagnostic', id: reborn, reason: 'corrupt' })
     expect(entries).toContainEqual({
       kind: 'child', id: healthy, label: 'healthy sibling', mode: 'continuable',
@@ -575,7 +590,7 @@ describe('SubagentRuntime.listChildren', () => {
     // A stale cached sentinel must not out-rank the authoritative re-fold.
     ctx.sessionProjectionCache.cachedSnapshot = () => ({ asOfSeq: 0, values: { subagent: null } })
     const inspect = vi.spyOn(ctx.sessionPersistence, 'inspect')
-    await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([{
+    expect(withoutOutcome(await ctx.subagents.listChildren(parent.id))).toEqual([{
       kind: 'child', id: healthy, label: 'actually valid', mode: 'continuable',
       activity: 'inactive', hasChildren: false,
     }])
@@ -599,7 +614,7 @@ describe('SubagentRuntime.listChildren', () => {
       },
       { type: 'subagent/descriptor', seq: 2, time: 3, data: descriptorPayload('broken surface') },
     ] as SessionEvent[])
-    const entries = await ctx.subagents.listChildren(parent.id)
+    const entries = withoutOutcome(await ctx.subagents.listChildren(parent.id))
     expect(entries).toEqual([{ kind: 'diagnostic', id: invalid, reason: 'unavailable' }])
   })
 
@@ -609,7 +624,7 @@ describe('SubagentRuntime.listChildren', () => {
       parentSession: parent.id,
       origin: 'subagent',
     }, childEvents({ version: SUBAGENT_DESCRIPTOR_VERSION, mode: 'continuable', provider: 7 }))
-    const entries = await ctx.subagents.listChildren(parent.id)
+    const entries = withoutOutcome(await ctx.subagents.listChildren(parent.id))
     expect(entries).toEqual([{ kind: 'diagnostic', id: malformed, reason: 'corrupt' }])
   })
 
@@ -622,7 +637,7 @@ describe('SubagentRuntime.listChildren', () => {
     // The projection fold does not distinguish an unrecognized version from
     // other invalid descriptors: both serve no identity, and a settled
     // no-value candidate is corrupt.
-    const entries = await ctx.subagents.listChildren(parent.id)
+    const entries = withoutOutcome(await ctx.subagents.listChildren(parent.id))
     expect(entries).toEqual([{ kind: 'diagnostic', id: future, reason: 'corrupt' }])
   })
 
@@ -636,7 +651,7 @@ describe('SubagentRuntime.listChildren', () => {
       seedLength: seed.length,
       origin: 'subagent',
     }, seed)
-    const entries = await ctx.subagents.listChildren(parent.id)
+    const entries = withoutOutcome(await ctx.subagents.listChildren(parent.id))
     expect(entries).toEqual([
       {
         kind: 'child', id: forkChild, label: 'ancestor label', mode: 'continuable',
@@ -656,7 +671,7 @@ describe('SubagentRuntime.listChildren', () => {
       provider: 'not-mounted',
       label: 'orphan provider',
     }))
-    const entries = await ctx.subagents.listChildren(parent.id)
+    const entries = withoutOutcome(await ctx.subagents.listChildren(parent.id))
     expect(entries).toEqual([
       {
         kind: 'child', id: foreign, label: 'orphan provider', mode: 'continuable',
@@ -675,7 +690,7 @@ describe('SubagentRuntime.listChildren', () => {
     }, childEvents(descriptorPayload('poison me')))
     // The subagent unit itself folds this child cleanly; the FOREIGN unit's
     // view throws, and that damage stays contained to the one child.
-    const entries = await ctx.subagents.listChildren(parent.id)
+    const entries = withoutOutcome(await ctx.subagents.listChildren(parent.id))
     expect(entries).toContainEqual({ kind: 'diagnostic', id: poisoned, reason: 'corrupt' })
     expect(entries).toContainEqual({
       kind: 'child', id: healthy, label: 'healthy sibling', mode: 'continuable',
@@ -698,7 +713,7 @@ describe('SubagentRuntime.listChildren', () => {
     })
     healthy.append('turn/start', { turn: 1 })
     healthy.append('subagent/descriptor', descriptorPayload('live healthy'))
-    const entries = await ctx.subagents.listChildren(parent.id)
+    const entries = withoutOutcome(await ctx.subagents.listChildren(parent.id))
     expect(entries).toContainEqual({ kind: 'diagnostic', id: poisonedId, reason: 'corrupt' })
     expect(entries).toContainEqual({
       kind: 'child', id: healthyId, label: 'live healthy', mode: 'continuable',
@@ -731,7 +746,7 @@ describe('SubagentRuntime.listChildren', () => {
     }
     // Per-child isolation: the failed child degrades to one diagnostic while
     // the healthy sibling stays complete.
-    const degraded = await ctx.subagents.listChildren(parent.id)
+    const degraded = withoutOutcome(await ctx.subagents.listChildren(parent.id))
     expect(degraded).toContainEqual({ kind: 'diagnostic', id: flaky, reason: 'unavailable' })
     expect(degraded).toContainEqual({
       kind: 'child', id: healthy, label: 'healthy sibling', mode: 'continuable',
@@ -740,7 +755,7 @@ describe('SubagentRuntime.listChildren', () => {
     // Nothing is memoized: with the backend healthy again, the next listing
     // folds the same child to its identity.
     ctx.sessionPersistence.inspect = original
-    await expect(ctx.subagents.listChildren(parent.id)).resolves.toContainEqual({
+    expect(withoutOutcome(await ctx.subagents.listChildren(parent.id))).toContainEqual({
       kind: 'child', id: flaky, label: 'flaky storage', mode: 'continuable',
       activity: 'inactive', hasChildren: false,
     })
@@ -772,7 +787,7 @@ describe('SubagentRuntime.listChildren', () => {
       createdAt: 2,
       origin: 'subagent',
     }, compactedEvents)
-    const entries = await ctx.subagents.listChildren(parent.id)
+    const entries = withoutOutcome(await ctx.subagents.listChildren(parent.id))
     expect(entries).toEqual([
       {
         kind: 'child', id: plain, label: 'twin child', mode: 'continuable',
@@ -798,7 +813,7 @@ describe('SubagentRuntime.listChildren', () => {
       inspected.push(sessionId)
       return original(sessionId, signal)
     }
-    const entries = await ctx.subagents.listChildren(parent.id)
+    const entries = withoutOutcome(await ctx.subagents.listChildren(parent.id))
     expect(entries).toEqual([
       {
         kind: 'child', id: childId, label: 'direct child', mode: 'continuable',
@@ -830,7 +845,7 @@ describe('SubagentRuntime.listChildren', () => {
       inspected.push(sessionId)
       return original(sessionId, signal)
     }
-    const entries = await ctx.subagents.listChildren(parent.id)
+    const entries = withoutOutcome(await ctx.subagents.listChildren(parent.id))
     expect(entries).toHaveLength(3)
     // The cost model: one inspection per cold child, none for a live child,
     // whose identity is served from the registry's watermark cache.
@@ -849,7 +864,7 @@ describe('SubagentRuntime.listChildren', () => {
       expect(ctx.sessionProjectionCache.cachedSnapshot(header!)?.values.subagent).toBeDefined()
     }, { timeout: 5_000 })
     const inspect = vi.spyOn(ctx.sessionPersistence, 'inspect')
-    await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([{
+    expect(withoutOutcome(await ctx.subagents.listChildren(parent.id))).toEqual([{
       kind: 'child', id: childId, label: 'cached child', mode: 'continuable',
       activity: 'inactive', hasChildren: false,
     }])
@@ -868,12 +883,12 @@ describe('SubagentRuntime.listChildren', () => {
     }]
     // No stored row at all for a foreign child this process never ran.
     const inspect = vi.spyOn(ctx.sessionPersistence, 'inspect')
-    await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual(expected)
+    expect(withoutOutcome(await ctx.subagents.listChildren(parent.id))).toEqual(expected)
     expect(inspect).toHaveBeenCalledTimes(1)
     // A stored row whose cut predates the descriptor: the subagent key is
     // absent from the served values, and preparation still rules.
     ctx.sessionProjectionCache.cachedSnapshot = () => ({ asOfSeq: 0, values: {} })
-    await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual(expected)
+    expect(withoutOutcome(await ctx.subagents.listChildren(parent.id))).toEqual(expected)
     expect(inspect).toHaveBeenCalledTimes(2)
   })
 
@@ -885,7 +900,7 @@ describe('SubagentRuntime.listChildren', () => {
       origin: 'subagent',
     }, childEvents(descriptorPayload('uncacheable child')))
     const inspect = vi.spyOn(ctx.sessionPersistence, 'inspect')
-    await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([{
+    expect(withoutOutcome(await ctx.subagents.listChildren(parent.id))).toEqual([{
       kind: 'child', id: foreign, label: 'uncacheable child', mode: 'continuable',
       activity: 'inactive', hasChildren: false,
     }])
@@ -904,7 +919,7 @@ describe('SubagentRuntime.listChildren', () => {
       throw new Error('poisoned cache row')
     }
     const inspect = vi.spyOn(ctx.sessionPersistence, 'inspect')
-    await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([{
+    expect(withoutOutcome(await ctx.subagents.listChildren(parent.id))).toEqual([{
       kind: 'child', id: recovered, label: 'recovered child', mode: 'continuable',
       activity: 'inactive', hasChildren: false,
     }])
@@ -921,7 +936,7 @@ describe('SubagentRuntime.listChildren', () => {
       { type: 'turn/end', seq: 1, time: 2, data: { turn: 1, reason: { kind: 'completed' } } },
     ] as SessionEvent[])
 
-    await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([{
+    expect(withoutOutcome(await ctx.subagents.listChildren(parent.id))).toEqual([{
       kind: 'child', id: childId, label: 'direct child', mode: 'continuable',
       activity: 'inactive', hasChildren: false,
     }])
@@ -938,7 +953,7 @@ describe('SubagentRuntime.listChildren', () => {
     await expect(ctx.subagents.listChildren(childId)).resolves.toEqual([
       { kind: 'diagnostic', id: diagnosticId, reason: 'corrupt' },
     ])
-    await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([{
+    expect(withoutOutcome(await ctx.subagents.listChildren(parent.id))).toEqual([{
       kind: 'child', id: childId, label: 'direct child', mode: 'continuable',
       activity: 'inactive', hasChildren: true,
     }])
@@ -1038,7 +1053,7 @@ describe('SubagentRuntime.listChildren', () => {
   it('returns an empty array for a parent with no children', async () => {
     const { ctx, parent } = await setup([])
     await ctx.sessions.flush(parent.session)
-    await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([])
+    expect(withoutOutcome(await ctx.subagents.listChildren(parent.id))).toEqual([])
   })
 
   it('SubagentError from listChildren is typed with its stable code', async () => {
@@ -1286,5 +1301,18 @@ describe('SubagentRuntime.listDescendants', () => {
     await expect(ctx.subagents.listDescendants(parent.id)).rejects.toThrow(
       expect.objectContaining({ code: 'SUBAGENT_CONTROL_PROJECTIONS_UNAVAILABLE' }) as Error,
     )
+  })
+  it('serves the durable outcome so a master can read why a child stopped', async () => {
+    // The reason must outlive the transient `subagent/end`: after the child is
+    // gone, this row is all the master has to decide resume vs. give up.
+    const { ctx, parent } = await setup([textResponse('done')])
+    const childId = await startChild(ctx, parent, 'report')
+    const [entry] = await ctx.subagents.listChildren(parent.id)
+    expect(entry).toMatchObject({
+      kind: 'child',
+      id: childId,
+      activity: 'inactive',
+      outcome: { stopReason: 'completed' },
+    })
   })
 })

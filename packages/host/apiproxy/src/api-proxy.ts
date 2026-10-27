@@ -1028,6 +1028,45 @@ function subagentPromptError(
   return err(request, { code: 'internal', message: 'subagent prompt failed', details: {} })
 }
 
+/**
+ * Derive the served disposition of one child from live residency and its
+ * durable terminal outcome.
+ *
+ * Residency alone is not a status: a child that crashed, hit its token ceiling,
+ * or was refused has left the live registry exactly like one that finished, so
+ * presenting residency made every failed child look green. Outcome is the
+ * durable half; combined they answer the question a human actually asks.
+ *
+ * A child that is working right now outranks any earlier outcome — a resumed
+ * child is running again whatever its previous epoch ended with. Only an
+ * unrecognized future stop reason falls to `idle`: reporting it as `completed`
+ * would hide a failure, and as `failed` would invent one.
+ * @param running - whether the child's Agent is live and sampling right now.
+ * @param stopReason - the child's last closed-epoch stop reason, if any.
+ * @returns the served status.
+ */
+function servedSubagentStatus(
+  running: boolean,
+  stopReason: string | undefined,
+): 'running' | 'idle' | 'failed' | 'completed' {
+  if (running) return 'running'
+  switch (stopReason) {
+    case 'completed':
+      return 'completed'
+    case 'error':
+    case 'max-tokens':
+    case 'refusal':
+      return 'failed'
+    // `aborted` is a cancellation, not a failure: the child never reached a
+    // verdict. It stays resumable and must not be painted red.
+    case 'aborted':
+    case undefined:
+      return 'idle'
+    default:
+      return 'idle'
+  }
+}
+
 /** Stable RPC face of the missing projections capability, shared by every catalog read path. */
 function projectionsUnavailableError(): RpcError {
   return {
@@ -3152,12 +3191,23 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         try {
           const entries = await ctx.subagents.listChildren(request.payload.parentSessionId, signal)
           return ok(request, {
-            entries: entries.map(entry => entry.kind === 'child'
-              ? {
+            entries: entries.map((entry) => {
+              if (entry.kind !== 'child') return entry
+              const running = ctx.agents.get(entry.id)?.status === 'running'
+              return {
                 ...entry,
-                activity: ctx.agents.get(entry.id)?.status === 'running' ? 'running' : 'inactive',
+                activity: running ? 'running' as const : 'inactive' as const,
+                status: servedSubagentStatus(running, entry.outcome?.stopReason),
+                ...(entry.outcome === undefined
+                  ? {}
+                  : {
+                    stopReason: entry.outcome.stopReason,
+                    ...(entry.outcome.error === undefined
+                      ? {}
+                      : { stopReasonDetail: entry.outcome.error }),
+                  }),
               }
-              : entry),
+            }),
             parentAvailable: ctx.agents.get(request.payload.parentSessionId) !== undefined,
           })
         } catch (error: unknown) {

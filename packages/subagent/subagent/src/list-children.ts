@@ -27,6 +27,7 @@ import type { SessionProjectionCache } from '@deepseek-ai/dsh-session-projection
 import { SubagentError } from './error.ts'
 import type { SubagentIdentityProjection } from './projection-types.ts'
 import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
+import type { SubagentOutcomeProjection } from './projection-types.ts'
 
 /**
  * Concurrent cold inspections per listing; a constant because it bounds one
@@ -66,6 +67,17 @@ export type SubagentListEntry =
      * not registered in this deployment's projection registry.
      */
     readonly usage?: TokenUsageProjection
+    /**
+     * How the child's most recent closed epoch ended, folded from its own
+     * `turn/end` events. Absent when no epoch has closed yet.
+     *
+     * This is what makes a FAILED child inspectable rather than merely
+     * "not running": a master agent reads the reason here and decides whether
+     * to resume, switch its model, or give up. `stopReason` uses the same
+     * vocabulary as `subagent/end` (`completed`, `error`, `aborted`,
+     * `max-tokens`, `refusal`), and `error` carries the failure message.
+     */
+    readonly outcome?: SubagentOutcomeProjection
   } & (
     | {
       /** A terminal one-shot child. */
@@ -286,6 +298,7 @@ async function resolveCandidateRows(
     if (identity === undefined || identity === null) return
     rows[index] = childRow(
       childId, identity, 'running', subagentParents.has(childId), servedUsage(values.tokenUsage),
+      values.subagentOutcome,
     )
   })
 
@@ -393,6 +406,7 @@ async function resolveColdIdentity(
     if (cached !== undefined && cached !== null && cached.seq >= (header.seedLength ?? 0)) {
       return childRow(
         childId, cached, 'inactive', hasChildren, servedUsage(cachedValues?.tokenUsage),
+        cachedValues?.subagentOutcome,
       )
     }
   }
@@ -427,7 +441,9 @@ async function resolveColdIdentity(
   if (identity === undefined || identity === null) {
     return { kind: 'diagnostic', id: childId, reason: 'corrupt' }
   }
-  return childRow(childId, identity, 'inactive', hasChildren, servedUsage(values.tokenUsage))
+  return childRow(
+    childId, identity, 'inactive', hasChildren, servedUsage(values.tokenUsage), values.subagentOutcome,
+  )
 }
 
 /** The served usage row, absent before the child's first usage report. */
@@ -448,8 +464,10 @@ function childRow(
   activity: 'running' | 'inactive',
   hasChildren: boolean,
   usage: TokenUsageProjection | undefined,
+  outcome: SubagentOutcomeProjection | null | undefined,
 ): SubagentListEntry {
   const withUsage = usage === undefined ? {} : { usage }
+  const withOutcome = outcome === undefined || outcome === null ? {} : { outcome }
   return identity.mode === 'one-shot'
     ? {
       kind: 'child',
@@ -459,6 +477,7 @@ function childRow(
       activity,
       hasChildren,
       ...withUsage,
+      ...withOutcome,
     }
     : {
       kind: 'child',
@@ -468,6 +487,7 @@ function childRow(
       activity,
       hasChildren,
       ...withUsage,
+      ...withOutcome,
     }
 }
 

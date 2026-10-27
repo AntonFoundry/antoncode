@@ -457,15 +457,27 @@ describe('dsh-tool-subagent-control set_agent_model', () => {
     await waitNoActivation(ctx, started.childId)
   })
 
-  it('fails loudly for a target that is not running', async () => {
+  it('accepts a target that is not running, recording the route for its next resume', async () => {
+    // A child that died on its route is exactly the one a switch is for; the
+    // tool reports success because the intent was recorded durably, and the
+    // next send_message resumes the child on the replacement model.
     const { ctx, parent } = await setup([textResponse('done')])
     const result = await callTool(ctx, 'set_agent_model', {
       agent_id: 'missing-subagent',
       provider: 'mock',
       model: 'replacement',
     }, parent)
+    expect(result.isError).toBeFalsy()
+  })
+
+  it('still rejects a provider that is not registered', async () => {
+    const { ctx, parent } = await setup([textResponse('done')])
+    const result = await callTool(ctx, 'set_agent_model', {
+      agent_id: 'missing-subagent',
+      provider: 'no-such-provider',
+      model: 'replacement',
+    }, parent)
     expect(result.isError).toBe(true)
-    expect(text(result)).toContain('not running')
   })
 
   it('rejects an unknown provider before installing the switch', async () => {

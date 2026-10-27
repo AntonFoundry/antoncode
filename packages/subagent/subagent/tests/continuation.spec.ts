@@ -2614,7 +2614,11 @@ describe('SubagentRuntime.selectModel', () => {
     await waitNoActivation(ctx, started.childId)
   })
 
-  it('rejects a target that is not live instead of accepting a silent no-op', async () => {
+  it('records a model switch for a child that is not live, for the next resume', async () => {
+    // The child that most needs a different model is the one that just died on
+    // the old route, so a cold target records the intent instead of throwing.
+    // A later cold resume consumes it (see the resume specs); what this pins is
+    // that the call is accepted and that a STALE caller is still refused.
     const { ctx, parent } = await setup([textResponse('done')])
     expect(() => {
       ctx.subagents.selectModel(
@@ -2622,7 +2626,17 @@ describe('SubagentRuntime.selectModel', () => {
         replacement,
         { kind: 'ancestor', agent: parent },
       )
-    }).toThrow(expect.objectContaining({ code: 'NOT_LIVE' }))
+    }).not.toThrow()
+  })
+
+  it('rejects a stale caller even when the target is not live', async () => {
+    const { ctx, parent } = await setup([textResponse('done')])
+    // A caller that is no longer registered cannot retarget anything, live or
+    // cold: the authority check does not depend on the target existing.
+    const stale = { kind: 'ancestor', agent: { ...parent, id: SessionId('stale-caller') } } as never
+    expect(() => {
+      ctx.subagents.selectModel(SessionId('missing-subagent'), replacement, stale)
+    }).toThrow(expect.objectContaining({ code: 'UNAUTHORIZED' }))
   })
 
   it('rejects a self-targeting or stale caller', async () => {

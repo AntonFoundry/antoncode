@@ -4,7 +4,7 @@ import SessionStore from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SubagentRuntime from '../src/index.ts'
-import { subagentTimingProjectionDefinition } from '../src/projection.ts'
+import { subagentOutcomeProjectionDefinition, subagentTimingProjectionDefinition } from '../src/projection.ts'
 
 function event(type: SessionEvent['type'], seq: number, time: number): SessionEvent {
   return { type, seq, time, data: {} } as SessionEvent
@@ -32,6 +32,7 @@ describe('subagent timing projection', () => {
     const after = ctx.sessionProjections.snapshot(ctx.sessions.create()).values
     expect(after.subagentTiming).toBeUndefined()
     expect(after.subagent).toBeUndefined()
+    expect(after.subagentOutcome).toBeUndefined()
   })
 
   it('resets inherited seed timing at the child descriptor and sums later completed turns', () => {
@@ -80,5 +81,59 @@ describe('subagent timing projection', () => {
       event('turn/end', 1, 200),
       event('subagent/descriptor', 2, 300),
     ])).toEqual({ settledMs: 0 })
+  })
+})
+
+describe('subagent outcome projection', () => {
+  /**
+   * One accounting turn: `foldConsumedWork` only counts a `turn/end` that
+   * closes a turn some `step/start` opened, so a bare ending reports nothing.
+   */
+  function turn(kind: string, seq: number, message?: string): SessionEvent[] {
+    return [
+      { type: 'turn/start', seq, time: seq * 10, data: { turn: 1 } } as unknown as SessionEvent,
+      { type: 'step/start', seq: seq + 1, time: seq * 10 + 1, data: { turn: 1, step: 1 } } as unknown as SessionEvent,
+      {
+        type: 'turn/end',
+        seq: seq + 2,
+        time: seq * 10 + 2,
+        data: {
+          turn: 1,
+          reason: kind === 'error'
+            ? { kind, error: { message: message ?? 'boom' } }
+            : { kind },
+        },
+      } as unknown as SessionEvent,
+    ]
+  }
+
+  function foldOutcome(events: SessionEvent[]) {
+    let state = subagentOutcomeProjectionDefinition.init()
+    for (const item of events) state = subagentOutcomeProjectionDefinition.apply(state, item)
+    return subagentOutcomeProjectionDefinition.view(state)
+  }
+
+  it('serves null before any turn closes', () => {
+    expect(foldOutcome([])).toBeNull()
+    expect(foldOutcome([event('turn/start', 0, 1)])).toBeNull()
+  })
+
+  it('records a failure with its reason, so a crashed child is not merely idle', () => {
+    expect(foldOutcome(turn('error', 5, 'no adapter registered')))
+      .toEqual({ stopReason: 'error', error: 'no adapter registered', seq: 7 })
+  })
+
+  it('distinguishes a clean completion from a failure', () => {
+    expect(foldOutcome(turn('completed', 3))).toEqual({ stopReason: 'completed', seq: 5 })
+    expect(foldOutcome(turn('max-tokens', 3))).toEqual({ stopReason: 'max-tokens', seq: 5 })
+    expect(foldOutcome(turn('interrupted', 3))).toEqual({ stopReason: 'aborted', seq: 5 })
+    expect(foldOutcome(turn('blocked', 3))).toEqual({ stopReason: 'refusal', seq: 5 })
+  })
+
+  it('replaces the outcome of an earlier epoch, so a resumed child reports its latest result', () => {
+    expect(foldOutcome([
+      ...turn('error', 5, 'first failure'),
+      ...turn('completed', 20),
+    ])).toEqual({ stopReason: 'completed', seq: 22 })
   })
 })
