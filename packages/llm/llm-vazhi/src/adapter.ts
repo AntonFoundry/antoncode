@@ -23,7 +23,7 @@ import {
   type ResolvedRetryPolicy,
   type StreamChunk,
 } from '@deepseek-ai/dsh-llm'
-import { OpenAIAdapter } from '@deepseek-ai/dsh-llm-openai'
+import { modelReasoningInfo, OpenAIAdapter, type VerbatimReasoningEffort } from '@deepseek-ai/dsh-llm-openai'
 import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import type { PoolDocument } from './pool.ts'
 import { formatDuration, type VazhiEndpoint } from './providers.ts'
@@ -35,12 +35,17 @@ export const AUTO_MODEL = 'auto'
 /** Selector label for {@link AUTO_MODEL}. */
 export const AUTO_MODEL_NAME = 'Auto (free pool)'
 
+/** Reasoning-effort labels a Vazhi attempt may send verbatim. */
+export type VazhiReasoningEffort = VerbatimReasoningEffort
+
 /** One resolution's validated connection and policy facts. */
 export interface VazhiResolvedOptions {
   /** Directory holding `state.json`, `pool-cache.json`, and `config.json`. */
   readonly directory: string
   /** Selector label for the route. */
   readonly displayName: string
+  /** Efforts offered on every model of this route, in display order. */
+  readonly reasoningEfforts: readonly VazhiReasoningEffort[]
   /** Positive context capacity used when the pool carries no exact value. */
   readonly defaultContextWindow: number
   /** Per-request output cap used when the pool carries no exact value. */
@@ -156,6 +161,9 @@ export class VazhiAdapter extends LlmAdapter {
     const options = this.#options(provider)
     const pool = await this.#router.loadPool()
     const entry = pool.pool.find(candidate => candidate.model === model)
+    // The ladder belongs to the route: an upstream or pool snapshot that does
+    // not advertise effort levels still offers the levels its requests can send.
+    const reasoning = modelReasoningInfo(options.reasoningEfforts)
     return {
       provider,
       id: model,
@@ -163,6 +171,7 @@ export class VazhiAdapter extends LlmAdapter {
       inputModalities: ['text'],
       context: { contextWindow: entry?.meta?.contextWindow ?? options.defaultContextWindow },
       defaultMaxTokens: entry?.meta?.maxTokens ?? options.maxTokens,
+      ...reasoning === undefined ? {} : { reasoning },
     }
   }
 
@@ -244,7 +253,7 @@ export class VazhiAdapter extends LlmAdapter {
         baseURL: endpoint.baseURL,
         headers: endpoint.headers,
         displayName: connection.displayName,
-        defaults: {},
+        defaults: { reasoningDialect: 'gateway' },
         maxTokens: connection.maxTokens,
         defaultContextWindow: connection.defaultContextWindow,
         models: [],

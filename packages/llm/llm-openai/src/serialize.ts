@@ -42,6 +42,37 @@ const REASONING_MODEL = /^(o\d|gpt-5)/i
  */
 export const VERBATIM_REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 
+/** One effort label a verbatim dialect accepts. */
+export type VerbatimReasoningEffort = typeof VERBATIM_REASONING_EFFORTS[number]
+
+/**
+ * Validate one route's verbatim effort ladder. An empty ladder is the explicit
+ * opt-out that hides a route's effort control; a repeated or undocumented
+ * label is a configuration error, because the provider would receive a value
+ * it does not define.
+ * @param efforts - the configured ladder, or undefined for the route default.
+ * @param fallback - the route default used when `efforts` is undefined.
+ * @param owner - package name prefixed to a validation error.
+ * @returns the detached, validated ladder.
+ * @throws when a label is undocumented or repeats.
+ */
+export function resolveVerbatimReasoningEfforts(
+  efforts: readonly VerbatimReasoningEffort[] | undefined,
+  fallback: readonly VerbatimReasoningEffort[],
+  owner: string,
+): VerbatimReasoningEffort[] {
+  const levels = efforts ?? fallback
+  const seen = new Set<VerbatimReasoningEffort>()
+  for (const level of levels) {
+    if (!VERBATIM_REASONING_EFFORTS.includes(level)) {
+      throw new Error(`${owner}: unknown reasoning effort ${JSON.stringify(level)}`)
+    }
+    if (seen.has(level)) throw new Error(`${owner}: reasoningEfforts repeats ${JSON.stringify(level)}`)
+    seen.add(level)
+  }
+  return [...levels]
+}
+
 /**
  * Map the harness effort vocabulary onto the OpenAI wire levels. `off` and
  * `undefined` both put nothing on the wire (provider default); OpenAI has no

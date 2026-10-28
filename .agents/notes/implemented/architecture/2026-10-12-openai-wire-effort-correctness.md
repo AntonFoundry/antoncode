@@ -19,19 +19,23 @@ capabilities:
 
 - Each catalog model may declare exact `reasoningEfforts`; a route with no
   per-model effort metadata exposes no effort control, unless its provider
-  documents one vocabulary for every model, which the route then offers as one
-  ladder (the OpenGateway bullet below). Route-specific catalogs replace
+  exposes one vocabulary for every model, which the route then offers as one
+  ladder (the gateway-dialect bullet below). Route-specific catalogs replace
   the shared catalog for endpoints with different model capabilities.
 - Request serialization accepts the explicit OpenAI effort vocabulary;
   model metadata gates UI choices and configured defaults. Unsupported
   explicit choices fail before transport, and defaults unsupported by the
   selected model are omitted.
-- A provider that documents one effort vocabulary for every model declares
-  the `gateway` reasoning dialect (OpenGateway). That dialect sends its
+- A route whose provider exposes one effort vocabulary for all its models declares
+  the `gateway` reasoning dialect (OpenGateway, Vazhi). That dialect sends its
   documented labels verbatim, keeps `off` as the provider default by sending
   no field, and skips the per-model subset filter so a level such as `max`
   reaches a provider that defines it; see the
-  [OpenGateway provider route](../feature/2026-10-27-opengateway-provider-route.md).
+  [OpenGateway provider route](../feature/2026-10-27-opengateway-provider-route.md)
+  and the [Vazhi free-model pool route](../feature/2026-10-27-vazhi-free-model-pool-route.md).
+  Vazhi fronts several OpenAI-compatible upstreams whose advertised effort
+  vocabularies vary, so its route offers the OpenAI-compatible ladder and the
+  selected upstream decides what a chosen level does.
 - `OPENAI_REASONING_EFFORTS` remains exported for source compatibility, but
   model resolution no longer uses this legacy union.
 - `ModelsDevAdapter.resolveModel` derives reasoning from the models.dev
@@ -66,5 +70,7 @@ own catalog-driven effort dialect.
 `off` omission, and the declared-default mapping;
 `llm-models-dev` covers the freeness predicate, the reasoning flag parse,
 and per-model reasoning declaration/stripping through the mounted plugin;
+`llm-vazhi` covers the route ladder, the verbatim wire label, and the empty
+ladder's hidden control through the adapter and mounted route;
 `llm-pi-ai` covers the NVIDIA servable-id filter with models.dev capacity
 enrichment.

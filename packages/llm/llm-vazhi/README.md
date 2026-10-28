@@ -12,7 +12,9 @@ Failures are classified from provider wording (auth, denied, per-minute, hourly,
 
 A request walks at most `maxAttempts` upstreams. It stops walking the moment a chunk reached the consumer, because a retry after partial output would duplicate it, and a caller abort never penalizes a model. When no pool model is ready, the error names the wait; when the attempt budget runs out, it reports the last failure.
 
-The `llm-vazhi:` settings section accepts `displayName`, `directory`, `poolURL`, `poolRefreshMs`, `poolRetryAfterMs`, `poolTimeoutMs`, `maxAttempts`, `slowStartMs`, `slowForMs`, `maxTokens`, `defaultContextWindow`, `streamIdleTimeoutMs`, and `retryPolicy`. Options resolve for each request, so a changed value reaches the next turn; the pool download cadence and the captured retry policy take effect on the next mount or registration.
+The `llm-vazhi:` settings section accepts `displayName`, `directory`, `poolURL`, `poolRefreshMs`, `poolRetryAfterMs`, `poolTimeoutMs`, `reasoningEfforts`, `maxAttempts`, `slowStartMs`, `slowForMs`, `maxTokens`, `defaultContextWindow`, `streamIdleTimeoutMs`, and `retryPolicy`. Options resolve for each request, so a changed value reaches the next turn; the pool download cadence and the captured retry policy take effect on the next mount or registration.
+
+The picker offers a reasoning-effort ladder on every model of the route, including `auto`. The pool document carries no per-model effort vocabulary, so the route advertises one configured ladder (`reasoningEfforts`, `low`, `medium`, and `high` by default) and sends a selected label verbatim as `reasoning_effort`; which levels an upstream honors is upstream- and model-dependent. An empty `reasoningEfforts` list hides the control.
 
 ## Model Experience
 
@@ -49,5 +51,5 @@ Loop-retained response blocks append to the next request and preserve its earlie
 - `auto` selection is invisible to the model. A model that benefits from task-specific prompting cannot tell which upstream answered, and the route cannot hand per-model prompt guidance to the loop.
 - Free-model coverage depends on the published pool document and on each upstream's live availability. An empty or stale document, or an upstream that changed its free tier, shows up as an empty or shorter picker rather than as an admission error.
 - Cooldowns are local to the harness home. Two machines sharing one upstream account do not see each other's rate limits until the provider answers with one.
-- Reasoning-effort controls are absent: the pool document carries no effort vocabulary, so the picker offers no effort choice and requests send none.
+- The pool document carries no effort vocabulary, so the picker cannot hide levels an upstream rejects; the route offers its configured ladder on every model, and a selected level is the caller's choice.
 - Pinned ids name `upstream/model`. A model the pool document does not carry is not routable even when its upstream is reachable, because admission is what the pool decides.

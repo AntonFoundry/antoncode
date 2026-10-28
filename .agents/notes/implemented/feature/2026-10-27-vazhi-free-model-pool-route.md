@@ -18,7 +18,9 @@ The operator's other tooling routes free models through [vazhi](https://github.c
 
 **Cooldowns are a cross-process cache.** `$DSH_HOME/vazhi/state.json` is written through an atomic rename under a sibling file lock, read back through a sanitizer that drops entries a writer would not have produced, and treated as advisory: an unreadable or unwritable file costs retries, never the route. A successful attempt clears what predates it, so a recovered upstream is not held down by stale state.
 
-**Options resolve per request.** `resolveAdapterOptions` is the one explicit resolve step; a settings change to `displayName`, `directory`, `poolURL`, the download timeouts, `maxAttempts`, `slowStartMs`, `slowForMs`, `maxTokens`, `defaultContextWindow`, or `streamIdleTimeoutMs` reaches the next request. The mount-time interval captures `poolRefreshMs`, and the captured retry policy re-registers the route in place when a settings snapshot changes it.
+**Options resolve per request.** `resolveAdapterOptions` is the one explicit resolve step; a settings change to `displayName`, `directory`, `poolURL`, the download timeouts, `reasoningEfforts`, `maxAttempts`, `slowStartMs`, `slowForMs`, `maxTokens`, `defaultContextWindow`, or `streamIdleTimeoutMs` reaches the next request. The mount-time interval captures `poolRefreshMs`, and the captured retry policy re-registers the route in place when a settings snapshot changes it.
+
+**Reasoning efforts are route state, not pool metadata.** The pool document carries no effort vocabulary, so the route offers one configured ladder (`reasoningEfforts`, default `low`, `medium`, `high` — the same ladder OpenCode uses for an OpenAI-compatible provider) on every model, including `auto`. `resolveModel` builds that ladder through the shared `modelReasoningInfo` helper, and an empty ladder is the explicit opt-out that hides the control. Each attempt marks its inherited OpenAI connection with the `gateway` reasoning dialect, so a selected label reaches the upstream verbatim, including `max` and `xhigh`, and no effort field is sent when the caller leaves the effort unset. Which levels an upstream honors remains upstream- and model-dependent.
 
 ## Alternatives considered
 
@@ -36,3 +38,4 @@ The operator's other tooling routes free models through [vazhi](https://github.c
 - Failover starts a cold KV cache on the next upstream, and the model cannot tell that a pool chose it or that earlier attempts failed.
 - Cooldowns are local to one harness home; two machines on the same upstream account only learn the shared limit when the provider states it.
 - Context capacity and output caps come from the pool document when it carries them, from `defaultContextWindow`/`maxTokens` otherwise; a stale document understates a model rather than overstating it.
+- Every model on the route shows the configured effort ladder, including upstreams that ignore or reject `reasoning_effort`; the upstream decides what a selected level does.

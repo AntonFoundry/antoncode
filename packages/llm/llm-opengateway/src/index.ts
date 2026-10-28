@@ -32,6 +32,7 @@ import {
   DEFAULT_CONTEXT_WINDOW,
   DEFAULT_MAX_TOKENS,
   DEFAULT_STREAM_IDLE_TIMEOUT_MS,
+  resolveVerbatimReasoningEfforts,
   VERBATIM_REASONING_EFFORTS,
 } from '@deepseek-ai/dsh-llm-openai'
 import type { OpenAIConnectionOptions } from '@deepseek-ai/dsh-llm-openai'
@@ -142,24 +143,14 @@ export interface ResolvedOpenGatewayOptions extends OpenAIConnectionOptions {
 
 /**
  * Validate one route's effort ladder. An empty ladder is the explicit opt-out
- * that hides the control; a repeated or undocumented label is a configuration
- * error, because the gateway would receive a value it does not define.
+ * that hides the control.
  * @param efforts - the configured ladder, or undefined for the route default.
  * @returns the detached, validated ladder.
  */
 function resolveReasoningEfforts(
   efforts: readonly OpenGatewayReasoningEffort[] | undefined,
 ): OpenGatewayReasoningEffort[] {
-  const levels = efforts ?? DEFAULT_REASONING_EFFORTS
-  const seen = new Set<OpenGatewayReasoningEffort>()
-  for (const level of levels) {
-    if (!VERBATIM_REASONING_EFFORTS.includes(level)) {
-      throw new Error(`llm-opengateway: unknown reasoning effort ${JSON.stringify(level)}`)
-    }
-    if (seen.has(level)) throw new Error(`llm-opengateway: reasoningEfforts repeats ${JSON.stringify(level)}`)
-    seen.add(level)
-  }
-  return [...levels]
+  return resolveVerbatimReasoningEfforts(efforts, DEFAULT_REASONING_EFFORTS, 'llm-opengateway')
 }
 
 /**

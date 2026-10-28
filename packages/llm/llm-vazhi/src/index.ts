@@ -28,14 +28,14 @@ import {
   type AdapterRegistrationHandle,
   type RetryPolicyConfig,
 } from '@deepseek-ai/dsh-llm'
-import { DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS, DEFAULT_STREAM_IDLE_TIMEOUT_MS } from '@deepseek-ai/dsh-llm-openai'
+import { DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS, DEFAULT_STREAM_IDLE_TIMEOUT_MS, resolveVerbatimReasoningEfforts, VERBATIM_REASONING_EFFORTS } from '@deepseek-ai/dsh-llm-openai'
 import { credentialRef, type CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { getOrCreateAnonymousUserId, type AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
-import { VazhiAdapter, type VazhiResolvedOptions, type VazhiRouter } from './adapter.ts'
+import { VazhiAdapter, type VazhiReasoningEffort, type VazhiResolvedOptions, type VazhiRouter } from './adapter.ts'
 import { PoolStore } from './pool.ts'
 import {
   credentialRefOf,
@@ -47,7 +47,7 @@ import {
 import { CooldownStore, penalize, noteStart, recover } from './state.ts'
 
 export { VazhiAdapter, AUTO_MODEL, AUTO_MODEL_NAME } from './adapter.ts'
-export type { VazhiAdapterOptions, VazhiResolvedOptions, VazhiRouter } from './adapter.ts'
+export type { VazhiAdapterOptions, VazhiReasoningEffort, VazhiResolvedOptions, VazhiRouter } from './adapter.ts'
 export { PoolStore, parsePool } from './pool.ts'
 export type { PoolDocument, PoolEntry, PoolModelMeta, UserPoolConfig } from './pool.ts'
 export {
@@ -99,6 +99,15 @@ export const DEFAULT_SLOW_START_MS = 15_000
 export const DEFAULT_SLOW_FOR_MS = 600_000
 
 /**
+ * Efforts offered on every model of this route. The pool document carries no
+ * per-model effort vocabulary, so the route advertises the same ladder OpenCode
+ * defaults to for an OpenAI-compatible provider and leaves the provider
+ * default unset. Each upstream maps a level to its own control; which levels a
+ * model honors is upstream- and model-dependent.
+ */
+export const DEFAULT_REASONING_EFFORTS: readonly VazhiReasoningEffort[] = ['low', 'medium', 'high']
+
+/**
  * Plugin config, validated by the same-named schemastery schema and doubling
  * as the `llm-vazhi` settings-section shape. Every field is optional.
  */
@@ -115,6 +124,12 @@ export interface Config {
   poolRetryAfterMs?: number
   /** Bound on one pool download. */
   poolTimeoutMs?: number
+  /**
+   * Reasoning levels the picker offers on every model of this route, in
+   * display order. Which levels an upstream honors is upstream- and
+   * model-dependent; an empty list hides the effort control and sends none.
+   */
+  reasoningEfforts?: VazhiReasoningEffort[]
   /** Upstream attempts one request may make. */
   maxAttempts?: number
   /** First-token time above which an attempt counts as a slow starter. */
@@ -138,6 +153,8 @@ export const Config: z<Config> = z.object({
   poolRefreshMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).default(DEFAULT_POOL_REFRESH_MS),
   poolRetryAfterMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).default(DEFAULT_POOL_RETRY_AFTER_MS),
   poolTimeoutMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).default(DEFAULT_POOL_TIMEOUT_MS),
+  reasoningEfforts: z.array(z.union([...VERBATIM_REASONING_EFFORTS]))
+    .default([...DEFAULT_REASONING_EFFORTS]),
   maxAttempts: z.number().step(1).min(1).max(100).default(DEFAULT_MAX_ATTEMPTS),
   slowStartMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).default(DEFAULT_SLOW_START_MS),
   slowForMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).default(DEFAULT_SLOW_FOR_MS),
@@ -180,6 +197,11 @@ export function resolveAdapterOptions(config: Config): ResolvedVazhiOptions {
   if (directory.length === 0) throw new Error('llm-vazhi: directory must be non-empty')
   const poolURL = config.poolURL ?? DEFAULT_POOL_URL
   if (poolURL.length === 0) throw new Error('llm-vazhi: poolURL must be non-empty')
+  const reasoningEfforts = resolveVerbatimReasoningEfforts(
+    config.reasoningEfforts,
+    DEFAULT_REASONING_EFFORTS,
+    'llm-vazhi',
+  )
   const maxTokens = config.maxTokens ?? DEFAULT_MAX_TOKENS
   if (!Number.isSafeInteger(maxTokens) || maxTokens <= 0) {
     throw new Error('llm-vazhi: maxTokens must be a positive safe integer')
@@ -196,6 +218,7 @@ export function resolveAdapterOptions(config: Config): ResolvedVazhiOptions {
     directory,
     displayName,
     poolURL,
+    reasoningEfforts,
     poolRefreshMs: positiveInteger(config.poolRefreshMs ?? DEFAULT_POOL_REFRESH_MS, 'poolRefreshMs', MAX_TIMER_DELAY_MS),
     poolRetryAfterMs: positiveInteger(config.poolRetryAfterMs ?? DEFAULT_POOL_RETRY_AFTER_MS, 'poolRetryAfterMs', MAX_TIMER_DELAY_MS),
     poolTimeoutMs: positiveInteger(config.poolTimeoutMs ?? DEFAULT_POOL_TIMEOUT_MS, 'poolTimeoutMs', MAX_TIMER_DELAY_MS),

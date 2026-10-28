@@ -22,6 +22,7 @@ import {
   DEFAULT_POOL_REFRESH_MS,
   DEFAULT_POOL_RETRY_AFTER_MS,
   DEFAULT_POOL_TIMEOUT_MS,
+  DEFAULT_REASONING_EFFORTS,
   DEFAULT_SLOW_FOR_MS,
   DEFAULT_SLOW_START_MS,
   resolveAdapterOptions,
@@ -65,7 +66,7 @@ function stubFetch(
   answerPool: () => Response = () => new Response('down', { status: 503 }),
   answerChat: () => Response = generation,
 ): Stub {
-  const fetchMock = vi.fn(async (input: unknown) => {
+  const fetchMock = vi.fn(async (input: unknown, _init?: unknown) => {
     const url = String(input)
     if (url.endsWith('/chat/completions')) return answerChat()
     return answerPool()
@@ -154,6 +155,7 @@ describe('resolveAdapterOptions', () => {
       poolRefreshMs: DEFAULT_POOL_REFRESH_MS,
       poolRetryAfterMs: DEFAULT_POOL_RETRY_AFTER_MS,
       poolTimeoutMs: DEFAULT_POOL_TIMEOUT_MS,
+      reasoningEfforts: [...DEFAULT_REASONING_EFFORTS],
       maxAttempts: DEFAULT_MAX_ATTEMPTS,
       slowStartMs: DEFAULT_SLOW_START_MS,
       slowForMs: DEFAULT_SLOW_FOR_MS,
@@ -170,6 +172,7 @@ describe('resolveAdapterOptions', () => {
       poolRefreshMs: 1_000,
       poolRetryAfterMs: 2_000,
       poolTimeoutMs: 3_000,
+      reasoningEfforts: ['none', 'low', 'max'],
       maxAttempts: 2,
       slowStartMs: 4_000,
       slowForMs: 5_000,
@@ -185,6 +188,7 @@ describe('resolveAdapterOptions', () => {
       poolRefreshMs: 1_000,
       poolRetryAfterMs: 2_000,
       poolTimeoutMs: 3_000,
+      reasoningEfforts: ['none', 'low', 'max'],
       maxAttempts: 2,
       slowStartMs: 4_000,
       slowForMs: 5_000,
@@ -193,6 +197,21 @@ describe('resolveAdapterOptions', () => {
       streamIdleTimeoutMs: 6_000,
     })
     expect(resolved.retryPolicy.mode).toBe('always')
+  })
+
+  it('keeps an explicit effort ladder in display order', () => {
+    expect(resolveAdapterOptions({ reasoningEfforts: ['low', 'high', 'max'] }).reasoningEfforts)
+      .toEqual(['low', 'high', 'max'])
+  })
+
+  it('accepts an empty effort ladder as the explicit opt-out', () => {
+    expect(resolveAdapterOptions({ reasoningEfforts: [] }).reasoningEfforts).toEqual([])
+  })
+
+  it('rejects repeated and undocumented effort labels', () => {
+    expect(() => resolveAdapterOptions({ reasoningEfforts: ['low', 'low'] })).toThrow(/repeats/)
+    expect(() => resolveAdapterOptions({ reasoningEfforts: ['low', 'ultra' as never] }))
+      .toThrow(/unknown reasoning effort/)
   })
 
   it('rejects empty string fields', () => {

@@ -6,7 +6,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
-import { LlmError, resolveRetryPolicy, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import { LlmError, ReasoningEffortId, resolveRetryPolicy, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS } from '@deepseek-ai/dsh-llm-openai'
 import {
   AUTO_MODEL,
@@ -34,7 +34,7 @@ function sse(...events: string[]): Response {
   })
 }
 
-function pool(models: Array<{ model: string; meta?: PoolDocument['pool'][number]['meta'] }>): PoolDocument {
+function pool(models: Array<{ model: string; meta?: NonNullable<PoolDocument['pool'][number]['meta']> }>): PoolDocument {
   return { version: 1, generated: '2026-10-24T00:00:00.000Z', sharedLimits: [], pool: models }
 }
 
@@ -42,6 +42,7 @@ function connection(overrides: Partial<VazhiResolvedOptions> = {}): VazhiResolve
   return {
     directory: '/nonexistent',
     displayName: 'Vazhi',
+    reasoningEfforts: ['low', 'medium', 'high'],
     defaultContextWindow: DEFAULT_CONTEXT_WINDOW,
     maxTokens: DEFAULT_MAX_TOKENS,
     streamIdleTimeoutMs: 30_000,
@@ -173,6 +174,13 @@ describe('resolveModel', () => {
       inputModalities: ['text'],
       context: { contextWindow: 32_000 },
       defaultMaxTokens: 4_096,
+      reasoning: {
+        efforts: [
+          { id: 'low', name: 'Low' },
+          { id: 'medium', name: 'Medium' },
+          { id: 'high', name: 'High' },
+        ],
+      },
     })
   })
 
@@ -185,6 +193,13 @@ describe('resolveModel', () => {
       inputModalities: ['text'],
       context: { contextWindow: DEFAULT_CONTEXT_WINDOW },
       defaultMaxTokens: DEFAULT_MAX_TOKENS,
+      reasoning: {
+        efforts: [
+          { id: 'low', name: 'Low' },
+          { id: 'medium', name: 'Medium' },
+          { id: 'high', name: 'High' },
+        ],
+      },
     })
     await expect(adapter.resolveModel('vazhi', 'ovh/Unknown')).resolves.toEqual({
       provider: 'vazhi',
@@ -193,11 +208,46 @@ describe('resolveModel', () => {
       inputModalities: ['text'],
       context: { contextWindow: DEFAULT_CONTEXT_WINDOW },
       defaultMaxTokens: DEFAULT_MAX_TOKENS,
+      reasoning: {
+        efforts: [
+          { id: 'low', name: 'Low' },
+          { id: 'medium', name: 'Medium' },
+          { id: 'high', name: 'High' },
+        ],
+      },
     })
+  })
+
+  it('labels a custom ladder and hides the control when it is empty', async () => {
+    const custom = harness({ connection: { reasoningEfforts: ['none', 'xhigh', 'max'] } })
+    await expect(custom.adapter.resolveModel('vazhi', 'ovh/One')).resolves.toMatchObject({
+      reasoning: {
+        efforts: [
+          { id: 'none', name: 'None' },
+          { id: 'xhigh', name: 'Extra High' },
+          { id: 'max', name: 'Max' },
+        ],
+      },
+    })
+    const hidden = harness({ connection: { reasoningEfforts: [] } })
+    const info = await hidden.adapter.resolveModel('vazhi', 'ovh/One')
+    expect(info.reasoning).toBeUndefined()
   })
 })
 
 describe('stream over the pool', () => {
+  it('sends a selected effort label verbatim', async () => {
+    const { adapter, fetchMock } = harness({ connection: { reasoningEfforts: ['low', 'high', 'max'] } })
+    await expect(text(adapter.stream({
+      provider: 'vazhi',
+      model: AUTO_MODEL,
+      messages: [],
+      reasoningEffort: ReasoningEffortId('max'),
+    }))).resolves.toBe('hello')
+    const init = fetchMock.mock.calls[0]![1] as { body?: string }
+    expect(init.body).toContain('"reasoning_effort":"max"')
+  })
+
   it('walks to the next free model after a failure and records both outcomes', async () => {
     const { adapter, router, fetchMock } = harness({
       document: pool([{ model: 'ovh/One' }, { model: 'llm7/Two' }]),
