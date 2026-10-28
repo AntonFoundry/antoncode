@@ -45,7 +45,9 @@ export {
   OPENAI_REASONING_EFFORTS,
   OpenAIAdapter,
   declaredDefaultEffort,
+  modelReasoningInfo,
 } from './adapter.ts'
+export { VERBATIM_REASONING_EFFORTS } from './serialize.ts'
 export type { OpenAIAdapterOptions, OpenAICatalogModel, OpenAIConnectionOptions, OpenAIReasoningEffort } from './adapter.ts'
 export type { RequestDefaults } from './serialize.ts'
 export type { ResponsesInputItem, ResponsesRequest } from './responses.ts'

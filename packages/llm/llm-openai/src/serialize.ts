@@ -3,13 +3,14 @@
  * served by local OpenAI-compatible installations). User text is joined;
  * assistant text becomes `content`, tool calls become `tool_calls`, and tool
  * results become separate tool messages. Reasoning effort preserves the
- * model-declared OpenAI values; legacy `off` omits the field and `max` maps
- * to `high`. Output
- * capping uses `max_completion_tokens` for o-series/gpt-5 (which reject
- * `max_tokens`) and `max_tokens` for everything else, keeping both the
- * official API and local servers happy. Core image blocks are rejected
- * explicitly because this wire route is text-only; unknown declaration-merged
- * block types retain the adapter's documented extension fallback.
+ * model-declared OpenAI values; legacy `off` omits the field and `max` maps to
+ * `high`, except under a provider dialect whose documented labels go out
+ * verbatim. Output capping uses `max_completion_tokens` for o-series/gpt-5
+ * (which reject `max_tokens`) and `max_tokens` for everything else, keeping
+ * both the official API and local servers happy. Core image blocks are
+ * rejected explicitly because this wire route is text-only; unknown
+ * declaration-merged block types retain the adapter's documented extension
+ * fallback.
  *
  * @module dsh-llm-openai/serialize
  */
@@ -21,31 +22,51 @@ import type { WireMessage, WireRequest, WireTool } from './types.ts'
 /** Adapter-level request defaults (from plugin config). */
 export interface RequestDefaults {
   reasoningEffort?: 'off' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | undefined
-  /** OpenRouter accepts its catalog's effort values verbatim, including `xhigh` and `max`. */
-  reasoningDialect?: 'openrouter'
+  /**
+   * The provider's documented effort vocabulary, when it is not OpenAI's own.
+   * Both dialects send their labels verbatim (including `max`), but they
+   * disagree on `off`: OpenRouter spells it `none`, while OpenGateway uses it
+   * for the provider default and sends no field.
+   */
+  reasoningDialect?: 'openrouter' | 'gateway'
 }
 
 /** Reasoning-model classes that require `max_completion_tokens`. */
 const REASONING_MODEL = /^(o\d|gpt-5)/i
 
 /**
+ * Effort labels the documented provider dialects accept verbatim, in the order
+ * OpenGateway and OpenRouter publish them. A dialect provider's own
+ * configuration vocabulary derives from this list, so a configured level can
+ * never reach a wire that would reject it.
+ */
+export const VERBATIM_REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+
+/**
  * Map the harness effort vocabulary onto the OpenAI wire levels. `off` and
  * `undefined` both put nothing on the wire (provider default); OpenAI has no
  * "max" level, so the harness `max` maps to the highest wire level `high`.
+ * The `openrouter` and `gateway` dialects send the labels the caller's
+ * catalog advertises verbatim.
  * @param effort - the harness effort, or undefined to apply the default.
+ * @param dialect - the wire vocabulary the provider documents, when it is not OpenAI's own.
  * @returns the wire effort, or undefined when no field should be sent.
+ * @throws LlmError when a verbatim dialect receives a label it does not document.
  */
 export function reasoningEffortWire(
   effort: GenerateOptions['reasoningEffort'] | 'off' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | undefined,
-  dialect?: 'openrouter',
+  dialect?: 'openrouter' | 'gateway',
 ): 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | undefined {
-  if (dialect === 'openrouter') {
+  if (dialect !== undefined) {
     if (effort === undefined) return undefined
-    if (effort === 'off') return 'none'
-    if (['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(String(effort))) {
-      return String(effort) as 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+    if (effort === 'off') return dialect === 'openrouter' ? 'none' : undefined
+    if (VERBATIM_REASONING_EFFORTS.includes(effort as typeof VERBATIM_REASONING_EFFORTS[number])) {
+      return effort as typeof VERBATIM_REASONING_EFFORTS[number]
     }
-    throw new LlmError(`OpenRouter does not support reasoning effort "${effort}"`, 'UNSUPPORTED_REASONING_EFFORT')
+    throw new LlmError(
+      `${dialect === 'openrouter' ? 'OpenRouter' : 'OpenGateway'} does not support reasoning effort "${effort}"`,
+      'UNSUPPORTED_REASONING_EFFORT',
+    )
   }
   switch (effort) {
     case undefined:

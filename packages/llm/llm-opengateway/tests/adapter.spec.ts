@@ -117,6 +117,42 @@ describe('OpenGatewayAdapter discovery', () => {
     })
   })
 
+  it('offers the route effort ladder on every model, catalogued or not', async () => {
+    const { adapter } = adapterOf()
+    await adapter.listModels('opengateway')
+    await expect(adapter.resolveModel('opengateway', 'deepseek/deepseek-v4-flash')).resolves.toMatchObject({
+      reasoning: {
+        efforts: [
+          { id: 'low', name: 'Low' },
+          { id: 'medium', name: 'Medium' },
+          { id: 'high', name: 'High' },
+        ],
+      },
+    })
+    // A snapshot outage leaves the ladder intact: the control is route state,
+    // not a catalog fact.
+    await expect(adapter.resolveModel('opengateway', 'unlisted/model')).resolves.toMatchObject({
+      reasoning: { efforts: [{ id: 'low' }, { id: 'medium' }, { id: 'high' }] },
+    })
+  })
+
+  it('labels a custom ladder and hides the control when it is empty', async () => {
+    const custom = adapterOf({ reasoningEfforts: ['none', 'low', 'xhigh', 'max'] })
+    await expect(custom.adapter.resolveModel('opengateway', 'unlisted/model')).resolves.toMatchObject({
+      reasoning: {
+        efforts: [
+          { id: 'none', name: 'None' },
+          { id: 'low', name: 'Low' },
+          { id: 'xhigh', name: 'Extra High' },
+          { id: 'max', name: 'Max' },
+        ],
+      },
+    })
+    const off = adapterOf({ reasoningEfforts: [] })
+    const info = await off.adapter.resolveModel('opengateway', 'unlisted/model')
+    expect(info.reasoning).toBeUndefined()
+  })
+
   it('reports route identity and the configured retry policy', () => {
     const { adapter } = adapterOf({ retryPolicy: { mode: 'always' } })
     expect(adapter.providerInfo('opengateway')).toEqual({ id: 'opengateway', name: 'OpenGateway' })

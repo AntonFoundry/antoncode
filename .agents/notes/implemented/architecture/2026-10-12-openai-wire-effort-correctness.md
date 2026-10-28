@@ -17,13 +17,21 @@ capabilities:
 
 ## Decision
 
-- Each catalog model may declare exact `reasoningEfforts`. Models without
-  that metadata expose no effort control. Route-specific catalogs replace
+- Each catalog model may declare exact `reasoningEfforts`; a route with no
+  per-model effort metadata exposes no effort control, unless its provider
+  documents one vocabulary for every model, which the route then offers as one
+  ladder (the OpenGateway bullet below). Route-specific catalogs replace
   the shared catalog for endpoints with different model capabilities.
 - Request serialization accepts the explicit OpenAI effort vocabulary;
   model metadata gates UI choices and configured defaults. Unsupported
   explicit choices fail before transport, and defaults unsupported by the
   selected model are omitted.
+- A provider that documents one effort vocabulary for every model declares
+  the `gateway` reasoning dialect (OpenGateway). That dialect sends its
+  documented labels verbatim, keeps `off` as the provider default by sending
+  no field, and skips the per-model subset filter so a level such as `max`
+  reaches a provider that defines it; see the
+  [OpenGateway provider route](../feature/2026-10-27-opengateway-provider-route.md).
 - `OPENAI_REASONING_EFFORTS` remains exported for source compatibility, but
   model resolution no longer uses this legacy union.
 - `ModelsDevAdapter.resolveModel` derives reasoning from the models.dev
@@ -48,12 +56,14 @@ capabilities:
 ## Consequences
 
 Deployments that need effort selection for custom OpenAI-compatible models
-must declare those models' supported levels. OpenRouter retains its own
-catalog-driven effort dialect.
+must declare those models' supported levels, or use the `gateway` dialect when
+their provider documents one vocabulary for every model. OpenRouter retains its
+own catalog-driven effort dialect.
 
 ## Testing
 
-`llm-openai` covers the wire mapping and the declared-default mapping;
+`llm-openai` covers the wire mapping, the gateway dialect's verbatim labels and
+`off` omission, and the declared-default mapping;
 `llm-models-dev` covers the freeness predicate, the reasoning flag parse,
 and per-model reasoning declaration/stripping through the mounted plugin;
 `llm-pi-ai` covers the NVIDIA servable-id filter with models.dev capacity

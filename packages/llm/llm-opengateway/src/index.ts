@@ -32,6 +32,7 @@ import {
   DEFAULT_CONTEXT_WINDOW,
   DEFAULT_MAX_TOKENS,
   DEFAULT_STREAM_IDLE_TIMEOUT_MS,
+  VERBATIM_REASONING_EFFORTS,
 } from '@deepseek-ai/dsh-llm-openai'
 import type { OpenAIConnectionOptions } from '@deepseek-ai/dsh-llm-openai'
 import { credentialRef, type CredentialRef } from '@deepseek-ai/dsh-credentials'
@@ -39,11 +40,15 @@ import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { getOrCreateAnonymousUserId, type AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
-import { OpenGatewayAdapter, type OpenGatewayConnectionOptions } from './adapter.ts'
+import { OpenGatewayAdapter, type OpenGatewayConnectionOptions, type OpenGatewayReasoningEffort } from './adapter.ts'
 import { OpenGatewayCatalog } from './catalog.ts'
 
 export { OpenGatewayAdapter } from './adapter.ts'
-export type { OpenGatewayAdapterOptions, OpenGatewayConnectionOptions } from './adapter.ts'
+export type {
+  OpenGatewayAdapterOptions,
+  OpenGatewayConnectionOptions,
+  OpenGatewayReasoningEffort,
+} from './adapter.ts'
 export { OpenGatewayCatalog, parseModels } from './catalog.ts'
 export type { OpenGatewayModel } from './catalog.ts'
 
@@ -68,6 +73,15 @@ export const DEFAULT_API_KEY_ENV = 'OPENGATEWAY_API_KEY'
 export const DEFAULT_CATALOG_REFRESH_MS = 28_800_000
 
 /**
+ * Efforts offered on every model of this route. The gateway publishes no
+ * per-model effort metadata, so the route advertises the same ladder OpenCode
+ * defaults to for an OpenAI-compatible provider and leaves the provider
+ * default unset. The gateway maps a level to the selected provider's control;
+ * which levels a model honors remains model-dependent.
+ */
+export const DEFAULT_REASONING_EFFORTS: readonly OpenGatewayReasoningEffort[] = ['low', 'medium', 'high']
+
+/**
  * Plugin config, validated by the same-named schemastery schema and doubling
  * as the `llm-opengateway` settings-section shape. Every field is optional:
  * an empty section serves discovery anonymously and fails a generation with
@@ -84,6 +98,12 @@ export interface Config {
   headers?: Record<string, string>
   /** Catalog re-fetch cadence in milliseconds. */
   catalogRefreshMs?: number
+  /**
+   * Reasoning levels the picker offers on every model of this route, in
+   * display order. Which levels a model honors is gateway- and model-dependent;
+   * an empty list hides the effort control and sends none.
+   */
+  reasoningEfforts?: OpenGatewayReasoningEffort[]
   /** Default per-request output cap; explicit request values win. */
   maxTokens?: number
   /** Positive context capacity used when the selected model has no exact value. */
@@ -100,6 +120,8 @@ export const Config: z<Config> = z.object({
   displayName: z.string().default('OpenGateway'),
   headers: z.dict(z.string()),
   catalogRefreshMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).default(DEFAULT_CATALOG_REFRESH_MS),
+  reasoningEfforts: z.array(z.union([...VERBATIM_REASONING_EFFORTS]))
+    .default([...DEFAULT_REASONING_EFFORTS]),
   maxTokens: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(DEFAULT_MAX_TOKENS),
   defaultContextWindow: z.number().step(1).min(1).default(DEFAULT_CONTEXT_WINDOW),
   streamIdleTimeoutMs: z.number().min(Number.MIN_VALUE).max(MAX_TIMER_DELAY_MS).default(DEFAULT_STREAM_IDLE_TIMEOUT_MS),
@@ -110,10 +132,34 @@ export const Config: z<Config> = z.object({
 export interface ResolvedOpenGatewayOptions extends OpenAIConnectionOptions {
   /** Endpoint base whose `/models` document this route lists. */
   catalogBaseURL: string
+  /** Efforts offered on every model of this route, in display order. */
+  reasoningEfforts: readonly OpenGatewayReasoningEffort[]
   /** Validated credential reference naming the bearer key. */
   apiKeyEnv: CredentialRef
   /** Validated catalog re-fetch cadence captured by the mount-time refresh loop. */
   catalogRefreshMs: number
+}
+
+/**
+ * Validate one route's effort ladder. An empty ladder is the explicit opt-out
+ * that hides the control; a repeated or undocumented label is a configuration
+ * error, because the gateway would receive a value it does not define.
+ * @param efforts - the configured ladder, or undefined for the route default.
+ * @returns the detached, validated ladder.
+ */
+function resolveReasoningEfforts(
+  efforts: readonly OpenGatewayReasoningEffort[] | undefined,
+): OpenGatewayReasoningEffort[] {
+  const levels = efforts ?? DEFAULT_REASONING_EFFORTS
+  const seen = new Set<OpenGatewayReasoningEffort>()
+  for (const level of levels) {
+    if (!VERBATIM_REASONING_EFFORTS.includes(level)) {
+      throw new Error(`llm-opengateway: unknown reasoning effort ${JSON.stringify(level)}`)
+    }
+    if (seen.has(level)) throw new Error(`llm-opengateway: reasoningEfforts repeats ${JSON.stringify(level)}`)
+    seen.add(level)
+  }
+  return [...levels]
 }
 
 /**
@@ -135,6 +181,7 @@ export function resolveAdapterOptions(config: Config): ResolvedOpenGatewayOption
   if (!Number.isInteger(catalogRefreshMs) || catalogRefreshMs <= 0 || catalogRefreshMs > MAX_TIMER_DELAY_MS) {
     throw new Error(`llm-opengateway: catalogRefreshMs must be a positive integer no greater than ${MAX_TIMER_DELAY_MS}`)
   }
+  const reasoningEfforts = resolveReasoningEfforts(config.reasoningEfforts)
   const maxTokens = config.maxTokens ?? DEFAULT_MAX_TOKENS
   if (!Number.isSafeInteger(maxTokens) || maxTokens <= 0) {
     throw new Error('llm-opengateway: maxTokens must be a positive safe integer')
@@ -154,7 +201,8 @@ export function resolveAdapterOptions(config: Config): ResolvedOpenGatewayOption
     displayName,
     ...(config.headers === undefined ? {} : { headers: { ...config.headers } }),
     catalogRefreshMs,
-    defaults: {},
+    reasoningEfforts,
+    defaults: { reasoningDialect: 'gateway' },
     maxTokens,
     defaultContextWindow,
     models: [],

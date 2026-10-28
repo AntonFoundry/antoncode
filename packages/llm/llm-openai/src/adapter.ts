@@ -15,6 +15,7 @@ import { attributionHeaders, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceed
 import type {
   GenerateOptions,
   LlmModelInfo,
+  LlmModelReasoningInfo,
   LlmProviderInfo,
   LlmResolvedModelInfo,
   ResolvedRetryPolicy,
@@ -168,6 +169,37 @@ export const OPENAI_REASONING_EFFORTS = [
 ] as const
 
 /**
+ * Human-readable label for one effort id: the two compound labels in the
+ * harness vocabulary keep their words, and a single-word level is capitalized.
+ * @param effort - the effort id as declared by a model or connection.
+ * @returns the selector label.
+ */
+function reasoningEffortLabel(effort: string): string {
+  if (effort === 'none') return 'None'
+  if (effort === 'xhigh') return 'Extra High'
+  return effort.slice(0, 1).toUpperCase() + effort.slice(1)
+}
+
+/**
+ * Build one model's selectable reasoning metadata from declared efforts.
+ * @param efforts - effort ids the model offers, in display order.
+ * @param defaultEffort - the connection default, when the model offers it.
+ * @returns the picker metadata, or undefined when the model declares no levels.
+ */
+export function modelReasoningInfo(
+  efforts: readonly string[],
+  defaultEffort?: ReasoningEffortId,
+): LlmModelReasoningInfo | undefined {
+  if (efforts.length === 0) return undefined
+  return {
+    efforts: efforts.map(effort => ({ id: ReasoningEffortId(effort), name: reasoningEffortLabel(effort) })),
+    ...defaultEffort !== undefined && efforts.includes(defaultEffort.toString())
+      ? { defaultEffort }
+      : {},
+  }
+}
+
+/**
  * Map the configured connection default to an OpenAI wire effort. The exact
  * model's catalog entry decides whether that effort is advertised.
  * @param configured - the connection's configured default effort.
@@ -198,7 +230,9 @@ export function declaredDefaultEffort(
 /** Apply the catalog's exact effort capability to one model request. */
 function requestDefaults(connection: OpenAIConnectionOptions, options: GenerateOptions): RequestDefaults {
   const defaults = connection.defaults
-  if (defaults.reasoningDialect === 'openrouter') return defaults
+  // A gateway owns its own effort vocabulary, so OpenAI's catalog subset must
+  // not filter the levels it documents.
+  if (defaults.reasoningDialect !== undefined) return defaults
   const model = connection.models.find(entry => entry.id === options.model)
   const efforts = model?.reasoningEfforts ?? []
   const requested = options.reasoningEffort?.toString()
@@ -296,18 +330,7 @@ export class OpenAIAdapter extends LlmAdapter {
     const contextWindow = configured?.contextWindow
       ?? connection.defaultContextWindow
     const defaultEffort = declaredDefaultEffort(connection.defaults.reasoningEffort)
-    const efforts = configured?.reasoningEfforts ?? []
-    const reasoning = efforts.length === 0 ? undefined : {
-      efforts: efforts.map(level => ({
-        id: ReasoningEffortId(level),
-        name: level === 'none' ? 'None'
-          : level === 'xhigh' ? 'Extra High'
-            : level.slice(0, 1).toUpperCase() + level.slice(1),
-      })),
-      ...defaultEffort !== undefined && efforts.includes(defaultEffort.toString() as OpenAIReasoningEffort)
-        ? { defaultEffort }
-        : {},
-    }
+    const reasoning = modelReasoningInfo(configured?.reasoningEfforts ?? [], defaultEffort)
     return Promise.resolve({
       // The chat-completions wire route is text-only regardless of catalog
       // membership, so the uncatalogued fallback declares the same negative

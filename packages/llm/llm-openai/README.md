@@ -77,7 +77,10 @@ headers take precedence when names collide.
   its own exact catalog-advertised values.
   The models.dev OpenRouter route selects the serializer's OpenRouter dialect,
   which preserves its catalog-advertised `none`, `minimal`, `low`, `medium`,
-  `high`, `xhigh`, and `max` values instead of clamping them to High.
+  `high`, `xhigh`, and `max` values instead of clamping them to High, and
+  spells `off` as `none`. The OpenGateway route selects the gateway dialect,
+  which preserves the same documented labels but sends no field for `off`,
+  matching the gateway's provider-default meaning.
 - **Output capping** uses `max_completion_tokens` for o-series/GPT-5 class
   models (which reject `max_tokens`) and `max_tokens` for everything else.
 - **Reasoning streaming**: official API responses carry no CoT; reasoning

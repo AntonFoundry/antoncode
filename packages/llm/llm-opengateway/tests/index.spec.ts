@@ -10,7 +10,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import LlmRuntime from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
@@ -110,7 +110,8 @@ describe('resolveAdapterOptions', () => {
       maxTokens: 16_384,
       defaultContextWindow: 128_000,
       models: [],
-      defaults: {},
+      reasoningEfforts: ['low', 'medium', 'high'],
+      defaults: { reasoningDialect: 'gateway' },
     })
     expect(String(resolved.apiKeyEnv)).toBe('OPENGATEWAY_API_KEY')
     expect(resolved.retryPolicy).toMatchObject({ mode: 'normal' })
@@ -140,6 +141,21 @@ describe('resolveAdapterOptions', () => {
     })
     expect(String(resolved.apiKeyEnv)).toBe('CUSTOM_KEY')
     expect(resolved.retryPolicy.mode).toBe('always')
+  })
+
+  it('keeps an explicit effort ladder in display order', () => {
+    expect(resolveAdapterOptions({ reasoningEfforts: ['low', 'high', 'max'] }).reasoningEfforts)
+      .toEqual(['low', 'high', 'max'])
+  })
+
+  it('accepts an empty effort ladder as the explicit opt-out', () => {
+    expect(resolveAdapterOptions({ reasoningEfforts: [] }).reasoningEfforts).toEqual([])
+  })
+
+  it('rejects repeated and undocumented effort labels', () => {
+    expect(() => resolveAdapterOptions({ reasoningEfforts: ['low', 'low'] })).toThrow(/repeats/)
+    expect(() => resolveAdapterOptions({ reasoningEfforts: ['low', 'ultra' as never] }))
+      .toThrow(/unknown reasoning effort/)
   })
 
   it('copies the header map instead of sharing the configuration object', () => {
@@ -276,12 +292,46 @@ describe('llm-opengateway registration', () => {
       context: { contextWindow: 200_000 },
       defaultMaxTokens: 8_192,
       inputModalities: ['text'],
+      reasoning: {
+        efforts: [
+          { id: 'low', name: 'Low' },
+          { id: 'medium', name: 'Medium' },
+          { id: 'high', name: 'High' },
+        ],
+      },
     })
     await expect(ctx.llm.resolveModelInfo('opengateway', 'unlisted')).resolves.toMatchObject({
       id: 'unlisted',
       defaultMaxTokens: 16_384,
       inputModalities: ['text'],
+      reasoning: { efforts: [{ id: 'low' }, { id: 'medium' }, { id: 'high' }] },
     })
+  })
+
+  it('offers no effort control when the route ladder is empty', async () => {
+    stubCatalog()
+    const ctx = await boot({ reasoningEfforts: [] })
+    const info = await ctx.llm.resolveModelInfo('opengateway', 'model-a')
+    expect(info.reasoning).toBeUndefined()
+  })
+
+  it('sends a configured ladder level verbatim, including max', async () => {
+    vi.stubEnv('OPENGATEWAY_API_KEY', 'sk-test')
+    const fetchMock = stubGateway()
+    const ctx = await boot({ reasoningEfforts: ['low', 'high', 'max'] })
+    let text = ''
+    for await (const chunk of ctx.llm.stream({
+      provider: 'opengateway',
+      model: 'model-a',
+      messages: [],
+      reasoningEffort: ReasoningEffortId('max'),
+    })) {
+      if (chunk.type === 'text-delta') text += chunk.text
+    }
+    expect(text).toBe('hello')
+    const generation = fetchMock.mock.calls.find(call => String(call[0]).endsWith('/chat/completions'))
+    expect(generation).toBeDefined()
+    expect((generation as unknown[])[1]).toMatchObject({ body: expect.stringContaining('"reasoning_effort":"max"') })
   })
 
   it('fails a generation with MISSING_CREDENTIAL naming the reference', async () => {

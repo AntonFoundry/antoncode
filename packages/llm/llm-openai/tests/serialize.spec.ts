@@ -94,6 +94,15 @@ describe('reasoningEffortWire', () => {
     expect(reasoningEffortWire('off', 'openrouter')).toBe('none')
     expect(reasoningEffortWire(undefined, 'openrouter')).toBeUndefined()
   })
+
+  it('sends OpenGateway labels verbatim and treats off as the provider default', () => {
+    for (const effort of ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const) {
+      expect(reasoningEffortWire(effort, 'gateway')).toBe(effort)
+    }
+    expect(reasoningEffortWire('off', 'gateway')).toBeUndefined()
+    expect(reasoningEffortWire(undefined, 'gateway')).toBeUndefined()
+    expect(() => reasoningEffortWire('ultra' as never, 'gateway')).toThrow(/OpenGateway/)
+  })
 })
 
 describe('serializeRequest', () => {
