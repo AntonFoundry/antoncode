@@ -1,15 +1,19 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { AgentMailConversationView, type AgentMailConversationViewProps } from '../src/client/AgentMailConversationView.tsx'
 import { agentDisplayName } from '../src/client/agent-names.ts'
+import { setAgentMailChannel } from '../src/client/composer-targets.ts'
 import type { AgentMailGateway } from '../src/client/gateway.ts'
 import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
+beforeEach(() => { setAgentMailChannel('self', 'local') })
 const t = (key: string): string => en[key as keyof typeof en] ?? key
+const chat = { nodes: { values: () => [] } }
+const useSession = ((selector: (snapshot: unknown) => unknown) => selector({ chat })) as unknown as AgentMailConversationViewProps['useSession']
 const props = (gateway?: AgentMailGateway, sessionId = 'self'): AgentMailConversationViewProps =>
-  ({ t, sessionId, gateway }) as unknown as AgentMailConversationViewProps
+  ({ t, sessionId, gateway, useSession }) as unknown as AgentMailConversationViewProps
 
 function fakeGateway() {
   let state: ReturnType<AgentMailGateway['authorization']> = { state: 'unpaired' }
@@ -95,37 +99,15 @@ describe('authorized Agent Mail view', () => {
     expect(screen.queryByText('Local mail')).toBeNull()
   })
 
-  it('sends to a same-workspace peer, a cross-workspace peer, and a broadcast', async () => {
+  it('uses the resident composer instead of an internal form', async () => {
     const fake = fakeGateway()
-    render(<AgentMailConversationView {...props(fake.gateway)} />)
+    const view = render(<AgentMailConversationView {...props(fake.gateway)} />)
     await waitFor(() => { expect(fake.authorize).toHaveBeenCalled() })
-    const peer = screen.getByLabelText(en.peerLabel)
-    const message = screen.getByLabelText(en.messageLabel) as HTMLTextAreaElement
-
-    fireEvent.change(peer, { target: { value: 'local' } })
-    fireEvent.change(message, { target: { value: 'one' } })
-    fireEvent.click(screen.getByRole('button', { name: en.sendButton }))
-    await waitFor(() => { expect(fake.sendLocal).toHaveBeenCalledWith({
-      sessionId: 'self', workspaceId: 'w1', recipients: ['local'], body: 'one', workspaceWide: false,
-    }) })
-    await waitFor(() => { expect(message.value).toBe('') })
-
-    fireEvent.click(screen.getByRole('button', { name: 'direct' }))
-    fireEvent.change(peer, { target: { value: 'remote' } })
-    fireEvent.change(message, { target: { value: 'two' } })
-    fireEvent.click(screen.getByRole('button', { name: en.sendButton }))
-    await waitFor(() => { expect(fake.sendDirect).toHaveBeenCalledWith({
-      sessionId: 'self', workspaceId: 'w1', recipient: 'remote', body: 'two',
-    }) })
-    await waitFor(() => { expect(message.value).toBe('') })
-
-    fireEvent.click(screen.getByRole('button', { name: 'general' }))
-    fireEvent.click(screen.getByLabelText(en.workspaceWide))
-    fireEvent.change(message, { target: { value: 'all' } })
-    fireEvent.click(screen.getByRole('button', { name: en.sendButton }))
-    await waitFor(() => { expect(fake.sendLocal).toHaveBeenCalledWith({
-      sessionId: 'self', workspaceId: 'w1', recipients: [], body: 'all', workspaceWide: true,
-    }) })
+    expect(screen.queryByLabelText(en.peerLabel)).toBeNull()
+    expect(screen.queryByLabelText(en.messageLabel)).toBeNull()
+    expect(screen.queryByRole('button', { name: en.sendButton })).toBeNull()
+    expect(screen.getByText(en.composerHint)).toBeTruthy()
+    expect(view.container.querySelector('[data-conversation-composer-overlay]')).toBeTruthy()
   })
 
   it('acknowledges each channel by its own sequence', async () => {

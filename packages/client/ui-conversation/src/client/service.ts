@@ -17,6 +17,7 @@ import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attach
 import type { ComposerAttachment } from './contract/slots.ts'
 import type { QueueAction, QueueItemId } from './contract/queue.ts'
 import type { ComposerBlocks } from './input/blocks.ts'
+import type { ComposerRoutes } from './input/composer-routes.ts'
 import type { DraftAttachmentId, SessionInputResolver } from './input/contract.ts'
 import type { InputSubmitMode } from './contract/composer-submission.ts'
 
@@ -33,6 +34,17 @@ export interface IConversation {
    * cannot import makes a session's input inert with its own reason.
    */
   readonly blocks: ComposerBlocks
+  /**
+   * Routes that take the resident composer's submission instead of the chat
+   * prompt while their conversation view is active.
+   */
+  readonly composerRoutes: ComposerRoutes
+  /**
+   * Persisted active view id for one session; null keeps the chat fallback.
+   * @param sessionId - session whose view selection is read.
+   * @returns the selected view id, or null.
+   */
+  activeView(sessionId: SessionId): string | null
   /**
    * Send a prompt into the caller scope's session (queued turn).
    * @param text - prompt text, sent verbatim as one text block.
@@ -93,6 +105,8 @@ export class ConversationController extends Service implements IConversation {
   readonly input: SessionInputResolver
   /** The per-session composer-block registry. */
   readonly blocks: ComposerBlocks
+  /** Per-view composer routing (Agent Mail owns its own send semantics). */
+  readonly composerRoutes: ComposerRoutes
   private readonly draftAttachments = new Map<DraftAttachmentId, ComposerAttachment>()
   private readonly imageUrls = new Map<string, ImageUrlEntry>()
   private readonly imageGenerations = new Map<SessionId, number>()
@@ -106,10 +120,15 @@ export class ConversationController extends Service implements IConversation {
    * constructed by the plugin apply (the same instances the slot inject
    * factories close over).
    */
-  constructor(ctx: Context, config: { input: SessionInputResolver; blocks: ComposerBlocks }) {
+  constructor(ctx: Context, config: {
+    input: SessionInputResolver
+    blocks: ComposerBlocks
+    composerRoutes: ComposerRoutes
+  }) {
     super(ctx, 'conversation')
     this.input = config.input
     this.blocks = config.blocks
+    this.composerRoutes = config.composerRoutes
     ctx.effect(() => () => {
       this.disposed = true
       for (const url of this.createdImageUrls) revokePreview(url)
@@ -118,6 +137,15 @@ export class ConversationController extends Service implements IConversation {
       this.imageUrls.clear()
       this.imageGenerations.clear()
     }, 'conversation attachment URL cache')
+  }
+
+  /**
+   * Persisted active view for one session.
+   * @param sessionId - session whose view selection is read.
+   * @returns the selected `conversation.view` id, or null for chat fallback.
+   */
+  activeView(sessionId: SessionId): string | null {
+    return this.composerRoutes.activeView(sessionId)
   }
 
   /**

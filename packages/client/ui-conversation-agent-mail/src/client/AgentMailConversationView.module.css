@@ -1,4 +1,5 @@
-/* Discord-shaped agent channel: sidebar of channels, grouped message feed, composer. */
+/* Discord-shaped agent channel: sidebar of channels, grouped message feed.
+   The standard session composer stays outside this view and routes here. */
 
 .shell {
   display: flex;
@@ -8,6 +9,8 @@
   background: var(--dsw-alias-bg-base);
 }
 
+/* The channel rail scrolls independently of the feed. Without this it grows
+   with the message column and the session scrollport scrolls both together. */
 .sidebar {
   display: flex;
   flex-direction: column;
@@ -15,6 +18,8 @@
   min-height: 0;
   padding: 12px 8px;
   gap: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--dsw-specific-sidebar-fill, var(--dsw-alias-bg-base));
   border-right: 1px solid var(--dsw-alias-border-l2);
 }
@@ -176,9 +181,18 @@
   gap: 4px;
   min-height: 0;
   margin: 0;
-  padding: 16px;
+  /* Clear the resident composer the view overlays at the session's bottom. */
+  padding: 16px 16px 190px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   list-style: none;
+}
+
+.composerHint {
+  margin: 0;
+  padding: 8px 16px 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
 }
 
 .message,
@@ -250,6 +264,11 @@
 .time,
 .workspace {
   color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+.recipient {
+  color: var(--dsw-alias-state-business-primary);
   font-size: 11px;
 }
 

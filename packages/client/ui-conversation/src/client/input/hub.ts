@@ -14,6 +14,7 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { queueReadFaceOf } from '../queue/store.ts'
 import type { ComposerKeyboard, DraftAttachmentId, SessionInputResolver, SessionInput } from './contract.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
+import type { ComposerRoutes } from './composer-routes.ts'
 import type { PopupDismissFace } from './facade.ts'
 import { SessionInputShell } from './facade.ts'
 
@@ -44,6 +45,7 @@ export class InputHub implements SessionInputResolver {
   constructor(
     private readonly rootCtx: ClientContext,
     private readonly t: TranslateNS<'conversation'>,
+    private readonly routes: ComposerRoutes,
   ) {}
 
   /**
@@ -156,6 +158,20 @@ export class InputHub implements SessionInputResolver {
     const shell = this.shells.get(session.sessionId)
     // Commit, not an editable clear: undo must not resurrect sent content.
     shell?.commitSend(imageIds)
+    const route = this.routes.activeRoute(session.sessionId)
+    if (route !== undefined) {
+      void route.submit({ sessionId: session.sessionId, text, imageIds, mode }).catch((cause: unknown) => {
+        if (this.shells.get(session.sessionId) === shell) {
+          shell?.restoreImages(imageIds)
+          if (shell?.snapshot.draft === '') shell.setDraft(text)
+          shell?.notify('error', cause instanceof Error ? cause.message : String(cause))
+          return
+        }
+        const conversation = this.rootCtx.get('conversation') as ConversationAttachmentFace | undefined
+        for (const id of imageIds) conversation?.releaseDraftImage(id)
+      })
+      return
+    }
     void this.conversation().sendSession(session, text, imageIds, mode).catch(() => {
       if (this.shells.get(session.sessionId) === shell) {
         shell?.restoreImages(imageIds)

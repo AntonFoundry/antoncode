@@ -44,12 +44,17 @@ function props(
 }
 
 describe('Agent Mail read-only conversation view', () => {
-  it('registers only slots and locale, with no queue API dependency', async () => {
-    expect(inject).toEqual(['slots', 'locale'])
+  it('registers slots, composer routing, and the mention source', async () => {
+    expect(inject).toEqual(['slots', 'locale', 'conversation', 'inputTriggers'])
     const ctx = new Context()
     await ctx.plugin(SlotRegistry, { packageName: '@deepseek-ai/dsh-client-ui-conversation' }).await()
     const locale = new LocaleRuntime(ctx)
     ctx.provide('locale', locale)
+    ctx.provide('conversation', {
+      composerRoutes: { register: () => () => {} },
+      activeView: () => null,
+    } as never)
+    ctx.provide('inputTriggers', { registerSource: () => () => {} } as never)
     const stopRoot = ctx.get('slots')!.register({
       name: 'root', children: { 'conversation.view': { kind: 'list', scope: 'session' } },
     } as never, () => null)

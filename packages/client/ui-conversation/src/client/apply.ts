@@ -11,6 +11,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { ViewTab } from './contract/views.ts'
+import type { ChatStoreState } from './contract/views.ts'
 import type {
   ApprovalWait, ChatNodeTurnDataInjected, ChatScrollPosition, ChatViewInjected, ComposerBarInjected,
   ComposerChainProps, ConversationInjected, ConversationSessionHeaderInjected, ConversationSessionInjected,
@@ -18,6 +19,7 @@ import type {
 } from './contract/slots.ts'
 import type { InputNotice } from './input/contract.ts'
 import { createChatStore } from './stores.ts'
+import { ComposerRoutes } from './input/composer-routes.ts'
 import { ConversationController, UnsupportedImageMediaTypeError } from './service.ts'
 import type { IConversation } from './service.ts'
 import { ComposerBlockRegistry } from './input/blocks.ts'
@@ -130,6 +132,15 @@ export function apply(ctx: Context): void {
 
   // Apply-time construction keeps store identity bound to this fiber.
   const chatStore = createChatStore()
+  // The active view drives composer routing. The selection is persisted in the
+  // same per-session chat store the header tabs write; reading through the
+  // store registry keeps this wiring free of a second source of truth.
+  const composerRoutes = new ComposerRoutes((sessionId) => {
+    const store = (slots as unknown as {
+      storeInstanceOf(handle: unknown, sessionId: string): { getSnapshot(): ChatStoreState }
+    }).storeInstanceOf(chatStore, sessionId)
+    return store.getSnapshot().view
+  })
   const submissionPolicy = new ComposerSubmissionPolicy(
     ctx.settingsScope.bind<ConversationSettings>({ namespace: CONVERSATION_SETTINGS_NAMESPACE }),
   )
@@ -167,7 +178,7 @@ export function apply(ctx: Context): void {
 
   // The per-session input machine registry (SessionInputResolver face; published as
   // ctx.conversation.input by the service below sharing this one instance).
-  const inputHub = new InputHub(ctx, t)
+  const inputHub = new InputHub(ctx, t, composerRoutes)
 
   // The composer-block registry: a plugin that knows a session cannot send —
   // ui-model-selection, when no adapter serves the session's route — raises a block
@@ -476,7 +487,7 @@ export function apply(ctx: Context): void {
   // registers itself as `conversation` and lives on its own child fiber.
   // Presentation registrants depend directly on their slot declarations;
   // this service remains only where conversation actions are required.
-  ctx.plugin(ConversationController, { input: inputHub, blocks: composerBlocks })
+  ctx.plugin(ConversationController, { input: inputHub, blocks: composerBlocks, composerRoutes })
 
   // Task state renders as the sidebar's execution tree: the todo tree rides
   // ui-sidebar's memory area (root scope) instead of the details panel's
