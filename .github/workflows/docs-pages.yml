@@ -2,7 +2,7 @@ name: Deploy documentation
 
 on:
   push:
-    branches: [master]
+    branches: [main]
     paths:
       - '.github/workflows/docs-pages.yml'
       - 'docs/**'
@@ -25,7 +25,7 @@ env:
   PRIMARY_NODE_VERSION: '24'
   # Projected source links target the public repository, whose history can
   # differ from this workflow's source repository.
-  DOCS_REPOSITORY_REF: master
+  DOCS_REPOSITORY_REF: main
   # CI runs must never report to the production telemetry endpoint baked
   # into apps/cli/cordis.yml (AppCLIEntry disables the row when set).
   DSH_TELEMETRY_DISABLED: '1'
@@ -53,10 +53,13 @@ jobs:
         id: pages
         uses: actions/configure-pages@v6
 
-      - name: Verify and build documentation
+      # The site needs a build, not every documentation gate: prose gates run
+      # in CI, and a single red gate there would otherwise block the download
+      # page from deploying at all.
+      - name: Build documentation site
         env:
           DOCS_BASE: ${{ steps.pages.outputs.base_path }}/
-        run: pnpm run doc-sync
+        run: pnpm run website:build
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5

@@ -6,6 +6,15 @@ DeepSeek Harness (`dsh`) is an open-source agent harness developed by [DeepSeek 
 
 It uses an architecture where **everything is a plugin**, and is powered by [Cordis](https://github.com/cordiverse/cordis), whose design is described in [_A Programming Paradigm for Spatiotemporal Composability_](https://github.com/cordiverse/paper).
 
+## Download for macOS
+
+Anton is the macOS app for this harness: a menu-bar controller that supervises the harness, serves its web UI through a loopback bridge, and adds a browser driver and macOS notifications to the agent.
+
+- [Anton 0.1.0 — Apple silicon (.dmg)](https://github.com/AntonFoundry/antoncode/releases/download/v0.1.0/Anton-0.1.0-arm64.dmg)
+- [All releases](https://github.com/AntonFoundry/antoncode/releases)
+
+The build is ad-hoc signed and not notarized: on first launch, right-click **Anton** → **Open**. Requires macOS 13 or newer on Apple silicon. First launch installs the `anton` CLI into `~/.local/bin` and creates an app-owned harness home at `~/Library/Application Support/Anton/dsh`, separate from a developer `~/.dsh`.
+
 ## Developer preview
 
 DeepSeek Harness is currently in _developer preview_ and is iterating rapidly. **THERE WILL BE COMPATIBILITY-BREAKING CHANGES.**

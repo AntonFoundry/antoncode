@@ -89,14 +89,14 @@ const sharedTheme: Pick<DefaultTheme.Config, 'search' | 'socialLinks' | 'editLin
     provider: 'local',
   },
   socialLinks: [
-    { icon: 'github', link: 'https://github.com/deepseek-ai/deepseek-harness' },
+    { icon: 'github', link: 'https://github.com/AntonFoundry/antoncode' },
   ],
   editLink: {
     pattern: ({ frontmatter }: PageData) => {
       const data: unknown = frontmatter
       const editSource: unknown = typeof data === 'object' && data !== null ? Reflect.get(data, 'editSource') : undefined
       if (typeof editSource !== 'string') throw new Error('Projected documentation page has no editSource frontmatter.')
-      return `https://github.com/deepseek-ai/deepseek-harness/edit/master/${editSource}`
+      return `https://github.com/AntonFoundry/antoncode/edit/main/${editSource}`
     },
     text: 'Edit this page on GitHub',
   },
@@ -205,6 +205,12 @@ export default withMermaid({
   themeConfig: {
     siteTitle: siteTitle('Preview'),
     nav: [
+      {
+        text: 'Download',
+        link: 'https://github.com/AntonFoundry/antoncode/releases/latest',
+        target: '_blank',
+        rel: 'noopener',
+      },
       { text: 'Guide', link: landingLink(guideModules.guide), activeMatch: '^/guide/' },
       ...moduleNav(),
     ],
