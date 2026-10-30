@@ -1,9 +1,9 @@
 # Anton vault backup
 
 Encrypted, deduplicated backups of the agent's durable state — session
-transcripts, the ambient journal, Blueant settings, the live DSH home —
-via [restic](https://restic.net) (AES-256 at rest client-side; the cloud
-never sees plaintext).
+transcripts, skills, profiles, and the rest of the live DSH home — via
+[restic](https://restic.net) (AES-256 at rest client-side; the cloud never
+sees plaintext).
 
 ## Quick start
 

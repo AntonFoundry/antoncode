@@ -100,11 +100,13 @@ open dist/Anton.app
 ```
 
 The bundle contains the compiled Bridge, a Node runtime, the built local
-DeepSeek Harness runtime, and the memory-service client plugin. On first
-launch it creates an app-owned Harness profile at
-`~/Library/Application Support/Anton/dsh`, with the bundled plugin enabled.
-Harness sessions in this app are therefore isolated from an existing
-developer `~/.dsh` installation.
+DeepSeek Harness runtime, the memory-service client plugin, and the desktop
+tools plugin. On first launch it creates an app-owned Harness profile at
+`~/Library/Application Support/Anton/dsh`, with the bundled plugin enabled and
+the desktop tools mounted. Harness sessions in this app are therefore isolated
+from an existing developer `~/.dsh` installation. First launch also installs
+the `anton` CLI launcher into `~/.local/bin` (shared `~/.anton/dsh` home) so a
+terminal — or a repairing agent — reaches the same runtime the app runs.
 
 When the main Harness stays down, Anton starts the recovery profile and launches one automatic repair task through its app-owned `repair` profile. That profile uses the bundled headless runner and the saved default model. The bridge refreshes the repair profile manifest at startup and reports `running`, `done`, or `failed` through `/bridge/api/recovery/state`; Anton returns to the main profile only after `done`.
 
@@ -121,4 +123,34 @@ development plumbing, not the final remote-control protocol: the browser
 extension and hosted `antoncode.dev` flow will add device pairing, scoped
 workspace capabilities, request signing, and user approvals.
 
-Blueant inherits the bundled Creator composition, including shell, file, todo, goals, planning, delegation, workflows, skills, and runtime inspection tools. PTC uses `both` presentation: direct tool calls and `run_code` with the generated TypeScript SDK are available together. Desktop Chrome controls and `blueant_notify` extend that catalog without an allow-list. The normal session permission policy applies; there is no separate native approval panel. The bridge regenerates this managed preset at startup, backs up the previous composition as `agent.before-creator.cordis.yml`, and copies Creator’s composition-authoring skill. Copy Blueant into a separate user preset for persistent customizations. Existing mounted sessions pick up the composition after a harness restart.
+## Agent tools: browser and notifications
+
+Every session in the app's `web` profile gets five tools, mounted from one
+plugin the bridge copies into the profile:
+
+| Tool | What it does |
+| --- | --- |
+| `browser_open` | Opens an http(s) URL in the visible Anton browser (new tab, or `reuse` the current one). |
+| `browser_read` | Returns the active tab's title, URL, page text (≤12k chars), a form outline with ready CSS selectors, and visible buttons. |
+| `browser_fill` | Fills one form field with trusted input and reports the value the page actually holds. |
+| `browser_click` | Clicks one element with a real mouse press/release, so site handlers and validation run. |
+| `notify` | Queues a macOS notification the Mac app delivers through `UNUserNotificationCenter`. |
+
+The browser is a second Chrome instance with its own profile
+(`~/Library/Application Support/Anton/anton-chrome`) and an ephemeral,
+loopback-only DevTools port. It never opens the user's daily Chrome profile, and
+the window stays visible and interruptible. The notification queue is bounded
+(20 entries, oldest dropped) and drained by the app with id-based acks.
+
+The plugin source is `src/desktop-tools.ts`; `pnpm --filter
+@deepseek-ai/anton-bridge run build:tools` builds `dist/anton-desktop-tools.js`
+for a checkout run, and the macOS build ships it under `Resources/plugins`.
+`ensureDesktopTools` copies it to `profiles/web/plugins/` and appends one
+managed entry to that profile's `cordis.patch.yml`, so the tools are part of the
+normal agent composition — there is no separate persona, preset, or allow-list.
+The session permission policy applies to every call.
+
+The bridge also serves the browser and notification endpoints directly
+(`/bridge/api/chrome/{open,read,act}`, `/bridge/api/notify*`). They accept
+origin-less loopback callers, which is how the agent tool reaches them, and
+reject a browser request whose `Origin` does not match.

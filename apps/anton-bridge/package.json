@@ -7,6 +7,9 @@
   "scripts": {
     "dev": "bun run src/index.ts",
     "start": "bun run src/index.ts",
+    "predev": "bun run build:tools",
+    "prestart": "bun run build:tools",
+    "build:tools": "bun build --target node --format esm --outfile dist/anton-desktop-tools.js src/desktop-tools.ts",
     "build": "bun build --compile --outfile dist/anton-bridge src/index.ts",
     "build:macos": "bun ../../scripts/build-anton-macos.ts"
   },

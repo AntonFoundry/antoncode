@@ -13,7 +13,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { resolveSessionPreset, SETTINGS_NAMESPACE } from '@deepseek-ai/dsh-agent-presets'
 import { applyChildComposition, childSessionMeta } from '@deepseek-ai/dsh-subagent'
-import { ensureBlueantPreset } from '../../anton-bridge/src/blueant-preset.ts'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-compaction-basic'
 import type {} from '@deepseek-ai/dsh-skill'
@@ -843,58 +842,4 @@ describe('a session keeps the preset it was created with', () => {
       await handle.dispose()
     }
   })
-})
-
-
-describe('Blueant Creator and PTC composition', () => {
-  it('mounts every Creator capability plus desktop tools and executes PTC', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'dsh-blueant-creator-'))
-    ensureBlueantPreset({ dshHome: home, harnessRoot: REPO_ROOT, profile: 'web' })
-    const blueCtx = await bootWeb(join(home, 'settings.yaml'), [{
-      id: 'agent-presets',
-      config: {
-        default: 'blueant', includeUserRoot: false,
-        roots: [
-          { path: join(home, '.agent-presets'), trust: 'user' },
-          { path: join(CONFIG_DIR, 'agent-presets'), trust: 'system' },
-        ],
-      },
-    }])
-    try {
-      const blueant = await blueCtx.agents.create({
-        sessionId: SessionId(randomUUID()),
-        setup: agentCtx => blueCtx.agentPresets.mount(agentCtx, 'blueant').then(() => undefined),
-      })
-      const assembly = await blueCtx.systemPrompt.assemble({ scope: blueant.agent })
-      expect(assembly.tools.map(tool => tool.name)).toEqual(expect.arrayContaining([
-        'run_code', 'bash', 'read', 'write', 'edit', 'todo_write',
-        'create_goal', 'subagent', 'subagent_fork', 'workflow', 'web_search',
-        'cordis_inspect_list', 'cordis_run', 'job_list', 'plan_write',
-        'chrome_open', 'chrome_read', 'chrome_fill', 'chrome_click', 'blueant_notify',
-      ]))
-      expect(assembly.tools.length).toBeGreaterThan(20)
-      expect(assembly.sections.find(section => section.name === 'tools:sdk')?.text).toContain('todo_write')
-      expect((await blueCtx.skills.list({ scope: blueant.agent })).map(skill => skill.name))
-        .toContain('editing-cordis-compositions')
-      const plan = await blueCtx.tools.execute({
-        agent: blueant.agent, callId: CallId(randomUUID()), name: 'todo_write',
-        signal: new AbortController().signal,
-        arguments: { todos: [{ content: 'Verify Blueant PTC', status: 'in_progress' }] },
-      })
-      expect(plan.isError, JSON.stringify(plan.content)).toBe(false)
-      const result = await blueCtx.tools.execute({
-        agent: blueant.agent, callId: CallId(randomUUID()), name: 'run_code',
-        signal: new AbortController().signal,
-        arguments: {
-          description: 'Verify Blueant can update its todo tree through PTC',
-          code: 'return await tools.todo_write({ todos: [{ content: "Verify Blueant PTC", status: "completed" }] });',
-        },
-      })
-      expect(result.isError, JSON.stringify(result.content)).toBe(false)
-      expect(result.content.some(block => block.type === 'text' && block.text.includes('"completed": 1'))).toBe(true)
-      await blueant.dispose()
-    } finally {
-      await blueCtx.fiber.dispose()
-    }
-  }, 120_000)
 })

@@ -1,12 +1,6 @@
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, basename, join, resolve } from 'node:path'
-import { ensureBlueantPreset, ensureBlueantProfileLink } from './blueant-preset.ts'
-import { startMobileIngest } from './inbox.ts'
-import { startJournalCollector } from './journal.ts'
-import { startJournalTriage } from './triage.ts'
-import { startJournalConsolidation } from './consolidate.ts'
-import { getBlueantSettings, updateBlueantSettings } from './blueant-settings.ts'
 import { getChromeManager } from './chrome.ts'
 import { readNativeConsentKey } from './consent-key.ts'
 import { NativeChallengeInbox } from './consent-challenges.ts'
@@ -249,22 +243,22 @@ function ensureRepairProfile(): void {
 }
 
 /**
- * Windows half of first-run provisioning: a `dsh.cmd` wrapper in
+ * Windows half of first-run provisioning: an `anton.cmd` wrapper in
  * `%APPDATA%\Anton\bin` (same home the launcher scripts use, so the CLI and
  * the app share one configuration tree). Bundle paths are baked in at
  * install time; a dev checkout running under Bun never lands here because
  * its executable is not `anton-bridge.exe`. Idempotent like the POSIX side:
  * an existing file without the Anton marker is never clobbered.
  */
-function ensureWindowsDshLauncher(): void {
+function ensureWindowsLauncher(): void {
   const execPath = process.execPath
   if (basename(execPath).toLowerCase() !== 'anton-bridge.exe') return
   const distRoot = resolve(execPath, '..', '..')
-  const marker = 'REM dsh-launcher: anton'
+  const marker = 'REM anton-launcher: managed'
   const script = [
     '@echo off',
     marker,
-    'REM dsh -- DeepSeek Harness CLI launcher (installed by Anton).',
+    'REM anton -- Anton CLI launcher (installed by the Anton app).',
     'setlocal',
     'REM One home: the terminal CLI shares Anton profiles, credentials, and',
     'REM settings -- no second configuration tree to maintain.',
@@ -278,47 +272,53 @@ function ensureWindowsDshLauncher(): void {
     'if not exist "%NODE_BIN%" set "NODE_BIN=node"',
     'where "%NODE_BIN%" >nul 2>nul',
     'if errorlevel 1 (',
-    '  echo dsh: no usable node runtime 1>&2',
+    '  echo anton: no usable node runtime 1>&2',
     '  exit /b 1',
     ')',
     '"%NODE_BIN%" "%ROOT%\\apps\\cli\\lib\\bin.js" %*',
   ].join('\r\n')
   const appData = process.env.APPDATA
   if (appData === undefined || appData.length === 0) {
-    console.warn('dsh launcher install skipped: %APPDATA% is not set')
+    console.warn('anton launcher install skipped: %APPDATA% is not set')
     return
   }
   const binDir = join(appData, 'Anton', 'bin')
-  const launcher = join(binDir, 'dsh.cmd')
+  const launcher = join(binDir, 'anton.cmd')
   mkdirSync(binDir, { recursive: true })
   try {
     const existing = existsSync(launcher) ? readFileSync(launcher, 'utf8') : undefined
     if (existing !== undefined && !existing.includes(marker)) return
     if (existing === script) return
     writeFileSync(launcher, `${script}\r\n`)
-    console.info(`Installed dsh launcher at ${launcher}`)
+    console.info(`Installed anton launcher at ${launcher}`)
     console.info(`Hint: add ${binDir} to PATH (setx PATH "%PATH%;${binDir}")`)
   } catch (error) {
     // A restricted environment never blocks the app itself.
-    console.warn(`dsh launcher install skipped: ${error instanceof Error ? error.message : String(error)}`)
+    console.warn(`anton launcher install skipped: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
+
 /**
- * First-run provisioning: put a `dsh` launcher on PATH (~/.local/bin/dsh)
- * so the CLI is available from any terminal on a fresh system. Only the
- * packaged app installs it — a checkout developer already has `pnpm dsh`.
- * The launcher embeds this bundle's absolute paths (self-contained Node and
- * CLI), preferring a $DSH_ROOT override or a dev checkout when one exists.
- * Idempotent: an existing file is replaced only when it carries the Anton
- * marker line, so a user's own `dsh` script is never clobbered.
+ * First-run provisioning: put the `anton` launcher on PATH
+ * (~/.local/bin/anton) so the CLI is available from any terminal on a fresh
+ * system. Only the packaged app installs it — a checkout developer runs
+ * `pnpm anton` from source. The launcher embeds this bundle's absolute paths
+ * (self-contained Node and CLI), preferring a $DSH_ROOT override or a dev
+ * checkout when one exists, so an agent asked to repair the install always
+ * reaches the same tree the app runs.
+ *
+ * A `dsh` launcher written by an earlier Anton version is removed when it
+ * carries that version's marker: the fork names its CLI `anton`, and a stale
+ * `dsh` command must not shadow the renamed one. A user-authored `dsh` file is
+ * never touched. Idempotent: the launcher is replaced only when it differs.
  */
-function ensureDshLauncher(): void {
-  if (process.env.ANTON_INSTALL_DSH_LAUNCHER === 'false') return
+function ensureLauncher(): void {
+  if (process.env.ANTON_INSTALL_CLI === 'false' || process.env.ANTON_INSTALL_DSH_LAUNCHER === 'false') return
   // Windows ships anton-bridge.exe, not an .app bundle: same first-run
-  // promise through a `dsh.cmd` wrapper. (No PATH mutation — the location is
-  // logged; the in-app login button removes the CLI need most users over.)
+  // promise through an `anton.cmd` wrapper. (No PATH mutation — the location
+  // is logged; the in-app login button removes the CLI need most users over.)
   if (process.platform === 'win32') {
-    ensureWindowsDshLauncher()
+    ensureWindowsLauncher()
     return
   }
   // Bundle mode only: this bridge's own executable path names the app bundle
@@ -328,11 +328,11 @@ function ensureDshLauncher(): void {
   const execPath = process.execPath
   if (!execPath.includes('.app/Contents/')) return
   const resourcesRoot = resolve(execPath, '..', '..')
-  const marker = '# dsh-launcher: anton'
+  const marker = '# anton-launcher: managed'
   const script = [
     '#!/bin/sh',
     marker,
-    '# dsh — DeepSeek Harness CLI launcher (installed by Anton).',
+    '# anton — Anton CLI launcher (installed by the Anton app).',
     '# Resolution: $DSH_ROOT override, a dev checkout if present, this app bundle.',
     'set -eu',
     // One home: the terminal CLI shares Anton's profiles, credentials, and
@@ -345,28 +345,100 @@ function ensureDshLauncher(): void {
     'elif [ -f "$REPO/apps/cli/lib/bin.js" ]; then ROOT="$REPO"',
     'elif [ -f "$BUNDLE/deepseek-harness/apps/cli/lib/bin.js" ]; then ROOT="$BUNDLE/deepseek-harness"',
     '  NODE_BIN="$BUNDLE/node/bin/node"',
-    'else echo "dsh: no harness found (set DSH_ROOT or reinstall Anton)" >&2; exit 1',
+    'else echo "anton: no harness found (set DSH_ROOT or reinstall Anton)" >&2; exit 1',
     'fi',
-    'if [ -z "$NODE_BIN" ] || [ ! -x "$NODE_BIN" ]; then echo "dsh: no usable node runtime" >&2; exit 1; fi',
+    'if [ -z "$NODE_BIN" ] || [ ! -x "$NODE_BIN" ]; then echo "anton: no usable node runtime" >&2; exit 1; fi',
     'exec "$NODE_BIN" "$ROOT/apps/cli/lib/bin.js" "$@"',
   ].join('\n')
   const binDir = join(homedir(), '.local', 'bin')
-  const launcher = join(binDir, 'dsh')
+  const launcher = join(binDir, 'anton')
   mkdirSync(binDir, { recursive: true })
   try {
+    removeStaleDshLauncher(binDir)
     const existing = existsSync(launcher) ? readFileSync(launcher, 'utf8') : undefined
     if (existing !== undefined && !existing.includes(marker)) return
     if (existing === script) return
     writeFileSync(launcher, `${script}\n`)
     chmodSync(launcher, 0o755)
-    console.info(`Installed dsh launcher at ${launcher}`)
+    console.info(`Installed anton launcher at ${launcher}`)
     if (!(process.env.PATH ?? '').includes(binDir)) {
       console.info(`Hint: add ${binDir} to PATH (echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc)`)
     }
   } catch (error) {
     // A read-only home or restricted environment never blocks the app itself.
-    console.warn(`dsh launcher install skipped: ${error instanceof Error ? error.message : String(error)}`)
+    console.warn(`anton launcher install skipped: ${error instanceof Error ? error.message : String(error)}`)
   }
+}
+
+/**
+ * Remove the `dsh` launcher an earlier Anton version installed, identified by
+ * the marker it wrote. A file without that marker belongs to the user.
+ * @param binDir - the user's launcher directory.
+ */
+function removeStaleDshLauncher(binDir: string): void {
+  const legacy = join(binDir, 'dsh')
+  if (!existsSync(legacy)) return
+  if (!readFileSync(legacy, 'utf8').includes('# dsh-launcher: anton')) return
+  unlinkSync(legacy)
+  console.info(`Removed the retired dsh launcher at ${legacy}`)
+}
+
+/**
+ * Mark an existing profile manifest as an ES module package so its local
+ * plugins load without Node's CommonJS re-parse warning. User-added fields and
+ * dependencies are preserved; only `type` is written.
+ * @param manifestPath - the profile's package.json.
+ */
+function addProfileModuleType(manifestPath: string): void {
+  try {
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>
+    if (manifest.type === 'module') return
+    manifest.type = 'module'
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+  } catch (error) {
+    // A hand-edited or unreadable manifest is the user's file: report it in
+    // bridge.log and let the profile boot with its own resolution.
+    console.warn(`anton profile manifest left unchanged: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+/**
+ * Desktop tools are one plugin file the app ships and every session of the
+ * main profile loads: the browser driver and notification tools. Copying it
+ * (rather than depending on a package) keeps the profile self-contained, and
+ * refreshing it on each start means an app update reaches the running profile
+ * at the next harness restart.
+ * @param profileDir - the profile being provisioned.
+ */
+function ensureDesktopTools(profileDir: string): void {
+  const source = firstDefined([
+    ...process.env.ANTON_DESKTOP_TOOLS_PLUGIN === undefined ? [] : [process.env.ANTON_DESKTOP_TOOLS_PLUGIN],
+    // Packaged app: Resources/plugins beside the bridge binary's Resources.
+    ...process.execPath.includes('.app/Contents/')
+      ? [resolve(process.execPath, '..', '..', 'plugins', 'anton-desktop-tools.js')]
+      : [],
+    // Checkout: `pnpm --filter @deepseek-ai/anton-bridge run build:tools`.
+    resolve(import.meta.dir, '..', 'dist', 'anton-desktop-tools.js'),
+  ].filter((candidate): candidate is string => Boolean(candidate)))
+  if (!existsSync(source)) {
+    console.warn(`anton desktop tools plugin missing at ${source}; browser and notification tools stay unregistered`)
+    return
+  }
+  mkdirSync(join(profileDir, 'plugins'), { recursive: true })
+  writeFileSync(join(profileDir, 'plugins', 'anton-desktop-tools.js'), readFileSync(source))
+  const patchPath = join(profileDir, 'cordis.patch.yml')
+  const marker = '# anton-desktop-tools: managed'
+  // A profile patch inserts rows; it cannot address a row that no bundle
+  // declares. The managed block is rewritten in full on every start so an
+  // older form (or a stale path) never survives an upgrade.
+  const block = `${marker}\n- insert:\n    - id: anton-desktop-tools\n      name: ./plugins/anton-desktop-tools.js\n`
+  const patch = existsSync(patchPath) ? readFileSync(patchPath, 'utf8') : ''
+  const markerIndex = patch.indexOf(marker)
+  let body = markerIndex === -1 ? patch : patch.slice(0, markerIndex)
+  // The profile template starts as the empty list `[]`; an insert replaces it.
+  body = body.replace(/\n?\[\]\s*$/, '').trimEnd()
+  const next = body === '' ? block : `${body}\n\n${block}`
+  if (next !== patch) writeFileSync(patchPath, next)
 }
 
 /**
@@ -400,7 +472,8 @@ function ensureBundledContextProfile(): void {
   ensureRecoveryProfile()
   ensureRepairProfile()
   ensureHeadlessProfile()
-  ensureDshLauncher()
+  ensureLauncher()
+  if (profile === 'web') ensureDesktopTools(join(dshHome, 'profiles', profile))
   const profileDir = join(dshHome, 'profiles', profile)
   const manifestPath = join(profileDir, 'package.json')
   const patchPath = join(profileDir, 'cordis.patch.yml')
@@ -411,9 +484,14 @@ function ensureBundledContextProfile(): void {
     writeFileSync(manifestPath, `${JSON.stringify({
       name: `anton-profile-${profile}`,
       private: true,
+      type: 'module',
       dependencies: { '@c0ntext/dsh-c0ntext': `file:${bundledContextPluginRoot}` },
       dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@c0ntext/dsh-c0ntext'] } },
     }, null, 2)}\n`)
+  } else {
+    // The profile's local plugins are ESM; without this Node re-parses each
+    // one as CommonJS first and warns on every harness start.
+    addProfileModuleType(manifestPath)
   }
   if (!existsSync(patchPath)) {
     // Tool presentation is a deployment choice on the base bundle's `tools`
@@ -493,8 +571,6 @@ async function startHarness(): Promise<{ started: boolean; reused: boolean }> {
     throw new Error(`DeepSeek Harness entry was not found at ${harnessEntry}. Build the harness first (npm run build:lib:host) or set ANTON_HARNESS_ENTRY to its built CLI.`)
   }
   ensureBundledContextProfile()
-  ensureBlueantPreset({ dshHome, profile, harnessRoot })
-  ensureBlueantProfileLink({ dshHome, profile, harnessRoot })
 
   const child = Bun.spawn(
     [nodeBinary, ...(harnessLoader === '' ? [] : ['--import', harnessLoader]), harnessEntry, '--profile', profile, '--port', String(harnessPort)],
@@ -799,30 +875,6 @@ const server = await serveWithPortRetry(() => Bun.serve<BridgeSocketData>({
       return challenge === undefined ? new Response(null, { status: 204 }) : json(challenge)
     }
     if (pathname === '/bridge/api/status' && request.method === 'GET') return json(await status())
-    if (pathname === '/bridge/api/settings' && request.method === 'GET') {
-      if (!sameOrigin(request)) return json({ error: 'cross_origin_request_rejected' }, { status: 403 })
-      return json(getBlueantSettings())
-    }
-    if (pathname === '/bridge/api/settings' && request.method === 'PUT') {
-      if (!sameOrigin(request)) return json({ error: 'cross_origin_request_rejected' }, { status: 403 })
-      try {
-        const payload: unknown = await request.json()
-        const body = typeof payload === 'object' && payload !== null ? payload as { journalEnabled?: unknown; model?: unknown } : {}
-        const patch = {
-          journalEnabled: typeof body.journalEnabled === 'boolean' ? body.journalEnabled : undefined,
-          wakeWordEnabled: typeof (body as { wakeWordEnabled?: unknown }).wakeWordEnabled === 'boolean'
-            ? (body as { wakeWordEnabled: boolean }).wakeWordEnabled : undefined,
-          mobileIngestEnabled: typeof (body as { mobileIngestEnabled?: unknown }).mobileIngestEnabled === 'boolean'
-            ? (body as { mobileIngestEnabled: boolean }).mobileIngestEnabled : undefined,
-          model: body.model === null || (typeof body.model === 'object' && body.model !== null
-            && typeof (body.model as { provider?: unknown }).provider === 'string'
-            && typeof (body.model as { model?: unknown }).model === 'string') ? body.model as never : undefined,
-        }
-        return json(updateBlueantSettings(patch))
-      } catch (error) {
-        return json({ error: error instanceof Error ? error.message : 'unable_to_update_settings' }, { status: 400 })
-      }
-    }
     if (pathname === '/bridge/api/recovery/state' && request.method === 'GET') {
       if (!sameOrigin(request)) return json({ error: 'cross_origin_request_rejected' }, { status: 403 })
       return json({ profile, repair: repairStatus })
@@ -872,8 +924,8 @@ const server = await serveWithPortRetry(() => Bun.serve<BridgeSocketData>({
     }
 
     if (pathname === '/bridge/api/notify' && request.method === 'POST') {
-      // Act tier inbox: any loopback caller (the blueant_notify tool) may
-      // enqueue a notification; the Mac app polls, delivers it through
+      // Notification inbox: any loopback caller (the agent's `notify` tool)
+      // may enqueue a notification; the Mac app polls, delivers it through
       // UNUserNotificationCenter, and acks. Queue is small and bounded so a
       // chatty agent cannot flood the notification center.
       if (!loopbackControlAllowed(request)) return json({ error: 'cross_origin_request_rejected' }, { status: 403 })
@@ -882,7 +934,7 @@ const server = await serveWithPortRetry(() => Bun.serve<BridgeSocketData>({
         const body = typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {}
         const text = typeof body.body === 'string' ? body.body.slice(0, 2000) : ''
         if (text === '') return json({ error: 'body_required' }, { status: 400 })
-        const title = typeof body.title === 'string' && body.title !== '' ? body.title.slice(0, 200) : 'Blueant'
+        const title = typeof body.title === 'string' && body.title !== '' ? body.title.slice(0, 200) : 'Anton'
         const id = `notify-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
         pendingNotifications.push({ id, title, body: text })
         if (pendingNotifications.length > 20) pendingNotifications.splice(0, pendingNotifications.length - 20)
@@ -980,31 +1032,12 @@ const server = await serveWithPortRetry(() => Bun.serve<BridgeSocketData>({
 console.info(`Anton Bridge listening at ${bridgeUrl}`)
 console.info(`Local controls: ${bridgeUrl}/bridge`)
 
-// Phase 5a: the ambient ingestion lane. Runs for the bridge's lifetime,
-// sampling desktop context into the daily journal — fail-soft by design.
-startJournalCollector({ intervalMs: Number(process.env.ANTON_JOURNAL_INTERVAL_MS) || 60_000 })
-startMobileIngest({ intervalMs: Number(process.env.ANTON_INBOX_INTERVAL_MS) || 15_000 })
-
-// Phase 5b: cheap-model triage — untriaged journal entries become durable
-// c0ntext evidence. Same fail-soft posture; watermark-driven, never
-// double-writes.
-startJournalTriage({
-  intervalMs: Number(process.env.ANTON_TRIAGE_INTERVAL_MS) || 5 * 60_000,
-  contextEndpoint: contextEndpoint === '' ? undefined : contextEndpoint,
-  contextApiKey: resolveContextApiKey(),
-})
-
-// Phase 5c: scheduled consolidation — the bridge-timer power nap. The
-// engine's own dream scheduler fires on harness idle; this one runs on
-// wall-clock cadence so an always-active machine still consolidates.
-startJournalConsolidation({
-  contextEndpoint: contextEndpoint === '' ? undefined : contextEndpoint,
-  contextApiKey: resolveContextApiKey(),
-  project: process.env.ANTON_CONSOLIDATE_PROJECT,
-})
+// The desktop tools plugin is rewritten into each profile by
+// ensureDesktopTools, so a change to this file takes effect on the next
+// harness start. See startHarness.
 
 /**
- * Act-tier notification inbox: blueant_notify enqueues here, the Mac app
+ * Notification inbox: the agent's `notify` tool enqueues here, the Mac app
  * polls /bridge/api/notify/pending, delivers through UNUserNotificationCenter,
  * and acks by id. Bounded — see the route handlers above.
  */

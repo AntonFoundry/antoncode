@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # anton-vault-backup: encrypted, deduplicated backup of Anton's durable state.
 #
-# What it protects: the agent's memory — durable session transcripts, the
-# ambient journal, triaged c0ntext evidence config, Blueant settings, and the
-# live DSH home (profiles + skills). Re-downloadable binaries (whisper
-# models) and caches are excluded.
+# What it protects: the agent's memory — durable session transcripts,
+# c0ntext evidence config, and the live DSH home (profiles + skills).
+# Re-downloadable binaries and caches are excluded.
 #
 # Where: a restic repository. Default location is inside iCloud Drive so the
 # encrypted repo syncs to Apple's servers with zero extra credentials; any
@@ -29,7 +28,6 @@ BACKUP_ROOTS=(
 # Never leave these in the vault: multi-GB re-downloadable models and
 # volatile caches. Patterns are restic excludes (relative to each root).
 EXCLUDES=(
-  '*/blueant/models/**'
   '*/sessions.quarantine-*/**'
   '*/storages/**'
   '**/.sessions/**/screenshots/**'

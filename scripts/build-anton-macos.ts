@@ -132,28 +132,16 @@ run(['bun', 'build', '--compile', '--outfile', join(resources, 'bin', 'anton-bri
 bundledNode(join(resources, 'node'))
 cpSync(join(bridgeRoot, 'macos', 'Info.plist'), join(contents, 'Info.plist'))
 appIcon(join(resources, 'Anton.icns'))
-// whisper.cpp static libs (Metal embedded, arm64) built once into
-// apps/anton-bridge/macos/vendor: cmake -S <whisper.cpp checkout> -B vendor/build
-// -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON -DBUILD_SHARED_LIBS=OFF
-// -DWHISPER_BUILD_EXAMPLES=OFF -DCMAKE_OSX_ARCHITECTURES=arm64. Link order
-// matters: whisper before ggml, ggml before its backends (cpu/metal/blas).
-const vendor = join(bridgeRoot, 'macos', 'vendor')
+// Desktop tools plugin (browser driver + notifications) the bridge copies into
+// the main profile. Built separately from the compiled bridge because the
+// Harness loader imports it as a profile-local ESM module.
+mkdirSync(join(resources, 'plugins'), { recursive: true })
+run(['bun', 'build', '--target', 'node', '--format', 'esm',
+  '--outfile', join(resources, 'plugins', 'anton-desktop-tools.js'), 'src/desktop-tools.ts'], bridgeRoot)
 run(['swiftc', '-parse-as-library',
-  '-import-objc-header', join(bridgeRoot, 'macos', 'WhisperBridge.h'),
-  '-I', join(vendor, 'include', 'whisper'), '-I', join(vendor, 'include', 'ggml'),
-  '-L', join(vendor, 'lib'),
-  '-lwhisper', '-lparakeet', '-lggml', '-lggml-metal', '-lggml-blas', '-lggml-cpu', '-lggml-base', '-lc++',
-  '-framework', 'Cocoa', '-framework', 'AVFoundation', '-framework', 'Speech',
-  '-framework', 'Metal', '-framework', 'MetalKit', '-framework', 'Accelerate',
+  '-framework', 'Cocoa',
   join(bridgeRoot, 'macos', 'AntonApp.swift'),
   join(bridgeRoot, 'macos', 'NativeConsentCode.swift'),
-  join(bridgeRoot, 'macos', 'BlueantPanel.swift'),
-  join(bridgeRoot, 'macos', 'WakeWordListener.swift'),
-  join(bridgeRoot, 'macos', 'ParakeetEngine.swift'),
-  join(bridgeRoot, 'macos', 'SpeechController.swift'),
-  join(bridgeRoot, 'macos', 'WhisperEngine.swift'),
-  join(bridgeRoot, 'macos', 'HotkeyCenter.swift'),
-  join(bridgeRoot, 'macos', 'HarnessClient.swift'),
   '-o', join(macOS, 'Anton')])
 
 // Harness runs from its built lib/ tree. The workspace's own src/ dirs and
@@ -162,7 +150,7 @@ run(['swiftc', '-parse-as-library',
 // ship their runtime JS there). Stale bun-build bridge artifacts are dead
 // weight. Keep node_modules: workspace symlinks remain valid because the
 // whole tree is copied together.
-syncDirectory(harnessRoot, join(resources, 'deepseek-harness'), ['/.git', '/dist', '/dist *', '/.turbo', 'packages/*/*/src', 'apps/*/src', '*.ts', '*.tsx', '*.map', '*.bun-build', 'apps/anton-bridge/dist', 'apps/*/dist *', 'apps/anton-bridge/macos/vendor/build', 'apps/anton-bridge/macos/vendor/build *',
+syncDirectory(harnessRoot, join(resources, 'deepseek-harness'), ['/.git', '/dist', '/dist *', '/.turbo', 'packages/*/*/src', 'apps/*/src', '*.ts', '*.tsx', '*.map', '*.bun-build', 'apps/anton-bridge/dist', 'apps/*/dist *',
   // Repository-only surfaces never needed at runtime: internal notes and
   // planning docs, generated docs and the website projection, build scripts,
   // and the runnable-examples leaves. Shipping them leaks internal material
