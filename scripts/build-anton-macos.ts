@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
 const harnessRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -101,7 +101,53 @@ function assertLibOnlyHarnessBundle(): void {
   }
 }
 
-/** Render macos/AppIcon.png into the multi-resolution .icns the bundle's Info.plist names. */
+/**
+ * Refuse to package a bundle that carries the developer's credentials or a
+ * machine-local secret file. The staging copy is what gets signed and
+ * published, so this is the last point where a leaked `.env` can be caught.
+ *
+ * The scan covers first-party files (the workspace tree minus every
+ * `node_modules`, plus the app's own Resources). Third-party packages are
+ * excluded because their own test fixtures legitimately contain key-shaped
+ * strings such as `-----BEGIN PRIVATE KEY-----`.
+ */
+function assertNoSecretsInBundle(): void {
+  const forbidden = /(^|\/)\.env(\.|$)|(^|\/)\.credentials\.yaml$|(^|\/)id_rsa|\.pem$|(^|\/)\.git$/
+  const secret = new RegExp([
+    'sk-[A-Za-z0-9]{20,}', 'sk_[A-Za-z0-9]{20,}', 'ghp_[A-Za-z0-9]{20,}',
+    'AKIA[0-9A-Z]{16}', 'AIza[0-9A-Za-z_-]{30,}', 'xox[baprs]-[A-Za-z0-9-]{10,}',
+    '-----BEGIN [A-Z ]*PRIVATE KEY-----',
+  ].join('|'))
+  const home = homedir()
+  const walk = (dir: string, visit: (path: string) => void): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (entry.name === 'node_modules' || entry.name === '.git') continue
+        walk(join(dir, entry.name), visit)
+        continue
+      }
+      if (entry.isFile()) visit(join(dir, entry.name))
+    }
+  }
+  const leaks: string[] = []
+  for (const root of [resources, join(resources, 'deepseek-harness')]) {
+    walk(root, (path) => {
+      const relative = path.slice(resources.length + 1)
+      if (forbidden.test(relative)) {
+        leaks.push(relative)
+        return
+      }
+      if (!/\.(m?js|json|ya?ml|md|sh|py|txt|plist)$/.test(path)) return
+      const text = readFileSync(path, 'utf8')
+      if (secret.test(text) || text.includes(home)) leaks.push(relative)
+    })
+  }
+  if (leaks.length > 0) {
+    throw new Error(`Anton bundle would ship credentials or secret files:\n${[...new Set(leaks)].sort().join('\n')}`)
+  }
+}
+
+
 function appIcon(destination: string): void {
   const source = join(bridgeRoot, 'macos', 'AppIcon.png')
   const temporary = mkdtempSync(join(tmpdir(), 'anton-icon-'))
@@ -150,7 +196,16 @@ run(['swiftc', '-parse-as-library',
 // ship their runtime JS there). Stale bun-build bridge artifacts are dead
 // weight. Keep node_modules: workspace symlinks remain valid because the
 // whole tree is copied together.
-syncDirectory(harnessRoot, join(resources, 'deepseek-harness'), ['/.git', '/dist', '/dist *', '/.turbo', 'packages/*/*/src', 'apps/*/src', '*.ts', '*.tsx', '*.map', '*.bun-build', 'apps/anton-bridge/dist', 'apps/*/dist *',
+syncDirectory(harnessRoot, join(resources, 'deepseek-harness'), ['/.git', '/.github', '/.gitlab-ci.yml', '/.gitignore', '/.gitattributes',
+  // Credentials and machine-local state never enter a distributed bundle.
+  // `.env` in particular is the developer's real key file.
+  '/.env', '/.env.*', '/.pnpm-store', '/.claude', '/.commandcode', '/.tmp', '/tmp', '/dsh-session',
+  '/.DS_Store', '**/.DS_Store',
+  // Package-manager bin shims and metadata embed the build machine's absolute
+  // paths and are never read by the packaged runtime.
+  'node_modules/.bin', 'node_modules/.cache', 'node_modules/.modules.yaml', 'node_modules/.pnpm-workspace-state-v1.json',
+  '/command-code-session*.html', '/graphify-out', '/.rgignore', '/.jscpd.json',
+  '/dist', '/dist *', '/.turbo', 'packages/*/*/src', 'apps/*/src', '*.ts', '*.tsx', '*.map', '*.bun-build', 'apps/anton-bridge/dist', 'apps/*/dist *',
   // Repository-only surfaces never needed at runtime: internal notes and
   // planning docs, generated docs and the website projection, build scripts,
   // and the runnable-examples leaves. Shipping them leaks internal material
@@ -158,11 +213,28 @@ syncDirectory(harnessRoot, join(resources, 'deepseek-harness'), ['/.git', '/dist
   // from the app bundle.
   '/*.md', '/.agents/notes', '/docs', '/website', '/scripts', '/examples',
   // Dev-run residue and repo-local tooling configs: never runtime inputs.
-  '/.sessions', '/.artifacts', '/knip.json', '/lefthook.yml', '/CONTRIBUTING.i18n.yaml'])
+  '/.sessions', '/.artifacts', '/knip.json', '/lefthook.yml', '/CONTRIBUTING.i18n.yaml',
+  'tsconfig*.tsbuildinfo', '/.oxlintrc.json', '/.oxlintrc.staged.json',
+  // The bridge ships as the compiled binary plus its plugin; its source,
+  // Swift project, vault LaunchAgent, and stale native build dirs carry
+  // machine-local absolute paths.
+  '/apps/anton-bridge',
+  // Tests and their snapshots are never runtime inputs; fixtures also carry
+  // machine-specific paths in expected output.
+  'apps/*/tests', 'packages/*/*/tests',
+  // tsc emits tests alongside declarations; the compiled specs embed the
+  // build machine's absolute import paths.
+  'apps/*/lib/types/tests', 'packages/*/*/lib/types/tests',
+  'node_modules/.vitest-cache', 'node_modules/.vite'])
 // Anton bundles the memory-service client plugin only. The service itself is
 // a separate product reached over its configured endpoint — no service
 // implementation, configuration, or infrastructure files enter the bundle.
-syncDirectory(join(contextRoot, 'deepseek-harness-plugin'), join(resources, 'c0ntext', 'deepseek-harness-plugin'), ['/src', '/tests', '/README.md', '/CHANGELOG.md', '/pnpm-lock.yaml', '/tsconfig.json', '/tsdown.config.ts', '*.ts', '*.tsx', '*.map'])
+syncDirectory(join(contextRoot, 'deepseek-harness-plugin'), join(resources, 'c0ntext', 'deepseek-harness-plugin'), ['/src', '/tests', '/README.md', '/CHANGELOG.md', '/pnpm-lock.yaml', '/tsconfig.json', '/tsdown.config.ts', '*.ts', '*.tsx', '*.map',
+  // Package-manager shims and metadata embed this machine's absolute paths;
+  // the plugin resolves its real dependencies without them.
+  'node_modules/.bin', 'node_modules/.cache', 'node_modules/.modules.yaml', 'node_modules/.ignored',
+  'node_modules/.vitest-cache', 'node_modules/.vite',
+  'node_modules/.pnpm-workspace-state-v1.json'])
 // Fail the candidate build rather than shipping a bridge which can listen but
 // cannot launch Harness because its memory plugin is absent.
 const bundledPluginManifest = join(resources, 'c0ntext', 'deepseek-harness-plugin', 'package.json')
@@ -170,6 +242,7 @@ if (!existsSync(bundledPluginManifest)) {
   throw new Error(`Bundled c0ntext plugin was not copied to ${bundledPluginManifest}`)
 }
 assertLibOnlyHarnessBundle()
+assertNoSecretsInBundle()
 
 /**
  * End-to-end boot smoke: run the staged bridge exactly as the app would
