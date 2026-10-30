@@ -10,6 +10,7 @@ It uses an architecture where **everything is a plugin**, and is powered by [Cor
 
 Anton is the macOS app for this harness: a menu-bar controller that supervises the harness, serves its web UI through a loopback bridge, and adds a browser driver and macOS notifications to the agent.
 
+- **[Download Anton](https://antonfoundry.github.io/antonweb/)** — website, requirements, and install steps
 - [Anton 0.1.0 — Apple silicon (.dmg)](https://github.com/AntonFoundry/antoncode/releases/download/v0.1.0/Anton-0.1.0-arm64.dmg)
 - [All releases](https://github.com/AntonFoundry/antoncode/releases)
 

@@ -207,7 +207,7 @@ export default withMermaid({
     nav: [
       {
         text: 'Download',
-        link: 'https://github.com/AntonFoundry/antoncode/releases/latest',
+        link: 'https://antonfoundry.github.io/antonweb/',
         target: '_blank',
         rel: 'noopener',
       },
