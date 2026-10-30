@@ -1,4 +1,9 @@
-# Blueant settings panel — journal switch + model selection
+# Agent Note: Blueant settings panel — journal switch + model selection
+
+Status: implemented
+Archived: 2026-10-30
+
+English
 
 2026-09-21 — antoncode workspace, Anton bridge + Mac app.
 

@@ -1,4 +1,9 @@
-# Blueant capture tier — selected text, screenshot, on-demand clipboard (Phase 4b)
+# Agent Note: Blueant capture tier — selected text, screenshot, on-demand clipboard (Phase 4b)
+
+Status: implemented
+Archived: 2026-10-30
+
+English
 
 2026-09-20 — antoncode workspace, Anton macOS app.
 

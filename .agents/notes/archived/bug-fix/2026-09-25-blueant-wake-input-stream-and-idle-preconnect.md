@@ -1,6 +1,7 @@
 # Agent Note: Blueant wake listening on a device with no input stream
 
 Status: implemented
+Archived: 2026-10-30
 
 English
 

@@ -1,6 +1,9 @@
 # Agent Note: Blueant reads the host model catalog before opening a session
 
 Status: implemented
+Archived: 2026-10-30
+
+English
 
 ## Problem
 

@@ -1,4 +1,9 @@
-# Blueant phase 5b — cheap-model triage of journal entries into c0ntext
+# Agent Note: Blueant phase 5b — cheap-model triage of journal entries into c0ntext
+
+Status: implemented
+Archived: 2026-10-30
+
+English
 
 2026-09-21 — antoncode workspace, Anton bridge.
 

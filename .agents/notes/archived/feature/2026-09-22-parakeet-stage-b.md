@@ -1,6 +1,7 @@
 # Agent Note: Parakeet Stage B — native TDT engine as dictation default
 
 Status: implemented
+Archived: 2026-10-30
 
 English
 

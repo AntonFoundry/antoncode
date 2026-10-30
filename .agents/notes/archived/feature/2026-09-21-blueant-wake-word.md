@@ -1,6 +1,7 @@
 # Agent Note: Blueant ambient wake word (Phase 7b)
 
 Status: implemented
+Archived: 2026-10-30
 
 English
 

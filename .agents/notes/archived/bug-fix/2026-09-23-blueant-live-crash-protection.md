@@ -1,6 +1,9 @@
 # Agent Note: Blueant live crash protection
 
 Status: implemented
+Archived: 2026-10-30
+
+English
 
 ## Problem
 

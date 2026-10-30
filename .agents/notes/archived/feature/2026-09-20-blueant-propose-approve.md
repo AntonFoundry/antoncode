@@ -1,4 +1,9 @@
-# Blueant act tier — propose-then-approve shell actions (Phase 4c remainder)
+# Agent Note: Blueant act tier — propose-then-approve shell actions (Phase 4c remainder)
+
+Status: implemented
+Archived: 2026-10-30
+
+English
 
 2026-09-20 — antoncode workspace, Anton bridge + macOS app + Blueant preset.
 

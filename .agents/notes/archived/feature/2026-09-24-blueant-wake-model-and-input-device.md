@@ -1,6 +1,7 @@
 # Agent Note: Blueant wake model and microphone selection
 
 Status: implemented
+Archived: 2026-10-30
 
 English
 

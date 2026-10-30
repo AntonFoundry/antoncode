@@ -1,6 +1,9 @@
 # Agent Note: Blueant combines Creator and PTC capabilities
 
 Status: implemented
+Archived: 2026-10-30
+
+English
 
 ## Problem
 

@@ -1,6 +1,7 @@
 # Agent Note: Blueant persona app on the Anton menubar (Phases 1–3)
 
 Status: implemented
+Archived: 2026-10-30
 
 English
 

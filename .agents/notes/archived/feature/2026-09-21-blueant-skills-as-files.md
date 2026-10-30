@@ -1,4 +1,9 @@
-# Blueant skills-as-files surface
+# Agent Note: Blueant skills-as-files surface
+
+Status: implemented
+Archived: 2026-10-30
+
+English
 
 Date: 2026-09-21
 Scope: apps/anton-bridge/src/blueant-preset.ts, deployment skills dir

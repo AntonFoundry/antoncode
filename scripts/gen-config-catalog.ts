@@ -307,6 +307,24 @@ function declForTypeName(world: World, ctx: FileCtx, name: string): { decl: Type
 const PASSTHROUGH_WRAPPERS = new Set(['Partial', 'Required', 'Readonly', 'NonNullable'])
 
 /**
+ * The config type a plugin's config parameter declares, unwrapping the
+ * loader-facing wrappers a class may use (`Required<Config>` when the loader
+ * applies defaults). Returns null when the parameter is not a plain type name.
+ * @param type - the parameter's declared type node, when it has one.
+ * @returns the config type name, or null when the declaration is unusable.
+ */
+function configParamTypeName(type: ts.TypeNode | undefined): string | null {
+  let node = type
+  while (node !== undefined && ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)
+    && PASSTHROUGH_WRAPPERS.has(node.typeName.text) && node.typeArguments?.length === 1) {
+    node = node.typeArguments[0]
+  }
+  return node !== undefined && ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)
+    ? node.typeName.text
+    : null
+}
+
+/**
  * Walk a schema key path against a declared type. This is a PRESENCE check,
  * not a runtime value check: it answers "does the declared config type have a member
  * here", resolving interfaces (heritage included), type aliases, literals,
@@ -654,11 +672,13 @@ export function collectConfigCatalog(scanRoot: string = root): CatalogEntry[] {
     if (kind !== 'config' || !configParam) continue
 
     // Resolve the config type and paste its package-local transitive closure.
-    if (!configParam.type || !ts.isTypeReferenceNode(configParam.type) || !ts.isIdentifier(configParam.type.typeName)) {
+    // A class may receive `Required<Config>` (defaults applied by the loader);
+    // the declaration to paste and check is the wrapped config type.
+    const typeName = configParamTypeName(configParam.type)
+    if (typeName === null) {
       violations.push(`${pkg}: config parameter type (${pointer(entryRel, ctx.sf, configParam)}) is not a plain type-name reference; declare a named config type.`)
       continue
     }
-    const typeName = configParam.type.typeName.text
     entry.configTypeName = typeName
     const pastes: Paste[] = []
     const refs = new Map<string, TypeRef>()

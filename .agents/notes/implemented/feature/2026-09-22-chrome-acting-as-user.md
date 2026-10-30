@@ -1,4 +1,4 @@
-# Agent Note: Chrome acting-as-user — agent-owned profile, approve-gated page actions
+# Agent Note: Browser acting-as-user — agent-owned Chrome profile, trusted page actions
 
 Status: implemented
 
@@ -6,62 +6,66 @@ English
 
 ## Problem
 
-The Act tier ran shell commands behind human approval, but the highest-value
-agent actions live inside web pages: applications, portals, form
-submissions. The 2026-09-21 design record
-(archived/architecture/2026-09-21-chrome-acting-as-user-design.md)
-sanctioned an agent-owned Chrome profile driven over the DevTools
-Protocol; this is its implementation.
+The highest-value agent actions live inside web pages: applications, portals,
+form submissions. A page fetcher issues one HTTP request and returns markup;
+it cannot run JavaScript, hold a session, or click a control. The agent needs
+a browser a person could use — and the user needs to be able to watch it.
 
 ## Decision
 
-- **Isolation**: `src/chrome.ts` launches the user's installed Chrome with
-  `--user-data-dir=<App Support>/Anton/anton-chrome --remote-debugging-port=0`
+- **Isolation.** `apps/anton-bridge/src/chrome.ts` launches the installed
+  Chrome with
+  `--user-data-dir=<app support>/Anton/anton-chrome --remote-debugging-port=0`
   (ephemeral loopback port discovered through `DevToolsActivePort`). The
-  profile is isolated from daily browsing; the window is visible and
-  grabbable at any moment. `ensureRunning` attaches to an already-running
-  agent Chrome first (probe `/json/version`) and spawns only when nothing
-  listens — a previous window survives bridge restarts, and spawning a
-  second instance never triggers the singleton handoff.
-- **Tools** (blueant preset plugin `chrome.js`, bridge endpoints
-  `/bridge/api/chrome/*`): `chrome_open` and `chrome_read` are ungated Ask
-  tier (reading the agent profile's own tabs touches no user state);
-  `chrome_fill` and `chrome_click` enqueue a human-readable proposal card
-  ("Fill '#email' with '…' on 'Job application — Acme'") into the same
-  ledger surface the shell proposals use, and the Mac app's existing
-  Approve panel decides them — no new UI, no bulk grants.
-- **Execution trust**: input goes through `Input.dispatchMouseEvent` and
-  `Input.insertText` (trusted events, so site handlers behave — verified:
-  the synthetic page's own submit handler ran), each fill is re-read from
-  the page and reported back with what the field actually holds. The CDP
-  action executes only inside the decide handler after the human click.
-- **Preset migration**: the preset yml is content-aware — regenerated when
-  `./plugins/chrome.js` is missing from it — so existing installs gain the
-  four tools on next bridge start without touching user files.
+  profile is separate from daily browsing, so no personal cookies or tabs are
+  reachable, and the window is visible and grabbable at any moment.
+  `ensureRunning` attaches to an already-running agent Chrome first (probe
+  `/json/version`) and spawns only when nothing answers, so a window survives
+  a bridge restart and a second instance never triggers the singleton
+  handoff.
+- **Tools.** `apps/anton-bridge/src/desktop-tools.ts` registers
+  `browser_open`, `browser_read`, `browser_fill`, and `browser_click` in every
+  session of the web profile, over `/bridge/api/chrome/*`. `browser_read`
+  returns the rendered text (≤12 000 chars), the URL, a form outline with
+  usable CSS selectors, and the visible buttons (≤40 fields, ≤20 buttons,
+  password values masked).
+- **Execution trust.** Fills and clicks go through
+  `Input.dispatchMouseEvent` and `Input.insertText`, not DOM mutation, so site
+  handlers and validation run. Each fill is re-read from the page and reported
+  with what the field actually holds, so an autocomplete widget that ignores
+  `insertText` surfaces as a mismatch instead of a silent success.
+- **One policy.** There is no bridge-side approval ledger or proposal card:
+  the harness tool permission policy governs the calls, exactly as it
+  governs `bash` (see [Desktop actions use the harness tool permission
+  policy](../bug-fix/2026-09-27-desktop-tool-permission-policy.md)).
+- **Mounting.** The bridge copies the plugin into the web profile and appends
+  one managed `insert` row to that profile's patch, so the driver is part of
+  the ordinary agent composition rather than a separate persona.
 
 ## Testing
 
-- Mechanical CDP round-trip against a synthetic data-URL form (isolated
-  profile): open → read (form outline with labels, options, selectors) →
-  trusted fill (value verified) → trusted click → the page's submit
-  handler ran ("SUBMITTED blueant@test.dev").
-- Preset generation exercised against a scratch dsh home: chrome.js
-  bundles clean, stale yml (pre-chrome) is rewritten on regenerate.
-- Read-tier endpoints are verifiable after deploy with plain curl; the
-  fill/click approval path is exercised by the first real human decision —
-  by design, no code path bypasses that click.
+`apps/anton-bridge/tests/desktop-tools.spec.ts` covers registration, the
+bridge calls each tool makes, the form outline it hands the model, the
+page-title echo on a fill, and the unreachable-app message. The driver itself
+is verified by a CDP round trip against a synthetic form: open → read → trusted
+fill (value verified) → trusted click (the page's own submit handler ran). The
+macOS build's boot smoke composes the real profile with the plugin mounted.
 
 ## Alternatives considered
 
-AppleScript `execute javascript` and accessibility-tree clicks were
-rejected in the design record; a Chrome extension + native messaging host
-remains the long-term upgrade behind the same tool names.
+AppleScript `execute javascript` and accessibility-tree clicks were rejected
+in the design record: they depend on per-app scripting grants and miss
+JavaScript-rendered content. A Chrome extension plus native messaging host
+remains the long-term upgrade behind the same tool names; it would replace the
+CDP transport without changing the model-facing contract. `WKWebView` was
+rejected for this purpose because the page would live inside Anton's window
+rather than in a browser the user can grab, with no persistent profile.
 
 ## Consequences
 
-The user signs into target sites once inside the agent window — the
-deliberate trade for never granting the agent the personal profile.
-Every page mutation costs one approval click; timeouts leave the card on
-screen. `chrome_read` caps text at 12 KB and fields at 40 so a chatty
-page cannot flood a session. Navigation (chrome_open) is ungated by
-design — it reaches only the isolated profile, never the user's browser.
+The user signs into target sites once inside the agent window — the deliberate
+trade for never granting the agent the personal profile. The window is
+interruptible at any time; closing it costs one relaunch on the next call.
+Selectors are CSS only, and there is no keyboard control, tab management,
+upload, or screenshot support. Page text is capped, so a huge page is read
+partially by design.

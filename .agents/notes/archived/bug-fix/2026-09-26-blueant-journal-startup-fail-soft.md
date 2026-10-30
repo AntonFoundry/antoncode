@@ -1,6 +1,9 @@
 # Agent Note: Blueant journal startup honors the fail-soft contract
 
 Status: implemented
+Archived: 2026-10-30
+
+English
 
 ## Problem
 

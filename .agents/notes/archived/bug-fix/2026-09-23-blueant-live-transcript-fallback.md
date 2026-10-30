@@ -1,6 +1,7 @@
 # Agent Note: Blueant Live transcript fallback
 
 Status: implemented
+Archived: 2026-10-30
 
 English
 

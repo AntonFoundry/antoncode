@@ -1,6 +1,9 @@
 # Agent Note: Blueant local transcription and Gemini text handoff
 
 Status: implemented
+Archived: 2026-10-30
+
+English
 
 ## Problem
 

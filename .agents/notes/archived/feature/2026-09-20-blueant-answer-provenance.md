@@ -1,4 +1,9 @@
-# Blueant answer provenance + window-title context (Phase 4a/4d slice)
+# Agent Note: Blueant answer provenance + window-title context (Phase 4a/4d slice)
+
+Status: implemented
+Archived: 2026-10-30
+
+English
 
 2026-09-20 — antoncode workspace, Blueant popup panel.
 

@@ -1,6 +1,9 @@
 # Agent Note: Blueant permission onboarding and voice controls
 
 Status: implemented
+Archived: 2026-10-30
+
+English
 
 ## Problem
 

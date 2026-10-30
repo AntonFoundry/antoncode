@@ -1,4 +1,9 @@
-# Blueant phase 5a — the journal collector (ambient ingestion lane)
+# Agent Note: Blueant phase 5a — the journal collector (ambient ingestion lane)
+
+Status: implemented
+Archived: 2026-10-30
+
+English
 
 2026-09-21 — antoncode workspace, Anton bridge.
 

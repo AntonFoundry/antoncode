@@ -1,6 +1,7 @@
 # Agent Note: Parakeet Stage B feasibility — GO via whisper.cpp native support
 
 Status: implemented
+Archived: 2026-10-30
 
 English
 

@@ -93,6 +93,13 @@ headers take precedence when names collide.
   `QUOTA_EXCEEDED`, `CONTEXT_WINDOW_EXCEEDED`, `INVALID_REQUEST`, `SERVER`,
   `TRANSPORT`, `TIMEOUT`, `ABORTED`.
 
+## Known Limitations and Deferred Work
+
+- **Text-only.** The chat-completions and Responses serializers carry no attachments, so image blocks are rejected with `UNSUPPORTED_CONTENT` rather than silently dropped. Adding vision means new wire plumbing, not a config flag.
+- **Static default catalog.** The package ships a small built-in model list and never fetches one; live discovery belongs to `llm-models-dev` or a provider route that owns its own catalog.
+- **No `max` on OpenAI's own API.** Harness `max` maps to `high` for the plain route; only a dialect route (`openrouter`, `gateway`) sends the label verbatim.
+- **No reasoning replay.** Official responses carry no chain of thought, and history keeps visible text and tool calls only, so a resumed turn cannot resend prior reasoning.
+
 ## Development
 
 ```sh

@@ -305,7 +305,9 @@ Requires: `tools`
 export interface Config {
   /**
    * The form this agent's model sees. `native` sends every visible schema,
-   * `code` sends only `run_code` plus a generated SDK, `both` sends both.
+   * `code` sends only `run_code` plus a generated SDK, `both` sends both,
+   * `paged` sends the reserved `tool_search` transport plus granted tools
+   * with the full catalog as a compact prompt section.
    * Required rather than defaulted: the deployment default is what a preset
    * without this row already gets, so an omitted value would mean the row was
    * composed for nothing.
@@ -545,7 +547,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/extensions/cordis-host-runner/src/index.ts:88`](../packages/extensions/cordis-host-runner/src/index.ts)
+Source: [`packages/extensions/cordis-host-runner/src/index.ts:89`](../packages/extensions/cordis-host-runner/src/index.ts)
 
 <a id="deepseek-aidsh-credentials-local"></a>
 
@@ -623,6 +625,79 @@ export type Config = LocalConfig
 Depends on: [`LocalConfig`](#deepseek-aidsh-fs-local)
 
 Source: [`packages/fs/fs-sandbox/src/index.ts:49`](../packages/fs/fs-sandbox/src/index.ts)
+
+<a id="deepseek-aidsh-gate-policy"></a>
+
+## `@deepseek-ai/dsh-gate-policy`
+
+Requires: `tools`
+
+```ts config-catalog
+/**
+ * Plugin config, validated by the same-named schemastery schema plus the
+ * load-time checks in `apply` (misconfiguration fails loud: an invalid regex,
+ * an empty rule name, or an empty checklist throws at plugin load, never a
+ * silent fall-back). An empty `rules` list is valid and means no gate fires.
+ */
+export interface Config {
+  /** Gate rules; evaluated in order, and the first matching rule denies. */
+  rules?: GateRule[]
+  /** The todo-plan gate: gated tools are denied until the session has a todo plan. Defaults to disabled. */
+  todoPlanGate?: TodoPlanGateConfig
+  /** Pre-fetch c0ntext guidebook recipes and append matching ones to denials. Defaults to `false`. */
+  verdictsEnabled?: boolean
+  /** Base URL of the c0ntext worker, e.g. `http://127.0.0.1:8090`. Verdicts are inert without it. */
+  verdictsEndpoint?: string
+  /** c0ntext API key sent as `X-API-Key`. Empty for a keyless local worker. */
+  verdictsApiKey?: string
+  /** Environment variable that overrides `verdictsApiKey`. Defaults to `ANTON_CONTEXT_API_KEY`. */
+  verdictsApiKeyEnv?: string
+  /** Per-request timeout for `GET /recipes/list`. Defaults to `4000`. */
+  verdictsTimeoutMs?: number
+  /** Refresh interval for the recipe cache. Defaults to `300000`. */
+  verdictsRefreshMs?: number
+}
+
+/** One gate rule: a trigger over tool name plus command text, and the checklist to satisfy first. */
+export interface GateRule {
+  /** Rule identifier, quoted in the denial so the model and the log name the gate. */
+  name: string
+  /** `*`-wildcard patterns over the tool name (default `['bash']`). */
+  tools?: string[]
+  /** Anchored-regex sources tested against the call's `command` argument; first match wins. */
+  commandPatterns: string[]
+  /** The checks the model must perform and state before retrying the call. */
+  checklist: string
+  /**
+   * Route the match through the user-approval UI instead of denying: the
+   * human sees the gate (rule, checklist, command context) and answers
+   * allow-once or deny. Allowed calls proceed untouched; denials and any
+   * approval-channel failure fall back to the checklist denial text. The
+   * ask bypasses the session approval policy — a gate confirmation is
+   * deployment-mandated, not a model-initiated ask.
+   */
+  confirm?: boolean
+}
+
+/**
+ * The todo-plan gate's configuration: when enabled, the gated tools are
+ * denied until the calling session carries a todo plan (a `todo/write`
+ * event anywhere in its log). `todo_write` itself is never gated — it is
+ * how the gate is satisfied.
+ */
+export interface TodoPlanGateConfig {
+  /** Enable the plan gate. Defaults to `false`. */
+  enabled?: boolean
+  /** Tools gated until a todo plan exists. Defaults to `['bash', 'edit', 'write', 'multiedit']`. */
+  tools?: string[]
+  /** Whether an implementation plan is required when a large todo tree is present. Defaults to `true`. */
+  requireImplementationPlan?: boolean
+  /** Threshold of total todos (root + nested) to require an implementation plan via plan_write or exit_plan_mode. Defaults to `3`. */
+  minTodosForImplementationPlan?: number
+}
+```
+
+Source: [`packages/guard/gate-policy/src/index.ts:85`](../packages/guard/gate-policy/src/index.ts)
 
 <a id="deepseek-aidsh-goal"></a>
 
@@ -725,7 +800,7 @@ Source: [`packages/hooks/hooks-codex/src/index.ts:44`](../packages/hooks/hooks-c
 
 ## `@deepseek-ai/dsh-host-apiproxy`
 
-Requires: `agentDefaultModel` · `agents` · `attachments` · `directoryPicker` · `llm` · `sessions` · `subagents` · `sessionQuery` · `tools` · `userQuestions` · `workspaceRegistry`
+Requires: `agentDefaultModel` · `agents` · `attachments` · `directoryPicker` · `flowBuilder` · `langflow` · `llm` · `sessions` · `subagents` · `sessionQuery` · `tools` · `userQuestions` · `workspaceRegistry` · `worktreeRegistry`
 
 ```ts config-catalog
 /** Gateway plugin configuration. */
@@ -753,7 +828,30 @@ export interface Config {
 }
 ```
 
-Source: [`packages/host/apiproxy/src/index.ts:41`](../packages/host/apiproxy/src/index.ts)
+Source: [`packages/host/apiproxy/src/index.ts:47`](../packages/host/apiproxy/src/index.ts)
+
+<a id="deepseek-aidsh-host-directory-picker-auto"></a>
+
+## `@deepseek-ai/dsh-host-directory-picker-auto`
+
+Requires: `webServer` · `loader`
+
+```ts config-catalog
+/** Validated plugin configuration. */
+export interface Config {
+  /**
+   * `auto` (default) resolves the interaction from the boot-time sample;
+   * `native`/`browse` pin it — a patch layer can set this (patches may
+   * configure a mounted row but can never swap its package name).
+   */
+  kind: 'auto' | DirectoryPickerBackendKind
+}
+
+/** Concrete interaction backend the resolver chooses between. */
+export type DirectoryPickerBackendKind = 'native' | 'browse'
+```
+
+Source: [`packages/host/directory-picker-auto/src/index.ts:64`](../packages/host/directory-picker-auto/src/index.ts)
 
 <a id="deepseek-aidsh-host-directory-picker-browse"></a>
 
@@ -767,7 +865,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/host/directory-picker-browse/src/index.ts:181`](../packages/host/directory-picker-browse/src/index.ts)
+Source: [`packages/host/directory-picker-browse/src/index.ts:189`](../packages/host/directory-picker-browse/src/index.ts)
 
 <a id="deepseek-aidsh-host-frontend-static"></a>
 
@@ -783,7 +881,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/host/frontend-static/src/index.ts:28`](../packages/host/frontend-static/src/index.ts)
+Source: [`packages/host/frontend-static/src/index.ts:29`](../packages/host/frontend-static/src/index.ts)
 
 <a id="deepseek-aidsh-host-webserver"></a>
 
@@ -831,10 +929,224 @@ export interface Config {
    * omission defaults to 10.
    */
   maxConcurrentJobsPerOwner?: number
+
+  /**
+   * Maximum terminal job records retained per exact owner or in the shared unowned bucket;
+   * eviction is oldest-finished-first and announces the removals; omission defaults to 128.
+   */
+  settledRetentionPerOwner?: number
 }
 ```
 
-Source: [`packages/jobs/jobs-local/src/index.ts:31`](../packages/jobs/jobs-local/src/index.ts)
+Source: [`packages/jobs/jobs-local/src/index.ts:34`](../packages/jobs/jobs-local/src/index.ts)
+
+<a id="deepseek-aidsh-langflow-sidecar"></a>
+
+## `@deepseek-ai/dsh-langflow-sidecar`
+
+Requires: `subprocess`
+
+```ts config-catalog
+/**
+ * Plugin configuration. `workdir` has NO default on purpose: a `process.cwd()`
+ * fallback would scatter LangFlow's database and logs wherever the process
+ * happens to start; assemblies state the location explicitly.
+ */
+export interface Config extends LangflowSidecarConfig {}
+
+/** Resolved sidecar configuration (see the plugin entry's `Config`). */
+export interface LangflowSidecarConfig {
+  /** Launcher executable; `uvx` resolves `langflow` on demand through the uv cache. */
+  command: string
+  /** Loopback port LangFlow serves on. */
+  port: number
+  /** Child working directory; LangFlow stores its database and logs here. */
+  workdir: string
+  /** How long `start()` polls `/health` before declaring a startup failure. */
+  readyTimeoutMs: number
+}
+```
+
+Source: [`packages/flowbuilder/langflow-sidecar/src/index.ts:26`](../packages/flowbuilder/langflow-sidecar/src/index.ts)
+
+<a id="deepseek-aidsh-llm-antigravity"></a>
+
+## `@deepseek-ai/dsh-llm-antigravity`
+
+Requires: `llm`
+
+```ts config-catalog
+/** Plugin config, doubling as the `llm-antigravity` settings-section shape. */
+export interface Config {
+  /** Path to the shared Antigravity accounts file; defaults to `~/.config/opencode/antigravity-accounts.json`. */
+  accountsPath?: string
+  /** Antigravity gateway base URL; defaults to the daily sandbox endpoint. */
+  baseURL?: string
+  /** Default per-request output cap. */
+  maxTokens?: number
+  /** Positive context capacity used when the selected model has no exact value. */
+  defaultContextWindow?: number
+  /** Advisory models shown by discovery consumers. */
+  models?: AntigravityCatalogModel[]
+  /** Maximum provider idle time while one stream read is outstanding. */
+  streamIdleTimeoutMs?: number
+  /** Provider-owned model-request retry policy. */
+  retryPolicy?: RetryPolicyConfig
+  /** Provider routes keyed by route id; only `antigravity` is served. */
+  providers?: Record<string, AntigravityProviderProfile>
+}
+
+/** One optional model entry advertised by the Antigravity adapter. */
+export interface AntigravityCatalogModel {
+  /** Wire model id accepted by the Antigravity gateway. */
+  id: string
+  /** Selector label; defaults to {@link id}. */
+  name?: string
+  /** Optional selector detail for deployments with similar model variants. */
+  description?: string
+  /** Known combined request/response context capacity. */
+  contextWindow?: number
+  /** Per-request output cap for this model. */
+  maxTokens?: number
+}
+
+/** Sparse per-route overrides; the `providers` dict key IS the route id. */
+export interface AntigravityProviderProfile {
+  /** Path to the shared Antigravity accounts file for this route. */
+  accountsPath?: string
+  /** Antigravity gateway base URL for this route. */
+  baseURL?: string
+  /** Selector label for this route; defaults to `Google Antigravity`. */
+  displayName?: string
+}
+```
+
+Depends on: [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
+
+Source: [`packages/llm/llm-antigravity/src/index.ts:80`](../packages/llm/llm-antigravity/src/index.ts)
+
+<a id="deepseek-aidsh-llm-claude"></a>
+
+## `@deepseek-ai/dsh-llm-claude`
+
+Requires: `llm`
+
+```ts config-catalog
+/**
+ * Plugin config, validated by the same-named schemastery schema and doubling
+ * as the `llm-claude` settings-section shape. Every field is optional: an
+ * empty section registers the route with pure discovery, and a request
+ * without a stored session fails with the login fix, not at plugin load.
+ */
+export interface Config {
+  /** Credential reference holding the Claude OAuth session (JSON); defaults to `CLAUDE_CODE_OAUTH`. */
+  oauthRef?: string
+  /**
+   * Anthropic gateway base override; the catalog models keep theirs when
+   * omitted. Deployments pointing at a compatible gateway (and tests
+   * against scripted ones) set this instead of re-describing every model.
+   */
+  baseURL?: string
+  /** Selector label for this route. */
+  displayName?: string
+  /** Positive context capacity used when the selected model has no exact value. */
+  defaultContextWindow?: number
+  /** Positive idle ceiling while one stream read is outstanding. */
+  streamIdleTimeoutMs?: number
+  /** Provider-owned model-request retry policy; omission uses normal defaults. */
+  retryPolicy?: RetryPolicyConfig
+}
+```
+
+Depends on: [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
+
+Source: [`packages/llm/llm-claude/src/index.ts:103`](../packages/llm/llm-claude/src/index.ts)
+
+<a id="deepseek-aidsh-llm-codex"></a>
+
+## `@deepseek-ai/dsh-llm-codex`
+
+Requires: `llm`
+
+```ts config-catalog
+/**
+ * Plugin config, validated by the same-named schemastery schema and doubling
+ * as the `llm-codex` settings-section shape. The section fields are the
+ * shared defaults the route falls back to; {@link Config.providers} holds
+ * the route's profile. Deliberately NO API key field: authentication always
+ * comes from the shared Codex login. A missing or expired login fails per
+ * request with `MISSING_CREDENTIAL`/`AUTH` and a pointer to `codex login` —
+ * never a key prompt.
+ */
+export interface Config {
+  /** Codex home directory holding `auth.json`; defaults to $CODEX_HOME or `~/.codex`. */
+  codexHome?: string
+  /** Codex backend base URL; defaults to the public chatgpt.com Codex endpoint. */
+  baseURL?: string
+  /** Default reasoning effort; an absent setting uses the selected model's default. */
+  reasoningEffort?: CodexReasoningEffort
+  /** Default per-request output cap; a model's own cap and explicit request values win. */
+  maxTokens?: number
+  /** Positive context capacity used when the selected model has no exact value (default 400,000). */
+  defaultContextWindow?: number
+  /** Advisory models shown by discovery consumers; defaults to the Codex catalog. */
+  models?: CodexCatalogModel[]
+  /** Maximum provider idle time while one stream read is outstanding (default five minutes). */
+  streamIdleTimeoutMs?: number
+  /** Provider-owned model-request retry policy; omission uses normal defaults. */
+  retryPolicy?: RetryPolicyConfig
+  /**
+   * Provider routes keyed by route id; the only route this adapter serves is
+   * `codex`. An empty (or omitted) dict is the dormant posture: the adapter
+   * mounts with no route and registers it the moment a settings section
+   * supplies the profile.
+   */
+  providers?: Record<string, CodexProviderProfile>
+}
+
+/** Codex effort ids exposed by model metadata and the Responses request. */
+export type CodexReasoningEffort = 'off' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
+
+/** One optional model entry advertised by the Codex adapter. */
+export interface CodexCatalogModel {
+  /** Wire model id accepted by the Codex backend. */
+  id: string
+  /** Selector label; defaults to {@link id}. */
+  name?: string
+  /** Optional selector detail for deployments with similar model variants. */
+  description?: string
+  /** Known combined request/response context capacity; omitted when deployment metadata is unavailable. */
+  contextWindow?: number
+  /** Per-request output cap for this model; omission falls back to the profile's {@link CodexConnectionOptions.maxTokens}. */
+  maxTokens?: number
+  /** Exact reasoning choices accepted by this model; omission uses the adapter's legacy Codex set. */
+  reasoningEfforts?: CodexReasoningEffort[]
+  /** API-advertised default reasoning choice. */
+  defaultReasoningEffort?: CodexReasoningEffort
+  /** API-advertised descriptions keyed by exact reasoning choice. */
+  reasoningEffortDescriptions?: Partial<Record<CodexReasoningEffort, string>>
+}
+
+/**
+ * Sparse per-route overrides of the section defaults; the `providers` dict
+ * key IS the route id. The key's presence configures and registers the
+ * route; its absence leaves the route dormant. A profile may legitimately
+ * be empty — authentication is the shared Codex login, so there is no
+ * credential field to fill.
+ */
+export interface CodexProviderProfile {
+  /** Codex home directory holding `auth.json` for this route; defaults to the section's, then $CODEX_HOME or `~/.codex`. */
+  codexHome?: string
+  /** Codex backend base URL for this route; defaults to the section's, then the public chatgpt.com Codex endpoint. */
+  baseURL?: string
+  /** Selector label for this route; defaults to `OpenAI Codex`. */
+  displayName?: string
+}
+```
+
+Depends on: [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
+
+Source: [`packages/llm/llm-codex/src/index.ts:127`](../packages/llm/llm-codex/src/index.ts)
 
 <a id="deepseek-aidsh-llm-deepseek"></a>
 
@@ -864,7 +1176,7 @@ export interface Config {
   maxTokens?: number
   /** Positive context capacity used when the selected model has no exact value (default 1,000,000). */
   defaultContextWindow?: number
-  /** Advisory models shown by discovery consumers; defaults to V4 Flash and V4 Pro. */
+  /** Advisory models shown by discovery consumers; defaults to V4 Flash, V4.1 Flash, and V4 Pro. */
   models?: DeepSeekCatalogModel[]
   /** Maximum provider idle time while one stream read is outstanding (default five minutes). */
   streamIdleTimeoutMs?: number
@@ -889,7 +1201,272 @@ export interface DeepSeekCatalogModel {
 
 Depends on: [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
 
-Source: [`packages/llm/llm-deepseek/src/index.ts:62`](../packages/llm/llm-deepseek/src/index.ts)
+Source: [`packages/llm/llm-deepseek/src/index.ts:63`](../packages/llm/llm-deepseek/src/index.ts)
+
+<a id="deepseek-aidsh-llm-models-dev"></a>
+
+## `@deepseek-ai/dsh-llm-models-dev`
+
+Requires: `llm`
+
+```ts config-catalog
+/**
+ * Plugin config, validated by the same-named schemastery schema and doubling
+ * as the `llm-models-dev` settings-section shape.
+ */
+export interface Config {
+  /** Catalog root fetched as `<catalogURL>/api.json`; defaults to models.dev. */
+  catalogURL?: string
+  /** Re-fetch cadence: the mount fetches eagerly, then this interval re-fetches in the background. */
+  catalogRefreshMs?: number
+  /** Default per-request output cap; explicit request values win. */
+  maxTokens?: number
+  /** Positive context capacity used when the catalog has no exact value. */
+  defaultContextWindow?: number
+  /** Maximum provider idle time while one stream read is outstanding. */
+  streamIdleTimeoutMs?: number
+  /** Provider-owned model-request retry policy; omission uses normal defaults. */
+  retryPolicy?: RetryPolicyConfig
+  /**
+   * Provider routes keyed by route id. An empty dict unregisters every route:
+   * the dormant posture mirrors `llm-openai`.
+   */
+  providers?: Record<string, ModelDevProviderProfile>
+}
+
+/**
+ * Per-route profile overriding one declared route's facts; the `providers`
+ * dict key IS the route id. A profile for an undeclared route must name
+ * {@link FreeRouteProfile.catalogProvider}; the route id minus a trailing
+ * `-free` is otherwise the catalog identity.
+ */
+export interface ModelDevProviderProfile {
+  /** models.dev provider id whose free tier this route serves. */
+  catalogProvider?: string
+  /** Credential reference (environment-variable name) resolved per request. */
+  apiKeyEnv?: string
+  /** Gateway endpoint base; `/chat/completions` is appended. */
+  baseURL?: string
+  /** Selector label for this route. */
+  displayName?: string
+  /** Accept anonymous free-tier requests when no key resolves (gateway-dependent). */
+  anonymous?: boolean
+  /** Additional provider-specific HTTP headers; transport-owned headers win collisions. */
+  headers?: Record<string, string>
+}
+```
+
+Depends on: [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
+
+Source: [`packages/llm/llm-models-dev/src/index.ts:128`](../packages/llm/llm-models-dev/src/index.ts)
+
+<a id="deepseek-aidsh-llm-openai"></a>
+
+## `@deepseek-ai/dsh-llm-openai`
+
+Requires: `llm`
+
+```ts config-catalog
+/**
+ * Plugin config, validated by the same-named schemastery schema and doubling
+ * as the `llm-openai` settings-section shape. The section fields are the
+ * shared defaults every route falls back to; {@link Config.providers} holds
+ * the per-route profiles. A missing API key resolves through the profile's
+ * or section's {@link Config.apiKeyEnv} at each request (a request without
+ * any key fails with `MISSING_CREDENTIAL`, not at plugin load), and an
+ * omitted base URL defaults to the public OpenAI API — or point it at a
+ * local installation for the `openai-compatible` route.
+ */
+export interface Config {
+  /**
+   * Shared credential reference (environment-variable name) resolved per
+   * request. A route profile's own `apiKeyEnv` wins; with neither set, the
+   * route derives `<ROUTE>_API_KEY` in upper snake (`openai` →
+   * `OPENAI_API_KEY`, `openai-compatible` → `OPENAI_COMPATIBLE_API_KEY`) —
+   * the same derivation the web Models page stores and cleans up under.
+   */
+  apiKeyEnv?: string
+  /** Shared endpoint base; falls back to $OPENAI_BASE_URL from a trusted environment layer, then the public API. */
+  baseURL?: string
+  /** Default reasoning effort; used only by models that declare the corresponding supported level. */
+  reasoningEffort?: 'off' | OpenAIReasoningEffort | 'max'
+  /** Default per-request output cap; a model's own cap and explicit request values win. */
+  maxTokens?: number
+  /** Positive context capacity used when the selected model has no exact value (default 128,000). */
+  defaultContextWindow?: number
+  /** Advisory models shown by discovery consumers; defaults to the GPT-4o/o-series/GPT-5 catalog. */
+  models?: OpenAICatalogModel[]
+  /** Maximum provider idle time while one stream read is outstanding (default five minutes). */
+  streamIdleTimeoutMs?: number
+  /** Provider-owned model-request retry policy; omission uses normal defaults. */
+  retryPolicy?: RetryPolicyConfig
+  /**
+   * Provider routes keyed by route id. An empty (or omitted) dict is the
+   * dormant posture: the adapter mounts with no routes and registers them
+   * the moment a settings section supplies profiles.
+   */
+  providers?: Record<string, OpenAIProviderProfile>
+}
+
+/** OpenAI reasoning values supported by model-specific API metadata. */
+export type OpenAIReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+
+/** One optional model entry advertised by the direct-fetch adapter. */
+export interface OpenAICatalogModel {
+  /** Wire model id accepted by the configured endpoint. */
+  id: string
+  /** Selector label; defaults to {@link id}. */
+  name?: string
+  /** Optional selector detail for deployments with similar model variants. */
+  description?: string
+  /** Known combined request/response context capacity; omitted when deployment metadata is unavailable. */
+  contextWindow?: number
+  /** Per-request output cap for this model; omission falls back to the profile's {@link OpenAIConnectionOptions.maxTokens}. */
+  maxTokens?: number
+  /** Exact OpenAI reasoning values accepted by this model; omission hides the effort control. */
+  reasoningEfforts?: OpenAIReasoningEffort[]
+}
+
+/**
+ * Sparse per-route overrides of the section defaults; the `providers` dict
+ * key IS the route id. The key's presence configures and registers the
+ * route; its absence leaves the route dormant. A profile may be empty — the
+ * section defaults and the derived credential reference still serve it.
+ */
+export interface OpenAIProviderProfile {
+  /** Credential reference (environment-variable name) resolved per request for this route alone. */
+  apiKeyEnv?: string
+  /** Endpoint base for this route; the section value, trusted $OPENAI_BASE_URL, and the public API sit below it. */
+  baseURL?: string
+  /** Selector label for this route; defaults to the declared route's name, or the route id for an undeclared one. */
+  displayName?: string
+  /** Additional provider-specific HTTP headers; transport-owned headers win collisions. */
+  headers?: Record<string, string>
+  /** Route-specific model facts; replaces the shared catalog for this endpoint. */
+  models?: OpenAICatalogModel[]
+}
+```
+
+Depends on: [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
+
+Source: [`packages/llm/llm-openai/src/index.ts:112`](../packages/llm/llm-openai/src/index.ts)
+
+<a id="deepseek-aidsh-llm-opencode"></a>
+
+## `@deepseek-ai/dsh-llm-opencode`
+
+Requires: `llm`
+
+```ts config-catalog
+/**
+ * Plugin config, validated by the same-named schemastery schema and doubling
+ * as the `llm-opencode` settings-section shape. Every field is optional: an
+ * empty section registers the route with pure discovery (Zen anonymous
+ * transport plus CLI-status service URL and the service-file password), and
+ * a request without any reachable generation path fails with the real
+ * downstream verdict, not at plugin load.
+ */
+export interface Config {
+  /** Explicit server base URL; skips file and CLI discovery. */
+  serverURL?: string
+  /** Basic-auth username; defaults to `opencode`. */
+  username?: string
+  /** Server registration-file path; defaults to the CLI state-home `service.json`. */
+  serviceFile?: string
+  /** Password-file path; defaults to `~/.config/opencode/service.json`. */
+  passwordFile?: string
+  /** Environment variable holding the password fallback. */
+  passwordEnv?: string
+  /** Start the OpenCode background service when none is running; defaults to true. */
+  autoStart?: boolean
+  /** Working directory the server scopes sessions to; defaults to the launch directory. */
+  directory?: string
+  /** Selector label for this route. */
+  displayName?: string
+  /** Credential reference naming the Zen bearer key; defaults to `OPENCODE_API_KEY`. */
+  apiKeyEnv?: string
+  /**
+   * Credential reference holding the Zen OAuth workspace session (JSON);
+   * defaults to `OPENCODE_ZEN_OAUTH`. Written by the login flow, read and
+   * silently refreshed per request.
+   */
+  oauthRef?: string
+  /** Direct Zen gateway base; `/chat/completions` and `/responses` are appended. */
+  zenBaseURL?: string
+  /** OAuth inference gateway base; the workspace session talks here instead of {@link zenBaseURL}. */
+  inferenceBaseURL?: string
+  /** Catalog root fetched as `<catalogURL>/api.json` for direct-transport discovery. */
+  catalogURL?: string
+  /** Direct-transport re-fetch cadence: the mount fetches eagerly, then this interval re-fetches. */
+  catalogRefreshMs?: number
+  /** Default per-request output cap; explicit request values win. */
+  maxTokens?: number
+  /** Positive context capacity used when the selected model has no exact value. */
+  defaultContextWindow?: number
+  /** Ceiling for one admitted turn, from prompt admission to terminal outcome. */
+  requestTimeoutMs?: number
+  /** Provider-owned model-request retry policy; omission uses normal defaults. */
+  retryPolicy?: RetryPolicyConfig
+}
+```
+
+Depends on: [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
+
+Source: [`packages/llm/llm-opencode/src/index.ts:139`](../packages/llm/llm-opencode/src/index.ts)
+
+<a id="deepseek-aidsh-llm-opengateway"></a>
+
+## `@deepseek-ai/dsh-llm-opengateway`
+
+Requires: `llm`
+
+```ts config-catalog
+/**
+ * Plugin config, validated by the same-named schemastery schema and doubling
+ * as the `llm-opengateway` settings-section shape. Every field is optional:
+ * an empty section serves discovery anonymously and fails a generation with
+ * `MISSING_CREDENTIAL` naming the key to store, not at plugin load.
+ */
+export interface Config {
+  /** Endpoint base; `/chat/completions`, `/responses`, and `/models` are appended. */
+  baseURL?: string
+  /** Credential reference naming the OpenGateway bearer key. */
+  apiKeyEnv?: string
+  /** Selector label for this route. */
+  displayName?: string
+  /** Extra provider-specific HTTP headers sent with each request. */
+  headers?: Record<string, string>
+  /** Catalog re-fetch cadence in milliseconds. */
+  catalogRefreshMs?: number
+  /**
+   * Reasoning levels the picker offers on every model of this route, in
+   * display order. Which levels a model honors is gateway- and model-dependent;
+   * an empty list hides the effort control and sends none.
+   */
+  reasoningEfforts?: OpenGatewayReasoningEffort[]
+  /** Default per-request output cap; explicit request values win. */
+  maxTokens?: number
+  /** Positive context capacity used when the selected model has no exact value. */
+  defaultContextWindow?: number
+  /** Maximum provider idle time while one stream read is outstanding. */
+  streamIdleTimeoutMs?: number
+  /** Provider-owned model-request retry policy; omission uses normal defaults. */
+  retryPolicy?: RetryPolicyConfig
+}
+
+/**
+ * Reasoning-effort labels OpenGateway documents, taken from the shared wire
+ * vocabulary so a configured level always survives serialization. The gateway
+ * maps them to the selected provider's controls; which levels a model honors
+ * is gateway- and model-dependent, which is why the route can offer a ladder
+ * the catalog does not publish per model.
+ */
+export type OpenGatewayReasoningEffort = typeof VERBATIM_REASONING_EFFORTS[number]
+```
+
+Depends on: [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
+
+Source: [`packages/llm/llm-opengateway/src/index.ts:91`](../packages/llm/llm-opengateway/src/index.ts)
 
 <a id="deepseek-aidsh-llm-pi-ai"></a>
 
@@ -900,6 +1477,19 @@ Requires: `llm`
 ```ts config-catalog
 /** Plugin configuration: the provider routes this instance owns. */
 export interface Config {
+  /**
+   * Provider route names owned by a native adapter in the same Harness
+   * composition. The pi-ai directory and adapter leave these routes alone so
+   * two adapters cannot both publish the same selectable provider.
+   */
+  reservedProviders?: string[]
+  /**
+   * Re-fetch cadence for the models.dev live catalog in milliseconds
+   * (default eight hours, `DEFAULT_MODELS_DEV_REFRESH_MS`). The mounted
+   * timer captures the mount-time value, like `catalogRefreshMs` in
+   * llm-models-dev; a settings-layer change takes effect on the next restart.
+   */
+  modelsDevRefreshMs?: number
   /**
    * pi-ai provider routes, keyed by provider. An empty (or omitted) dict is
    * the dormant settings-driven posture: the adapter mounts with no routes
@@ -912,6 +1502,19 @@ export interface Config {
 export interface PiAiProviderProfile {
   /** Credential reference (environment-variable name) resolved per request through `ctx.credentials`. */
   apiKeyEnv?: string
+  /**
+   * Ask the provider's own OpenAI-compatible listing at startup instead of
+   * the default models.dev catalog read; both fall back to the installed
+   * pi-ai catalog when their source fails.
+   */
+  liveModelDiscovery?: boolean
+  /**
+   * Union the startup live listing into an explicitly configured `models`
+   * list: configured entries win by id, discovered ids join, and the
+   * installed catalog keeps serving anything neither named. Without it, a
+   * `models` list is strict curation and no live fetch runs for it.
+   */
+  liveModelUnion?: boolean
   /** Name shown by configuration surfaces; defaults to the route key. */
   displayName?: string
   /**
@@ -922,11 +1525,7 @@ export interface PiAiProviderProfile {
   api?: string
   /** Endpoint for this route's models; defaults to the installed catalog's endpoint. */
   baseURL?: string
-  /**
-   * This route's model catalog. Omission serves the installed catalog for the
-   * route unchanged; an explicit list replaces it, each entry defaulting its
-   * unset fields from the installed model of the same id.
-   */
+  /** This route's model catalog; an explicit list is strict curation. */
   models?: PiAiModelProfile[]
   /**
    * Installed-catalog customizations by model id: each entry reshapes that
@@ -1079,7 +1678,7 @@ type WithheldThinkingFormat = 'chat-template' | 'qwen-chat-template'
 
 Depends on: `Api` (`@earendil-works/pi-ai`) · `CacheRetention` (`@earendil-works/pi-ai`) · `Model` (`@earendil-works/pi-ai`) · `ModelThinkingLevel` (`@earendil-works/pi-ai`) · `OpenAICompletionsCompat` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets` (`@earendil-works/pi-ai`) · `Transport` (`@earendil-works/pi-ai`)
 
-Source: [`packages/llm/llm-pi-ai/src/config.ts:172`](../packages/llm/llm-pi-ai/src/config.ts)
+Source: [`packages/llm/llm-pi-ai/src/config.ts:190`](../packages/llm/llm-pi-ai/src/config.ts)
 
 <a id="deepseek-aidsh-llm-replay"></a>
 
@@ -1161,6 +1760,60 @@ export type Config = Readonly<Record<string, never>>
 ```
 
 Source: [`packages/llm/llm-retry/src/index.ts:24`](../packages/llm/llm-retry/src/index.ts)
+
+<a id="deepseek-aidsh-llm-vazhi"></a>
+
+## `@deepseek-ai/dsh-llm-vazhi`
+
+Requires: `llm`
+
+```ts config-catalog
+/**
+ * Plugin config, validated by the same-named schemastery schema and doubling
+ * as the `llm-vazhi` settings-section shape. Every field is optional.
+ */
+export interface Config {
+  /** Selector label for this route. */
+  displayName?: string
+  /** Directory holding cooldown state, the pool cache, and the user's narrowing document. */
+  directory?: string
+  /** Pool document URL, refreshed on `poolRefreshMs`. */
+  poolURL?: string
+  /** Pool download cadence in milliseconds. */
+  poolRefreshMs?: number
+  /** Wait after a failed pool download. */
+  poolRetryAfterMs?: number
+  /** Bound on one pool download. */
+  poolTimeoutMs?: number
+  /**
+   * Reasoning levels the picker offers on every model of this route, in
+   * display order. Which levels an upstream honors is upstream- and
+   * model-dependent; an empty list hides the effort control and sends none.
+   */
+  reasoningEfforts?: VazhiReasoningEffort[]
+  /** Upstream attempts one request may make. */
+  maxAttempts?: number
+  /** First-token time above which an attempt counts as a slow starter. */
+  slowStartMs?: number
+  /** How long a slow mark keeps a model behind the rest of the pool. */
+  slowForMs?: number
+  /** Default per-request output cap; explicit request values win. */
+  maxTokens?: number
+  /** Positive context capacity used when the pool carries no exact value. */
+  defaultContextWindow?: number
+  /** Maximum provider idle time while one stream read is outstanding. */
+  streamIdleTimeoutMs?: number
+  /** Provider-owned model-request retry policy; omission uses normal defaults. */
+  retryPolicy?: RetryPolicyConfig
+}
+
+/** Reasoning-effort labels a Vazhi attempt may send verbatim. */
+export type VazhiReasoningEffort = VerbatimReasoningEffort
+```
+
+Depends on: [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · [`VerbatimReasoningEffort`](../packages/llm/llm-openai/src/index.ts)
+
+Source: [`packages/llm/llm-vazhi/src/index.ts:114`](../packages/llm/llm-vazhi/src/index.ts)
 
 <a id="deepseek-aidsh-lsp-stdio"></a>
 
@@ -1293,6 +1946,25 @@ export interface Config {
 
 Source: [`packages/feedback/message-feedback/src/index.ts:49`](../packages/feedback/message-feedback/src/index.ts)
 
+<a id="deepseek-aidsh-model-intel"></a>
+
+## `@deepseek-ai/dsh-model-intel`
+
+```ts config-catalog
+export interface Config {
+  /** Whether the feature mounts at all; false removes the scheduler and the resolver answers nothing. */
+  enabled?: boolean
+  /** Hours between research passes. Defaults to a week. */
+  researchIntervalHours?: number
+  /** Minutes between schedule checks (cheap; the pass itself is the expensive part). */
+  checkIntervalMinutes?: number
+  /** Provider/model route the research distiller itself runs on, "provider/model". Empty = first eligible configured provider. */
+  researchRoute?: string
+}
+```
+
+Source: [`packages/subagent/model-intel/src/index.ts:91`](../packages/subagent/model-intel/src/index.ts)
+
 <a id="deepseek-aidsh-permission-presets"></a>
 
 ## `@deepseek-ai/dsh-permission-presets`
@@ -1370,7 +2042,7 @@ export interface PlanModeConfig {
 }
 ```
 
-Source: [`packages/plan/plan-mode/src/index.ts:70`](../packages/plan/plan-mode/src/index.ts)
+Source: [`packages/plan/plan-mode/src/index.ts:77`](../packages/plan/plan-mode/src/index.ts)
 
 <a id="deepseek-aidsh-pwsh-local"></a>
 
@@ -1444,6 +2116,14 @@ Source: [`packages/shell/pwsh-sandbox/src/index.ts:40`](../packages/shell/pwsh-s
 export interface Config {
   /** Consecutive-repeat counts that trigger a reminder (default `[3, 5, 8]`). */
   thresholds?: number[]
+
+  /**
+   * Consecutive failed calls to one tool that trigger the guessing advisory
+   * (default `3`). The run counts failures regardless of argument variation:
+   * distinct arguments mean the model is guessing, identical arguments mean it
+   * is ignoring an error — both are intent it cannot resolve from what it sees.
+   */
+  failureThreshold?: number
   /** Tool-name patterns to track; empty means every tool is tracked. */
   include?: string[]
   /** Tool-name patterns transparent to the chain (neither count nor reset). */
@@ -1456,10 +2136,43 @@ export interface Config {
    * always compares the FULL canonical string).
    */
   argumentsPreviewChars?: number
+  /**
+   * Complete alternation cycles that trigger the ping-pong advisory (default
+   * 2). One cycle is two calls whose canonical keys strictly alternate
+   * (A, B, A, B, …) — the edit ping-pong a consecutive-repeat counter can
+   * never see, because every call differs from its predecessor. Default 2
+   * means the advisory fires on the fourth alternating call.
+   */
+  cycleThreshold?: number
+  /**
+   * When the ping-pong advisory is ignored and the alternation continues,
+   * BLOCK the next cycle call (default `true`) with feedback ordering the
+   * model to stop retrying and change approach — the automatic escape when
+   * advisory-only nudges are not enough.
+   */
+  escalateToBlock?: boolean
 }
 ```
 
 Source: [`packages/guard/repeat-tool-reminder/src/index.ts:28`](../packages/guard/repeat-tool-reminder/src/index.ts)
+
+<a id="deepseek-aidsh-resume-note"></a>
+
+## `@deepseek-ai/dsh-resume-note`
+
+Requires: `agents`
+
+```ts config-catalog
+/** Resume-note injection scheduling. Invalid values fail plugin load. */
+export interface Config {
+  /** Set `false` to suppress injection without removing the plugin row. Default `true`. */
+  enabled?: boolean
+  /** Override the model-visible note text. Omit for {@link DEFAULT_NOTE_TEXT}. */
+  text?: string
+}
+```
+
+Source: [`packages/context/resume-note/src/index.ts:26`](../packages/context/resume-note/src/index.ts)
 
 <a id="deepseek-aidsh-sandbox-local"></a>
 
@@ -2242,7 +2955,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/core/system-prompt/src/index.ts:186`](../packages/core/system-prompt/src/index.ts)
+Source: [`packages/core/system-prompt/src/index.ts:194`](../packages/core/system-prompt/src/index.ts)
 
 <a id="deepseek-aidsh-terminal-bash"></a>
 
@@ -2334,6 +3047,35 @@ export type TokenMeterConfig = Record<string, never>
 
 Source: [`packages/llm/token-meter/src/types.ts:12`](../packages/llm/token-meter/src/types.ts)
 
+<a id="deepseek-aidsh-tool-anton-lifecycle"></a>
+
+## `@deepseek-ai/dsh-tool-anton-lifecycle`
+
+Requires: `tools`
+
+```ts config-catalog
+/** Model-facing lifecycle tool configuration. */
+export interface Config {
+  /**
+   * Control endpoint of the Anton Bridge supervisor. Deployments embedding the bridge on another
+   * host or port override this; the bundled app keeps the default.
+   */
+  bridgeEndpoint?: string
+  /** Environment variable that overrides `bridgeEndpoint` at process launch. */
+  bridgeEndpointEnv?: string
+  /** Register the `anton_status` diagnostics tool. Defaults to `true`. */
+  statusToolEnabled?: boolean
+  /** Register the `anton_start` recovery tool. Defaults to `true`. */
+  startToolEnabled?: boolean
+  /** Register the `anton_stop` shutdown tool. Defaults to `true`. */
+  stopToolEnabled?: boolean
+  /** Register the `anton_restart` redeploy tool. Defaults to `true`. */
+  restartToolEnabled?: boolean
+}
+```
+
+Source: [`packages/lifecycle/tool-anton-lifecycle/src/index.ts:36`](../packages/lifecycle/tool-anton-lifecycle/src/index.ts)
+
 <a id="deepseek-aidsh-tool-bash"></a>
 
 ## `@deepseek-ai/dsh-tool-bash`
@@ -2371,6 +3113,22 @@ export interface Config {
 ```
 
 Source: [`packages/shell/tool-bash-persistent/src/index.ts:400`](../packages/shell/tool-bash-persistent/src/index.ts)
+
+<a id="deepseek-aidsh-tool-flowbuilder"></a>
+
+## `@deepseek-ai/dsh-tool-flowbuilder`
+
+Requires: `tools` · `flowBuilder` · `systemPrompt`
+
+```ts config-catalog
+/** Config: result rendering caps. */
+export interface Config {
+  /** Rendered-result ceiling, in characters: a longer JSON value is truncated with a notice (default 50000). */
+  maxResultChars?: number
+}
+```
+
+Source: [`packages/flowbuilder/tool-flowbuilder/src/index.ts:27`](../packages/flowbuilder/tool-flowbuilder/src/index.ts)
 
 <a id="deepseek-aidsh-tool-fs"></a>
 
@@ -2652,7 +3410,7 @@ export interface Config {
 
 Depends on: [`AgentOptions`](subsystems/core.md)
 
-Source: [`packages/subagent/tool-subagent/src/index.ts:29`](../packages/subagent/tool-subagent/src/index.ts)
+Source: [`packages/subagent/tool-subagent/src/index.ts:31`](../packages/subagent/tool-subagent/src/index.ts)
 
 <a id="deepseek-aidsh-tool-subagent-report"></a>
 
@@ -2708,13 +3466,13 @@ export interface Config {
    * agents that run work concurrently — subagents, background commands, workflow fan-out — and the
    * description then instructs the model to mark every actively worked task. False restores the
    * single-active discipline: the description asks for exactly one, and a call marking more is
-   * rejected.
+   * rejected. The count spans the whole tree.
    */
   allowParallelInProgress: boolean
 }
 ```
 
-Source: [`packages/todo/tool-todo/src/index.ts:29`](../packages/todo/tool-todo/src/index.ts)
+Source: [`packages/todo/tool-todo/src/index.ts:39`](../packages/todo/tool-todo/src/index.ts)
 
 <a id="deepseek-aidsh-tool-web"></a>
 
@@ -2760,6 +3518,28 @@ export interface Config {
 
 Source: [`packages/workflow/tool-workflow/src/index.ts:33`](../packages/workflow/tool-workflow/src/index.ts)
 
+<a id="deepseek-aidsh-tool-zai"></a>
+
+## `@deepseek-ai/dsh-tool-zai`
+
+Requires: `tools`
+
+```ts config-catalog
+/** Plugin configuration: references and toggles only, never secret values. The zod `Config` supplies defaults for the optional fields. */
+export interface ToolZaiConfig {
+  /** Credential reference naming the Z.AI key (default `Z_AI_API_KEY`). */
+  apiKeyEnv: string
+  /** Vision chat model (default `glm-5.3-flash`, as in `@z_ai/mcp-server`). */
+  visionModel?: string | undefined
+  /** Per-call HTTP timeout in milliseconds (default 300000). */
+  timeoutMs?: number | undefined
+  /** Allowlist of tool names to register; default is all thirteen. */
+  enabledTools?: string[] | undefined
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts:70`](../packages/zai/tool-zai/src/index.ts)
+
 <a id="deepseek-aidsh-tools"></a>
 
 ## `@deepseek-ai/dsh-tools`
@@ -2774,10 +3554,16 @@ export interface Config {
    * sends only `run_code` plus a generated SDK prompt and collapses the
    * executor to the same surface (a model-direct call may only name
    * `run_code`; `run_code` SDK sub-dispatches keep every visible tool); `both`
-   * sends both forms. Code modes require a `ctx.codeRuntime` whose `language`
+   * sends both forms; `paged` sends only the reserved `tool_search` transport
+   * plus a name-and-summary catalog section, and `tool_search` executions
+   * grant the matched tools into the calling scope — granted tools join the
+   * wire set from the next turn, while a model-direct call naming any other
+   * tool resolves to `UNKNOWN_TOOL` before policy runs, exactly like the
+   * `code` collapse. Code modes require a `ctx.codeRuntime` whose `language`
    * has a registered SDK renderer (TypeScript or Python) and fail prompt
-   * assembly when it is absent or has no renderer. Under `code`, native names
-   * in `toolOrder` are invalid.
+   * assembly when it is absent or has no renderer; `paged` needs no runtime.
+   * Under `code`, native names in `toolOrder` are invalid; under `paged` the
+   * full catalog stays valid.
    */
   mode?: ToolPresentationMode
   /**
@@ -2788,13 +3574,33 @@ export interface Config {
    * restores strictly serial dispatch. Must be a positive integer.
    */
   maxParallelSubCalls?: number
+  /**
+   * Tool names always wired with full schemas under `paged`, in addition to
+   * the reserved `tool_search` transport and any dynamically granted tools.
+   * A pinned tool is effectively pre-granted: it is visible and directly
+   * callable from the first turn without a `tool_search` round-trip, and it
+   * is omitted from the `tools:catalog` discovery surface (re-listing an
+   * already-wired tool is noise). A pinned name that resolves to no
+   * registered tool, or that a scoped restriction removes, is ignored —
+   * pinning grants visibility, it does not override restrictions. `native`,
+   * `code`, and `both` ignore this field.
+   */
+  pinned?: string[]
+  /**
+   * Token-efficiency framing in the standing discipline section (default
+   * true): the model is told the session runs under a tight budget and is
+   * steered toward the cheap-tool behaviors that budget pressure produces
+   * (targeted reads over whole files, batched commands, lean prose). A
+   * deployment running long-horizon, output-heavy tasks may turn it off.
+   */
+  efficiencyDiscipline?: boolean
 }
 
 /** How the registry presents its tools to the model (see {@link Config.mode}). */
-export type ToolPresentationMode = 'native' | 'code' | 'both'
+export type ToolPresentationMode = 'native' | 'code' | 'both' | 'paged'
 ```
 
-Source: [`packages/core/tools/src/index.ts:654`](../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:707`](../packages/core/tools/src/index.ts)
 
 <a id="deepseek-aidsh-typert-loader"></a>
 
@@ -2841,7 +3647,7 @@ export interface Config {
 export type ApprovalPolicy = 'ask' | 'never'
 ```
 
-Source: [`packages/interaction/user-approval/src/index.ts:177`](../packages/interaction/user-approval/src/index.ts)
+Source: [`packages/interaction/user-approval/src/index.ts:186`](../packages/interaction/user-approval/src/index.ts)
 
 <a id="deepseek-aidsh-web"></a>
 
@@ -2914,6 +3720,30 @@ export interface Config {
 ```
 
 Source: [`packages/web/web-fetch-http/src/index.ts:34`](../packages/web/web-fetch-http/src/index.ts)
+
+<a id="deepseek-aidsh-web-search-browser"></a>
+
+## `@deepseek-ai/dsh-web-search-browser`
+
+Requires: `web`
+
+```ts config-catalog
+/** Plugin config (all optional — `apply` fills constant defaults). */
+export interface Config {
+  /** Launch browsers without a visible window. Defaults to true. */
+  headless?: boolean
+  /** Comma-separated Playwright browser kinds for the pool (`chromium`, `firefox`, `webkit`). */
+  browserTypes?: string
+  /** Extract full page content per result into each source's `snippet`. Slower; defaults to false. */
+  fetchContent?: boolean
+  /** Per-search engine timeout budget in milliseconds. Defaults to 12000. */
+  timeoutMs?: number
+  /** Character cap on an enriched snippet. Defaults to 1000. */
+  snippetLength?: number
+}
+```
+
+Source: [`packages/web/web-search-browser/src/index.ts:39`](../packages/web/web-search-browser/src/index.ts)
 
 <a id="deepseek-aidsh-web-search-deepseek"></a>
 
@@ -2991,6 +3821,34 @@ export interface Config {
 
 Source: [`packages/web/web-search-perplexity/src/index.ts:32`](../packages/web/web-search-perplexity/src/index.ts)
 
+<a id="deepseek-aidsh-web-search-zai"></a>
+
+## `@deepseek-ai/dsh-web-search-zai`
+
+Requires: `web`
+
+```ts config-catalog
+/** Plugin config (all optional — `apply` fills env-var and constant defaults). */
+export interface Config {
+  /** Z.AI API key (same key as chat completions). Falls back to `$ZAI_API_KEY`. Empty → provider unavailable. */
+  apiKey?: string
+  /** Endpoint base; `/web_search` is appended. Defaults to the public API. */
+  baseURL?: string
+  /** Search engine backend sent as `search_engine`. Defaults to `search-prime`. */
+  searchEngine?: string
+  /** Restrict results to one domain. Absent sends no filter. */
+  searchDomainFilter?: string
+  /** Restrict results to a publication window. Absent sends no filter. */
+  searchRecencyFilter?: SearchRecencyFilter
+  /** Default result count when a request carries no `maxResults`. Defaults to 10 (API range 1–50). */
+  count?: number
+}
+
+export type SearchRecencyFilter = typeof SEARCH_RECENCY_FILTERS[number]
+```
+
+Source: [`packages/web/web-search-zai/src/index.ts:41`](../packages/web/web-search-zai/src/index.ts)
+
 <a id="deepseek-aidsh-workflow-worker-thread"></a>
 
 ## `@deepseek-ai/dsh-workflow-worker-thread`
@@ -3021,11 +3879,30 @@ export interface Config {
 
 Source: [`packages/workflow/workflow-worker-thread/src/index.ts:32`](../packages/workflow/workflow-worker-thread/src/index.ts)
 
+<a id="deepseek-aidsh-worktree"></a>
+
+## `@deepseek-ai/dsh-worktree`
+
+Requires: `storageDomain` · `workspaceRegistry`
+
+```ts config-catalog
+/** Config schema inputs: deployment-varying naming choices, changeable from cordis.yml. */
+export interface WorktreeRegistryConfig {
+  /** Branch namespace for created worktree branches; `<prefix><slug>`. */
+  branchPrefix: string
+  /** Sibling-directory suffix for the worktree parent: `<repo><suffix>/<slug>`. */
+  parentSuffix: string
+}
+```
+
+Source: [`packages/workspace/worktree/src/index.ts:49`](../packages/workspace/worktree/src/index.ts)
+
 ## Loadable plugins with no config
 
 These load from a `cordis.yml` entry with no `config:` block; they declare no configuration API.
 
 - `@deepseek-ai/dsh-agent` ([`packages/core/agent/src/index.ts`](../packages/core/agent/src/index.ts))
+- `@deepseek-ai/dsh-agent-queue` — requires `storageDomain` · `workspaceRegistry` · `agents` ([`packages/interaction/agent-queue/src/index.ts`](../packages/interaction/agent-queue/src/index.ts))
 - `@deepseek-ai/dsh-api-gateway` — requires `typert` ([`packages/api/gateway/src/index.ts`](../packages/api/gateway/src/index.ts))
 - `@deepseek-ai/dsh-api-remotes` ([`packages/api/remotes/src/index.ts`](../packages/api/remotes/src/index.ts))
 - `@deepseek-ai/dsh-client-locale` ([`packages/client/locale/src/index.ts`](../packages/client/locale/src/index.ts))
@@ -3034,16 +3911,23 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-agent-preset` ([`packages/client/ui-agent-preset/src/index.ts`](../packages/client/ui-agent-preset/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-commands` ([`packages/client/ui-commands/src/index.ts`](../packages/client/ui-commands/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-conversation` ([`packages/client/ui-conversation/src/index.ts`](../packages/client/ui-conversation/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-conversation-agent-mail` ([`packages/client/ui-conversation-agent-mail/src/index.ts`](../packages/client/ui-conversation-agent-mail/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-cordis` ([`packages/extensions/ui-cordis/src/index.ts`](../packages/extensions/ui-cordis/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-deliverables` — requires `systemPrompt` ([`packages/client/ui-deliverables/src/index.ts`](../packages/client/ui-deliverables/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-directory-picker-browse` ([`packages/client/ui-directory-picker-browse/src/index.ts`](../packages/client/ui-directory-picker-browse/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-directory-picker-native` ([`packages/client/ui-directory-picker-native/src/index.ts`](../packages/client/ui-directory-picker-native/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-efficiency-discipline` ([`packages/client/ui-efficiency-discipline/src/index.ts`](../packages/client/ui-efficiency-discipline/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-file-image` ([`packages/client/ui-file-image/src/index.ts`](../packages/client/ui-file-image/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-file-markdown` ([`packages/client/ui-file-markdown/src/index.ts`](../packages/client/ui-file-markdown/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-file-video` ([`packages/client/ui-file-video/src/index.ts`](../packages/client/ui-file-video/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-flowbuilder` ([`packages/client/ui-flowbuilder/src/index.ts`](../packages/client/ui-flowbuilder/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-goal` ([`packages/client/ui-goal/src/index.ts`](../packages/client/ui-goal/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-input-trigger` ([`packages/client/ui-input-trigger/src/index.ts`](../packages/client/ui-input-trigger/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-jobs` ([`packages/client/ui-jobs/src/index.ts`](../packages/client/ui-jobs/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-layout` ([`packages/client/ui-layout/src/index.ts`](../packages/client/ui-layout/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-message-feedback` ([`packages/client/ui-message-feedback/src/index.ts`](../packages/client/ui-message-feedback/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-model-selection` ([`packages/client/ui-model-selection/src/index.ts`](../packages/client/ui-model-selection/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-orchestrator` ([`packages/client/ui-orchestrator/src/index.ts`](../packages/client/ui-orchestrator/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-permission-presets` ([`packages/client/ui-permission-presets/src/index.ts`](../packages/client/ui-permission-presets/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-plan` ([`packages/client/ui-plan/src/index.ts`](../packages/client/ui-plan/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings` ([`packages/client/ui-settings/src/index.ts`](../packages/client/ui-settings/src/index.ts))
@@ -3054,12 +3938,15 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-sidebar` ([`packages/client/ui-sidebar/src/index.ts`](../packages/client/ui-sidebar/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-skill` ([`packages/client/ui-skill/src/index.ts`](../packages/client/ui-skill/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-subagent` ([`packages/client/ui-subagent/src/index.ts`](../packages/client/ui-subagent/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-terminal` ([`packages/client/ui-terminal/src/index.ts`](../packages/client/ui-terminal/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-theme` ([`packages/client/ui-theme/src/index.ts`](../packages/client/ui-theme/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-tool` ([`packages/client/ui-tool/src/index.ts`](../packages/client/ui-tool/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-trajectory` ([`packages/client/ui-trajectory/src/index.ts`](../packages/client/ui-trajectory/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-user-questions` ([`packages/client/ui-user-questions/src/index.ts`](../packages/client/ui-user-questions/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-webcam` ([`packages/client/ui-webcam/src/index.ts`](../packages/client/ui-webcam/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-workflow-run` ([`packages/client/ui-workflow-run/src/index.ts`](../packages/client/ui-workflow-run/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-workspace` ([`packages/client/ui-workspace/src/index.ts`](../packages/client/ui-workspace/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-worktree` ([`packages/client/ui-worktree/src/index.ts`](../packages/client/ui-worktree/src/index.ts))
 - `@deepseek-ai/dsh-command-compact` — requires `commands` · `compaction` ([`packages/compaction/command-compact/src/index.ts`](../packages/compaction/command-compact/src/index.ts))
 - `@deepseek-ai/dsh-command-feedback` — requires `commands` ([`packages/feedback/command-feedback/src/index.ts`](../packages/feedback/command-feedback/src/index.ts))
 - `@deepseek-ai/dsh-command-goal` — requires `commands` · `goals` ([`packages/goal/command-goal/src/index.ts`](../packages/goal/command-goal/src/index.ts))
@@ -3068,7 +3955,6 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-fs-e2b` — requires `e2b` ([`packages/e2b/fs-e2b/src/index.ts`](../packages/e2b/fs-e2b/src/index.ts))
 - `@deepseek-ai/dsh-fs-observation-policy` ([`packages/fs/fs-observation-policy/src/index.ts`](../packages/fs/fs-observation-policy/src/index.ts))
 - `@deepseek-ai/dsh-goal-round-driver` — requires `agents` · `goals` · `sessions` ([`packages/goal/goal-round-driver/src/index.ts`](../packages/goal/goal-round-driver/src/index.ts))
-- `@deepseek-ai/dsh-host-directory-picker-auto` — requires `webServer` · `loader` ([`packages/host/directory-picker-auto/src/index.ts`](../packages/host/directory-picker-auto/src/index.ts))
 - `@deepseek-ai/dsh-host-directory-picker-native` ([`packages/host/directory-picker-native/src/index.ts`](../packages/host/directory-picker-native/src/index.ts))
 - `@deepseek-ai/dsh-host-plugin-inventory` — requires `loader` ([`packages/host/plugin-inventory/src/index.ts`](../packages/host/plugin-inventory/src/index.ts))
 - `@deepseek-ai/dsh-llm` ([`packages/llm/llm/src/index.ts`](../packages/llm/llm/src/index.ts))
@@ -3084,10 +3970,11 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-subagent` ([`packages/subagent/subagent/src/index.ts`](../packages/subagent/subagent/src/index.ts))
 - `@deepseek-ai/dsh-subprocess-local` ([`packages/subprocess/subprocess-local/src/index.ts`](../packages/subprocess/subprocess-local/src/index.ts))
 - `@deepseek-ai/dsh-terminal` ([`packages/terminal/terminal/src/index.ts`](../packages/terminal/terminal/src/index.ts))
+- `@deepseek-ai/dsh-tool-agent-queue` — requires `tools` · `agentQueue` ([`packages/interaction/tool-agent-queue/src/index.ts`](../packages/interaction/tool-agent-queue/src/index.ts))
 - `@deepseek-ai/dsh-tool-ask-user` — requires `tools` · `userQuestions` ([`packages/interaction/tool-ask-user/src/index.ts`](../packages/interaction/tool-ask-user/src/index.ts))
 - `@deepseek-ai/dsh-tool-call-timeout-policy` — requires `tools` ([`packages/guard/timeout-policy/src/index.ts`](../packages/guard/timeout-policy/src/index.ts))
 - `@deepseek-ai/dsh-tool-cordis` — requires `tools` · `systemPrompt` · `dynamicCordisRunner` · `cordisInspect` ([`packages/extensions/tool-cordis/src/index.ts`](../packages/extensions/tool-cordis/src/index.ts))
-- `@deepseek-ai/dsh-tool-subagent-control` — requires `tools` · `subagents` ([`packages/subagent/tool-subagent-control/src/index.ts`](../packages/subagent/tool-subagent-control/src/index.ts))
+- `@deepseek-ai/dsh-tool-subagent-control` — requires `tools` · `subagents` · `llm` ([`packages/subagent/tool-subagent-control/src/index.ts`](../packages/subagent/tool-subagent-control/src/index.ts))
 - `@deepseek-ai/dsh-user-questions` ([`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts))
 - `@deepseek-ai/dsh-workspace` — requires `storageDomain` · `sessionPersistence` ([`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts))
 
@@ -3130,6 +4017,8 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-client-web` ([`packages/client/web/src/index.ts`](../packages/client/web/src/index.ts))
 - `@deepseek-ai/dsh-client-web-react` ([`packages/client/web-react/src/index.ts`](../packages/client/web-react/src/index.ts))
 - `@deepseek-ai/dsh-cmdline` ([`packages/boot/cmdline/src/index.ts`](../packages/boot/cmdline/src/index.ts))
+- `@deepseek-ai/dsh-flowbuilder-domain` ([`packages/flowbuilder/flowbuilder-domain/src/index.ts`](../packages/flowbuilder/flowbuilder-domain/src/index.ts))
+- `@deepseek-ai/dsh-flowbuilder-service` ([`packages/flowbuilder/flowbuilder-service/src/index.ts`](../packages/flowbuilder/flowbuilder-service/src/index.ts))
 - `@deepseek-ai/dsh-home-paths` ([`packages/util/home-paths/src/index.ts`](../packages/util/home-paths/src/index.ts))
 - `@deepseek-ai/dsh-hook-protocol` ([`packages/hooks/hook-protocol/src/index.ts`](../packages/hooks/hook-protocol/src/index.ts))
 - `@deepseek-ai/dsh-launch-environment` ([`packages/util/launch-environment/src/index.ts`](../packages/util/launch-environment/src/index.ts))

@@ -1,4 +1,9 @@
-# Journal triage backpressure and dedupe (Phase 6c)
+# Agent Note: Journal triage backpressure and dedupe (Phase 6c)
+
+Status: implemented
+Archived: 2026-10-30
+
+English
 
 Date: 2026-09-21
 Scope: apps/anton-bridge/src/triage.ts
