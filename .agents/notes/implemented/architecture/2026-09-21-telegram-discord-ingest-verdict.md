@@ -35,7 +35,7 @@ creates, gated behind a `telegramIngestEnabled` settings toggle (default
 off), appending the existing journal convention (`## HH:MM:SS` blocks with
 `source: telegram`, chat, sender, 500-char excerpt cap, per-chat
 high-water `msg_id` dedupe). Effort: 1-1.5 days on the existing
-`journal.ts`/`blueant-settings.ts` scaffolding. Privacy guardrails: chat
+the then-existing ambient-journal scaffolding. Privacy guardrails: chat
 ID allowlist (not blocklist), excerpt caps, no Keychain/tdata/token-cache
 paths ever.
 

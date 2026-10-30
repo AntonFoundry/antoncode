@@ -6,7 +6,7 @@ English
 
 ## Problem
 
-Two model-menu failures compounded. First, `resolveRouteModels` served exactly one of three mutually exclusive sources — a configured `models` list, a discovered live listing, or the installed catalog — so a partial list *replaced* the route's catalog and hid models such as `deepseek-v4.1-flash` and `kimi-k3` from the pickers. Second, the live models.dev refresh was hardwired to the `zai` route, so no other route ever learned new provider ids. Separately, the tree did not typecheck: `CredentialRef | undefined` narrowing errors in `llm-openai`/`llm-models-dev`, a missing `unlinkSync` import in `anton-rebuild`, and `apps/anton-bridge/src/blueant-preset.ts` absent from `tsconfig.host.json`'s file list.
+Two model-menu failures compounded. First, `resolveRouteModels` served exactly one of three mutually exclusive sources — a configured `models` list, a discovered live listing, or the installed catalog — so a partial list *replaced* the route's catalog and hid models such as `deepseek-v4.1-flash` and `kimi-k3` from the pickers. Second, the live models.dev refresh was hardwired to the `zai` route, so no other route ever learned new provider ids. Separately, the tree did not typecheck: `CredentialRef | undefined` narrowing errors in `llm-openai`/`llm-models-dev`, a missing `unlinkSync` import in `anton-rebuild`, and an `apps/anton-bridge` source file absent from `tsconfig.host.json`'s file list.
 
 ## Decision
 
