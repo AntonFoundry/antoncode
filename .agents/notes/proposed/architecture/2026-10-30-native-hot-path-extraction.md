@@ -30,18 +30,44 @@ through a C Landlock addon, the macOS app in Swift, and the bridge as a compiled
 Bun binary. Node starts the built CLI in 70–80 ms on this machine. The remaining
 cost is concentrated in specific algorithms and render loops, not in the language.
 
+## Measured baseline
+
+Three real session logs from this machine, parsed from `session.jsonl.zstd` with
+per-event timestamps (decompress + parse cost included in the load column). Shares
+are of completed-turn wall time; tool time is the union of tool intervals clipped
+to their turn, so background agents can overlap model time.
+
+| Session | Events | Turns | Wall time | Model wait | Streaming | Tools (union) | Between steps | Load |
+|---|---|---|---|---|---|---|---|---|
+| janet, 310 turns, 7,019 tool calls | 159,994 | 309 | 27.0 h | 64.0% | 27.2% | 40.3% (overlaps) | 2.5% | 0.30 s + 0.81 s |
+| deepseek-harness, 28 turns, 1,098 calls | 16,780 | 28 | 7.6 h | 36.7% | 15.1% | 46.9% (`job_output` waits) | 1.2% | 0.07 s + 0.14 s |
+| janet, 377 turns, 370 calls | 36,348 | 377 | 5.7 h | 11.6% | 84.6% | 2.8% | 1.0% | 0.07 s + 0.07 s |
+
+Model wait plus streaming is 53–96% of wall time in every sample; local
+between-step work (persistence, projection, orchestration, UI gaps) is 1–2.5%.
+Tool time is large only where a turn waits on a human (`ask_user_question`),
+a background job (`job_output`), or a subagent — all I/O, not CPU.
+
+A cold headless turn (`apps/cli/lib/bin.js --profile headless`, CPU-profiled):
+wall 5.5 s, idle waiting on the model 2.2 s, busy CPU ~1.5 s of which module
+loading, `existsSync`/`readlink`/`dlopen`, and ESM compile dominate; JSON parsing
+(undici) is 0.1 s and GC 0.1 s. In other words the one-shot cost is boot, and the
+steady-state cost is waiting.
+
+Loading a 113 MB decompressed log (42 MB zstd) takes 0.3 s to decompress and
+0.8 s to JSON-parse line by line; an 11 MB projection cache parses in 26 ms.
+Persistence and JSON are not the bottleneck at these sizes.
+
 ## Proposal
 
 Keep the harness in TypeScript. Move work to a native language only where a
 profile names it, and put it behind an existing capability seam so the plugin
 model, RPC, tests, and packaging stay intact.
 
-1. **Measure before choosing a language.** Add a per-turn breakdown (model
-   request/stream, each tool call, session append, projection rebuild, client
-   render) and capture it on (a) a 10k-event session resume, (b) a long streaming
-   answer, (c) a tool-heavy turn (search + bash + edit). Record Node CPU profiles
-   (`node --cpu-prof`) and a browser Performance trace for the same turn. A
-   rewrite proposal without this baseline is rejected by construction.
+1. **Keep the baseline current.** The table above is the reproducible starting
+   point; extend it with a warm multi-turn session (so boot is excluded) and a
+   browser Performance trace for a long answer. A native-extraction proposal
+   without that evidence is rejected by construction.
 2. **Swift stays in the app and grows there.** The Mac app already owns the
    bridge lifecycle, notifications, and consent UI. Native desktop services that
    benefit from Apple frameworks belong in that process or a small Swift helper:
@@ -80,8 +106,9 @@ model, RPC, tests, and packaging stay intact.
 
 ## Acceptance criteria
 
-- A committed baseline table of per-phase timings and CPU profiles for the three
-  scenarios above, taken on the same machine.
+- The baseline table above (three sessions) plus a warm-session CPU profile and a
+  browser trace, recorded in this note and refreshed when the measured phase
+  changes.
 - Any extracted component beats the TypeScript path by a stated margin (target:
   ≥2× on the measured phase, not on total turn time) and keeps the owning Service
   Definition's contract, cancellation, and error codes unchanged.
