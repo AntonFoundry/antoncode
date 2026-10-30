@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
- * dsh — command-line entry. Dynamic imports per mode keep unrelated modes out
- * of each dispatch path; the adapter prints and exits for
- * `--help`/`--version`/a parse error, so only a valid mode reaches the switch.
+ * anton — command-line entry (the DeepSeek Harness CLI, forked and renamed).
+ * Dynamic imports per mode keep unrelated modes out of each dispatch path; the
+ * adapter prints and exits for `--help`/`--version`/a parse error, so only a
+ * valid mode reaches the switch.
  * @module @deepseek-ai/dsh/bin
  */
 
@@ -11,7 +12,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { loadLayeredEnv } from '@deepseek-ai/dsh-app-boot'
-import { parseDshArgs } from './args.ts'
+import { parseAntonArgs } from './args.ts'
 
 // Both the source tree (apps/cli/src) and the bundled bin (apps/cli/lib) sit
 // one directory under apps/cli, so the checked-in manifest resolves with the
@@ -24,7 +25,7 @@ function readVersion(): string {
   return typeof manifest.version === 'string' ? manifest.version : '0.0.0'
 }
 
-const invocation = parseDshArgs(process.argv.slice(2), readVersion())
+const invocation = parseAntonArgs(process.argv.slice(2), readVersion())
 
 switch (invocation.mode) {
   case 'profile': {
@@ -95,5 +96,5 @@ switch (invocation.mode) {
   }
   default:
     invocation satisfies never
-    throw new Error(`dsh: unhandled invocation mode ${JSON.stringify(invocation)}`)
+    throw new Error(`anton: unhandled invocation mode ${JSON.stringify(invocation)}`)
 }

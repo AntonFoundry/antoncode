@@ -156,7 +156,7 @@ describe('superviseRebuild', () => {
     const seeded = seedState({ command: [process.execPath, '-e', 'setTimeout(() => {}, 60_000)'] })
     const supervised = superviseRebuild(seeded.jobId)
     // The supervisor's own SIGTERM handler is the launchd cancellation path;
-    // deliver it while the child runs, exactly as `dsh anton rebuild cancel`
+    // deliver it while the child runs, exactly as `anton rebuild cancel`
     // would through launchctl.
     setTimeout(() => { process.kill(process.pid, 'SIGTERM') }, 150)
     await expect(supervised).resolves.toBe(1)

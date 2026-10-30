@@ -17,6 +17,7 @@
     "website"
   ],
   "scripts": {
+    "anton": "node --import tsx/esm apps/cli/src/bin.ts",
     "build": "npm run build:lib && npm run build:web",
     "build:lib": "npm run build:lib:host && npm run build:lib:client",
     "build:lib:host": "tsc -b tsconfig.host.json && tsdown --env.DSH_BUILD_FACE host",
@@ -130,7 +131,6 @@
     "release:pack": "tsx scripts/release/pack.ts",
     "release:verify-packed-install": "tsx scripts/release/verify-packed-install.ts",
     "release:publish": "tsx scripts/release/publish.ts",
-    "dsh": "node --import tsx/esm apps/cli/src/bin.ts",
     "anton:dev": "bun run apps/anton-bridge/src/index.ts",
     "anton:build": "bun build --compile --outfile dist/anton-bridge apps/anton-bridge/src/index.ts",
     "anton:build:macos": "bun scripts/build-anton-macos.ts",

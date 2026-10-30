@@ -1,5 +1,5 @@
 /**
- * `dsh anton <action>`: control the local Anton app's harness through its
+ * `anton <action>`: control the local Anton app's harness through its
  * bridge API — the safe alternative to quit/kill/relaunch shell chains. A
  * restart here reloads the harness tree the bridge serves while the app
  * itself stays up; no boot of any profile happens in this process.
@@ -33,12 +33,12 @@ export async function runAnton(action: 'status' | 'start' | 'stop' | 'restart'):
     })
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
-    console.error(`dsh anton: bridge not reachable at ${bridgeBaseUrl()} (${reason}). Is the Anton app running?`)
+    console.error(`anton: bridge not reachable at ${bridgeBaseUrl()} (${reason}). Is the Anton app running?`)
     return 1
   }
   const body = await response.text()
   if (!response.ok) {
-    console.error(`dsh anton: ${action} failed with HTTP ${response.status}\n${body.slice(0, 2000)}`)
+    console.error(`anton: ${action} failed with HTTP ${response.status}\n${body.slice(0, 2000)}`)
     return 1
   }
   console.log(body)

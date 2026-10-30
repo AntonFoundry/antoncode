@@ -9,7 +9,7 @@ English
 When the harness process dies mid-turn (restart, crash, kill), the user's next
 message lands in a session whose transcript simply stops. The model sees the
 interruption as an unexplained gap and often re-asks or re-derives state —
-observed repeatedly during Anton bundle swaps and `dsh anton restart` cycles.
+observed repeatedly during Anton bundle swaps and `anton restart` cycles.
 
 The durable fact already existed: the persistence repair commits a synthetic
 `turn/end { reason: { kind: 'interrupted' } }` closer for a crash-orphaned
@@ -46,7 +46,7 @@ wrong end kind, no end, duplicate). Keyless e2e through the real Loader
 turn, appends a crash-open tail, re-boots, `agents.resume` repairs the tail,
 and the next turn carries exactly one note with verbatim default text,
 sequenced between the interrupted end and the normal end. Live: the first
-post-deployment `dsh anton restart` interrupted the author's own turn and
+post-deployment `anton restart` interrupted the author's own turn and
 the note appeared verbatim in the next turn's context.
 
 ## Alternatives considered

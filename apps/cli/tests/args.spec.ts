@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { parseDshArgs } from '../src/args.ts'
+import { parseAntonArgs } from '../src/args.ts'
 
-const parse = (argv: string[]) => parseDshArgs(argv, '1.2.3')
+const parse = (argv: string[]) => parseAntonArgs(argv, '1.2.3')
 
 /** Capture the process exit code while muting Commander's output. */
 function exitCode(argv: string[]): number {
@@ -20,7 +20,7 @@ function exitCode(argv: string[]): number {
 
 afterEach(() => { vi.restoreAllMocks() })
 
-describe('parseDshArgs', () => {
+describe('parseAntonArgs', () => {
   it('routes profile boots and the web alias, handing the rest to the app', () => {
     expect(parse(['--profile', 'tui'])).toEqual({ mode: 'profile', profile: 'tui', patches: [], args: [] })
     expect(parse(['--profile', 'tui', '--patch', 'a.yml', '--patch', 'b.yml']))
@@ -71,7 +71,7 @@ describe('parseDshArgs', () => {
   })
 
   it('rejects missing profile, removed flags, and contradictory inputs', () => {
-    expect(exitCode([])).toBe(1)
+    expect(exitCode([])).toBe(0) // a bare invocation prints the launcher help
     expect(exitCode(['tui'])).toBe(1) // an app argument without --profile has no app to reach
     expect(exitCode(['--config', 'c.yml'])).toBe(1) // removed
     expect(exitCode(['-p', 'task'])).toBe(1) // removed
@@ -98,17 +98,25 @@ describe('parseDshArgs', () => {
     expect(exitCode(['--profile', 'x', 'plugin', 'add', 'y'])).toBe(1)
   })
 
+  it('routes app control at the CLI root', () => {
+    for (const action of ['status', 'start', 'stop', 'restart'] as const) {
+      expect(parse([action])).toEqual({ mode: 'anton', action })
+    }
+    expect(exitCode(['start', 'extra'])).toBe(1)
+  })
+
   it('routes managed Anton rebuild actions', () => {
-    expect(parse(['anton', 'rebuild', 'start']))
+    expect(parse(['rebuild', 'start']))
       .toEqual({ mode: 'anton-rebuild', action: 'start', timeoutMinutes: 20, checkout: process.cwd() })
-    expect(parse(['anton', 'rebuild', 'start', '--timeout', '35', '--checkout', '/tmp/harness']))
+    expect(parse(['rebuild', 'start', '--timeout', '35', '--checkout', '/tmp/harness']))
       .toEqual({ mode: 'anton-rebuild', action: 'start', timeoutMinutes: 35, checkout: '/tmp/harness' })
-    expect(parse(['anton', 'rebuild', 'status']))
+    expect(parse(['rebuild', 'status']))
       .toEqual({ mode: 'anton-rebuild', action: 'status', timeoutMinutes: 20, checkout: process.cwd() })
-    expect(parse(['anton', 'rebuild', 'cancel']))
+    expect(parse(['rebuild', 'cancel']))
       .toEqual({ mode: 'anton-rebuild', action: 'cancel', timeoutMinutes: 20, checkout: process.cwd() })
-    expect(exitCode(['anton', 'rebuild'])).toBe(1)
-    expect(exitCode(['anton', 'rebuild', 'start', '--timeout', 'later'])).toBe(1)
+    expect(exitCode(['rebuild'])).toBe(1)
+    expect(exitCode(['rebuild', 'later'])).toBe(1)
+    expect(exitCode(['rebuild', 'start', '--timeout', 'later'])).toBe(1)
   })
 
   it('routes the OpenCode Zen workspace login', () => {
@@ -133,5 +141,17 @@ describe('parseDshArgs', () => {
     expect(exitCode(['--help'])).toBe(0)
     expect(exitCode(['-h'])).toBe(0)
     expect(exitCode(['--version'])).toBe(0)
+  })
+
+  it('gives every subcommand a working --help', () => {
+    for (const command of ['models', 'plugin', 'opencode-login', 'claude-login', 'status', 'rebuild']) {
+      expect(exitCode([command, '--help'])).toBe(0)
+      expect(exitCode([command, '-h'])).toBe(0)
+    }
+  })
+
+  it('still hands --help to pnpm once the plugin command names its action', () => {
+    expect(parse(['plugin', '--profile', 'tui', 'add', '--help']))
+      .toEqual({ mode: 'plugin', profile: 'tui', args: ['add', '--help'] })
   })
 })

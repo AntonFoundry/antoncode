@@ -74,7 +74,7 @@ pnpm run hygiene        # knip + publint + workspace constraints + NodeNext cons
 pnpm run check:windows-wine  # ONLY when diagnosing a known Windows failure (needs wine); CI owns this signal
 pnpm run doc-sync       # all documentation gates; leaf list in scripts/run-gates.ts
 pnpm run website:build  # VitePress build (doubles as dead-link check)
-pnpm dsh --profile headless "task"  # run one task from source (needs DEEPSEEK_API_KEY)
+pnpm anton --profile headless "task"  # run one task from source (needs DEEPSEEK_API_KEY)
 pnpm run demo:cordis    # the agent modifies its own runtime (needs key)
 pnpm run demo:acp       # ACP automation server (needs DEEPSEEK_API_KEY)
 ```
@@ -87,9 +87,9 @@ The app ships only built `lib/` output, so rebuild changed packages first (`npx 
 pnpm run anton:build:macos  # self-contained: quits a running Anton, builds + boot-smokes a staging bundle in dist/, installs /Applications/Anton.app (override with ANTON_INSTALL_DIR; previous bundle kept as Anton.previous.app), relaunches, and verifies
 ```
 
-**Controlling the running app — always use `dsh anton`, never hand-crafted quit/kill/open chains**: `dsh anton status` reads bridge + harness + memory-service health; `dsh anton restart` reloads the harness tree the bridge serves (installed bundle or this checkout under `pnpm run anton:dev`) while the app itself stays up; `dsh anton stop`/`start` are deliberate lifecycle calls. `dsh anton restart` replaces the raw `POST http://127.0.0.1:3742/bridge/api/harness/restart` (still available) — all are safe under an interrupted tool call: read-only or idempotent, and none can quit the app.
+**Controlling the running app — always use `anton`, never hand-crafted quit/kill/open chains**: `anton status` reads bridge + harness + memory-service health; `anton restart` reloads the harness tree the bridge serves (installed bundle or this checkout under `pnpm run anton:dev`) while the app itself stays up; `anton stop`/`start` are deliberate lifecycle calls. `anton restart` replaces the raw `POST http://127.0.0.1:3742/bridge/api/harness/restart` (still available) — all are safe under an interrupted tool call: read-only or idempotent, and none can quit the app.
 
-Boot resilience, in layers: the build boot-smokes the staged bundle end to end (a broken plugin fails the build, not the launch); the profile boot retries with a failing loader entry disabled (degraded, loud — one broken plugin costs its own features, not the surface); and the Mac app's watchdog escalates persistent harness/bridge failures onto the first-party-only `recovery` profile (amber chip, "Exit Recovery Mode" menu) whose web UI is where repair happens, with a one-shot repair agent on the `repair` profile that diagnoses from `bridge.log`, fixes, rebuilds, and swaps the bundle in place (`ANTON_IN_PLACE_SWAP=1`). First run installs a `dsh` launcher into `~/.local/bin` sharing the app's `~/.anton/dsh` home (profiles `web`, `recovery`, `repair`, `headless`; `dsh models` lists a composition's providers and models).
+Boot resilience, in layers: the build boot-smokes the staged bundle end to end (a broken plugin fails the build, not the launch); the profile boot retries with a failing loader entry disabled (degraded, loud — one broken plugin costs its own features, not the surface); and the Mac app's watchdog escalates persistent harness/bridge failures onto the first-party-only `recovery` profile (amber chip, "Exit Recovery Mode" menu) whose web UI is where repair happens, with a one-shot repair agent on the `repair` profile that diagnoses from `bridge.log`, fixes, rebuilds, and swaps the bundle in place (`ANTON_IN_PLACE_SWAP=1`). First run installs an `anton` launcher into `~/.local/bin` sharing the app's `~/.anton/dsh` home (profiles `web`, `recovery`, `repair`, `headless`; `anton models` lists a composition's providers and models). The app also installs the `anton` binary itself (browser driver + notification tools included) so a repairing agent can reach the same tree the app runs.
 
 ### Host sandbox failures
 

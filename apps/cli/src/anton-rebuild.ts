@@ -136,18 +136,18 @@ function supervisorArguments(jobId: string): string[] {
 export async function startRebuild(options: StartOptions): Promise<number> {
   const timeoutMinutes = Math.trunc(options.timeoutMinutes || DEFAULT_TIMEOUT_MINUTES)
   if (timeoutMinutes < MIN_TIMEOUT_MINUTES || timeoutMinutes > MAX_TIMEOUT_MINUTES) {
-    console.error(`dsh anton rebuild: --timeout must be ${MIN_TIMEOUT_MINUTES}-${MAX_TIMEOUT_MINUTES} minutes`)
+    console.error(`anton rebuild: --timeout must be ${MIN_TIMEOUT_MINUTES}-${MAX_TIMEOUT_MINUTES} minutes`)
     return 1
   }
   const checkout = resolve(options.checkout)
   if (!existsSync(join(checkout, 'scripts', 'build-anton-macos.ts'))) {
-    console.error(`dsh anton rebuild: not a DeepSeek Harness checkout: ${checkout}`)
+    console.error(`anton rebuild: not a DeepSeek Harness checkout: ${checkout}`)
     return 1
   }
   const existing = readRebuildState()
   if (existing !== undefined && !TERMINAL.has(existing.phase)) {
     if (launchJobAlive(existing)) {
-      console.error(`dsh anton rebuild: job ${existing.jobId} is already ${existing.phase} (log: ${existing.logPath})`)
+      console.error(`anton rebuild: job ${existing.jobId} is already ${existing.phase} (log: ${existing.logPath})`)
       return 1
     }
     existing.phase = 'failed'
@@ -187,7 +187,7 @@ export async function startRebuild(options: StartOptions): Promise<number> {
     state.detail = `launchctl bootstrap failed: ${result.stderr.trim()}`
     state.notificationPending = true
     atomicWrite(state)
-    console.error(`dsh anton rebuild: ${state.detail}`)
+    console.error(`anton rebuild: ${state.detail}`)
     return 1
   }
   console.log(JSON.stringify(state, null, 2))
@@ -216,7 +216,7 @@ export async function rebuildStatus(): Promise<number> {
 export async function cancelRebuild(): Promise<number> {
   const state = readRebuildState()
   if (state === undefined || TERMINAL.has(state.phase)) {
-    console.error('dsh anton rebuild: no active rebuild')
+    console.error('anton rebuild: no active rebuild')
     return 1
   }
   if (!launchJobAlive(state)) {
@@ -225,12 +225,12 @@ export async function cancelRebuild(): Promise<number> {
     state.detail = 'supervisor disappeared before cancellation'
     state.notificationPending = true
     atomicWrite(state)
-    console.error(`dsh anton rebuild: ${state.detail}`)
+    console.error(`anton rebuild: ${state.detail}`)
     return 1
   }
   const result = launchctl('kill', 'SIGTERM', `${launchDomain()}/${state.label}`)
   if (result.status !== 0) {
-    console.error(`dsh anton rebuild: cancel failed: ${result.stderr.trim()}`)
+    console.error(`anton rebuild: cancel failed: ${result.stderr.trim()}`)
     return 1
   }
   console.log(JSON.stringify({ jobId: state.jobId, cancellationRequested: true, logPath: state.logPath }, null, 2))
