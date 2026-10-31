@@ -37,6 +37,26 @@ describe('BlockAssembler', () => {
     expect(assembler.blocks()).toEqual([{ type: 'text', text: 'hi' }])
   })
 
+  it('assigns an id to a tool call the provider left unidentified', () => {
+    // Providers occasionally stream a tool call with an empty id; the session
+    // log and the tool result both need one, or replay rejects the session.
+    const streamed = new BlockAssembler()
+    streamed.push({ type: 'block-start', index: 2, blockType: 'tool-call' })
+    streamed.push({ type: 'tool-call-delta', index: 2, id: CallId(''), name: '', argumentsDelta: '{"job_id":"bash-7"}' })
+    streamed.push({ type: 'finish', reason: { kind: 'tool-calls' } })
+    expect(streamed.blocks()).toEqual([
+      { type: 'tool-call', id: CallId('call-2'), name: '', arguments: '{"job_id":"bash-7"}' },
+    ])
+
+    const closed = new BlockAssembler()
+    closed.push({ type: 'block-start', index: 0, blockType: 'tool-call' })
+    closed.push({
+      type: 'block-end', index: 0,
+      block: { type: 'tool-call', id: CallId(''), name: 'echo', arguments: '{}' },
+    })
+    expect(closed.blocks()).toEqual([{ type: 'tool-call', id: CallId('call-0'), name: 'echo', arguments: '{}' }])
+  })
+
   it('tolerates deltas without explicit block-start/end', () => {
     const assembler = new BlockAssembler()
     assembler.push({ type: 'text-delta', index: 0, text: 'implicit' })

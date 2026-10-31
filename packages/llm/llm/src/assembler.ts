@@ -104,13 +104,21 @@ export class BlockAssembler {
   }
 
   private assemble(partial: PartialBlock, index: number): ContentBlock {
-    if (partial.block) return partial.block
+    if (partial.block) {
+      // A provider may close a tool call without an id; the log and its result
+      // need one, or replay rejects the session.
+      return partial.block.type === 'tool-call' && partial.block.id === ''
+        ? { ...partial.block, id: CallId(`call-${index}`) }
+        : partial.block
+    }
     switch (partial.blockType) {
       case 'text': return { type: 'text', text: partial.text }
       case 'reasoning': return { type: 'reasoning', text: partial.text }
       case 'tool-call': return {
         type: 'tool-call',
-        id: partial.toolCallId ?? CallId(`call-${index}`),
+        id: partial.toolCallId !== undefined && partial.toolCallId !== ''
+          ? partial.toolCallId
+          : CallId(`call-${index}`),
         name: partial.toolCallName ?? '',
         arguments: partial.toolCallArguments,
       }

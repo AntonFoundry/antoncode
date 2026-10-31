@@ -302,6 +302,28 @@ describe('Session', () => {
     }
   })
 
+  it('accepts a legacy tool result whose recorded call id is empty', () => {
+    // A provider once emitted a tool call without an id; the result echoed it.
+    // The pair is internally consistent, so replay must accept it rather than
+    // marking the whole session corrupt.
+    const event = {
+      type: 'tool/result', seq: 0, time: 1, surfaceOp: 'append',
+      data: {
+        turn: 1,
+        step: 1,
+        message: {
+          id: 'legacy-tool',
+          role: 'user',
+          content: [{ type: 'tool-result', toolCallId: '', content: [{ type: 'text', text: 'Error: unknown tool ""' }] }],
+          source: { kind: 'tool', callId: '' },
+        },
+      },
+    }
+    expect(() => Session.create(SessionId('legacy-empty-call-id'), [event as unknown as SessionEvent])).not.toThrow()
+    expect(Session.create(SessionId('legacy-empty-call-id'), [event as unknown as SessionEvent]).events)
+      .toContainEqual(event)
+  })
+
   it('snapshots message events without validating plugin-owned block details', () => {
     const boundary = snapshotSessionEvent({
       type: 'turn/start',
