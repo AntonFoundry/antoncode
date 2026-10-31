@@ -126,7 +126,28 @@ final class AntonApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let seed = Data(consentKey)
     let keyLine = seed.base64EncodedString() + "\n"
     let logURL = support.appendingPathComponent("bridge.log")
-    FileManager.default.createFile(atPath: logURL.path, contents: nil)
+    // Append across launches: the output of the bridge that just died is the
+    // only record of why it died, and a relaunch must not be what destroys it.
+    // `createFile(atPath:contents:)` replaces an existing file, so creating it
+    // unconditionally truncated the log on every launch and left the
+    // `seekToEnd()` below with nothing to seek past. Entering recovery is
+    // itself a relaunch, so that wiped the crash evidence moments before the
+    // bridge spawned the repair agent whose first instruction is to read this
+    // file — every automatic repair turn opened on an empty log.
+    //
+    // Rotating one generation at a size cap keeps an unbounded append from
+    // growing the log without limit, while still leaving the previous
+    // episode's tail on disk for the next diagnosis.
+    let manager = FileManager.default
+    if let size = try? manager.attributesOfItem(atPath: logURL.path)[.size] as? UInt64,
+       size > 4 * 1024 * 1024 {
+      let rotatedURL = support.appendingPathComponent("bridge.log.1")
+      try? manager.removeItem(at: rotatedURL)
+      try? manager.moveItem(at: logURL, to: rotatedURL)
+    }
+    if !manager.fileExists(atPath: logURL.path) {
+      manager.createFile(atPath: logURL.path, contents: nil)
+    }
     if let log = try? FileHandle(forWritingTo: logURL) {
       _ = try? log.seekToEnd()
       process.standardOutput = log
