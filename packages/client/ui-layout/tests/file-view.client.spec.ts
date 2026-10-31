@@ -67,6 +67,7 @@ describe('viewerLanguageFor', () => {
     expect(viewerLanguageFor('/w/paper.tex')).toBe('tex')
     expect(viewerLanguageFor('/w/view.m')).toBe('objc')
     expect(viewerLanguageFor('/w/core.janet')).toBe('janet')
+    expect(viewerLanguageFor('/w/actors.ben')).toBe('bender')
     expect(viewerLanguageFor('/w/init.el')).toBe('elisp')
     expect(viewerLanguageFor('/w/app.hy')).toBe('hy')
     expect(viewerLanguageFor('/w/main.purs')).toBe('purescript')

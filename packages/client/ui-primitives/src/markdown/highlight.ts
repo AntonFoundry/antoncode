@@ -25,6 +25,7 @@ import { createJavaScriptRegexEngine, defaultJavaScriptRegexConstructor } from '
 import langTs from '@shikijs/langs/typescript'
 import langBash from '@shikijs/langs/shellscript'
 import langJson from '@shikijs/langs/json'
+import { benderGrammar } from './bender-grammar.ts'
 import { janetGrammar } from './janet-grammar.ts'
 import type { HighlighterCore, LanguageRegistration } from 'shiki/core'
 import type { CSSProperties } from 'react'
@@ -162,10 +163,12 @@ const LAZY_GRAMMARS = new Map<string, () => Promise<LangModule>>([
 /**
  * Grammars the client defines itself because no `@shikijs/langs` package ships
  * one. They register synchronously on first use, so their first render is
- * highlighted rather than showing the plain fallback. Janet is the first such
- * grammar: its Lisp-family structure is covered by a local TextMate grammar.
+ * highlighted rather than showing the plain fallback. Janet and its Bender fork
+ * (same reader syntax, `.ben` files) are the current pair, both built from
+ * `lisp-dialect-grammar.ts`.
  */
 const SPECIAL_GRAMMARS = new Map<string, LanguageRegistration>([
+  ['bender', benderGrammar],
   ['janet', janetGrammar],
 ])
 
@@ -251,6 +254,8 @@ const LANG_ALIASES = new Map<string, string>([
   ['fennel', 'fennel'],
   ['fnl', 'fennel'],
   ['janet', 'janet'],
+  ['bender', 'bender'],
+  ['ben', 'bender'],
   ['racket', 'racket'],
   ['rkt', 'racket'],
   ['scheme', 'scheme'],

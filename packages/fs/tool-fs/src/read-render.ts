@@ -187,7 +187,7 @@ const LANG_BY_EXTENSION: Readonly<Record<string, string>> = {
   md: 'md', markdown: 'md', mdx: 'mdx',
   html: 'html', htm: 'html', css: 'css', scss: 'scss', less: 'less',
   sql: 'sql', xml: 'xml', lua: 'lua',
-  janet: 'janet', lisp: 'common-lisp', cl: 'common-lisp', lsp: 'common-lisp',
+  janet: 'janet', ben: 'bender', lisp: 'common-lisp', cl: 'common-lisp', lsp: 'common-lisp',
   el: 'emacs-lisp', fnl: 'fennel', clj: 'clojure', cljs: 'clojure',
   cljc: 'clojure', edn: 'clojure', scm: 'scheme', rkt: 'racket',
   hy: 'hy', elm: 'elm', cr: 'crystal', f90: 'fortran', f95: 'fortran',

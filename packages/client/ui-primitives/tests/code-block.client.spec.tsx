@@ -43,6 +43,20 @@ describe('highlightToHtml', () => {
     expect(highlightToHtml('(defn f [] nil)', 'Janet')).toContain('shiki')
   })
 
+  it('highlights Bender synchronously, with its {:hint} contract as a keyword', () => {
+    const code = '# hint contract\n(defn add\n  {:hint {:params [:double :double]}}\n  [x y]\n  (+ x y))\n(printf "add = %.1f" (add 20.0 22.0))\n'
+    const html = highlightToHtml(code, 'bender')
+    expect(html).toContain('pre class="shiki css-variables"')
+    expect(html).toContain('var(--shiki-token-comment)')
+    expect(html).toContain('var(--shiki-token-string-expression)')
+    expect(html).toContain('var(--shiki-token-function)')
+    // The fork's own grammar colors `:hint` as a declaration keyword and other
+    // keyword literals as values, so the two must not share a token color.
+    expect(html).toContain('var(--shiki-token-keyword)">:hint')
+    expect(html).toContain('var(--shiki-token-constant)">:params')
+    expect(highlightToHtml('(defn f [] nil)', 'BEN')).toContain('shiki')
+  })
+
   // Every read-tool language hint whose grammar loads lazily (the boot set —
   // ts/js/shell/sh/json — is covered above). Touching each one drives its own
   // dynamic import thunk, so the whole LAZY_GRAMMARS table is exercised.

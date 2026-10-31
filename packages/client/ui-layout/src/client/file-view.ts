@@ -55,7 +55,7 @@ const LANG_BY_EXTENSION: Readonly<Record<string, string>> = {
   scala: 'scala', dart: 'dart', groovy: 'groovy', gradle: 'groovy',
   pl: 'perl', pm: 'perl', hs: 'hs', ex: 'ex', exs: 'exs', erl: 'erl', hrl: 'hrl',
   clj: 'clj', cljs: 'cljs', cljc: 'cljc', edn: 'edn', rkt: 'rkt', scm: 'scm',
-  janet: 'janet', lisp: 'lisp', cl: 'lisp', lsp: 'lisp', el: 'elisp', fnl: 'fennel',
+  janet: 'janet', ben: 'bender', lisp: 'lisp', cl: 'lisp', lsp: 'lisp', el: 'elisp', fnl: 'fennel',
   hy: 'hy', elm: 'elm', cr: 'crystal', f90: 'fortran', f95: 'fortran',
   f03: 'fortran', f08: 'fortran', cob: 'cobol', cbl: 'cobol', ada: 'ada',
   adb: 'ada', ads: 'ada', hx: 'haxe', d: 'd', di: 'd', purs: 'purescript',
