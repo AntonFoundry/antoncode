@@ -57,7 +57,9 @@ def port(pkg: str, face: str) -> None:
 
     tsdown = path / "tsdown.config.ts"
     if tsdown.exists() and "invariant" in tsdown.read_text():
-        print(f"  NOTE {pkg}: tsdown.config.ts still names invariant; collapse it by hand")
+        # The invariant entry is gone, so a two-entry array config collapses to
+        # the single remaining object. Left loud rather than guessed at.
+        print(f"  ACTION {pkg}: tsdown.config.ts names the removed invariant entry; collapse it")
 
     aggregate = ROOT / ("tsconfig.client.json" if face == "client" else "tsconfig.host.json")
     text = aggregate.read_text()

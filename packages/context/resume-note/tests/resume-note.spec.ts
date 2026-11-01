@@ -9,6 +9,7 @@ import * as resumeNote from '@deepseek-ai/dsh-resume-note'
 import type { Config } from '@deepseek-ai/dsh-resume-note'
 
 const SIGNAL = new AbortController().signal
+const TEST_MODEL_SELECTION = { provider: 'mock', model: 'mock' } as const
 
 async function mount(config: Config = {}) {
   const ctx = new Context()
@@ -32,7 +33,7 @@ function sessionAgent(session: Session, id = 'agent', host?: Context): Agent {
     steer: () => {},
     inject: () => { throw new Error('resume-note must append directly to the open step') },
     cancel() {},
-    runMaintenance: task => task(new AbortController().signal),
+    runMaintenance: (task: (signal: AbortSignal) => unknown) => task(new AbortController().signal),
     whenIdle: () => Promise.resolve(),
   } as unknown as Agent
   if (host !== undefined) (agent as { ctx: Context }).ctx = createScope(host, agent).ctx
@@ -54,11 +55,11 @@ function closeTurn(session: Session, turn: number, kind: 'interrupted' | 'comple
 async function fire(ctx: Context, agent: Agent, turn: number, step: number): Promise<void> {
   const proposed = createUserMessage({
     content: [{ type: 'text', text: 'request proposal' }],
-    source: { kind: 'plugin', plugin: 'resume-note-test' },
+    source: { kind: 'user' },
   })
   const decision = await agentEvents(ctx, agent).waterfall(
     'agent/pre-step',
-    { messages: [proposed], turn, step, signal: SIGNAL },
+    { messages: [proposed], turn, step, signal: SIGNAL, modelSelection: TEST_MODEL_SELECTION },
     () => Promise.resolve({ kind: 'enter' as const, messages: [proposed] }),
   )
   if (decision.kind === 'enter') {

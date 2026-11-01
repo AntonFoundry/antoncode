@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ToolCallId, createMessage, createToolResultMessage, createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { createAssistantMessage, ToolCallId, createToolResultMessage, createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, Message, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { serializeResponsesRequest, translateResponses } from '../src/responses.ts'
 
@@ -21,7 +21,7 @@ describe('serializeResponsesRequest', () => {
   it('maps system to instructions and user text to input_text items', () => {
     const wire = serializeResponsesRequest(request({
       system: 'be brief',
-      messages: [createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'model' } })],
+      messages: [createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } })],
     }))
     expect(wire.instructions).toBe('be brief')
     expect(wire.input).toEqual([{ role: 'user', content: [{ type: 'input_text', text: 'hi' }] }])
@@ -30,12 +30,11 @@ describe('serializeResponsesRequest', () => {
 
   it('expands assistant tool calls and user tool results into items', () => {
     const history: Message[] = [
-      createMessage({
-        role: 'assistant',
+      createAssistantMessage({
         content: [
           { type: 'tool-call', id: ToolCallId('call-1'), name: 'read', arguments: '{"path":"a.ts"}' },
         ],
-        source: { kind: 'model' },
+        source: { provider: 'test', model: 'test' },
       }),
       createToolResultMessage({
         callId: ToolCallId('call-1'),

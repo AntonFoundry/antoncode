@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ToolCallId, ReasoningEffortId, createMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createAssistantMessage, ToolCallId, ReasoningEffortId, createMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import { reasoningEffortWire, serializeMessages, serializeRequest } from '../src/serialize.ts'
 
@@ -12,7 +12,7 @@ describe('serializeMessages', () => {
     const wire = serializeMessages([
       createUserMessage({
         content: [{ type: 'text', text: 'hello ' }, { type: 'text', text: 'world' }],
-        source: { kind: 'model' },
+        source: { kind: 'user' },
       }),
     ])
     expect(wire).toEqual([{ role: 'user', content: 'hello world' }])
@@ -22,7 +22,7 @@ describe('serializeMessages', () => {
     const wire = serializeMessages([
       createMessage({
         role: 'system', content: [{ type: 'text', text: 'be brief' }],
-        source: { kind: 'model' },
+        source: { kind: 'system-prompt' },
       }),
     ])
     expect(wire).toEqual([{ role: 'system', content: 'be brief' }])
@@ -30,13 +30,12 @@ describe('serializeMessages', () => {
 
   it('drops reasoning blocks and sends "" (never null) on tool-call turns', () => {
     const wire = serializeMessages([
-      createMessage({
-        role: 'assistant',
+      createAssistantMessage({
         content: [
           { type: 'reasoning', text: 'I should check the weather.' },
           { type: 'tool-call', id: ToolCallId('call-1'), name: 'get_weather', arguments: '{"city":"Paris"}' },
         ],
-        source: { kind: 'model' },
+        source: { provider: 'test', model: 'test' },
       }),
     ])
     expect(wire).toEqual([{
@@ -49,13 +48,12 @@ describe('serializeMessages', () => {
 
   it('serializes parallel tool calls in order', () => {
     const wire = serializeMessages([
-      createMessage({
-        role: 'assistant',
+      createAssistantMessage({
         content: [
           { type: 'tool-call', id: ToolCallId('a'), name: 'one', arguments: '{}' },
           { type: 'tool-call', id: ToolCallId('b'), name: 'two', arguments: '{}' },
         ],
-        source: { kind: 'model' },
+        source: { provider: 'test', model: 'test' },
       }),
     ])
     const assistant = wire[0] as { tool_calls: { id: string }[] }
@@ -163,7 +161,7 @@ describe('serializeRequest', () => {
         type: 'image',
         attachment: { type: 'builtin', id: 'a', ref: 'b' } as never,
       }],
-      source: { kind: 'model' },
+      source: { kind: 'user' },
     })
     // This adapter cannot carry image content; the shared projection degrades
     // the block to placeholder text rather than killing the step. The text is

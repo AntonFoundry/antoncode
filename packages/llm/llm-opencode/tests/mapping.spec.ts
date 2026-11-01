@@ -19,12 +19,12 @@ import {
   variantFor,
   wireTokens,
 } from '../src/adapter.ts'
-import { createAssistantMessage, createToolResultMessage, createUserMessage, ToolCallId, type ContentBlock, type Message } from '@deepseek-ai/dsh-llm'
+import { createMessage, createAssistantMessage, createToolResultMessage, createUserMessage, ToolCallId, type ContentBlock, type Message } from '@deepseek-ai/dsh-llm'
 
 function userText(text: string): Message {
   return createUserMessage({
     content: [{ type: 'text', text }],
-    source: { kind: 'model' },
+    source: { kind: 'user' },
   })
 }
 
@@ -140,18 +140,18 @@ describe('renderPrompt', () => {
   it('skips empty system prompts and quotes tool traffic as text', () => {
     const toolCall = createAssistantMessage({
       content: [{ type: 'tool-call', id: ToolCallId('call_1'), name: 'search', arguments: '{"q":"x"}' }],
-      source: { kind: 'model' },
+      source: { provider: 'test', model: 'test' },
     })
     const toolResult = createToolResultMessage({
       callId: ToolCallId('call_1'),
       content: [{ type: 'text', text: 'found it' }],
       isError: true,
     })
-    const systemish: Message = {
-      ...userText('ignored'),
+    const systemish = createMessage({
       role: 'system',
       content: [{ type: 'reasoning', text: 'thinking' }],
-    }
+      source: { kind: 'system-prompt' },
+    })
     expect(renderPrompt('', [toolCall, toolResult, systemish])).toBe(
       'Assistant: [tool call search {"q":"x"}]\n\nUser: [tool result for call_1 (error)]\nfound it\n\nSystem: thinking',
     )
@@ -185,7 +185,7 @@ describe('renderPrompt', () => {
         { type: 'text', text: 'kept' },
         { type: 'future-block', text: 'dropped' } as unknown as ContentBlock,
       ],
-      source: { kind: 'model' },
+      source: { kind: 'user' },
     })
     expect(renderPrompt(undefined, [message])).toBe('User: kept')
   })
@@ -196,7 +196,7 @@ describe('renderPrompt', () => {
         type: 'image',
         attachment: { id: 'att_1' },
       } as unknown as ContentBlock],
-      source: { kind: 'model' },
+      source: { kind: 'user' },
     })
     expect(() => renderPrompt(undefined, [message])).toThrow(/image/i)
   })

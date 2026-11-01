@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ToolCallId, ReasoningEffortId, createMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createAssistantMessage, ToolCallId, ReasoningEffortId, createMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import { reasoningEffortWire, serializeInput, serializeRequest } from '../src/serialize.ts'
@@ -13,7 +13,7 @@ describe('serializeInput', () => {
     const items = await serializeInput([
       createUserMessage({
         content: [{ type: 'text', text: 'hello ' }, { type: 'text', text: 'world' }],
-        source: { kind: 'model' },
+        source: { kind: 'user' },
       }),
     ])
     expect(items).toEqual([{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hello world' }] }])
@@ -23,7 +23,7 @@ describe('serializeInput', () => {
     const items = await serializeInput([
       createMessage({
         role: 'system', content: [{ type: 'text', text: 'be brief' }],
-        source: { kind: 'model' },
+        source: { kind: 'system-prompt' },
       }),
     ])
     expect(items).toEqual([])
@@ -31,13 +31,12 @@ describe('serializeInput', () => {
 
   it('maps assistant text and tool calls to message + function_call items', async () => {
     const items = await serializeInput([
-      createMessage({
-        role: 'assistant',
+      createAssistantMessage({
         content: [
           { type: 'text', text: 'checking the weather' },
           { type: 'tool-call', id: ToolCallId('call-1'), name: 'get_weather', arguments: '{"city":"Paris"}' },
         ],
-        source: { kind: 'model' },
+        source: { provider: 'test', model: 'test' },
       }),
     ])
     expect(items).toEqual([
@@ -63,7 +62,7 @@ describe('serializeInput', () => {
         type: 'image',
         attachment: { type: 'builtin', id: 'a', ref: 'b' } as never,
       }],
-      source: { kind: 'model' },
+      source: { kind: 'user' },
     })
     const items = await serializeInput([message])
     expect(JSON.stringify(items)).toContain('image omitted')
@@ -75,7 +74,7 @@ describe('serializeInput', () => {
         { type: 'text', text: 'What is shown?' },
         { type: 'image', attachment: { attachmentId: 'image-1', mediaType: 'image/png', bytes: 3, width: 1, height: 1 } as never },
       ],
-      source: { kind: 'model' },
+      source: { kind: 'user' },
     })
     const attachments = {
       readImage: async () => ({

@@ -41,7 +41,7 @@ async function antigravityAccounts(dir: string): Promise<string> {
   return accountsFile
 }
 
-async function boot(dir: string, config: LlmAntigravity.Config): Promise<Context> {
+async function boot(_dir: string, config: LlmAntigravity.Config): Promise<Context> {
   const ctx = new Context()
   cleanups.push(async () => {
     await ctx.fiber.dispose()

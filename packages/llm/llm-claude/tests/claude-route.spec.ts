@@ -15,7 +15,7 @@ import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, { LlmError, MessageId, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { LocalCredentialProvider } from '@deepseek-ai/dsh-credentials-local'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
-import { catalogModels } from '@deepseek-ai/dsh-llm-pi-ai'
+import { authContextFrom, catalogModels, credentialStoreFrom } from '@deepseek-ai/dsh-llm-pi-ai'
 import { CLAUDE_CATALOG_PROVIDER } from '../src/claude.ts'
 import * as LlmClaude from '@deepseek-ai/dsh-llm-claude'
 import {
@@ -95,14 +95,14 @@ function userText(text: string): {
   id: MessageId
   role: 'user'
   content: [{ type: 'text'; text: string }]
-  source: { kind: 'plugin'; plugin: 'test' }
+  source: { kind: 'user' }
 } {
   messageCounter += 1
   return {
     id: MessageId(`msg-claude-${messageCounter}`),
     role: 'user',
     content: [{ type: 'text', text }],
-    source: { kind: 'plugin', plugin: 'test' },
+    source: { kind: 'user' },
   }
 }
 let messageCounter = 0
@@ -182,6 +182,9 @@ async function bootWithAttachments(
   return { ctx, dir }
 }
 
+/** A context the pi-ai auth injectables read through; no services needed. */
+const stackContext = new Context()
+
 /** Adapter stack identical to the plugin's, aimed at a scripted gateway. */
 function stackFor(gatewayURL: string, resolveAccess: () => Promise<string>): ClaudeCodeAdapter {
   const models = [...catalogModels('anthropic').values()].map(model => ({ ...model, baseUrl: gatewayURL }))
@@ -195,6 +198,10 @@ function stackFor(gatewayURL: string, resolveAccess: () => Promise<string>): Cla
       oauthRef: resolved.oauthRef,
       models,
       resolveAccess,
+      // The adapter requires the auth injectables. A bare context is enough
+      // here: both read through it lazily and every case resolves its own
+      // access token directly.
+      auth: { credentials: credentialStoreFrom(stackContext), authContext: authContextFrom(stackContext) },
     }),
   })
 }
@@ -379,7 +386,7 @@ describe('image input', () => {
             { type: 'text', text: 'describe' },
             { type: 'image', attachment: saved },
           ],
-          source: { kind: 'plugin', plugin: 'test' },
+          source: { kind: 'user' },
         }] as never,
       }))
       if (gateway.requests.length !== 1) {

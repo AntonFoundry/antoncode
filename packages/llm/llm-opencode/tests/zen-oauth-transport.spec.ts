@@ -66,7 +66,7 @@ async function mockCatalog(document: unknown = FREE_CATALOG): Promise<string> {
 }
 
 function userMessage(text: string): Message {
-  return createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'plugin', plugin: 'test' } })
+  return createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } })
 }
 
 async function collect(stream: AsyncIterable<StreamChunk>): Promise<StreamChunk[]> {

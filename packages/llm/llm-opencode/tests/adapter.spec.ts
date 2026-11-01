@@ -28,7 +28,7 @@ afterEach(async () => {
 function userText(text: string): Message {
   return createUserMessage({
     content: [{ type: 'text', text }],
-    source: { kind: 'plugin', plugin: 'test' },
+    source: { kind: 'user' },
   })
 }
 
@@ -283,7 +283,7 @@ describe('OpenCodeServerAdapter failures', () => {
     const server = await mockOpenCodeServer()
     const message = createUserMessage({
       content: [{ type: 'text', text: 'describe' }],
-      source: { kind: 'plugin', plugin: 'test' },
+      source: { kind: 'user' },
     })
     const withImage = { ...message, content: [...message.content, { type: 'image', attachment: { id: 'a' } }] }
     const failure = await collectError(

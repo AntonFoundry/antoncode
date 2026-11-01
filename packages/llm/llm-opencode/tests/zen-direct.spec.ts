@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, {
   ToolCallId,
-  createMessage,
+  createAssistantMessage,
   createToolResultMessage,
   createUserMessage,
   ReasoningEffortId,
@@ -112,7 +112,7 @@ async function mockCatalog(document: unknown = FREE_CATALOG): Promise<string> {
 }
 
 function userText(text: string): Message {
-  return createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'plugin', plugin: 'test' } })
+  return createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } })
 }
 
 function streamOptions(model: string, messages: Message[], extra: Partial<GenerateOptions> = {}): GenerateOptions {
@@ -414,10 +414,9 @@ describe('direct effort and protocol routing', () => {
     })
     expect(chunks.at(-1)).toEqual({ type: 'finish', reason: { kind: 'tool-calls' } })
 
-    const followup = createMessage({
-      role: 'assistant',
+    const followup = createAssistantMessage({
       content: [{ type: 'tool-call', id: ToolCallId('call-1'), name: 'bash', arguments: '{"command":"ls"}' }],
-      source: { kind: 'model' },
+      source: { provider: 'test', model: 'test' },
     })
     const result = createToolResultMessage({
       callId: ToolCallId('call-1'),
@@ -444,10 +443,9 @@ describe('direct effort and protocol routing', () => {
       block: { type: 'tool-call', id: 'c9', name: 'bash', arguments: '{"command":"pwd"}' },
     })
 
-    const followup = createMessage({
-      role: 'assistant',
+    const followup = createAssistantMessage({
       content: [{ type: 'tool-call', id: ToolCallId('c9'), name: 'bash', arguments: '{"command":"pwd"}' }],
-      source: { kind: 'model' },
+      source: { provider: 'test', model: 'test' },
     })
     const result = createToolResultMessage({
       callId: ToolCallId('c9'),

@@ -38,7 +38,7 @@ async function codexHome(dir: string, refreshToken = ''): Promise<string> {
 }
 
 /** Real dynamic composition mirroring the shipped bundle: the plugin mounts with no profile. */
-async function boot(dir: string, config: LlmCodex.Config): Promise<Context> {
+async function boot(_dir: string, config: LlmCodex.Config): Promise<Context> {
   const ctx = new Context()
   cleanups.push(async () => {
     await ctx.fiber.dispose()
