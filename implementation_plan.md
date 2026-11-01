@@ -2,111 +2,76 @@
 
 ## Decision
 
-**Rebuild Anton on upstream `0.2.2-alpha.2` by porting our additive packages onto an upstream-descended branch.** The staged-merge path is abandoned; `merge/upstream-0.2` and tag `anton-pre-merge` are retained as references.
-
-The branch descends from `upstream-dsh-v0.2.2-alpha.2`, so future `git merge upstream/master` stays near-clean permanently.
+**Rebuild Anton on upstream `0.2.2-alpha.2` by porting our additive packages onto an upstream-descended branch.** Staged merging is abandoned; `merge/upstream-0.2` and tag `anton-pre-merge` are retained as references.
 
 ## Hard constraints
 
-1. **The UI's look and feel must not change.** Verified against `.anton-visual-baseline/`, not assumed.
-2. **Never boot the ported runtime against the live `DSH_HOME`.** See the session-migration gate below.
+1. **The UI's look and feel must not change** — verified against `.anton-visual-baseline/`, not assumed.
+2. **Never boot the ported runtime against the live `DSH_HOME`** (see the migration gate).
 
 ## Current state (verified)
 
-- Branch `anton/on-0.2.2` = upstream `0.2.2-alpha.2` + visual baseline + **21 ported packages, 13 of them now mounted as bundle rows**. **Build 10/10 gates; `verify-cordis-config` 305 files pass.**
-- Upstream's own test baseline on this machine: **24 failed / 50,670 passed**. Compare against this, never zero.
-- Safety refs: `anton-pre-merge` = `8444d4c7e5`; `merge/upstream-0.2` = `60080b9bda`.
+**Build 10/10 gates · `verify-cordis-config` 305 files · tree clean · 26 suite failures vs the 24 upstream baseline, none in a ported package.**
+
+21 of 30 additive packages ported **and mounted**. Safety refs: `anton-pre-merge` = `8444d4c7e5`, `merge/upstream-0.2` = `60080b9bda`.
 
 ## Porting is two steps: port AND compose
 
-A ported package without a bundle row is **present but inert** — it compiles, tests, and bundles while contributing nothing at runtime. All 21 ported packages were initially unmounted. Every port now ends by adding its row and re-running `npx tsx scripts/verify-cordis-config.ts`.
+A ported package without a bundle row is **inert**. Verify with `pnpm run build` (10 gates), never `tsc -b <pkg>` — a per-package build compiles only `src`, and vitest does not typecheck, so test and composition failures stay invisible. Subpath rows need a hand-written `tsconfig.base.json` alias.
 
-Subpath rows (`pkg/direct`, `pkg/tools`) need a **hand-written** `tsconfig.base.json` path alias outside the generated block; the generator emits bare package names only.
+## Phase 2 — Base ✅
 
-## Porting recipe (scripted at `.anton-port/port-package.py`)
+## Phase 3 — Port the additive packages (21 done)
 
-Per package: copy from `anton-pre-merge`; delete `src/invariant.ts` **and any invariant `describe` block inside a normal spec**; set version `0.2.2-alpha.2`; DSH deps `workspace:*`, vendor `workspace:~`; drop the `./invariant` export, its `files` line, and `dsh-invariants`; remove the invariants tsconfig reference; collapse the `tsdown.config.ts` invariant entry; register in `tsconfig.host.json` / `tsconfig.client.json`; run `pnpm run gen-tsconfig-paths`; `pnpm install`; fix drift; **then mount the row.**
+1. ✅ gate-policy, resume-note (+ `plan_write`).
+2. ✅ 8 `llm-*` providers (+ a justified additive widening of upstream `llm-pi-ai`'s index).
+3. ✅ model-intel, agent-queue + tool, tool-anton-lifecycle, tool-zai, web-search-browser.
+4. ✅ flowbuilder ×4.
+5. **Client faces: 1 of 10 done.** `ui-efficiency-discipline` is ported, mounted, and now carries the restored `tools:working-discipline` sections.
+6. `apps/anton-bridge` — do **not** forward-port `3a1fadfd6c`/`4e845d6bde` verbatim; both describe continuable behaviour the port lacks.
+7. Adopt upstream `preset/agent-preset`; fix the live preset's 3 invalid rows.
 
-**Verify with `pnpm run build` (10 gates), never `tsc -b tsconfig.host.json`** — the raw form bypasses the `--max-old-space-size` wrapper, OOMs, and can leave a `.tsbuildinfo` that reports phantom errors. A per-package build compiles only `src`, and vitest does not typecheck, so test-file type errors surface only in the aggregates. Also run `npx oxlint <pkg>` (type-aware); the pre-commit hook runs a weaker config.
+## Phase 4 — Curated modifications (in progress)
 
-### Known API drift
+1. **WM visual layer — STARTED, ~90% ported, needs one API port.** 20 WM files (8,916 lines) + `WmFrame.tsx` are copied in, reconciliations already done: `AppFrame`/`DocumentTitle`/`shortcut-locales` removed as orphaned; `ClientContext`/`SessionId`/`defineStore` re-pointed; `ThemeSyntaxPalette` + `ThemeDefinition.syntax` restored to `ui-theme`; icons renamed (`…16` → `…Medium`); `'root'` merge imported; project-reference **cycle** avoided by typing `useSessions`/`useWorkspaces` through `UseSessions`/`WorkspaceSnapshot` rather than `GlobalStandardProps`.
+   **Remaining: 24 type errors, one real API port.** Our frame assumes 0.1.x controller shapes: `SessionListState.current` (11 uses — upstream moved *view selection out of the sessions controller*, so it no longer exists by design), `ISessions.open`/`setStaged`, `IWorkspaces.startSession`/`listDirectory`/`readTextFile`/`openPath`, `ThemeRuntime.restoreBootDefault`, `DirectoryEntry.isDirectory`. Re-express these against the 0.2.x surfaces, chiefly `ctx.uiSession` bindings.
+   **Checkpoint: `/tmp/wm-inprogress`** (24 files + tsconfig). The branch was restored to green rather than left failing.
+2. **Re-express the client↔host RPC as typert controllers** — unblocks the 4 conversation faces. `host/apiproxy` is deleted upstream; our additions there were 67 files / 5,198 insertions.
+3. Replace **57 `as unknown` casts** with `snapshotJsonValue` (29 src / 28 tests); the gate is one-directional, so they must be fixed, not baselined.
+4. Port main's **paged tool presentation** (`presentAs`, `ToolPresentationMode`, `renderToolsCatalog`, `TOOL_SEARCH_NAME`).
+5. Decide the **continuable-subagent seam**: port it, or rewrite delegation against upstream.
+6. `client/runtime`, `schema-form`, `web-react` are upstream packages we modified — upstream relocated the client half of `client/runtime` into `api/session-controller` (`ordered-baseline.ts` byte-identical, `ISessions` provided there). Port only the additive remainder.
 
-- Invariants deleted; `ToolGuard` is synchronous; settings are **Config-derived** (`installSettingsSection` gone; namespace from `ctx.fiber.entry?.options.id`).
-- `session.events` → `snapshotEvents()`; the `'plugin'` message source is gone (each plugin declares its own kind); tool results are their own `role:'tool'` message; `CallId` → `ToolCallId`; `tools.execute` takes a **batch** and needs an executor plugin; `agent/pre-step` carries `modelSelection`; the session header is readonly.
-- `JsonValue` → `dsh-util-values`; `dsh-code-runtime` → `dsh-ptc-runtime` (`Code*` → `Ptc*`) with a `resolve`/`run` split; shell settles through `execute()` + `result()`; `SubprocessHandle.pid` is gone; `crypto.randomUUID` restricted (use `dsh-util-crypto`); `WebFetchResult.status` → `statusCode`, text body `.text` → `.content`.
-- Reading an optional service through `ctx.get` **untyped hides real drift behind `any`** — add the type-only import.
+### Why the 9 remaining faces are blocked
 
-### Client-face drift
+- **5 media faces** need `file.view`/`terminal.view`/`webcam.view` — ours, added by the WM change (0 at fork, 2 in our tree, 0 upstream). Unblocked by item 1.
+- **4 conversation faces** need `ctx.get('connection').api.<ns>` from the deleted apiproxy. Unblocked by item 2.
 
-- Client packages use **split compiler faces**: solution-only `tsconfig.json` + `tsconfig.host.json` / `tsconfig.client.json` leaves; dependents and the aggregates reference the **leaf**.
-- `clientBundle(import.meta.dirname, …)`, not the package name.
-- `ClientContext` was our re-export — use cordis `Context`. `defineStore`/`EngineStoreHandle` → `dsh-client-store`; `ctx.slots` → `dsh-client-ui-renderer`; `SessionListState` → `dsh-client-ui-session`; `ChatSnapshot` → `dsh-client-ui-chat`; `SessionId`/`transportError`/`RpcId` → `dsh-client-connection`; `WorkspaceView` → `dsh-api-workspace-controller`; `SessionSummary`/`ISessions`/`SESSION_SEARCH_RESULT_LIMIT` → `dsh-api-session-controller`; `SearchBlock` → `dsh-client-ui-primitives`; `searchCardModel` → `dsh-client-ui-tool`.
-- Client settings: host declares its own `Config` + `ctx.settings.configure({ auto })`; the browser half reads `ctx.configForms.get<T>(namespace)`.
-
-## Verified capability losses (triage; word-matched with `grep -rlw`)
-
-Severity does **not** track deleted line count — it mispredicted in 5 of 5 cases.
+## Verified capability losses
 
 | area | status | detail |
 |---|---|---|
-| `subagent/subagent` + `tool-subagent` | **CRITICAL** | No continuable concept: `startContinuable`, `registerContinuableSetup`, `reportFrom`, `drainContinuableDescendants`, `backgroundMode` all **0 files**. Loses durable child ids, `send_message` continuation, the report seam, completion notices, `list_agents` ready/idle. The port's Config accepts `provider`, `toolName`, `modelSelection`, `modelDiscovery`, `agentOptions`, `maxDepth` — **six** fields, not four. |
-| `core/tools` | **BEHAVIOURAL** | `presentAs`, `ToolPresentationMode`, `renderToolsCatalog`, `TOOL_SEARCH_NAME` all **0 files** → paged tool presentation gone (token/KV-cache regression with a large roster). `tools:working-discipline` section gone while its `efficiencyDiscipline` setting survives, so the toggle would instruct nothing. |
-| `client/ui-conversation` | cosmetic | Collapses to 2 hostless `details` slots; free with the WM-layer port. |
-| `client/connection` | **no loss** | Transport rewritten; search card models relocated to presentation. Close it. |
-| `session-persistence` | **gain + risk** | v0→v4 migration chain ships as four packages. See the gate below. |
-| `client/ui-primitives` | untriaged | Evidence suggests it absorbed code (it gained `SearchBlock`). |
+| `subagent` + `tool-subagent` | **CRITICAL** | No continuable concept: `startContinuable`, `registerContinuableSetup`, `reportFrom`, `drainContinuableDescendants`, `backgroundMode` all 0 files. Config has 6 fields (`agentOptions`/`maxDepth` survive). Live preset line 180 is invalid. |
+| `core/tools` | **BEHAVIOURAL** | Paged presentation gone (4 symbols, 0 files). `tools:working-discipline` **restored** — always-on, with its toggle gating only the economy framing. |
+| `client/ui-conversation` | cosmetic | 2 hostless `details` slots; free with the WM layer. |
+| `client/connection` | no loss | Transport rewritten; models relocated to presentation. |
+| `session-persistence` | gain + risk | v0→v4 chain ships. Gate below. |
 
-## Session-migration gate (data safety)
+## Session-migration gate
 
-`SESSION_FORMAT_VERSION` is **0** in our live logs (verified: `{"type":"session","version":0,…}`) and **4** on the port. Migration is one-way by repo policy. The live home holds **1,791 session logs across 27 workspace directories, 1.7 GB**.
+`SESSION_FORMAT_VERSION` is 0 in our live logs (verified) and 4 on the port; migration is one-way. Live home: **1,791 logs, 27 workspace dirs, 1.7 GB**. Backup exists at `…/sessions.format0.backup-20261102`. **Smoke only against a copied `DSH_HOME`.**
 
-- A format-0 backup exists at `~/Library/Application Support/Anton/dsh/sessions.format0.backup-20261102`.
-- **Smoke the ported runtime only against a copied home** (`DSH_HOME=/tmp/dsh-home-probe`). Do not let a first port boot touch the live home. This gates any Mac-app work.
+## Phase 1 — Visual baseline (outstanding)
 
-## Phase 1 — Visual baseline (partly done)
+Conversation view, tool cards, settings panes, theme variants, additive faces. `--headless=old`.
 
-Shell/theme/layout captured at three viewports. **Outstanding:** conversation view, tool cards, settings panes, theme variants, additive faces. `--headless=old` is required.
+## Phase 5 — Visual acceptance (must run before trusting the WM layer)
 
-## Phase 2 — Base established ✅
-
-## Phase 3 — Port the additive packages (21 of 30)
-
-1. ✅ `context/resume-note`, `guard/gate-policy` (+ `plan_write` pulled forward).
-2. ✅ 8 `llm/llm-*` providers (+ a justified widening of upstream `llm-pi-ai`'s index).
-3. ✅ `subagent/model-intel`, `interaction/agent-queue` + tool, `lifecycle/tool-anton-lifecycle`, `zai/tool-zai`, `web/web-search-browser`.
-4. ✅ `flowbuilder/*` (4 packages).
-5. **10 `client/ui-*` faces — 1 done, 9 gated on Phase 4.** `ui-efficiency-discipline` is ported. The 5 media faces need `file.view`/`terminal.view`/`webcam.view`, which are **ours**, added by the window-manager-frame change (0 at fork, 2 in our tree, 0 upstream) — confirmed independently; upstream's `sidebar-files`/`sidebar-terminal` are a different surface. The 4 conversation faces call `ctx.get('connection').api.<ns>` from the deleted `host/apiproxy` (67 files, 5,198 insertions).
-6. `apps/anton-bridge`. **Do not forward-port `3a1fadfd6c` / `4e845d6bde` verbatim** — both describe continuable behaviour the port lacks (`run_in_background` durable ids, settle notices, the `subagent-child-model` default). Port the continuable seam first or rewrite both against upstream's delegation surface.
-7. Adopt upstream `preset/agent-preset`; port our preset rows. The live Blueant preset needs fixes: `backgroundMode: continuable` (line 180) is not a Config field on the port, and `deployment:persona` was renamed `deployment:persona-prefix` — confirm prepend-vs-replace semantics before trusting it, since our preset relies on a per-child persona.
-
-## Phase 4 — Re-apply the curated modification set
-
-Two items are **prerequisites for group 5**:
-
-1. **Client visual layer** (`ui-layout` window-manager frame + the three view slots) — unblocks the 5 media faces.
-2. **Our client↔host RPC surface as typert remote controllers** — unblocks the 4 conversation faces.
-3. Restore the two `core/tools` losses: they are self-contained, need no WM layer, and are the cheapest real-capability wins — port main's paged-mode module plus the `presentAs`/`ToolPresentationMode` surface, and re-register `tools:working-discipline`.
-4. Triage the remaining non-client modifications; drop 0.1.x-only adaptations.
-5. `client/runtime`, `client/schema-form`, `client/web-react` existed at the fork — **upstream packages we modified**, not additive. Upstream relocated the client half of `client/runtime` into `packages/api/session-controller/src/client/` (same layout; `ordered-baseline.ts` byte-identical; `ISessions` declared and provided there). **Do not port it as a sessions implementation.**
-
-## Phase 5 — Visual verification (acceptance gate)
-
-Rebuild, re-capture every Phase 1 view, diff against baseline, verify every additive face mounts.
-
-## Phase 6 — Superagent absorption
-
-Install `dsh-superagent` as a bundle via `plugin-manager`; supply the profile `stateDir`; configure GitHub, leave Feishu disabled; validate GitHub request → ticket → session.
-
-## Phase 7 — Rename (last)
-
-Rename root identity and directory to antoncode-harness; update bridge paths, the `anton` launcher, `~/.anton/dsh`. **Do not rebuild the Mac app.**
+## Phase 6 — Superagent via `plugin-manager` bundle · ## Phase 7 — Rename (last; no Mac app rebuild)
 
 ## Known debt
 
-- `subagent/model-intel` ships no tests (pre-existing).
-- Regenerating `${DSH_HOME}/.agent-presets/<id>/agent.cordis.yml` **drops rows absent from the generator's tail**; the generator (`apps/anton-bridge/src/blueant-preset.ts` on main) does not exist on this branch.
-- `session-persistence` write-behind (`PersistenceCoordinator`, `SessionWriteBehind`) is **unverified**, not confirmed lost: the port has `batch`/`flush` in some form.
-
-## Fallback
-
-`anton-pre-merge` holds the old tree; `merge/upstream-0.2` holds the staged merge. Nothing done here is destructive.
+- `model-intel` ships no tests.
+- Non-English locale strings (19 packages + client dictionaries) are mine and want translation review.
+- Regenerating a preset `agent.cordis.yml` drops rows absent from the generator's tail.
+- `session-persistence` write-behind is unverified, not confirmed lost.
