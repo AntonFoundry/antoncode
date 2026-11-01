@@ -16,6 +16,10 @@ export interface ProductPackagePolicy {
  * Optional integrations may be reached by an optional bundle without becoming default capabilities.
  */
 export const PRODUCT_PACKAGE_POLICY: Readonly<Record<string, ProductPackagePolicy>> = {
+  'packages/context/resume-note': { category: 'optional', reason: 'Opt-in crash-resume notice enabled by a profile row.' },
+  'packages/interaction/tool-agent-queue': { category: 'optional', reason: 'Model tools mounted by an agent preset beside the queue service.' },
+  'packages/web/web-search-browser': { category: 'optional', reason: 'Browser search provider selected instead of an API provider.' },
+  'packages/zai/tool-zai': { category: 'optional', reason: 'Model tools requiring an explicitly configured Z.ai endpoint.' },
   'packages/core/agent-tool-presentation': { category: 'optional', reason: 'Deprecated selector retained for existing executor configurations.' },
   'packages/browser-use/browser-use': { category: 'optional', reason: 'Service definition used by explicitly selected browser providers.' },
   'packages/computer-use/computer-use': { category: 'optional', reason: 'Service definition used by explicitly selected computer providers.' },

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Browser web search",
+    "description": "Searches the web through a real browser when no API provider is set."
+  }
+}

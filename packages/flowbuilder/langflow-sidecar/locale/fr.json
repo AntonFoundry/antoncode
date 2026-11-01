@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Sidecar LangFlow",
+    "description": "Exécute un serveur LangFlow local pour la vue des flux."
+  }
+}

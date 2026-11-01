@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "LangFlow sidecar",
+    "description": "Runs a local LangFlow server for the workflows view."
+  }
+}

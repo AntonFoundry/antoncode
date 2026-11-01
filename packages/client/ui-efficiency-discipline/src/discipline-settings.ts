@@ -19,5 +19,7 @@ export interface DisciplineSettings {
 
 /** Durable schema; also the wire envelope the browser scope validates against. */
 export const DisciplineSettingsSchema: z<DisciplineSettings> = z.object({
-  [DISCIPLINE_FIELD]: z.boolean().default(DEFAULT_DISCIPLINE),
+  // The literal key, not DISCIPLINE_FIELD: the config catalog matches schema
+  // keys against the declared type by name and cannot resolve a computed one.
+  efficiencyDiscipline: z.boolean().default(DEFAULT_DISCIPLINE),
 })

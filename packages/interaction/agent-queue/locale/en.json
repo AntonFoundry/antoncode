@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Agent mailbox",
+    "description": "Durable mail between agent sessions in and across workspaces."
+  }
+}

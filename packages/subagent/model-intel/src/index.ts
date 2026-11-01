@@ -102,6 +102,22 @@ export interface Config {
   researchRoute?: string
 }
 
+/**
+ * {@link Config} after schema defaulting, where every field is present. Named
+ * rather than written as `Required<Config>` so the config catalog can resolve
+ * the declared type by name.
+ */
+export interface ResolvedConfig {
+  /** Whether the feature mounts at all. */
+  enabled: boolean
+  /** Hours between research passes. */
+  researchIntervalHours: number
+  /** Minutes between schedule checks. */
+  checkIntervalMinutes: number
+  /** Provider/model route the research distiller runs on; empty selects the first eligible. */
+  researchRoute: string
+}
+
 /** Three hours: how long a credential-resolution verdict stays cached. */
 const CREDENTIAL_CACHE_MS = 3 * 60 * 60_000
 
@@ -114,14 +130,14 @@ export class ModelIntelService extends Service {
     researchRoute: z.string().default(''),
   })
 
-  private readonly config: Required<Config>
+  private readonly config: ResolvedConfig
   /** Current datasheet snapshot; test-visible via {@link injectDatasheet}. */
   current: ModelIntelDatasheet = { fetchedAt: '', entries: [] }
   private datasheetMtimeMs = 0
   private credentialVerdicts = new Map<string, { ok: boolean; at: number }>()
   private researchInFlight = false
 
-  constructor(ctx: Context, config: Required<Config>) {
+  constructor(ctx: Context, config: ResolvedConfig) {
     super(ctx, 'model-intel')
     this.config = config
   }

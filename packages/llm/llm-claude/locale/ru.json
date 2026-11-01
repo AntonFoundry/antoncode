@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Claude Code",
+    "description": "Подключает модели Claude через сессию подписки Claude."
+  }
+}

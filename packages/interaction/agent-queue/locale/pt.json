@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Caixa de correio de agentes",
+    "description": "Correio durável entre sessões de agente dentro e entre espaços."
+  }
+}

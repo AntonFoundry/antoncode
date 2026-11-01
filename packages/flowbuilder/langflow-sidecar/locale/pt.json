@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Sidecar do LangFlow",
+    "description": "Executa um servidor LangFlow local para a visão de fluxos."
+  }
+}

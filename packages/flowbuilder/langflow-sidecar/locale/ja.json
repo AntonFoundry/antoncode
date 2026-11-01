@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "LangFlow サイドカー",
+    "description": "ワークフロー表示用のローカル LangFlow サーバーを実行します。"
+  }
+}

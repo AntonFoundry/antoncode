@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "LangFlow 边车",
+    "description": "为工作流视图运行本地 LangFlow 服务。"
+  }
+}

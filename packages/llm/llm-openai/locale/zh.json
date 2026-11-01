@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "OpenAI",
+    "description": "接入 OpenAI 及兼容 OpenAI 的模型服务。"
+  }
+}

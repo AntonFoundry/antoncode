@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "OpenGateway",
+    "description": "OpenGateway のエンドポイント経由でモデルを利用します。"
+  }
+}

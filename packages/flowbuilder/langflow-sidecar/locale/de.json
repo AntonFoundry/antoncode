@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "LangFlow-Sidecar",
+    "description": "Startet einen lokalen LangFlow-Server für die Workflow-Ansicht."
+  }
+}

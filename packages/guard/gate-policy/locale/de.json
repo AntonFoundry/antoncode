@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Werkzeug-Gates",
+    "description": "Verweigert oder bestätigt riskante Aufrufe und verlangt einen Plan."
+  }
+}

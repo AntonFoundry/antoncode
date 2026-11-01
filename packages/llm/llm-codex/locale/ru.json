@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "OpenAI Codex",
+    "description": "Подключает модели Codex через вход в Codex CLI."
+  }
+}

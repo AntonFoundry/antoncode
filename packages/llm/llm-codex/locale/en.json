@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "OpenAI Codex",
+    "description": "Connects Codex models with a Codex CLI login."
+  }
+}

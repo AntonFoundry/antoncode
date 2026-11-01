@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Tool gates",
+    "description": "Denies or confirms risky tool calls and requires a recorded plan."
+  }
+}

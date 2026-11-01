@@ -40,7 +40,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
  * `remote` carries the forwarded settings invalidation that
  * `bindSettingsScope` subscribes to on this context.
  */
-export const inject = ['slots', 'locale', 'connection', 'remote', 'settingsScope']
+export const inject = ['slots', 'locale', 'remote', 'remote.settings', 'configForms']
 
 /**
  * Client plugin body: register the feature-owned efficiency preference row
