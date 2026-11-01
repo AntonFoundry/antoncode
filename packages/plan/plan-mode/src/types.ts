@@ -23,6 +23,19 @@ export interface PlanProjection {
   pending: boolean
 }
 
+/**
+ * The standing implementation plan recorded by `plan_write`: log-only and
+ * whole-value replace, so the last write is the plan in force.
+ */
+export interface StandingPlan {
+  /** Complete markdown plan, starting with a `#` heading. */
+  plan: string
+  /** Headline taken from the plan's first heading when it has one. */
+  title?: string | undefined
+  /** Workspace-relative path the markdown was written to. */
+  path?: string | undefined
+}
+
 /** Host state used to derive {@link PlanProjection}. */
 export interface PlanUnitState {
   /** Logged plan mode. */
@@ -35,6 +48,8 @@ export interface PlanUnitState {
   activeAtLastHeader: boolean | null
   /** Whether a logged `plan/mode` has ever activated plan mode in this Session. */
   entered: boolean
+  /** The standing implementation plan in force, or null before the first `plan/write`. */
+  standingPlan: StandingPlan | null
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {

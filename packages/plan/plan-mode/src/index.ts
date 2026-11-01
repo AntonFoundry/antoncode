@@ -22,6 +22,8 @@
  * @module @deepseek-ai/dsh-plan-mode
  */
 
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname, resolve as resolvePath } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { z as zod } from 'zod'
@@ -51,6 +53,12 @@ declare module '@deepseek-ai/dsh-session/types' {
      * inactive through the projection unit's fold.
      */
     'plan/mode': { active: boolean }
+    /**
+     * The standing implementation plan from this point on: log-only,
+     * non-surface, whole-value replace. The last `plan/write` wins; a log with
+     * none folds to no standing plan through the projection unit's fold.
+     */
+    'plan/write': { plan: string; title?: string; path?: string }
   }
 }
 
@@ -62,6 +70,13 @@ declare module '@deepseek-ai/cordis' {
 
 /** The model-facing exit tool's name, admitted once the Session enters plan mode. */
 export const EXIT_PLAN_MODE = 'exit_plan_mode'
+
+/**
+ * The model-facing plan write tool's name. Always admitted, so an agent can
+ * record an implementation plan — including one produced by a planning
+ * subagent — or replace the plan in force, without entering plan mode.
+ */
+export const PLAN_WRITE = 'plan_write'
 
 /** Deployment-owned plan guidance. */
 export interface PlanModeConfig {
@@ -82,6 +97,33 @@ const EXIT_DESCRIPTION
   = 'Use only in plan mode. Present your plan for the user\'s review and, on approval, leave plan mode. '
   + 'The user may approve (carry out the plan from your next step) or keep '
   + 'planning — their feedback comes back in the tool result; revise and present again.'
+
+const PLAN_WRITE_DESCRIPTION
+  = 'Record or update the standing implementation plan for the current work. '
+  + 'Use this tool whenever an implementation plan has been produced (e.g. by a planning subagent) '
+  + 'or updated. The plan persists across turns and is injected into every subsequent request as a '
+  + 'standing guide for both the model and the user. Send the COMPLETE markdown plan, starting with a # heading.'
+
+/** The default workspace-relative path the standing plan markdown is written to. */
+const DEFAULT_PLAN_PATH = 'implementation_plan.md'
+
+/**
+ * Render the standing implementation plan prompt section.
+ *
+ * @param plan - the markdown implementation plan in force.
+ * @param title - optional headline shown with the section header.
+ * @returns the section text injected into every subsequent request.
+ */
+export function standingImplementationPlanSection(plan: string, title?: string): string {
+  const header = title === undefined
+    ? 'Standing implementation plan'
+    : `Standing implementation plan: ${title}`
+  return [
+    `${header} (the implementation plan currently in force — it persists across turns):`,
+    plan,
+    'Execute against this implementation plan phase by phase, keeping the standing todo tree in sync with progress. Only a whole new plan replaces it, via plan_write carrying the complete new plan.',
+  ].join('\n\n')
+}
 
 /** The plan's first markdown heading (any level), or `undefined` when it has none. */
 function firstHeading(plan: string): string | undefined {
@@ -123,6 +165,11 @@ const planUnitStateSchema: ZodType<PlanUnitState> = zod.object({
   }).strict().nullable(),
   activeAtLastHeader: zod.boolean().nullable(),
   entered: zod.boolean(),
+  standingPlan: zod.object({
+    plan: zod.string(),
+    title: zod.string().optional(),
+    path: zod.string().optional(),
+  }).strict().nullable(),
 }).strict()
 
 /** Wire payload schema of the `plan` projection. */
@@ -134,9 +181,9 @@ const planProjectionSchema: ZodType<PlanProjection> = zod.object({
 /** Projection of logged plan selections and committed mode. */
 export const planProjectionDefinition = {
   key: 'plan',
-  stateVersion: 4,
+  stateVersion: 5,
   stateSchema: planUnitStateSchema,
-  init: () => ({ active: false, wanted: null, running: null, activeAtLastHeader: null, entered: false }),
+  init: () => ({ active: false, wanted: null, running: null, activeAtLastHeader: null, entered: false, standingPlan: null }),
   apply: (state, event) => {
     if (event.type === 'command/run' && event.data.name === 'plan') {
       if (event.data.args === undefined) return state
@@ -154,6 +201,16 @@ export const planProjectionDefinition = {
     }
     if (event.type === 'request/header') {
       return { ...state, activeAtLastHeader: state.active }
+    }
+    if (event.type === 'plan/write') {
+      return {
+        ...state,
+        standingPlan: {
+          plan: event.data.plan,
+          ...event.data.title !== undefined ? { title: event.data.title } : {},
+          ...event.data.path !== undefined ? { path: event.data.path } : {},
+        },
+      }
     }
     return state
   },
@@ -200,6 +257,18 @@ export class PlanModeController extends Service {
       text: (context) => {
         if (context.agent === undefined) return ''
         return this.selectedActive(context.agent.session) ? this.section : ''
+      },
+    })
+    // Ordered immediately after plan policy, derived from its registered order
+    // so the core table stays the one home of section ordering.
+    ctx.systemPrompt.section({
+      name: 'plan:standing-plan',
+      order: ctx.systemPrompt.getSectionOrder('PLAN_POLICY') + 1,
+      interpolate: false,
+      text: (context) => {
+        if (context.agent === undefined) return ''
+        const standing = this.planState(context.agent.session).standingPlan
+        return standing === null ? '' : standingImplementationPlanSection(standing.plan, standing.title)
       },
     })
     this.planProjectionHandle = await ctx.sessionProjections.register(planProjectionDefinition)
@@ -373,6 +442,65 @@ export class PlanModeController extends Service {
         content: result.content,
       }),
     }), { when: ({ agent }) => this.selectedActive(agent.session) || this.planState(agent.session).entered })
+
+    ctx.tools.register(defineTool({
+      name: PLAN_WRITE,
+      description: PLAN_WRITE_DESCRIPTION,
+      parameters: {
+        plan: { type: 'string', required: true, description: 'The complete implementation plan, as markdown, starting with a # heading that names it.' },
+        title: { type: 'string', description: 'Optional short title for the plan.' },
+        path: { type: 'string', description: `Optional workspace-relative file path to save the plan markdown. Defaults to "${DEFAULT_PLAN_PATH}".` },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            recorded: { type: 'boolean', required: true },
+            title: { type: 'string', required: true },
+            path: { type: 'string', required: true },
+            bytes: { type: 'number', required: true },
+          },
+        },
+        render: (_args, { title, path: planPath, bytes }) => [{
+          type: 'text',
+          text: `Recorded implementation plan: ${title} in ${planPath} (${bytes} bytes). It is now the standing plan in force across turns.`,
+        }],
+      },
+      execute: async (args, exec) => {
+        const agent = exec.agent
+        if (agent === undefined) throw new Error(`${PLAN_WRITE} requires an agent session`)
+        if (!/^#\s+\S/.test(args.plan.trim())) {
+          throw new Error(`${PLAN_WRITE} requires a non-empty markdown plan starting with a # heading`)
+        }
+        const planPath = typeof args.path === 'string' && args.path.trim() !== '' ? args.path.trim() : DEFAULT_PLAN_PATH
+        const title = args.title ?? firstHeading(args.plan) ?? 'Implementation plan'
+        const absolute = resolvePath(agent.session.header.cwd ?? process.cwd(), planPath)
+        // The log is authoritative; the file is a convenience projection of it,
+        // so a write failure is reported without discarding the recorded plan.
+        try {
+          await mkdir(dirname(absolute), { recursive: true })
+          await writeFile(absolute, args.plan, 'utf-8')
+        } catch (error) {
+          ctx.logger.warn('dsh-plan-mode: failed to write the standing plan to %s: %o', absolute, error)
+        }
+        agent.session.append('plan/write', { plan: args.plan, title, path: planPath })
+        return { recorded: true, title, path: planPath, bytes: Buffer.byteLength(args.plan, 'utf-8') }
+      },
+      presentCall: args => ({
+        card: 'generic',
+        title: args.title ?? firstHeading(args.plan) ?? 'Implementation plan',
+        kind: 'other',
+        locations: [{ path: typeof args.path === 'string' && args.path.trim() !== '' ? args.path.trim() : DEFAULT_PLAN_PATH }],
+        content: [{ type: 'text', text: args.plan }],
+      }),
+      presentResult: (args, result) => ({
+        card: 'generic',
+        title: 'Implementation plan',
+        locations: [{ path: typeof args.path === 'string' && args.path.trim() !== '' ? args.path.trim() : DEFAULT_PLAN_PATH }],
+        content: result.content,
+      }),
+    }))
   }
 
   private loggedActive(session: Session): boolean {

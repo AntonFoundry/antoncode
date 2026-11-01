@@ -92,6 +92,12 @@ The command child activates only when a commands service is composed. It maps ba
 
 `exit_plan_mode` is disclosed progressively: it is admitted from the first step whose selected plan state is active and stays admitted for the rest of the Session, so entering plan mode the first time adds it together with the guidance, and later transitions change only the guidance; Native and PTC execution use the same admitted set. A call while plan mode is not committed fails. An approved review records a silent pending exit that the next accepted in-turn pre-step appends, keeping plan guidance for the rest of the current tool batch. Without a user-questions channel, or after a service reload while the review is pending, the call fails closed and `/plan off` remains the manual escape.
 
+### The standing implementation plan tool
+
+`plan_write` is admitted in every Session, with or without plan mode, because recording a plan is not a plan-mode activity: an agent may produce one at any time, including from a planning subagent's output. A call appends one `plan/write` event carrying the complete markdown, and writes the same markdown to its `path` (default `implementation_plan.md`, resolved against the Session's cwd). The log is authoritative and the file is a convenience projection of it, so a failed file write is logged and the recorded plan still stands. A plan that does not start with a `#` heading is rejected before anything is logged.
+
+The projection folds `plan/write` whole-value, so the last write is the plan in force, and the `plan:standing-plan` section injects it into every later request immediately after `plan:policy`. The section's order is derived from the registered `PLAN_POLICY` order rather than a second literal, keeping the core order table the one home of section ordering.
+
 ### Session projection unit
 
 The package requires `ctx.sessionProjections` and awaits registration of the `plan` unit during activation. Its prompt section is registered before that wait. Agent prompt assembly fails explicitly while the reader is unavailable, so a restored plan cannot run without its guidance. Callers must await plugin activation before running an agent.
@@ -102,8 +108,8 @@ The unit turns logged `/plan` command runs into a candidate target, commits the 
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Plugin entry: `Config` schema, the `ctx.planMode` service, `plan:policy` section, `/plan` command, `exit_plan_mode` tool |
-| [`src/types.ts`](src/types.ts) | The `plan` projection-key declaration and `PlanProjection` wire value |
+| [`src/index.ts`](src/index.ts) | Plugin entry: `Config` schema, the `ctx.planMode` service, `plan:policy` and `plan:standing-plan` sections, `/plan` command, `exit_plan_mode` and `plan_write` tools |
+| [`src/types.ts`](src/types.ts) | The `plan` projection-key declaration, `PlanProjection` wire value, and `StandingPlan` |
 | [`src/client.ts`](src/client.ts) | Client-namespace re-export of the types outlet |
 
 The review intent carries the originating tool-call id, so the Web client can reopen the same submitted plan after the review closes. The complete Markdown remains in the existing native call or PTC dispatch log.

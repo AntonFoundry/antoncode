@@ -114,7 +114,7 @@ describe('plan mode through the agent loop', () => {
     const systemNode = findEvent(log, 'system/message')
     expect(planMode.seq).toBeLessThan(header.seq)
     expect(header.data.reason).toBe('initial')
-    expect(header.data.header.tools?.map(tool => tool.name)).toEqual(['exit_plan_mode', 'read', 'write'])
+    expect(header.data.header.tools?.map(tool => tool.name)).toEqual(['exit_plan_mode', 'plan_write', 'read', 'write'])
     // The first system node already carries the section: appended, never replaced.
     expect(systemNode.surfaceOp).toBe('append')
     expect(log.filter(event => event.type === 'system/message')).toHaveLength(1)
@@ -142,7 +142,7 @@ describe('plan mode through the agent loop', () => {
     await waitForIdle(ctx, agent)
     expect(planActive(ctx, agent)).toBe(false)
     const first = findEvent(agent.session.snapshotEvents(), 'request/header')
-    expect(first.data.header.tools?.map(tool => tool.name)).toEqual(['read', 'write'])
+    expect(first.data.header.tools?.map(tool => tool.name)).toEqual(['plan_write', 'read', 'write'])
     const firstSystem = findEvent(agent.session.snapshotEvents(), 'system/message')
     expect(systemText(agent)).not.toContain(PLAN_CONFIG.section)
 
@@ -168,7 +168,7 @@ describe('plan mode through the agent loop', () => {
     expect(systemText(agent)).toContain('plan mode')
     expect(log.filter(event => event.type === 'request/header').map(event => event.data.reason)).toEqual(['initial', 'change'])
     const secondHeader = findEvent(log, 'request/header', 'last')
-    expect(secondHeader.data.header.tools?.map(tool => tool.name)).toEqual(['exit_plan_mode', 'read', 'write'])
+    expect(secondHeader.data.header.tools?.map(tool => tool.name)).toEqual(['exit_plan_mode', 'plan_write', 'read', 'write'])
     expect(secondHeader.data.header.tools).not.toEqual(first.data.header.tools)
   })
 
@@ -207,7 +207,7 @@ describe('plan mode through the agent loop', () => {
 
     expect(adapter.requests).toHaveLength(3)
     expect(requestSystem(adapter.requests[2])).toContain(PLAN_CONFIG.section)
-    expect(adapter.requests[2]?.tools?.map(tool => tool.name)).toEqual(['exit_plan_mode', 'read', 'write'])
+    expect(adapter.requests[2]?.tools?.map(tool => tool.name)).toEqual(['exit_plan_mode', 'plan_write', 'read', 'write'])
     const log = agent.session.snapshotEvents()
     const planMode = findEvent(log, 'plan/mode')
     const firstEnd = log.find(event => event.type === 'step/end'

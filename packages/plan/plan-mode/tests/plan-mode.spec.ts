@@ -1,3 +1,6 @@
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { executeToolFixture, executeModelToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import * as PtcToolExecutor from '@deepseek-ai/dsh-tool-executor-ptc'
@@ -18,7 +21,7 @@ import UserQuestionService, {
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import { PtcRuntime, type PtcRunRequest, type PtcRunResult } from '@deepseek-ai/dsh-ptc-runtime'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
-import PlanModeController, { EXIT_PLAN_MODE, planProjectionDefinition, resolveConfig } from '../src/index.ts'
+import PlanModeController, { EXIT_PLAN_MODE, PLAN_WRITE, planProjectionDefinition, resolveConfig } from '../src/index.ts'
 import type { PlanModeConfig } from '../src/index.ts'
 import type { PlanUnitState } from '../src/types.ts'
 
@@ -82,6 +85,13 @@ async function agentWithSession(
 async function assembleFor(ctx: Context, agent: Agent) {
   const toolSet = await ctx.tools.resolve({ agent, modelSelection: TEST_MODEL_SELECTION, signal: testToolSignal })
   return ctx.systemPrompt.assemble({ agent, scope: agent, toolSet })
+}
+
+/** Fold the whole plan unit state, for assertions beyond the active flag. */
+function foldPlanState(events: readonly SessionEvent[]): PlanUnitState {
+  let state: PlanUnitState = planProjectionDefinition.init()
+  for (const event of events) state = planProjectionDefinition.apply(state, event)
+  return state
 }
 
 function foldPlanMode(events: readonly SessionEvent[], end = events.length): boolean {
@@ -451,12 +461,12 @@ describe('the soft layer', () => {
     registerNamedTools(ctx, ['read', 'write'])
     const agent = await agentWithSession(ctx)
     const defaultAssembly = await assembleFor(ctx, agent)
-    expect(defaultAssembly.tools.map(tool => tool.name)).toEqual(['read', 'write'])
+    expect(defaultAssembly.tools.map(tool => tool.name)).toEqual(['plan_write', 'read', 'write'])
     expect(defaultAssembly.sections.find(section => section.name === 'plan:policy')?.text).toBe('')
 
     agent.session.append('plan/mode', { active: true })
     const planAssembly = await assembleFor(ctx, agent)
-    expect(planAssembly.tools.map(tool => tool.name)).toEqual([EXIT_PLAN_MODE, 'read', 'write'])
+    expect(planAssembly.tools.map(tool => tool.name)).toEqual([EXIT_PLAN_MODE, 'plan_write', 'read', 'write'])
     expect(planAssembly.sections.find(section => section.name === 'plan:policy')?.text).toBe(TEST_PLAN_SECTION)
 
     agent.session.append('plan/mode', { active: false })
@@ -469,7 +479,7 @@ describe('the soft layer', () => {
     const ctx = await setup()
     registerNamedTools(ctx, ['read'])
     const assembly = await ctx.systemPrompt.assemble()
-    expect(assembly.tools.map(tool => tool.name)).toEqual([EXIT_PLAN_MODE, 'read'])
+    expect(assembly.tools.map(tool => tool.name)).toEqual([EXIT_PLAN_MODE, PLAN_WRITE, 'read'])
     expect(assembly.sections.find(section => section.name === 'plan:policy')?.text).toBe('')
   })
 
@@ -478,7 +488,7 @@ describe('the soft layer', () => {
     registerNamedTools(ctx, ['read', 'write', 'todo_write'])
     const agent = await agentWithSession(ctx, 'agent-1', { active: true })
     const assembly = await assembleFor(ctx, agent)
-    expect(assembly.tools.map(tool => tool.name).sort()).toEqual([EXIT_PLAN_MODE, 'read', 'todo_write', 'write'])
+    expect(assembly.tools.map(tool => tool.name).sort()).toEqual([EXIT_PLAN_MODE, PLAN_WRITE, 'read', 'todo_write', 'write'])
     expect(assembly.sections.find(section => section.name === 'plan:policy')?.text).toBe(TEST_PLAN_SECTION)
   })
 
@@ -487,10 +497,10 @@ describe('the soft layer', () => {
     registerNamedTools(ctx, ['read', 'added-later'])
     const planning = await agentWithSession(ctx, 'planning', { active: true })
     expect((await assembleFor(ctx, planning)).tools.map(tool => tool.name))
-      .toEqual(['added-later', 'exit_plan_mode', 'read'])
+      .toEqual(['added-later', 'exit_plan_mode', 'plan_write', 'read'])
     const defaulted = await agentWithSession(ctx, 'defaulted')
     expect((await assembleFor(ctx, defaulted)).tools.map(tool => tool.name))
-      .toEqual(['added-later', 'read'])
+      .toEqual(['added-later', 'plan_write', 'read'])
   })
 
   it('keeps run_code the only wire tool in plan mode under the registry PTC mode; the SDK gains the exit binding', async () => {
@@ -554,7 +564,10 @@ describe('the soft layer', () => {
     registerNamedTools(bare, ['read', 'write'])
     const bareSdk = (await bare.systemPrompt.assemble({ agent })).sections.find(section => section.name === 'tools:sdk')?.text ?? ''
     expect(bareSdk).not.toContain('exit_plan_mode:')
-    expect(defaultSdk).toBe(bareSdk)
+    // plan_write is always registered by plan mode, so the inactive composition
+    // differs from a bare one by exactly that binding and nothing else.
+    expect(bareSdk).not.toContain('plan_write:')
+    expect(defaultSdk).toContain('plan_write:')
   })
 })
 
@@ -1213,5 +1226,93 @@ describe('HMR disposal', () => {
     expect((await ctx.systemPrompt.assemble()).sections.map(section => section.name)).not.toContain('plan:policy')
     await boundary(ctx, agent, 'step-start')
     expect(agent.session.snapshotEvents().some(event => event.type === 'plan/mode')).toBe(false)
+  })
+})
+
+describe('the standing implementation plan', () => {
+  /** Execute `plan_write` against a temp file so the repository tree stays clean. */
+  async function writePlan(
+    ctx: Context,
+    agent: Agent,
+    plan: string,
+    extra: { title?: string } = {},
+  ): Promise<{ planPath: string; dir: string }> {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-plan-write-'))
+    const planPath = join(dir, 'implementation_plan.md')
+    await executeToolFixture(ctx, {
+      callId: ToolCallId(`call-${++callCounter}`),
+      name: PLAN_WRITE,
+      arguments: { plan, path: planPath, ...extra },
+      signal: new AbortController().signal,
+      agent,
+    })
+    return { planPath, dir }
+  }
+
+  it('logs the plan, folds it into the projection, and writes the markdown file', async () => {
+    const ctx = await setup()
+    const agent = await agentWithSession(ctx)
+    const plan = '# Port the client\n\nStep one.'
+    const { planPath, dir } = await writePlan(ctx, agent, plan)
+    try {
+      const written = agent.session.snapshotEvents().filter(event => event.type === 'plan/write')
+      expect(written).toHaveLength(1)
+      expect(written[0]?.data).toMatchObject({ plan, title: 'Port the client', path: planPath })
+      expect(foldPlanState(agent.session.snapshotEvents()).standingPlan).toEqual({ plan, title: 'Port the client', path: planPath })
+      expect(await readFile(planPath, 'utf-8')).toBe(plan)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('injects the standing plan into every later assembly and replaces it whole', async () => {
+    const ctx = await setup()
+    const agent = await agentWithSession(ctx)
+    const sectionOf = async (): Promise<string> =>
+      (await assembleFor(ctx, agent)).sections.find(section => section.name === 'plan:standing-plan')?.text ?? ''
+
+    expect(await sectionOf()).toBe('')
+
+    const first = await writePlan(ctx, agent, '# First\n\nOriginal.')
+    try {
+      expect(await sectionOf()).toContain('Original.')
+      expect(await sectionOf()).toContain('Standing implementation plan: First')
+    } finally {
+      await rm(first.dir, { recursive: true, force: true })
+    }
+
+    // Whole-value replace: the last write is the plan in force.
+    const second = await writePlan(ctx, agent, '# Second\n\nReplacement.')
+    try {
+      const text = await sectionOf()
+      expect(text).toContain('Replacement.')
+      expect(text).not.toContain('Original.')
+    } finally {
+      await rm(second.dir, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a plan that does not start with a heading', async () => {
+    const ctx = await setup()
+    const agent = await agentWithSession(ctx)
+    const rejected = await executeToolFixture(ctx, {
+      callId: ToolCallId(`call-${++callCounter}`),
+      name: PLAN_WRITE,
+      arguments: { plan: 'no heading here' },
+      signal: new AbortController().signal,
+      agent,
+    })
+    expect(rejected).toMatchObject({ isError: true })
+    expect(JSON.stringify(rejected)).toContain('markdown plan starting with a # heading')
+    expect(agent.session.snapshotEvents().some(event => event.type === 'plan/write')).toBe(false)
+  })
+
+  it('is admitted outside plan mode, unlike the exit tool', async () => {
+    const ctx = await setup()
+    registerNamedTools(ctx, ['read'])
+    const agent = await agentWithSession(ctx, 'agent-1', { active: false })
+    const names = (await assembleFor(ctx, agent)).tools.map(tool => tool.name)
+    expect(names).toContain(PLAN_WRITE)
+    expect(names).not.toContain(EXIT_PLAN_MODE)
   })
 })
