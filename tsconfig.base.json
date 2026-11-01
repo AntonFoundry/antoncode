@@ -128,6 +128,7 @@
       "@deepseek-ai/node-addon-system/flock": ["./native/system/packages/entry/src/flock.ts"],
       "@deepseek-ai/dsh-tool-call-timeout-policy": ["./packages/guard/timeout-policy/src"],
       "@deepseek-ai/dsh-gate-policy": ["./packages/guard/gate-policy/src"],
+      "@deepseek-ai/dsh-resume-note": ["./packages/context/resume-note/src"],
       "@deepseek-ai/dsh-spill-policy/notice": ["./packages/spill/spill-policy/src/notice.ts"],
       "@deepseek-ai/dsh-subprocess/control": ["./packages/subprocess/subprocess/src/control.ts"],
       "@deepseek-ai/dsh-typert-registry": ["./packages/typert/registry/src/index.ts"],
