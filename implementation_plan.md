@@ -33,28 +33,21 @@ A ported package without a bundle row is **inert**. Verify with `pnpm run build`
 
 ## Phase 4 — Curated modifications (in progress)
 
-### 1. WM visual layer — ported to 12 type errors, one structural blocker
+### 1. WM visual layer — route (a) done; 69 type errors down to 1
 
-**Decision: port it, not package it.** 20 WM files (8,916 lines) plus `WmFrame.tsx` couple to the tree through only two imports, so packaging would reproduce 9,000 lines behind a new boundary to no benefit, and the frame belongs in `ui-layout` where the slot vocabulary lives. The user has approved splitting `WmFrame.tsx` (2,205 lines) **after** the port lands.
+**Decision: port it, not package it.** 20 WM files (8,916 lines) plus `WmFrame.tsx` couple to the tree through only two imports, so packaging would reproduce 9,000 lines behind a new boundary to no benefit, and the frame belongs in `ui-layout` where the slot vocabulary lives. `WmFrame.tsx` (2,205 lines) gets split **after** the port lands (approved).
 
-**Done and verified:** WM files copied; orphaned `AppFrame`/`DocumentTitle`/`shortcut-locales` deleted; `ClientContext`/`defineStore` re-pointed; `SessionId` from `dsh-session/types`; icons renamed `…16` → `…Medium`; `'root'` and hook types wired; **`ThemeSyntaxPalette` + `ThemeDefinition.syntax` restored to `ui-theme`** (our addition, used by the WM themes for code-block colours); `SessionListState.current` replaced by a `mainSessionIdOf` derivation over `retainedBy.mainView` (upstream moved view selection out of the sessions controller); controller calls re-pointed to `ctx.uiWorkspace` (`openSession`, `startSession`, `listDirectory`) and `remote.workspaceFiles.read`.
+**Route (a) implemented and it removed the cycle.** `ui-layout` now declares a local `WorkspaceNavigation` interface for the four members it calls (`openSession`, `startSession`, `listDirectory`, staged-session sync) and reads it through `ctx.get('uiWorkspace')`. No reference edge, so no cycle — the `ui-conversation` errors are gone. The signatures mirror `UiWorkspace` in `packages/client/ui-workspace/src/client/navigation.ts`; change both together.
 
-**The blocker is a project-reference cycle, and it is structural:**
+**Also done and verified:** orphaned `AppFrame`/`DocumentTitle`/`shortcut-locales` deleted; `ClientContext`/`defineStore` re-pointed; `SessionId` from `dsh-session/types`; icons `…16` → `…Medium`; `ThemeSyntaxPalette` + `ThemeDefinition.syntax` restored to `ui-theme`; `SessionListState.current` replaced by a `mainSessionIdOf` derivation over `retainedBy.mainView`; `restoreBootDefault` → `setTheme`; `DirectoryEntry.isDirectory` checks dropped (upstream's browse listing is directories-only — the files buffer needs `workspaceFiles.list` to show files again); `CodeBlock` copy labels supplied; `readTextFile` reads `remote.workspaceFiles.read` and returns `{ content, truncated }`; the `conversation` slot declares `hookContext: { scopeSessionId }` and each pane passes its own binding, falling back to the main view.
 
-```
-ui-layout → ui-workspace/client/navigation.ts (UiWorkspace type)
-          → ui-workspace client → ui-conversation → ui-layout
-```
+**The one remaining error is a frame-assembly decision.** Our frame registers into `root` with `store: createLayoutStore` **plus** an `inject` carrying the wm and scratch stores. Upstream's `inject` is the face a **parent** registration supplies through its child declaration — not something a registrant provides for itself — and `root` is seeded by the core, so it has no parent to carry one. Upstream's own frame instead pre-creates the store instance and wraps the handle so `create()` returns it (`/tmp/upstream-layout/client/index.ts`), giving the registrant actions and observable sources with no inject face at all.
 
-`ui-workspace` and `ui-conversation` both already depend on `ui-layout`, and `ui-workspace`'s client builds on `ui-conversation`, so **any** import of `UiWorkspace` from `ui-layout` closes the cycle — the package entry, the `/client` entry, and the `src/` passthrough all pull the same graph.
+**Next step: fold the wm and scratch state into the frame's single store** using that pre-created-instance pattern, and take the ~24 injected members from the store's actions and sources. Bounded, but it changes how `WmFrame` receives its state, so it is a real refactor rather than a rename.
 
-**The fix is a role decision, not another import tweak.** Two viable routes:
-- **(a) Type the capability locally.** Declare a minimal structural interface in `ui-layout` for the four navigation members it calls (`openSession`, `startSession`, `listDirectory`, plus staged-session sync) and obtain it through `ctx.get('uiWorkspace')`. No reference edge, no cycle. Slight duplication of a signature set, and it must be kept honest against upstream's declarations.
-- **(b) Split the navigation contract into its own package** that both `ui-layout` and `ui-workspace` may depend on. Cleaner long-term, and the kind of seam the repo already uses, but it is a new package and out of scope for a port.
+**Correction worth keeping:** I first added a `RootInjectFace` to `ui-renderer` to make the inject face declarable. That was a misreading of whose face `inject` is, and it was reverted — `ui-renderer` is untouched.
 
-**(a) is the right call for the port.** Then re-verify against `.anton-visual-baseline/` before trusting anything.
-
-**Checkpoint: `/tmp/wm-inprogress`** (24 source files + tsconfig + the `ui-theme` change). The branch is green, not left failing.
+**Checkpoint: `/tmp/wm-inprogress`** (34 files, including the `ui-theme` and `tsconfig.base.json` changes, prefixed `_`). The branch is green, not left failing.
 
 ### Remaining Phase 4 items
 
