@@ -590,6 +590,7 @@
     { "path": "./packages/llm/llm-claude" },
     { "path": "./packages/llm/llm-codex" },
     { "path": "./packages/llm/llm-opencode" },
+    { "path": "./packages/subagent/model-intel" },
     { "path": "./apps/cli" },
     { "path": "./apps/plugin-market-generator" },
     { "path": "./apps/desktop-host" },
