@@ -83,6 +83,15 @@
     - id: workspace
       name: '@deepseek-ai/dsh-workspace'
 
+    # Shared host-owned workspace queue; tool rows mount in agent presets.
+    - id: agent-queue
+      name: '@deepseek-ai/dsh-agent-queue'
+
+    # Cross-workspace direct mailbox on its own `agent_queue_direct` domain;
+    # it shares nothing with the workspace-scoped queue above.
+    - id: agent-queue-direct
+      name: '@deepseek-ai/dsh-agent-queue/direct'
+
     - id: session-reference
       name: '@deepseek-ai/dsh-session-reference'
 
