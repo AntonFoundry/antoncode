@@ -1,4 +1,25 @@
+---
+description: "OpenAI and OpenAI-compatible chat-completions adapter for the DeepSeek Harness
+LLM seam. One adapter serves profile-gated provider routes with the ide"
+kind: "package-reference"
+---
+
 # dsh-llm-openai
+
+English
+
+## Summary
+
+OpenAI and OpenAI-compatible chat-completions adapter for the DeepSeek Harness
+LLM seam. One adapter serves profile-gated provider routes with the identical
+`POST {baseURL}/chat/completions` + SSE protocol:
+
+## Table of Contents
+
+- [Understand the implementation](#understand-the-implementation)
+- [Dev Note](#dev-note)
+
+## Understand the implementation
 
 OpenAI and OpenAI-compatible chat-completions adapter for the DeepSeek Harness
 LLM seam. One adapter serves profile-gated provider routes with the identical
@@ -107,3 +128,7 @@ tsc -b tsconfig.host.json        # workspace typecheck (also registers the proje
 tsdown --env.DSH_BUILD_FACE host # bundles lib/index.js
 vitest run packages/llm/llm-openai/tests
 ```
+
+## Dev Note
+
+- See the module JSDoc for the owning contract and its rationale.

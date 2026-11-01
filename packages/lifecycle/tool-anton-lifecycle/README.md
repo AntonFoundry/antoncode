@@ -1,4 +1,22 @@
+---
+description: "English"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-anton-lifecycle
+
+English
+
+## Summary
+
+English
+
+## Table of Contents
+
+- [Understand the implementation](#understand-the-implementation)
+- [Dev Note](#dev-note)
+
+## Understand the implementation
 
 English
 
@@ -67,3 +85,7 @@ Tool calls append after the stable request prefix. A restart creates a new runti
 - The plugin requires the Anton Bridge to be running and reachable; it is not a general remote process manager.
 - The bundled c0ntext engine still requires a compatible Docker/Compose runtime when the Anton Bridge is configured to start it. The lifecycle tools report that dependency's failure but do not install Docker or container images.
 - Stop and restart are self-terminating operations. They cannot provide a normal post-action result to the process they terminate; use `anton_status` after the application is available again.
+
+## Dev Note
+
+- See the module JSDoc for the owning contract and its rationale.

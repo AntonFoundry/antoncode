@@ -1,4 +1,20 @@
+---
+description: "gate-policy package."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-gate-policy
+
+## Summary
+
+English
+
+## Table of Contents
+
+- [Understand the implementation](#understand-the-implementation)
+- [Dev Note](#dev-note)
+
+## Understand the implementation
 
 English
 
@@ -73,3 +89,7 @@ Gated calls add one denied tool result (`Error: Gate '<name>' blocked this call.
 - Triggers match the literal command text; a determined model could evade a gate by wrapping the action (e.g. `bash -c` inside another tool, a script file). Verified gates that execute the check themselves are deferred; the current enforcement relies on the model stating its checks in-transcript.
 - Only the `command` argument is inspected; tools whose dangerous arguments live elsewhere need their own gate surface.
 - Guidebook matching is deliberately naive token overlap between the gate text and recipe intents: it may miss relevant recipes (synonyms) or surface loose ones (shared generic words). Relevance ranking belongs to the c0ntext engine; the guard only narrows its cached inventory.
+
+## Dev Note
+
+- See the module JSDoc for the owning contract and its rationale.

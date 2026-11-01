@@ -1,4 +1,20 @@
+---
+description: "tool-flowbuilder package."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-flowbuilder
+
+## Summary
+
+English
+
+## Table of Contents
+
+- [Understand the implementation](#understand-the-implementation)
+- [Dev Note](#dev-note)
+
+## Understand the implementation
 
 English
 
@@ -26,3 +42,7 @@ Tool schemas and the prompt section are stable request-prefix content; results a
 
 - **`agent` nodes need a parent session** — a run started outside an agent turn cannot execute `agent` nodes (the spawn face requires a parent); such nodes fail the run loudly.
 - **Freeform graph JSON** — node and edge arguments are freeform objects validated at the service boundary; schema-level editor affordances are the canvas's job, not the tool schema's.
+
+## Dev Note
+
+- See the module JSDoc for the owning contract and its rationale.

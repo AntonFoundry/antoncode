@@ -1,4 +1,22 @@
+---
+description: "English"
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-llm-claude`
+
+English
+
+## Summary
+
+English
+
+## Table of Contents
+
+- [Understand the implementation](#understand-the-implementation)
+- [Dev Note](#dev-note)
+
+## Understand the implementation
 
 English
 
@@ -23,3 +41,7 @@ Turns resend the complete request prefix on each call; cache reuse depends on th
 - Subscription-only: this route cannot serve API keys (use the `anthropic` pi-ai route for `ANTHROPIC_API_KEY` billing) and has no anonymous tier — every turn needs a stored session.
 - Login runs from the terminal (`dsh claude-login`) or the Models-page Log in button (same paste-back flow server-side, no polling); the row dot and logout toggle follow the stored session.
 - Token family detection (`sk-ant-oat`) lives in pi-ai's Anthropic implementation; a subscription token presented through any other route depends on that route's own auth vocabulary.
+
+## Dev Note
+
+- See the module JSDoc for the owning contract and its rationale.

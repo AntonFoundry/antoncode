@@ -1,4 +1,20 @@
+---
+description: "flowbuilder-domain package."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-flowbuilder-domain
+
+## Summary
+
+English
+
+## Table of Contents
+
+- [Understand the implementation](#understand-the-implementation)
+- [Dev Note](#dev-note)
+
+## Understand the implementation
 
 English
 
@@ -24,3 +40,7 @@ Independent: domain records never touch request prefixes.
 
 - **Port types are hints, not enforcement** — `FlowPortType` drives canvas rendering and executor coercion hints; values at runtime stay plain JSON data. Typed-port enforcement at connect time is deferred to the client canvas.
 - **No library namespacing or versioning** — the library keys blocks by id with display-name overwrite; versioned blocks and folders are deferred until a second consumer needs them.
+
+## Dev Note
+
+- See the module JSDoc for the owning contract and its rationale.

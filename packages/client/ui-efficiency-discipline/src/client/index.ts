@@ -15,7 +15,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { EfficiencyRow, type EfficiencyRowInjected } from './EfficiencyRow.tsx'
 import { createEfficiencyRowStore } from './settings-store.ts'
-import { en, zh, type EfficiencyKey } from './locales.ts'
+import { de, en, es, fr, ja, pt, ru, zh, type EfficiencyKey } from './locales.ts'
 import {
   DEFAULT_DISCIPLINE, DISCIPLINE_FIELD, DISCIPLINE_SETTINGS_NAMESPACE,
   type DisciplineSettings,
@@ -50,7 +50,7 @@ export const inject = ['slots', 'locale', 'remote', 'remote.settings', 'configFo
 export function apply(ctx: ClientContext): void {
   const host = ctx.configForms.get<DisciplineSettings>(DISCIPLINE_SETTINGS_NAMESPACE)
 
-  ctx.effect(() => ctx.locale.register(SETTINGS_NS, { zh, en }), 'ui-efficiency: settings row dictionaries')
+  ctx.effect(() => ctx.locale.register(SETTINGS_NS, { zh, en, ja, es, fr, de, ru, pt }), 'ui-efficiency: settings row dictionaries')
 
   const store = createEfficiencyRowStore()
   let bound: BoundActions<typeof store> | undefined

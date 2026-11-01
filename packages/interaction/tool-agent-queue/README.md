@@ -1,6 +1,20 @@
+---
+description: "Model-facing tools for the shared workspace agent mailbox."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-agent-queue
 
 English
+
+## Summary
+
+Model-facing tools for the shared host `agentQueue` service. Every tool passes its exact calling Agent to the service; the service validates live session identity, registered workspace membership, addressed recipients, durable messages, and per-session acknowledgement cursors. The host contributes the tool names to both root and child agents.
+
+## Table of Contents
+
+- [Tools and delivery](#tools-and-delivery)
+- [Dev Note](#dev-note)
 
 Model-facing tools for the shared host `agentQueue` service. Every tool passes its exact calling Agent to the service; the service validates live session identity, registered workspace membership, addressed recipients, durable messages, and per-session acknowledgement cursors. The host contributes the tool names to both root and child agents.
 
@@ -67,3 +81,11 @@ A new digest appends step-local context and does not mutate a completed model re
 - **Recipients must be live** — `agent_queue_dm_send` cannot leave mail for an agent that is not currently running; the send fails rather than queueing for a future session.
 - **Two surfaces for two scopes** — local recipients go through `agent_queue_send` and remote recipients through `agent_queue_dm_send`; a model addressing a peer in its own workspace with the direct tool gets an error naming the right tool rather than silent routing.
 - **Direct tools have no digest, and discovery is paged and pull-only** — unread cross-workspace mail is surfaced only by an explicit `agent_queue_inbox_read` (or the `unread` count from `agent_queue_dm_address`); there is no natural-step notice. Peer discovery exposes only session id, authorized workspace id, and transport — never a working directory, header, or transcript — and reaches a complete roster only when the model walks `peer_cursor` to exhaustion; a single call is one bounded page, so a model that reads only the first page sees a partial roster by design.
+
+## Dev Note
+
+- The tools borrow the service's authority rather than re-deriving it: authorization for a
+  cross-workspace send is decided by resolving the recipient's live workspace, so a stale
+  session id cannot address a mailbox it no longer belongs to.
+- Tool results report the settled durable facts (sequence numbers and cursors) rather than an
+  acknowledgement of intent, so a replay can be reasoned about after a restart.

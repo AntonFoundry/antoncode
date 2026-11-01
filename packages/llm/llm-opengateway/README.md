@@ -1,4 +1,22 @@
+---
+description: "English"
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-llm-opengateway`
+
+English
+
+## Summary
+
+English
+
+## Table of Contents
+
+- [Understand the implementation](#understand-the-implementation)
+- [Dev Note](#dev-note)
+
+## Understand the implementation
 
 English
 
@@ -45,3 +63,7 @@ Loop-retained response blocks append to the next request and preserve its earlie
 - The gateway catalog advertises no per-model effort vocabulary, so the picker cannot hide levels a selected model does not honor; the route offers its configured ladder on every model.
 - The gateway catalog is advisory. A model it lists can still be retired or ungranted for an account; the request-time provider error remains authoritative.
 - Only the OpenAI chat-completions and Responses protocols are served. A model the gateway advertises solely through the Anthropic Messages protocol stays out of the picker.
+
+## Dev Note
+
+- See the module JSDoc for the owning contract and its rationale.

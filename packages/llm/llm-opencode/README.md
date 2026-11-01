@@ -1,4 +1,22 @@
+---
+description: "English"
+kind: "package-reference"
+---
+
 This provider registers `opencode-free` on `ctx.llm`: one route over three transports, picked per request. A logged-in Zen workspace session (device-flow OAuth via `dsh opencode-login` or the Models-page Log in button, approved once in the browser and stored as JSON in the credentials seam under `OPENCODE_ZEN_OAUTH` with silent refresh) selects the direct inference gateway at `https://opencode.ai/inference/openai/v1` with workspace identity (workspace discovery, paid models, and zero-cost turns where the gateway admits this client); zero-cost turns additionally take the free-tier gate (client-identity headers, a fixed marker with flattened history, and a fenced text tool protocol parsed back into Harness tool calls). A stored Zen bearer key (`OPENCODE_API_KEY` by default, resolved per request through the credential seam or the environment) selects direct OpenCode Zen generation — the models.dev `opencode` free tier over `https://opencode.ai/zen/v1` with the Harness's own tool schemas, so returned tool calls come back to the Harness and execute through Harness tools, never through OpenCode's local agent loop. Without either, the route serves the user's own OpenCode service (discovered from `OPENCODE_SERVER_URL`, the CLI state-home `service.json`, or live `opencode service status`, auto-started by default; Basic password from its registration file with `OPENCODE_SERVER_PASSWORD` as fallback) through transient text generation. When no service is reachable either, the request falls through to anonymous direct and surfaces the gateway's real verdict instead of a misleading transport error. No Zen API key is required for the service path.
+
+English
+
+## Summary
+
+English
+
+## Table of Contents
+
+- [Understand the implementation](#understand-the-implementation)
+- [Dev Note](#dev-note)
+
+## Understand the implementation
 
 English
 
@@ -72,3 +90,7 @@ selected model.
 - The transient generation API accepts text, not Harness tool schemas or image attachments. Anonymous turns can answer chat but cannot drive Harness coding tools through structured tool calls; run `dsh opencode-login` for workspace turns or store a Zen key for keyed tool-capable turns.
 - Live-verified 2026-10-16: the inference gateway answers `FreeTierError` to harness-runtime requests even with a valid workspace session, byte-exact client headers, catalog-correct protocol, and gate-shaped bodies on both wire protocols — only genuine OpenCode network stacks pass the client check. The local-service path therefore remains the working free path (text-only); the workspace session still owns discovery narrowing, paid-model turns, silent refresh, and exact failure guidance.
 - Automatic startup searches `PATH`, `~/.opencode/bin`, and the usual Homebrew executable locations; `OPENCODE_EXECUTABLE` can name another path. If the CLI is absent, start the service separately or configure a reachable `serverURL`. The provider does not stop the service.
+
+## Dev Note
+
+- See the module JSDoc for the owning contract and its rationale.

@@ -1,4 +1,22 @@
+---
+description: "English"
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-llm-models-dev`
+
+English
+
+## Summary
+
+English
+
+## Table of Contents
+
+- [Understand the implementation](#understand-the-implementation)
+- [Dev Note](#dev-note)
+
+## Understand the implementation
 
 English
 
@@ -18,3 +36,7 @@ No adapter-specific cache policy; OpenRouter and the selected model decide reuse
 
 - Catalog models that advertise reasoning as a toggle or token budget without named effort values cannot offer an effort slider through this adapter.
 - The catalog can list a free model that OpenRouter later retires; request-time provider errors remain authoritative.
+
+## Dev Note
+
+- See the module JSDoc for the owning contract and its rationale.

@@ -1,4 +1,22 @@
+---
+description: "A weekly-researched model-strength datasheet plus the `auto` child-model resolver. The scheduler composes the deployment's existing pieces: a persiste"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-model-intel
+
+English
+
+## Summary
+
+A weekly-researched model-strength datasheet plus the `auto` child-model resolver. The scheduler composes the deployment's existing pieces: a persisted `fetchedAt` marker in the datasheet gives restart-surviving cron semantics (missed intervals run once on the next boot), and a cheap effect-owned interval checks staleness. Each pass is guarded against concurrency and logged; the previous datasheet is kept verbatim on failure.
+
+## Table of Contents
+
+- [Understand the implementation](#understand-the-implementation)
+- [Dev Note](#dev-note)
+
+## Understand the implementation
 
 A weekly-researched model-strength datasheet plus the `auto` child-model resolver. The scheduler composes the deployment's existing pieces: a persisted `fetchedAt` marker in the datasheet gives restart-surviving cron semantics (missed intervals run once on the next boot), and a cheap effect-owned interval checks staleness. Each pass is guarded against concurrency and logged; the previous datasheet is kept verbatim on failure.
 
@@ -26,3 +44,7 @@ A weekly-researched model-strength datasheet plus the `auto` child-model resolve
 - The datasheet is only as good as the free public leaderboards the pass fetches; there is no paid-benchmark ingestion, and models the material does not mention are simply absent (they are then never auto-chosen until a later pass covers them).
 - Credential verdicts cache for three hours; a key added mid-window is picked up on the next check rather than instantly.
 - The research distiller trusts the fetched material's scores as-is; there is no cross-source verification or confidence weighting yet.
+
+## Dev Note
+
+- See the module JSDoc for the owning contract and its rationale.

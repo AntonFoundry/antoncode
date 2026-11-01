@@ -1,4 +1,20 @@
+---
+description: "agent-queue package."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-agent-queue
+
+## Summary
+
+English
+
+## Table of Contents
+
+- [Understand the implementation](#understand-the-implementation)
+- [Dev Note](#dev-note)
+
+## Understand the implementation
 
 English
 
@@ -76,3 +92,7 @@ A durable acknowledgement by every frozen addressee is the **only** way a messag
 - **Cross-table cursor creation uses rollback** — initial durable direct-recipient cursor records and the message record span separate table writes. The service serializes them and attempts rollback if publication fails, surfacing rollback failures; the backend does not provide a single cross-table transaction here.
 - **Replay is retention-limited** — a caller may request an earlier explicit read cursor, but fully acknowledged messages can be compacted on a subsequent publication. This is a mailbox, not a permanent transcript archive.
 - **No autonomous model interruption** — live notifications are for subscribers outside inference. A model sees messages through explicit reads or a later natural step when the tool integration is mounted; a queued message does not wake a parked agent.
+
+## Dev Note
+
+- See the module JSDoc for the owning contract and its rationale.

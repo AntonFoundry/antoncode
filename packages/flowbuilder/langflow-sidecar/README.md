@@ -1,4 +1,20 @@
+---
+description: "langflow-sidecar package."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-langflow-sidecar
+
+## Summary
+
+English
+
+## Table of Contents
+
+- [Understand the implementation](#understand-the-implementation)
+- [Dev Note](#dev-note)
+
+## Understand the implementation
 
 English
 
@@ -34,3 +50,7 @@ Independent: sidecar state never touches request prefixes.
 - **Composition coverage is operational** — spawning a real LangFlow child in CI is not viable (multi-minute first download), so unit tests stub the subprocess runtime and the real composition (base-layer mount, app boot smoke, GUI embed) is verified at the app level.
 - **Health is any-HTTP-response** — readiness counts any answered HTTP request as up; a LangFlow deployment whose UI is broken while `/health` answers would still report `running`.
 - **No multi-instance support** — one sidecar per process at a fixed configured port; a port already taken by another process surfaces as a startup error rather than port rotation.
+
+## Dev Note
+
+- See the module JSDoc for the owning contract and its rationale.

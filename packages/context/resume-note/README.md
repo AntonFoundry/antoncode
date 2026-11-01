@@ -1,4 +1,13 @@
+---
+description: "Opt-in durable notice marking a crash-interrupted tail turn as a harness restart."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-resume-note
+
+English
+
+## Summary
 
 Opt-in durable notice on the first turn after a crash-interrupted tail turn.
 
@@ -10,7 +19,17 @@ plugin-sourced notice so the model knows the transcript gap is a harness
 restart, not user intent — the user's next message almost always means
 "continue".
 
-## Behavior
+## Table of Contents
+
+- [Understand the implementation](#understand-the-implementation)
+- [Config](#config)
+- [Model experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+## Understand the implementation
+
+
 
 - Fires only when the last `turn/end` in the durable log carries
   `reason.kind === 'interrupted'` and no resume note follows it.
@@ -41,3 +60,12 @@ restart, not user intent — the user's next message almost always means
   therefore no note (correct: nothing was interrupted).
 - No dedicated `resume-note-delivered` session event; non-plugin
   consumers should read the plugin-source `user/message` from the log.
+
+## Dev Note
+
+- The notice is not injected through `agent.inject()`: that path queues for the
+  next step, while the resume point is the step being assembled. Appending to
+  the `agent/pre-step` decision keeps the message on the open step and inside
+  the loop's own logging, so the transcript stays the single source of truth.
+- The plugin declares its own message source kind rather than reusing a shared
+  one, so a consumer can identify its notice without matching on text.

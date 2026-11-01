@@ -1,4 +1,22 @@
+---
+description: "English"
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-llm-vazhi`
+
+English
+
+## Summary
+
+English
+
+## Table of Contents
+
+- [Understand the implementation](#understand-the-implementation)
+- [Dev Note](#dev-note)
+
+## Understand the implementation
 
 English
 
@@ -53,3 +71,7 @@ Loop-retained response blocks append to the next request and preserve its earlie
 - Cooldowns are local to the harness home. Two machines sharing one upstream account do not see each other's rate limits until the provider answers with one.
 - The pool document carries no effort vocabulary, so the picker cannot hide levels an upstream rejects; the route offers its configured ladder on every model, and a selected level is the caller's choice.
 - Pinned ids name `upstream/model`. A model the pool document does not carry is not routable even when its upstream is reachable, because admission is what the pool decides.
+
+## Dev Note
+
+- See the module JSDoc for the owning contract and its rationale.

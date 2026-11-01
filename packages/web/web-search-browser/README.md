@@ -1,4 +1,22 @@
+---
+description: "A scrape-backed `WebSearchProvider` for the harness [web capability seam](../web/README.md) (`ctx.web`). It requires no API key: results come from pub"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-web-search-browser
+
+English
+
+## Summary
+
+A scrape-backed `WebSearchProvider` for the harness [web capability seam](../web/README.md) (`ctx.web`). It requires no API key: results come from public search engines — Bing and Brave through dedicated Playwright browsers, with an axios DuckDuckGo HTML fallback — and each source's snippet comes from the engine result or, optionally, from extracted page content.
+
+## Table of Contents
+
+- [Understand the implementation](#understand-the-implementation)
+- [Dev Note](#dev-note)
+
+## Understand the implementation
 
 A scrape-backed `WebSearchProvider` for the harness [web capability seam](../web/README.md) (`ctx.web`). It requires no API key: results come from public search engines — Bing and Brave through dedicated Playwright browsers, with an axios DuckDuckGo HTML fallback — and each source's snippet comes from the engine result or, optionally, from extracted page content.
 
@@ -38,3 +56,7 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 - **The vendored engine logs verbosely to the console** — `src/engine/` is adapted from the `web-search-mcp` project and emits per-step console output; routing it through the harness logger is deferred until that project's upstream is stable enough to re-sync.
 - **Cancellation is cooperative at the provider layer only** — a torn-down browser stops the current work, but an in-flight axios request completes unobserved.
 - **Engine availability shifts** — Bing/Brave markup selectors break without notice; DuckDuckGo is the stable last resort.
+
+## Dev Note
+
+- See the module JSDoc for the owning contract and its rationale.

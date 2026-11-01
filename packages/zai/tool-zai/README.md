@@ -1,4 +1,22 @@
+---
+description: "English"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-zai
+
+English
+
+## Summary
+
+English
+
+## Table of Contents
+
+- [Understand the implementation](#understand-the-implementation)
+- [Dev Note](#dev-note)
+
+## Understand the implementation
 
 English
 
@@ -65,3 +83,7 @@ Prefix-stable while the enabled set and schemas are unchanged.
 - **Per-call MCP sessions cost one extra round trip** — each remote-trio call pays initialize + `tools/call` instead of sharing a persistent session's handshake.
 - **Z.AI quota errors surface as tool failures** — exhausted plan quota (e.g. code 1310) throws like any backend error; the plugin does not distinguish billing from breakage.
 - **No image persistence** — vision results are text; image blocks never enter `ctx.attachments`, unlike the MCP bridge path.
+
+## Dev Note
+
+- See the module JSDoc for the owning contract and its rationale.
