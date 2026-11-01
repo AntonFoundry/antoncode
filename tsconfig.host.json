@@ -587,6 +587,7 @@
     { "path": "./packages/llm/llm-openai" },
     { "path": "./packages/llm/llm-models-dev" },
     { "path": "./packages/llm/llm-vazhi" },
+    { "path": "./packages/llm/llm-claude" },
     { "path": "./apps/cli" },
     { "path": "./apps/plugin-market-generator" },
     { "path": "./apps/desktop-host" },
