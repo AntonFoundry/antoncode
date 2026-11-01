@@ -591,6 +591,8 @@
     { "path": "./packages/llm/llm-codex" },
     { "path": "./packages/llm/llm-opencode" },
     { "path": "./packages/subagent/model-intel" },
+    { "path": "./packages/web/web-search-browser" },
+    { "path": "./packages/lifecycle/tool-anton-lifecycle" },
     { "path": "./apps/cli" },
     { "path": "./apps/plugin-market-generator" },
     { "path": "./apps/desktop-host" },
