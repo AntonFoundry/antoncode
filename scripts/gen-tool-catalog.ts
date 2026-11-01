@@ -61,6 +61,12 @@ import * as ToolStrReplaceEditor from '@deepseek-ai/dsh-tool-str-replace-editor'
 import TerminalSessionService from '@deepseek-ai/dsh-terminal'
 import * as ToolPty from '@deepseek-ai/dsh-tool-terminal'
 import * as ToolGoal from '@deepseek-ai/dsh-tool-goal'
+import * as ToolAgentQueue from '@deepseek-ai/dsh-tool-agent-queue'
+import type AgentQueueService from '@deepseek-ai/dsh-agent-queue'
+import * as ToolAntonLifecycle from '@deepseek-ai/dsh-tool-anton-lifecycle'
+import * as ToolFlowbuilder from '@deepseek-ai/dsh-tool-flowbuilder'
+import type { FlowBuilderService } from '@deepseek-ai/dsh-flowbuilder-service'
+import * as ToolZai from '@deepseek-ai/dsh-tool-zai'
 import * as ToolSchedule from '@deepseek-ai/dsh-tool-schedule'
 import type ScheduleService from '@deepseek-ai/dsh-schedule'
 import Lsp from '@deepseek-ai/dsh-lsp'
@@ -717,6 +723,55 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-agent-queue',
+    dir: 'tool-agent-queue',
+    source: 'packages/interaction/tool-agent-queue/src/index.ts',
+    requires: ['ctx.tools', 'ctx.agentQueue', 'a calling Agent in a registered workspace'],
+    writes: ['tool/call', 'tool/result'],
+    async mount(ctx) {
+      // Schema harvest never publishes or reads mail, so the queue service is
+      // stubbed rather than given a storage stack and a workspace registry.
+      ctx.provide('agentQueue', {} as AgentQueueService)
+      await ctx.plugin(ToolAgentQueue)
+    },
+    note:
+      'delivery is durable and never wakes or interrupts a recipient; the cross-workspace direct tools are the /direct subpath.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-anton-lifecycle',
+    dir: 'tool-anton-lifecycle',
+    source: 'packages/lifecycle/tool-anton-lifecycle/src/index.ts',
+    requires: ['ctx.tools', 'a reachable Anton supervisor bridge'],
+    writes: ['tool/call', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(ToolAntonLifecycle)
+    },
+    note: 'stop and restart terminate the calling runtime, so they end the current turn.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-flowbuilder',
+    dir: 'tool-flowbuilder',
+    source: 'packages/flowbuilder/tool-flowbuilder/src/index.ts',
+    requires: ['ctx.tools', 'ctx.flowBuilder', 'ctx.systemPrompt'],
+    writes: ['tool/call', 'tool/result'],
+    async mount(ctx) {
+      // Schema harvest never saves or runs a flow; the service is stubbed so
+      // the entry needs no storage domain.
+      ctx.provide('flowBuilder', {} as FlowBuilderService)
+      await ctx.plugin(ToolFlowbuilder)
+    },
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-zai',
+    dir: 'tool-zai',
+    source: 'packages/zai/tool-zai/src/index.ts',
+    requires: ['ctx.tools', 'a reachable Z.ai MCP endpoint'],
+    writes: ['tool/call', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(ToolZai)
+    },
   },
 ]
 

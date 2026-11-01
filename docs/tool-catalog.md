@@ -22,7 +22,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-action-cards` | `propose_action` | `ctx.tools`, `ctx.agents`, `ctx.sessionProjections`, `ctx.remoteAccess` | `tool/call`, `tool/result`, `plugin:action-cards/decision`, `user/message` | - | Declared only to an Agent that loaded the skill of a registered card kind; the kind packages register their actions, and the Personalized recommendations bundle supplies the shipped kinds. |
 | `@deepseek-ai/dsh-tool-ask-user` | `ask_user_question` | `ctx.tools`, `ctx.userQuestions` | `tool/call`, `tool/result after an answer or timeout`, `late user/message` | - | ask_user_question keeps the original blocking behavior by default; set `mode: timed` to opt into a foreground timeout and pending result while the question remains answerable. In timed mode, `timeout: -1` keeps that call blocking indefinitely. |
 | `@deepseek-ai/dsh-tool-executor-ptc` | `run_code` | `ctx.workingDirectory (Agent executions)`, `ctx.tools`, `ctx.ptcRuntime`, `ctx.systemPrompt` | `tool/call`, `one tool/ptc-dispatch-start + tool/ptc-dispatch pair per bridged sub-call`, `tool/result` | - | The PTC executor exposes only run_code to the model and declares other visible capabilities in a generated SDK in the runtime’s language. Program bindings enter the shared guarded tool pipeline in submission order; concurrency-safe bodies overlap up to maxParallelSubCalls, and nested results remain linked to the outer program. |
-| `@deepseek-ai/dsh-plan-mode` | `exit_plan_mode` | `ctx.tools`, `ctx.systemPrompt`, `ctx.agents`, `ctx.userQuestions (execution time, opportunistic)` | `tool/call`, `plan/mode inactive on an approved review`, `tool/result` | - | exit_plan_mode stays in the model-facing schema while planning is inactive so transitions add no tool-catalog churn on top of the plan-policy change. Its execute path rejects calls outside plan mode; in plan mode it presents the plan over the user-questions seam (approve / keep planning with feedback), and approval logs plan mode inactive at the step boundary. |
+| `@deepseek-ai/dsh-plan-mode` | `exit_plan_mode`, `plan_write` | `ctx.tools`, `ctx.systemPrompt`, `ctx.agents`, `ctx.userQuestions (execution time, opportunistic)` | `tool/call`, `plan/mode inactive on an approved review`, `tool/result` | - | exit_plan_mode stays in the model-facing schema while planning is inactive so transitions add no tool-catalog churn on top of the plan-policy change. Its execute path rejects calls outside plan mode; in plan mode it presents the plan over the user-questions seam (approve / keep planning with feedback), and approval logs plan mode inactive at the step boundary. |
 | `@deepseek-ai/dsh-tool-bash` | `bash` | `ctx.workingDirectory`, `ctx.tools`, `ctx.shell`, `ctx.systemPrompt`, `ctx.shellEnv`, `ctx.jobs for run_in_background and the job-backed foreground path` | `tool/call`, `tool/result` | - | The bash tool is the model-facing consumer of the bash executor seam. With a job registry composed every call registers with the generic `ctx.jobs` runtime as it starts, collected/stopped through the `job_*` tools from `@deepseek-ai/dsh-tool-jobs`; without one, or with `enableRunInBackground: false`, the tool registers a foreground-only schema without the `run_in_background` parameter. |
 | `@deepseek-ai/dsh-tool-present` | `present` | `ctx.workingDirectory`, `ctx.tools`, `ctx.fs`, `ctx.agents` | `tool/call`, `deliverables/presented after a successful final result`, `tool/result` | - | Deliveries belong to the calling Session; Web ui-deliverables supplies source-file opening and cards. |
 | `@deepseek-ai/dsh-tool-pwsh` | `pwsh` | `ctx.workingDirectory`, `ctx.tools`, `ctx.shell`, `ctx.systemPrompt`, `ctx.shellEnv`, `ctx.jobs for run_in_background and the job-backed foreground path` | `tool/call`, `tool/result` | - | The pwsh tool is the PowerShell-dialect consumer of the bash executor seam for Windows compositions (a PowerShell executor such as `@deepseek-ai/dsh-pwsh-local` backs `ctx.shell`); it mirrors the bash tool call-for-call minus sandbox controls — `run_in_background` runs register with the generic `ctx.jobs` runtime and are collected/stopped through the `job_*` tools, and the managed `DSH_*` environment comes from `@deepseek-ai/dsh-shell-env`. Each call runs in a fresh process (no persistent PTY session), with native `C:\...` paths and `$env:NAME` variables. |
@@ -50,6 +50,10 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-workspace-dependencies` | `load_workspace_dependencies` | `ctx.tools` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
+| `@deepseek-ai/dsh-tool-agent-queue` | `agent_queue_ack`, `agent_queue_address`, `agent_queue_read`, `agent_queue_send`, `agent_queue_subscribe` | `ctx.tools`, `ctx.agentQueue`, `a calling Agent in a registered workspace` | `tool/call`, `tool/result` | - | delivery is durable and never wakes or interrupts a recipient; the cross-workspace direct tools are the /direct subpath. |
+| `@deepseek-ai/dsh-tool-anton-lifecycle` | `anton_restart`, `anton_start`, `anton_status`, `anton_stop` | `ctx.tools`, `a reachable Anton supervisor bridge` | `tool/call`, `tool/result` | - | stop and restart terminate the calling runtime, so they end the current turn. |
+| `@deepseek-ai/dsh-tool-flowbuilder` | `flow_block_save`, `flow_get`, `flow_library_search`, `flow_list`, `flow_run`, `flow_run_status`, `flow_save` | `ctx.tools`, `ctx.flowBuilder`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | - |
+| `@deepseek-ai/dsh-tool-zai` | `analyze_data_visualization`, `analyze_image`, `analyze_video`, `diagnose_error_screenshot`, `extract_text_from_screenshot`, `get_repo_structure`, `read_file`, `search_doc`, `ui_diff_check`, `ui_to_artifact`, `understand_technical_diagram`, `web_search_prime`, `webReader` | `ctx.tools`, `a reachable Z.ai MCP endpoint` | `tool/call`, `tool/result` | - | - |
 
 <a id="deepseek-aidsh-plugin-manager"></a>
 
@@ -678,6 +682,35 @@ Use only in plan mode. Present your plan for the user's review and, on approval,
     "plan": {
       "type": "string",
       "description": "The complete plan, as markdown, starting with a # heading that names it."
+    }
+  },
+  "required": [
+    "plan"
+  ]
+}
+```
+
+Source: [`packages/plan/plan-mode/src/index.ts`](../packages/plan/plan-mode/src/index.ts)
+
+### `plan_write`
+
+Record or update the standing implementation plan for the current work. Use this tool whenever an implementation plan has been produced (e.g. by a planning subagent) or updated. The plan persists across turns and is injected into every subsequent request as a standing guide for both the model and the user. Send the COMPLETE markdown plan, starting with a # heading.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "plan": {
+      "type": "string",
+      "description": "The complete implementation plan, as markdown, starting with a # heading that names it."
+    },
+    "title": {
+      "type": "string",
+      "description": "Optional short title for the plan."
+    },
+    "path": {
+      "type": "string",
+      "description": "Optional workspace-relative file path to save the plan markdown. Defaults to \"implementation_plan.md\"."
     }
   },
   "required": [
@@ -2912,3 +2945,817 @@ Search the web for current information. Returns an optional summary answer and a
 Source: [`packages/web/tool-web/src/index.ts`](../packages/web/tool-web/src/index.ts)
 
 web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps.
+
+<a id="deepseek-aidsh-tool-agent-queue"></a>
+
+## `@deepseek-ai/dsh-tool-agent-queue`
+
+### `agent_queue_ack`
+
+Advance your durable subscription cursor after reading messages. Does not remove another recipient’s messages or wake agents.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "description": "Workspace id for your subscription."
+    },
+    "through_seq": {
+      "type": "integer",
+      "description": "Last processed nonnegative stream sequence."
+    }
+  },
+  "required": [
+    "workspace_id",
+    "through_seq"
+  ]
+}
+```
+
+Source: [`packages/interaction/tool-agent-queue/src/index.ts`](../packages/interaction/tool-agent-queue/src/index.ts)
+
+### `agent_queue_address`
+
+Show your exact session address and available workspace queue identities. Share the session id with agents in the same workspace when addressing a message.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/interaction/tool-agent-queue/src/index.ts`](../packages/interaction/tool-agent-queue/src/index.ts)
+
+### `agent_queue_read`
+
+Read addressed and subscribed workspace messages from a cursor, without waking another agent. Acknowledge only after consuming the results.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "description": "Optional workspace id; defaults to your current workspace."
+    },
+    "cursor": {
+      "type": "integer",
+      "description": "Optional nonnegative stream sequence; defaults to your acknowledged cursor."
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Maximum messages, from 1 to 100 (default set by service)."
+    }
+  }
+}
+```
+
+Source: [`packages/interaction/tool-agent-queue/src/index.ts`](../packages/interaction/tool-agent-queue/src/index.ts)
+
+### `agent_queue_send`
+
+Publish a message within your workspace to up to 32 session addresses, the workspace stream, or both. Durable delivery does not wake or interrupt recipients.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "description": "Optional workspace id; defaults to your current workspace."
+    },
+    "recipients": {
+      "type": "array",
+      "description": "Optional session ids of recipients in this workspace (maximum 32).",
+      "items": {
+        "type": "string"
+      }
+    },
+    "workspace_wide": {
+      "type": "boolean",
+      "description": "Publish to all subscribed workspace sessions as well as any direct recipients."
+    },
+    "body": {
+      "type": "string",
+      "description": "Message text (maximum 65536 characters)."
+    }
+  },
+  "required": [
+    "body"
+  ]
+}
+```
+
+Source: [`packages/interaction/tool-agent-queue/src/index.ts`](../packages/interaction/tool-agent-queue/src/index.ts)
+
+### `agent_queue_subscribe`
+
+Subscribe your session to a workspace queue. This stores an independent durable read cursor; it does not wake or interrupt model turns.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workspace_id": {
+      "type": "string",
+      "description": "Workspace id from agent_queue_address."
+    }
+  },
+  "required": [
+    "workspace_id"
+  ]
+}
+```
+
+Source: [`packages/interaction/tool-agent-queue/src/index.ts`](../packages/interaction/tool-agent-queue/src/index.ts)
+
+delivery is durable and never wakes or interrupts a recipient; the cross-workspace direct tools are the /direct subpath.
+
+<a id="deepseek-aidsh-tool-anton-lifecycle"></a>
+
+## `@deepseek-ai/dsh-tool-anton-lifecycle`
+
+### `anton_restart`
+
+Restart the agent runtime service so freshly deployed code takes effect. Call this ONLY after a build/deploy step completed (e.g. a plugin or bundle was rebuilt), never mid-task: it terminates this very process, so the CURRENT turn ends immediately and the user starts a new conversation on the restarted app. Do not call it speculatively or more than once per deployment.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/lifecycle/tool-anton-lifecycle/src/index.ts`](../packages/lifecycle/tool-anton-lifecycle/src/index.ts)
+
+### `anton_start`
+
+Start the agent runtime service if it is stopped, reporting what it did. When everything already runs, it reports that nothing needed starting — safe to call speculatively while diagnosing.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/lifecycle/tool-anton-lifecycle/src/index.ts`](../packages/lifecycle/tool-anton-lifecycle/src/index.ts)
+
+### `anton_status`
+
+Report the health of the Anton application services: the supervisor bridge, the agent runtime process (with PID and port), and the c0ntext memory engine. Use this to diagnose whether a service is down before attempting anton_start or anton_restart.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/lifecycle/tool-anton-lifecycle/src/index.ts`](../packages/lifecycle/tool-anton-lifecycle/src/index.ts)
+
+### `anton_stop`
+
+Shut down the agent runtime service. WARNING: you ARE that process — calling this ends your current turn and conversation immediately, and the user brings the app back from its control surface. Call it ONLY when the user explicitly asks to stop or quit the application, never mid-task.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/lifecycle/tool-anton-lifecycle/src/index.ts`](../packages/lifecycle/tool-anton-lifecycle/src/index.ts)
+
+stop and restart terminate the calling runtime, so they end the current turn.
+
+<a id="deepseek-aidsh-tool-flowbuilder"></a>
+
+## `@deepseek-ai/dsh-tool-flowbuilder`
+
+### `flow_block_save`
+
+Author or update one reusable library block. A save without id replaces the same-name block, so iterating on a block by name is the expected loop. kind=code blocks must carry their JavaScript in code. Declare typed ports (inputs/outputs: {name, type: any|string|number|json}) and params ({name, type: string|number|boolean|json, required?, default?}).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Existing block id to update; omit to save by name."
+    },
+    "name": {
+      "type": "string",
+      "description": "Block display name (the save-by-name identity)."
+    },
+    "kind": {
+      "type": "string",
+      "description": "How an instance executes: code|llm|agent|shell|http|condition|transform."
+    },
+    "description": {
+      "type": "string",
+      "description": "One-line description surfaced in search results and the palette."
+    },
+    "code": {
+      "type": "string",
+      "description": "The block JavaScript (required for kind=code)."
+    },
+    "inputs": {
+      "type": "array",
+      "description": "Declared input ports.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "description": "Declared output ports.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "params": {
+      "type": "array",
+      "description": "Declared parameters.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "sourceFlowId": {
+      "type": "string",
+      "description": "The workflow the block was extracted from, when it has one."
+    }
+  },
+  "required": [
+    "name",
+    "kind",
+    "description"
+  ]
+}
+```
+
+Source: [`packages/flowbuilder/tool-flowbuilder/src/index.ts`](../packages/flowbuilder/tool-flowbuilder/src/index.ts)
+
+### `flow_get`
+
+Read one stored workflow definition in full (nodes, edges, timestamps) by id.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "The workflow definition id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/flowbuilder/tool-flowbuilder/src/index.ts`](../packages/flowbuilder/tool-flowbuilder/src/index.ts)
+
+### `flow_library_search`
+
+Search the reusable block library by a case-insensitive substring over name and description (omit the query for everything).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "The filter substring; omit to list the whole library."
+    }
+  }
+}
+```
+
+Source: [`packages/flowbuilder/tool-flowbuilder/src/index.ts`](../packages/flowbuilder/tool-flowbuilder/src/index.ts)
+
+### `flow_list`
+
+List every stored workflow definition (id, name, description, node count, last update).
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/flowbuilder/tool-flowbuilder/src/index.ts`](../packages/flowbuilder/tool-flowbuilder/src/index.ts)
+
+### `flow_run`
+
+Start one run of a stored workflow definition. Returns the run id immediately; execution continues asynchronously — poll flow_run_status.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "flowId": {
+      "type": "string",
+      "description": "The workflow definition id to run."
+    }
+  },
+  "required": [
+    "flowId"
+  ]
+}
+```
+
+Source: [`packages/flowbuilder/tool-flowbuilder/src/index.ts`](../packages/flowbuilder/tool-flowbuilder/src/index.ts)
+
+### `flow_run_status`
+
+Read one run: its status, the per-node states (with error messages), and the collected result once terminal.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "runId": {
+      "type": "string",
+      "description": "The run id returned by flow_run."
+    }
+  },
+  "required": [
+    "runId"
+  ]
+}
+```
+
+Source: [`packages/flowbuilder/tool-flowbuilder/src/index.ts`](../packages/flowbuilder/tool-flowbuilder/src/index.ts)
+
+### `flow_save`
+
+Create or update one workflow definition (it appears on the Dag Flow canvas). Node fields: id (unique), kind (input|output|code|llm|agent|shell|http|condition|transform|library), title, blockId (required for kind=library), params (object, default {}; input nodes carry their literal under value), code (for code/condition: a return-body program reading the plain `inputs` and `params` objects), x, y (canvas position numbers, default 0). Edge fields: id (unique), from {nodeId, port}, to {nodeId, port} — each target port accepts at most one edge, and the graph must stay acyclic. The graph is validated before anything is written; a rejected save writes nothing.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Existing definition id to update; omit to create a new workflow."
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-facing workflow name."
+    },
+    "description": {
+      "type": "string",
+      "description": "One-line description of what the workflow does."
+    },
+    "nodes": {
+      "type": "array",
+      "description": "Node fields: id (unique), kind (input|output|code|llm|agent|shell|http|condition|transform|library), title, blockId (required for kind=library), params (object, default {}; input nodes carry their literal under value), code (for code/condition: a return-body program reading the plain `inputs` and `params` objects), x, y (canvas position numbers, default 0).",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "edges": {
+      "type": "array",
+      "description": "Edge fields: id (unique), from {nodeId, port}, to {nodeId, port} — each target port accepts at most one edge, and the graph must stay acyclic.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    }
+  },
+  "required": [
+    "name",
+    "description",
+    "nodes",
+    "edges"
+  ]
+}
+```
+
+Source: [`packages/flowbuilder/tool-flowbuilder/src/index.ts`](../packages/flowbuilder/tool-flowbuilder/src/index.ts)
+
+<a id="deepseek-aidsh-tool-zai"></a>
+
+## `@deepseek-ai/dsh-tool-zai`
+
+### `analyze_data_visualization`
+
+Analyze data visualizations, charts, graphs, and dashboards to extract insights and trends. Use this tool ONLY when the user has a data visualization image and wants to understand the data patterns or metrics. This tool specializes in interpreting visual data representations. Do NOT use for: UI mockups, error messages, or technical architecture diagrams.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "image_source": {
+      "type": "string",
+      "description": "Local file path or remote URL to the image"
+    },
+    "prompt": {
+      "type": "string",
+      "description": "What insights or metrics to surface."
+    },
+    "analysis_focus": {
+      "type": "string",
+      "description": "Focus area: trends, anomalies, comparisons, summary."
+    }
+  },
+  "required": [
+    "image_source",
+    "prompt"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
+
+### `analyze_image`
+
+General-purpose image analysis for scenarios not covered by specialized tools. Use this tool as a FALLBACK when none of the other specialized tools (ui_to_artifact, extract_text_from_screenshot, diagnose_error_screenshot, understand_technical_diagram, analyze_data_visualization, ui_diff_check) fit the user's need. This tool provides flexible image understanding for any visual content.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "image_source": {
+      "type": "string",
+      "description": "Local file path or remote URL to the image"
+    },
+    "prompt": {
+      "type": "string",
+      "description": "Detailed description of what you want to analyze, extract, or understand from the image. Be specific about your requirements."
+    }
+  },
+  "required": [
+    "image_source",
+    "prompt"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
+
+### `analyze_video`
+
+Analyze video content using advanced AI vision models. Use this tool when the user wants to: understand what happens in a video, extract key moments or actions from video, analyze video content, scenes, or sequences, get descriptions of video footage, identify objects, people, or activities in video. Supports both local files and remote URL. Maximum file size: 8MB. Supports MP4, MOV, M4V formats.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "video_source": {
+      "type": "string",
+      "description": "Local file path or remote URL to the video (supports MP4, MOV, M4V)"
+    },
+    "prompt": {
+      "type": "string",
+      "description": "Detailed text prompt describing what to analyze, extract, or understand from the video"
+    }
+  },
+  "required": [
+    "video_source",
+    "prompt"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
+
+### `diagnose_error_screenshot`
+
+Diagnose and analyze error messages, stack traces, and exception screenshots. Use this tool ONLY when the user has an error screenshot and needs help understanding or fixing it. This tool specializes in error analysis and provides actionable solutions. Do NOT use for: code extraction, UI analysis, or diagram understanding.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "image_source": {
+      "type": "string",
+      "description": "Local file path or remote URL to the image"
+    },
+    "prompt": {
+      "type": "string",
+      "description": "What the user was doing and what help is needed."
+    },
+    "context": {
+      "type": "string",
+      "description": "Additional context: environment, versions, recent changes."
+    }
+  },
+  "required": [
+    "image_source",
+    "prompt"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
+
+### `extract_text_from_screenshot`
+
+Extract and recognize text from screenshots using advanced OCR capabilities. Use this tool ONLY when the user has a screenshot containing text and wants to extract it. This tool specializes in OCR for code, terminal output, documentation, and general text extraction. Do NOT use for: UI design conversion, error diagnosis, or diagram understanding.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "image_source": {
+      "type": "string",
+      "description": "Local file path or remote URL to the image"
+    },
+    "prompt": {
+      "type": "string",
+      "description": "What text to extract and any formatting requirements."
+    },
+    "programming_language": {
+      "type": "string",
+      "description": "Programming language of code in the screenshot, when applicable."
+    }
+  },
+  "required": [
+    "image_source",
+    "prompt"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
+
+### `get_repo_structure`
+
+Get the directory structure and file list of a GitHub repository.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "repo_name": {
+      "type": "string",
+      "description": "GitHub repository: owner/repo (e.g. \"vitejs/vite\")"
+    },
+    "dir_path": {
+      "type": "string",
+      "description": "The directory path to inspect (default: root \"/\")"
+    }
+  },
+  "required": [
+    "repo_name"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
+
+### `read_file`
+
+Read the full code content of a specific file in a GitHub repository.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "repo_name": {
+      "type": "string",
+      "description": "GitHub repository: owner/repo (e.g. \"vitejs/vite\")"
+    },
+    "file_path": {
+      "type": "string",
+      "description": "The relative path to the file (e.g. \"src/index.ts\")."
+    }
+  },
+  "required": [
+    "repo_name",
+    "file_path"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
+
+### `search_doc`
+
+Search documentation, issues, and commits of a GitHub repository.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "repo_name": {
+      "type": "string",
+      "description": "GitHub repository: owner/repo (e.g. \"vitejs/vite\")"
+    },
+    "query": {
+      "type": "string",
+      "description": "The search keywords or question about the repository."
+    },
+    "language": {
+      "type": "string",
+      "description": "'zh' or 'en' (choose according to context language)."
+    }
+  },
+  "required": [
+    "repo_name",
+    "query"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
+
+### `ui_diff_check`
+
+Compare two UI screenshots to identify visual differences and implementation discrepancies. Use this tool ONLY when the user wants to compare an expected/reference UI with an actual implementation. This tool is specialized for UI quality assurance and design-to-implementation verification. Do NOT use for: general image comparison, error diagnosis, or analyzing single UIs.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "expected_image_source": {
+      "type": "string",
+      "description": "Local file path or remote URL to the image"
+    },
+    "actual_image_source": {
+      "type": "string",
+      "description": "Local file path or remote URL to the image"
+    },
+    "prompt": {
+      "type": "string",
+      "description": "Instructions for the comparison. Specify what aspects to focus on or what level of detail is needed."
+    }
+  },
+  "required": [
+    "expected_image_source",
+    "actual_image_source",
+    "prompt"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
+
+### `ui_to_artifact`
+
+Convert UI screenshots into various artifacts: code, prompts, design specifications, or descriptions. Use this tool ONLY when the user wants to: generate frontend code from UI design (output_type='code'), create AI prompts for UI generation (output_type='prompt'), extract design specifications (output_type='spec'), get natural language description of the UI (output_type='description'). Do NOT use for: screenshots containing text/code to extract, error messages, diagrams, or data visualizations.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "image_source": {
+      "type": "string",
+      "description": "Local file path or remote URL to the image"
+    },
+    "output_type": {
+      "type": "string",
+      "description": "Type of output to generate. Options: 'code' (generate frontend code), 'prompt' (generate AI prompt for recreating this UI), 'spec' (generate design specification document), 'description' (natural language description of the UI).",
+      "enum": [
+        "code",
+        "prompt",
+        "spec",
+        "description"
+      ]
+    },
+    "prompt": {
+      "type": "string",
+      "description": "Detailed instructions describing what to generate from this UI image. Should clearly state the desired output and any specific requirements."
+    }
+  },
+  "required": [
+    "image_source",
+    "output_type",
+    "prompt"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
+
+### `understand_technical_diagram`
+
+Analyze and explain technical diagrams including architecture diagrams, flowcharts, UML, ER diagrams, and system design diagrams. Use this tool ONLY when the user has a technical diagram and wants to understand its structure or components. This tool specializes in interpreting visual technical documentation. Do NOT use for: UI screenshots, error messages, or data visualizations/charts.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "image_source": {
+      "type": "string",
+      "description": "Local file path or remote URL to the image"
+    },
+    "prompt": {
+      "type": "string",
+      "description": "What to explain about the diagram."
+    },
+    "diagram_type": {
+      "type": "string",
+      "description": "Diagram kind (architecture, flowchart, UML, ER, system design)."
+    }
+  },
+  "required": [
+    "image_source",
+    "prompt"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
+
+### `web_search_prime`
+
+Search web information, returns results including web page title, web page URL, web page summary, website name, website icon, etc.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "search_query": {
+      "type": "string",
+      "description": "Content to be searched, it is recommended that the search query not exceed 70 characters"
+    },
+    "search_domain_filter": {
+      "type": "string",
+      "description": "Used to limit the scope of search results, only return content from specified whitelist domains, such as: www.example.com."
+    },
+    "search_recency_filter": {
+      "type": "string",
+      "description": "Search for web pages within a specified time range. Default is noLimit Available values:- oneDay, within one day- oneWeek, within one week- oneMonth, within one month- oneYear, within one year- noLimit, no limit (default)"
+    },
+    "content_size": {
+      "type": "string",
+      "description": "Control the number of words in the web page summary; default value is medium - medium: balanced mode, suitable for most queries. 400-600 words.- high: maximize context to provide more comprehensive answers, but higher cost, 2500 words."
+    },
+    "location": {
+      "type": "string",
+      "description": "Guess which region the user is from based on user input. Default is cn Available values: - cn, Chinese region- us, non-Chinese region"
+    }
+  },
+  "required": [
+    "search_query"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
+
+### `webReader`
+
+Fetch and Convert URL to Large Model Friendly Input.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "url": {
+      "type": "string",
+      "description": "The URL of the website to fetch and read"
+    },
+    "timeout": {
+      "type": "integer",
+      "description": "Request timeout(unit is second), default is 20"
+    },
+    "no_cache": {
+      "type": "boolean",
+      "description": "Disable cache(true/false), default is false"
+    },
+    "return_format": {
+      "type": "string",
+      "description": "Reader response content type (markdown or text), default is markdown"
+    },
+    "retain_images": {
+      "type": "boolean",
+      "description": "Retain images (true/false), default is true"
+    },
+    "no_gfm": {
+      "type": "boolean",
+      "description": "Disable GitHub Flavored Markdown (true/false), default is false"
+    },
+    "keep_img_data_url": {
+      "type": "boolean",
+      "description": "Keep image data URL (true/false), default is false"
+    },
+    "with_images_summary": {
+      "type": "boolean",
+      "description": "Include images summary (true/false), default is false"
+    },
+    "with_links_summary": {
+      "type": "boolean",
+      "description": "Include links summary (true/false), default is false"
+    }
+  },
+  "required": [
+    "url"
+  ]
+}
+```
+
+Source: [`packages/zai/tool-zai/src/index.ts`](../packages/zai/tool-zai/src/index.ts)
