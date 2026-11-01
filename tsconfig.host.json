@@ -585,6 +585,7 @@
     { "path": "./packages/llm/llm-antigravity" },
     { "path": "./packages/llm/llm-opengateway" },
     { "path": "./packages/llm/llm-openai" },
+    { "path": "./packages/llm/llm-models-dev" },
     { "path": "./apps/cli" },
     { "path": "./apps/plugin-market-generator" },
     { "path": "./apps/desktop-host" },
