@@ -1,0 +1,42 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cosmokit"
+    },
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../../llm/llm"
+    },
+    {
+      "path": "../../llm/llm-openai"
+    },
+    {
+      "path": "../../llm/llm-models-dev"
+    },
+    {
+      "path": "../../credentials/credentials"
+    },
+    {
+      "path": "../../identity/anonymous-user-id"
+    },
+    {
+      "path": "../../settings/settings"
+    },
+    {
+      "path": "../../util/timeout"
+    }
+  ]
+}
