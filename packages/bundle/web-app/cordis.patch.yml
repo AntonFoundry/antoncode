@@ -310,6 +310,13 @@
     - id: ui-settings-general
       name: '@deepseek-ai/dsh-client-ui-settings-general'
 
+    # Anton's working-discipline sections and their preference row. The host
+    # half contributes the always-on plan-first instruction that core/tools
+    # carried before 0.2.x; the browser half owns the General-section toggle
+    # that gates the working-economy framing.
+    - id: ui-efficiency-discipline
+      name: '@deepseek-ai/dsh-client-ui-efficiency-discipline'
+
     - id: ui-settings-models
       name: '@deepseek-ai/dsh-client-ui-settings-models'
 
