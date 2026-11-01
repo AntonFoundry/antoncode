@@ -77,6 +77,13 @@ import { providerDefaultsOf } from './provider-data.ts'
 export { PiAiAdapter } from './adapter.ts'
 export type { PiAiAdapterOptions } from './adapter.ts'
 export { Config } from './config.ts'
+// A sibling plugin building its own profile literal defaults the image budgets
+// to the same values this plugin's schema does, so the two cannot drift.
+export {
+  DEFAULT_MAX_REQUEST_IMAGE_BYTES,
+  DEFAULT_REQUEST_IMAGE_MAX_BYTES,
+  DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
+} from './config.ts'
 export type {
   Options,
   PiAiCompatProfile,
@@ -90,6 +97,13 @@ export type {
 } from './config.ts'
 export { recordKeyFor } from './auth.ts'
 export { supportedProtocols } from './provider.ts'
+// A sibling plugin that serves its own routes through a pi-ai collection needs
+// the same four pieces this plugin uses to build one: the provider factory, the
+// installed-catalog lookup, and the two auth injectables. Re-exported rather
+// than reimplemented so both build identical collections.
+export { buildProvider } from './provider.ts'
+export { catalogModels } from './catalog.ts'
+export { authContextFrom, credentialStoreFrom } from './auth.ts'
 
 export const name = 'llm-pi-ai'
 export const inject = ['llm']
