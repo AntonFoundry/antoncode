@@ -181,6 +181,7 @@
       "@deepseek-ai/dsh-plan-mode/types": ["./packages/plan/plan-mode/src/types.ts"],
       "@deepseek-ai/dsh-plan-mode/client": ["./packages/plan/plan-mode/src/client.ts"],
       "@deepseek-ai/dsh-agent-preset-registry/tools": ["./packages/preset/agent-preset-registry/src/tools.ts"],
+      "@deepseek-ai/dsh-agent-queue/direct": ["./packages/interaction/agent-queue/src/direct.ts"],
       "@deepseek-ai/dsh-agent-preset-registry/types": ["./packages/preset/agent-preset-registry/src/types.ts"],
       "@deepseek-ai/dsh-agent-preset-registry/display": ["./packages/preset/agent-preset-registry/src/display.ts"],
       "@deepseek-ai/dsh-pwsh-local": ["./packages/shell/pwsh-local/src/index.ts"],

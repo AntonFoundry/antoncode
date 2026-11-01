@@ -572,3 +572,47 @@
 
     - id: llm-deepseek-account
       name: '@deepseek-ai/dsh-llm-deepseek-account'
+
+    # Anton's additive rows. Each package is ported onto the 0.2.x seams; these
+    # rows are what composes them, so a ported package without a row here is
+    # present but inert.
+    - id: tool-anton-lifecycle
+      name: '@deepseek-ai/dsh-tool-anton-lifecycle'
+
+    - id: model-intel
+      name: '@deepseek-ai/dsh-model-intel'
+
+    - id: llm-openai
+      name: '@deepseek-ai/dsh-llm-openai'
+
+    - id: llm-models-dev
+      name: '@deepseek-ai/dsh-llm-models-dev'
+
+    - id: llm-opencode
+      name: '@deepseek-ai/dsh-llm-opencode'
+
+    - id: llm-opengateway
+      name: '@deepseek-ai/dsh-llm-opengateway'
+
+    - id: llm-vazhi
+      name: '@deepseek-ai/dsh-llm-vazhi'
+
+    - id: llm-codex
+      name: '@deepseek-ai/dsh-llm-codex'
+
+    - id: llm-antigravity
+      name: '@deepseek-ai/dsh-llm-antigravity'
+
+    - id: llm-claude
+      name: '@deepseek-ai/dsh-llm-claude'
+
+    - id: flowbuilder-service
+      name: '@deepseek-ai/dsh-flowbuilder-service'
+
+    - id: langflow-sidecar
+      name: '@deepseek-ai/dsh-langflow-sidecar'
+      config:
+        workdir: !!js dshHomePath('langflow')
+
+    - id: tool-flowbuilder
+      name: '@deepseek-ai/dsh-tool-flowbuilder'

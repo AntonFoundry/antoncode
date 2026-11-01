@@ -2458,6 +2458,9 @@ importers:
       '@deepseek-ai/dsh-deepseek-llm-api-extensions':
         specifier: workspace:*
         version: link:../../llm/deepseek-llm-api-extensions
+      '@deepseek-ai/dsh-flowbuilder-service':
+        specifier: workspace:*
+        version: link:../../flowbuilder/flowbuilder-service
       '@deepseek-ai/dsh-fs-local':
         specifier: workspace:*
         version: link:../../fs/fs-local
@@ -2467,6 +2470,9 @@ importers:
       '@deepseek-ai/dsh-fs-sandbox':
         specifier: workspace:*
         version: link:../../fs/fs-sandbox
+      '@deepseek-ai/dsh-gate-policy':
+        specifier: workspace:*
+        version: link:../../guard/gate-policy
       '@deepseek-ai/dsh-goal':
         specifier: workspace:*
         version: link:../../goal/goal
@@ -2479,24 +2485,54 @@ importers:
       '@deepseek-ai/dsh-jobs-local':
         specifier: workspace:*
         version: link:../../jobs/jobs-local
+      '@deepseek-ai/dsh-langflow-sidecar':
+        specifier: workspace:*
+        version: link:../../flowbuilder/langflow-sidecar
       '@deepseek-ai/dsh-llm':
         specifier: workspace:*
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-llm-antigravity':
+        specifier: workspace:*
+        version: link:../../llm/llm-antigravity
+      '@deepseek-ai/dsh-llm-claude':
+        specifier: workspace:*
+        version: link:../../llm/llm-claude
+      '@deepseek-ai/dsh-llm-codex':
+        specifier: workspace:*
+        version: link:../../llm/llm-codex
       '@deepseek-ai/dsh-llm-deepseek-account':
         specifier: workspace:*
         version: link:../../llm/llm-deepseek-account
       '@deepseek-ai/dsh-llm-deepseek-api-key':
         specifier: workspace:*
         version: link:../../llm/llm-deepseek-api-key
+      '@deepseek-ai/dsh-llm-models-dev':
+        specifier: workspace:*
+        version: link:../../llm/llm-models-dev
+      '@deepseek-ai/dsh-llm-openai':
+        specifier: workspace:*
+        version: link:../../llm/llm-openai
+      '@deepseek-ai/dsh-llm-opencode':
+        specifier: workspace:*
+        version: link:../../llm/llm-opencode
+      '@deepseek-ai/dsh-llm-opengateway':
+        specifier: workspace:*
+        version: link:../../llm/llm-opengateway
       '@deepseek-ai/dsh-llm-pi-ai':
         specifier: workspace:*
         version: link:../../llm/llm-pi-ai
       '@deepseek-ai/dsh-llm-retry':
         specifier: workspace:*
         version: link:../../llm/llm-retry
+      '@deepseek-ai/dsh-llm-vazhi':
+        specifier: workspace:*
+        version: link:../../llm/llm-vazhi
       '@deepseek-ai/dsh-mcp-resources':
         specifier: workspace:*
         version: link:../../mcp/mcp-resources
+      '@deepseek-ai/dsh-model-intel':
+        specifier: workspace:*
+        version: link:../../subagent/model-intel
       '@deepseek-ai/dsh-otel':
         specifier: workspace:*
         version: link:../../telemetry/otel
@@ -2602,6 +2638,9 @@ importers:
       '@deepseek-ai/dsh-token-meter':
         specifier: workspace:*
         version: link:../../llm/token-meter
+      '@deepseek-ai/dsh-tool-anton-lifecycle':
+        specifier: workspace:*
+        version: link:../../lifecycle/tool-anton-lifecycle
       '@deepseek-ai/dsh-tool-bash':
         specifier: workspace:*
         version: link:../../shell/tool-bash
@@ -2614,6 +2653,9 @@ importers:
       '@deepseek-ai/dsh-tool-executor-ptc':
         specifier: workspace:*
         version: link:../../core/tool-executor-ptc
+      '@deepseek-ai/dsh-tool-flowbuilder':
+        specifier: workspace:*
+        version: link:../../flowbuilder/tool-flowbuilder
       '@deepseek-ai/dsh-tool-fs':
         specifier: workspace:*
         version: link:../../fs/tool-fs
@@ -2936,6 +2978,9 @@ importers:
       '@deepseek-ai/dsh-agent-preset-registry':
         specifier: workspace:*
         version: link:../../preset/agent-preset-registry
+      '@deepseek-ai/dsh-agent-queue':
+        specifier: workspace:*
+        version: link:../../interaction/agent-queue
       '@deepseek-ai/dsh-api-account-controller':
         specifier: workspace:*
         version: link:../../api/account-controller
