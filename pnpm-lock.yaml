@@ -18501,6 +18501,12 @@ importers:
       '@deepseek-ai/dsh-file-reference':
         specifier: workspace:*
         version: link:../../packages/context/file-reference
+      '@deepseek-ai/dsh-flowbuilder-domain':
+        specifier: workspace:*
+        version: link:../../packages/flowbuilder/flowbuilder-domain
+      '@deepseek-ai/dsh-flowbuilder-service':
+        specifier: workspace:*
+        version: link:../../packages/flowbuilder/flowbuilder-service
       '@deepseek-ai/dsh-fs':
         specifier: workspace:*
         version: link:../../packages/fs/fs
@@ -18552,6 +18558,12 @@ importers:
       '@deepseek-ai/dsh-llm-deepseek-api-key':
         specifier: workspace:*
         version: link:../../packages/llm/llm-deepseek-api-key
+      '@deepseek-ai/dsh-llm-models-dev':
+        specifier: workspace:*
+        version: link:../../packages/llm/llm-models-dev
+      '@deepseek-ai/dsh-llm-openai':
+        specifier: workspace:*
+        version: link:../../packages/llm/llm-openai
       '@deepseek-ai/dsh-llm-pi-ai':
         specifier: workspace:*
         version: link:../../packages/llm/llm-pi-ai
