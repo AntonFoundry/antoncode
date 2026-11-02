@@ -72,7 +72,7 @@ export class DirectoryPickerController extends TypertRemoteService {
   async list(path: string | undefined, signal: AbortSignal): Promise<DirectoryListing> {
     const capability = this.requireCapability('browse', 'list')
     try {
-      return await capability.list(path, signal)
+      return await capability.list(path, undefined, signal)
     } catch (error: unknown) {
       throw cancellableFailure(error, signal, 'directory listing was aborted')
     }

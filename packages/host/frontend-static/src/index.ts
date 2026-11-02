@@ -52,7 +52,6 @@ const MIME: Record<string, string> = {
   // Launchers require an image Content-Type for the install icons.
   '.png': 'image/png',
   '.svg': 'image/svg+xml',
-  '.png': 'image/png',
   '.json': 'application/json',
   '.map': 'application/json',
   '.webmanifest': 'application/manifest+json',

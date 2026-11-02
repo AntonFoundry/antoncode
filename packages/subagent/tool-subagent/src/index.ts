@@ -91,7 +91,7 @@ export interface Config extends PresetSelectionConfig {
   childReasoningEffort: Volatile<string | undefined>
 }
 
-export const Config: z<Config> = z.object({
+export const Config = z.object({
   provider: z.string().required(),
   toolName: z.string().default('subagent'),
   modelSelection: z.boolean().default(false),
