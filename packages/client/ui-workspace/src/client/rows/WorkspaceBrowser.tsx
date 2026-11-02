@@ -39,6 +39,7 @@ import {
 import { ProjectRowItem, SearchResultItem, SessionNodeItem } from './Rows.tsx'
 import { FLAT_SESSION_ORDER_KEY, type SessionGroupBy } from '../stores.ts'
 import { WorkspacePickFlow } from '../WorkspacePicker.tsx'
+import { orderWorkspacesByActivity } from '../workspace-activity.ts'
 import css from './WorkspaceBrowser.module.css'
 
 /**
@@ -268,6 +269,11 @@ type SessionTreeProps = Pick<
   home?: string | undefined
   /** Workspaces in Host group order with browser-projected Session order. */
   workspaces: readonly WorkspaceView[]
+  /** Workspaces with running or recent sessions, used for order and folder tint. */
+  activeWorkspaceIds: ReadonlySet<string>
+  /** Viewing choice for the collapsed week-idle Workspace section. */
+  archivedWorkspacesExpanded: boolean
+  setArchivedWorkspacesExpanded: (expanded: boolean) => void
   /** Display names for registered worktree Workspaces. */
   worktreeNames: Readonly<Record<string, string>>
   /** Browser-projected order for Sessions outside every Workspace. */
@@ -318,7 +324,8 @@ function EmptySessions({ rowState, onLeaveArchivedOnly, t }: Pick<SessionTreePro
 
 /** The scrolling session tree; unmounting drops the sessions subscription and the session watermarks. */
 function SessionTree({
-  list, useSessionStatus, startSession, open, workspaces, worktreeNames, ungroupedSessionIds,
+  list, useSessionStatus, startSession, open, workspaces, activeWorkspaceIds,
+  archivedWorkspacesExpanded, setArchivedWorkspacesExpanded, worktreeNames, ungroupedSessionIds,
   rowState, onLeaveArchivedOnly,
   workspaceReady, animationResetKey, usePanelInfo, useRemoteAccess, useSessionAccess, useWorkspaceAccess,
   onRenameRequest, onDeleteRequest, onSessionRenameRequest,
@@ -470,8 +477,14 @@ function SessionTree({
     return children
   }, [groups, parents])
   const rootGroups = childrenByParent.get(undefined) ?? []
-  const workspaceDropAtListStart = rootGroups[0]?.workspaceId !== undefined
-    && workspaceDrag?.over?.id === rootGroups[0].workspaceId
+  const hasActiveDescendant = (group: GroupNode): boolean =>
+    activeWorkspaceIds.has(group.key)
+    || (childrenByParent.get(group.key) ?? []).some(hasActiveDescendant)
+  const mainGroups = rootGroups.filter(group => group.workspaceId === undefined || hasActiveDescendant(group))
+  const archivedGroups = rootGroups.filter(group => group.workspaceId !== undefined && !hasActiveDescendant(group))
+  const firstVisibleGroup = mainGroups[0] ?? (archivedWorkspacesExpanded ? archivedGroups[0] : undefined)
+  const workspaceDropAtListStart = firstVisibleGroup?.workspaceId !== undefined
+    && workspaceDrag?.over?.id === firstVisibleGroup.workspaceId
     && workspaceDrag.over.half === 'before'
 
   const rowKeys: string[] = groups.length === 0 ? ['empty'] : []
@@ -563,6 +576,7 @@ function SessionTree({
           useRemoteAccess={useRemoteAccess}
           useWorkspaceAccess={useWorkspaceAccess}
           containsCurrentDescendant={currentAncestors.has(group.key)}
+          activityActive={activeWorkspaceIds.has(group.key)}
           home={home}
           t={t}
           onToggle={() => {
@@ -672,7 +686,9 @@ function SessionTree({
     )
   }
 
-  const groupRows = rootGroups.map(group => renderGroup(group, 0))
+  const groupRows = mainGroups.map(group => renderGroup(group, 0))
+  if (archivedGroups.length > 0) rowKeys.push('archive-workspaces')
+  const archivedRows = archivedWorkspacesExpanded ? archivedGroups.map(group => renderGroup(group, 0)) : []
   return (
     <HoverCardGroup className={clsx(css.treeBody, css.wide)}>
       {workspaceDropAtListStart && <span className={css.listTopDropIndicator} aria-hidden="true" />}
@@ -688,6 +704,20 @@ function SessionTree({
           <EmptySessions rowState={rowState} onLeaveArchivedOnly={onLeaveArchivedOnly} t={t} />
         )}
         {groupRows}
+        {archivedGroups.length > 0 && (
+          <div data-row-key="archive-workspaces">
+            <button
+              type="button"
+              className={css.archiveRow}
+              aria-expanded={archivedWorkspacesExpanded}
+              onClick={() => { setArchivedWorkspacesExpanded(!archivedWorkspacesExpanded) }}
+            >
+              <IconArchiveOutlineRegular size={16} />
+              <span>{archivedWorkspacesExpanded ? t('archive.hide') : t('archive.show', { n: archivedGroups.length })}</span>
+            </button>
+            {archivedRows}
+          </div>
+        )}
       </AnimatedRows>
       <span className={css.fade} />
     </HoverCardGroup>
@@ -976,6 +1006,7 @@ export function WorkspaceBrowser({
   // flow reads): a composition without a picking affordance can add nothing.
   const directoryFlowAvailable = useDirectoryFlow(occupied => occupied)
   const groupBy = useStore(s => s.groupBy)
+  const [archivedWorkspacesExpanded, setArchivedWorkspacesExpanded] = useState(false)
   const orderBy = useStore(s => s.orderBy)
   // Persisted view blobs written before the archived filter existed rehydrate
   // without the field; they read as the default hide-archived view.
@@ -1024,6 +1055,9 @@ export function WorkspaceBrowser({
       ),
     }
   }), [currentBlank, list.byId, orderBy, orderState, sessionOrderByAccount, workspaces])
+  const activityEntries = orderWorkspacesByActivity(orderedWorkspaces, list, Date.now())
+  const activeWorkspaceIds = new Set(activityEntries.filter(entry => entry.active).map(entry => entry.workspace.workspaceId))
+  const activityOrderedWorkspaces = activityEntries.map(entry => entry.workspace)
   const orderedUngroupedSessionIds = useMemo(() => {
     const baseOrder = orderBy === 'updated'
       ? orderByRecency(ungroupedMemberIds, list.byId)
@@ -1493,7 +1527,10 @@ export function WorkspaceBrowser({
                 useSessionStatus={useSessionStatus}
                 onSessionRenameRequest={requestSessionRename}
                 renderSlot={renderSlot}
-                workspaces={orderedWorkspaces}
+                workspaces={activityOrderedWorkspaces}
+                activeWorkspaceIds={activeWorkspaceIds}
+                archivedWorkspacesExpanded={archivedWorkspacesExpanded}
+                setArchivedWorkspacesExpanded={setArchivedWorkspacesExpanded}
                 worktreeNames={worktreeNames}
                 ungroupedSessionIds={orderedUngroupedSessionIds}
                 workspaceReady={workspaceReady}

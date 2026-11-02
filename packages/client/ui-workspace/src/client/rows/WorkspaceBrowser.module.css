@@ -556,11 +556,17 @@
    this reset only strips the button chrome the row style does not set. */
 .archiveRow {
   width: 100%;
-  height: 28px;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
   border: none;
   background: transparent;
   text-align: left;
   font: inherit;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
 }
 
 .empty {

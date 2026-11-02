@@ -10,7 +10,7 @@ import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/c
 import type { WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { JobView } from '@deepseek-ai/dsh-api-job-controller/types'
 
-type ActivitySessions = Pick<SessionListState, 'byId'> & { readonly jobsBySession: Readonly<Record<SessionId, readonly JobView[]>> }
+type ActivitySessions = Pick<SessionListState, 'byId'> & { readonly jobsBySession?: Readonly<Record<SessionId, readonly JobView[]>> }
 
 /**
  * A Workspace with no running Session still counts as active while its latest
@@ -48,7 +48,7 @@ export function isWorkspaceActive(
     if (session === undefined) continue
     if (session.running) return true
     if (now - session.updatedAt < WORKSPACE_ACTIVITY_WINDOW_MS) return true
-    const jobs = list.jobsBySession[sessionId]
+    const jobs = list.jobsBySession?.[sessionId]
     if (jobs !== undefined && jobs.some(isLiveJob)) return true
   }
   return false
@@ -69,7 +69,7 @@ export function isLiveJob(job: { status: string }): boolean {
  * @param jobsBySession - the sessions list snapshot's job registry mirror.
  * @returns counts keyed by session id; sessions without live jobs are absent.
  */
-export function liveJobCounts(jobsBySession: ActivitySessions['jobsBySession']): ReadonlyMap<SessionId, number> {
+export function liveJobCounts(jobsBySession: Readonly<Record<SessionId, readonly JobView[]>>): ReadonlyMap<SessionId, number> {
   const counts = new Map<SessionId, number>()
   for (const [sessionId, jobs] of Object.entries(jobsBySession)) {
     const count = jobs.filter(isLiveJob).length

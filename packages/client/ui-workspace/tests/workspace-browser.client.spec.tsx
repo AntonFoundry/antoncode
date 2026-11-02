@@ -26,9 +26,13 @@ import { zh } from '../src/client/locales.ts'
 const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined, reload: () => {} })) as GlobalStandardProps['useResource']
 const usePanelInfo: GlobalStandardProps['usePanelInfo'] = selector => selector({ activePanelId: null })
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
 const scrollIntoView = vi.fn()
 beforeEach(() => {
+  vi.spyOn(Date, 'now').mockReturnValue(1_000)
   localStorage.clear()
   createWorkspaceViewStore().create().actions.setOrderBy('manual', {})
   Element.prototype.scrollIntoView = scrollIntoView
@@ -116,6 +120,7 @@ const renderDirectoryFlowOnly: WorkspaceBrowserProps['renderSlot'] = (name: stri
     : null
 
 function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
+  if (vi.isFakeTimers()) vi.setSystemTime(1_000)
   const controls = createWorkspaceShortcutControls()
   const store = createWorkspaceViewStore().create()
   const props: WorkspaceBrowserProps = {
@@ -155,8 +160,6 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     ...overrides,
   }
   const view = render(<WorkspaceBrowser {...props} />)
-  // Week-idle workspaces (every no-session fixture) render under the collapsed
-  // Archive section; tests exercising main-list mechanics expand it first.
   const archiveToggle = view.queryByText(/归档工作区/)
   if (archiveToggle !== null) fireEvent.click(archiveToggle)
   return { view, props, store, controls }
@@ -169,6 +172,31 @@ function rerender(b: ReturnType<typeof mount>, overrides: Partial<WorkspaceBrows
 }
 
 describe('WorkspaceBrowser', () => {
+  it('sorts active workspaces, tints their folders, and collapses week-idle workspaces', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(10 * 24 * 60 * 60 * 1_000)
+    mount({
+      useSessions: hook(sessionState([
+        summary('old', 1),
+        summary('beta', Date.now() - 60_000),
+        summary('alpha', Date.now() - 120_000),
+      ])),
+      useWorkspaces: hook(workspaceState([
+        workspace('cold', ['old'], 'Cold'),
+        workspace('beta', ['beta'], 'Beta'),
+        workspace('alpha', ['alpha'], 'Alpha'),
+      ])),
+    })
+    const archive = screen.getByRole('button', { name: /已归档工作区/ })
+    fireEvent.click(archive)
+    expect(screen.queryByText('Cold')).toBeNull()
+    const titles = [...document.querySelectorAll('[role="treeitem"]')]
+      .map(row => row.textContent).filter(title => title === 'Alpha' || title === 'Beta')
+    expect(titles).toEqual(['Alpha', 'Beta'])
+    expect(sectionOf('Alpha').querySelector('[class*="folderActivity"]')).not.toBeNull()
+    fireEvent.click(archive)
+    expect(screen.getByText('Cold')).toBeTruthy()
+  })
+
   it.each(['workspace', 'flat', 'ungrouped'] as const)('keeps %s recency independent of arrival order and saved manual positions', (mode) => {
     localStorage.clear()
     const preferences = createWorkspaceViewStore().create()
