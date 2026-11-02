@@ -78,6 +78,10 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
+.ioText[data-notice] {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
 .commandInput {
   --dsl-command-whitespace: pre-wrap;
   color: var(--dsw-alias-label-secondary);

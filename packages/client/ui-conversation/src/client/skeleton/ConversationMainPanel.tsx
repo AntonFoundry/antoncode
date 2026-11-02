@@ -41,6 +41,7 @@ export function ConversationMainPanel(props: ConversationSlotProps) {
   const hero = sessionId === undefined
     || (shellPhase === 'blank' && (openState === 'open' || summaryBlank === true))
   const phase = settling ? 'settling' : hero ? 'hero' : 'active'
+  const { layoutSpan } = props
 
   return (
     <div className={css.root} data-phase={phase}>
@@ -49,6 +50,7 @@ export function ConversationMainPanel(props: ConversationSlotProps) {
         variant: 'main',
         phase,
         hero,
+        ...(layoutSpan !== undefined ? { layoutSpan } : {}),
       }, {
         slots: CONTENT_SLOTS,
       })}

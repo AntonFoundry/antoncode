@@ -63,7 +63,7 @@ describe('guessing advisory (consecutive failed calls)', () => {
       textResponse('done'),
     ])
     ctx.llm.registerAdapter(['mock'], adapter)
-    const agent = ctx.agentLoop.create(SessionId('a2'), { provider: 'mock', model: 'mock' })
+    const agent = await ctx.agentLoop.create(SessionId('a2'), { provider: 'mock', model: 'mock' })
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
     await waitForIdle(ctx, agent)
 
@@ -83,7 +83,7 @@ describe('guessing advisory (consecutive failed calls)', () => {
       textResponse('done'),
     ])
     ctx.llm.registerAdapter(['mock'], adapter)
-    const agent = ctx.agentLoop.create(SessionId('a3'), { provider: 'mock', model: 'mock' })
+    const agent = await ctx.agentLoop.create(SessionId('a3'), { provider: 'mock', model: 'mock' })
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
     await waitForIdle(ctx, agent)
 
@@ -454,11 +454,10 @@ describe('config validation fails loud', () => {
 describe('alternating ping-pong (edit flip-flop)', () => {
   /** Failed tool calls in the session log: a veto surfaces as an isError tool-result. */
   function toolErrors(agent: Agent): string[] {
-    return [...agent.session.events]
+    return agent.session.snapshotEvents()
       .filter((e): e is SessionEvent<'tool/result'> => e.type === 'tool/result')
-      .flatMap(e => e.data.message.content)
-      .filter(b => b.type === 'tool-result' && b.isError === true)
-      .map(b => b.content.map(c => c.type === 'text' ? c.text ?? '' : '').join(''))
+      .filter(e => e.data.message.isError)
+      .map(e => e.data.message.content.map(c => c.type === 'text' ? c.text : '').join(''))
   }
 
   it('advises once at cycleThreshold complete alternations, then vetoes the next cycle call', async () => {
@@ -472,7 +471,7 @@ describe('alternating ping-pong (edit flip-flop)', () => {
       textResponse('done'),
     ])
     ctx.llm.registerAdapter(['mock'], adapter)
-    const agent = ctx.agentLoop.create(SessionId('pp1'), { provider: 'mock', model: 'mock' })
+    const agent = await ctx.agentLoop.create(SessionId('pp1'), { provider: 'mock', model: 'mock' })
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
     await waitForIdle(ctx, agent)
 
@@ -502,7 +501,7 @@ describe('alternating ping-pong (edit flip-flop)', () => {
       textResponse('done'),
     ])
     ctx.llm.registerAdapter(['mock'], adapter)
-    const agent = ctx.agentLoop.create(SessionId('pp2'), { provider: 'mock', model: 'mock' })
+    const agent = await ctx.agentLoop.create(SessionId('pp2'), { provider: 'mock', model: 'mock' })
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
     await waitForIdle(ctx, agent)
 
@@ -517,7 +516,7 @@ describe('alternating ping-pong (edit flip-flop)', () => {
       textResponse('done'),
     ])
     ctx.llm.registerAdapter(['mock'], adapter)
-    const agent = ctx.agentLoop.create(SessionId('pp3'), { provider: 'mock', model: 'mock' })
+    const agent = await ctx.agentLoop.create(SessionId('pp3'), { provider: 'mock', model: 'mock' })
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
     await waitForIdle(ctx, agent)
 

@@ -8,6 +8,7 @@ import type {} from '@deepseek-ai/dsh-working-directory'
 import { Remote, RemoteError, TypertRemoteService, type RemoteStream } from '@deepseek-ai/dsh-typert-protocol'
 import { discoverShells, resolveShell } from './shells.ts'
 import { BrowserTerminal } from './terminal.ts'
+import { GuiTerminalController } from './gui-terminal.ts'
 import { TerminalRetention } from './retention.ts'
 import type {
   TerminalShell, TerminalInput, TerminalCreateRequest, TerminalEnvironment, TerminalFrame, TerminalRetentionFrame,
@@ -15,6 +16,7 @@ import type {
 } from './types.ts'
 
 export type * from './types.ts'
+export { GuiTerminalController } from './gui-terminal.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -101,6 +103,7 @@ export class TerminalController extends TypertRemoteService {
    */
   constructor(ctx: Context, private readonly config: Config) {
     super(ctx, 'terminalController', { namespace: 'terminal' })
+    ctx.plugin(GuiTerminalController)
     ctx.effect(() => async () => {
       this.lifetime.abort(new Error('Terminal controller disposed'))
       const results = await Promise.allSettled([...this.owners].map(([id, owner]) => this.disposeOwner(id, owner)))

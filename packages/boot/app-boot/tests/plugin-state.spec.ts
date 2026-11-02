@@ -14,7 +14,7 @@ import { boot, captureJsonState, loadPluginState, pluginStatePatches, updatePlug
 const paths: string[] = []
 
 afterEach(() => {
-  paths.splice(0).forEach(path => {
+  paths.splice(0).forEach((path) => {
     try {
       readFileSync(path)
     } catch {

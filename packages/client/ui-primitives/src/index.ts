@@ -88,7 +88,7 @@ export { SettingsForm } from './settings-form/SettingsForm.tsx'
 export type { SettingsFormLabels, SettingsFormProps } from './settings-form/SettingsForm.tsx'
 export { SettingsSecretField, SettingsSelectField, SettingsValueField } from './settings-form/fields.tsx'
 export type { SettingsFieldProps } from './settings-form/fields.tsx'
-export { SettingsFormModel, settingsNumberField, settingsTextField } from './settings-form/form-model.ts'
+export { SettingsFormModel, settingsBooleanField, settingsNumberField, settingsTextField } from './settings-form/form-model.ts'
 export type {
   SettingsFieldSpec, SettingsFieldState, SettingsFieldWrite, SettingsFormActions, SettingsFormPathOp, SettingsFormScope,
   SettingsFormScopeSnapshot, SettingsFormShell, SettingsSecretSpec,

@@ -28,7 +28,7 @@ Git worktree registry for the DeepSeek Harness: per-repository worktree lifecycl
 
 ## Durability
 
-Domain `worktree` (version 1): one `worktrees` table keyed by `WorktreeId`; the table is the registry — display order derives from record timestamps, so a single row write is the whole mutation. The global singleton holds only the per-repository mode preferences. Invariant companion `worktree-invariant` asserts the record cache mirrors the durable table in both directions.
+Domain `worktree` (version 1): one `worktrees` table keyed by `WorktreeId`; the table is the registry — display order derives from record timestamps, so a single row write is the whole mutation. The global singleton holds only the per-repository mode preferences.
 
 ## Known Limitations and Deferred Work
 

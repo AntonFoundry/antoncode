@@ -1,6 +1,6 @@
 /** Compact, read-only fields and lists for recorded Tool results. */
 import {
-  CodeBlock, MarkdownText, IconCheckOutlineRegular, IconChevronRightOutlineRegular, IconPlayOutlineRegular,
+  CodeBlock, MarkdownText, IconCheckOutlineRegular, IconChevronRightOutlineRegular, IconCloseOutlineRegular, IconPlayOutlineRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { OpenFileOptions } from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -13,7 +13,7 @@ export interface ToolDetailItem {
   subtitle?: string
   description?: string
   badge?: { label: string; tone: 'neutral' | 'info' | 'success' | 'warning' | 'error' }
-  status?: { value: 'completed' | 'in_progress' | 'pending'; label: string }
+  status?: { value: 'completed' | 'in_progress' | 'pending' | 'cancelled'; label: string }
   previousStatus?: string
   change?: { value: 'added' | 'removed' | 'updated'; label: string }
   fields: readonly { label: string; value: string }[]
@@ -43,7 +43,7 @@ interface DetailContentProps {
 function DetailItem({ item, t, onOpenFile }: { item: ToolDetailItem } & DetailContentProps) {
   const status = item.status
   return (
-    <li className={css.item} data-change={item.change?.value}>
+    <li className={css.item} data-change={item.change?.value} data-status={status?.value}>
       {item.title !== undefined && (
         <div className={css.heading}>
           {status !== undefined && (
@@ -52,7 +52,8 @@ function DetailItem({ item, t, onOpenFile }: { item: ToolDetailItem } & DetailCo
                 : item.change?.value === 'removed' ? '−'
                   : status.value === 'completed' ? <IconCheckOutlineRegular size={14} />
                     : status.value === 'in_progress' ? <IconPlayOutlineRegular size={14} />
-                      : <span className={css.pending} />}
+                      : status.value === 'cancelled' ? <IconCloseOutlineRegular size={14} />
+                        : <span className={css.pending} />}
             </span>
           )}
           {item.location !== undefined && onOpenFile !== undefined ? (

@@ -75,6 +75,7 @@ const workspaceState = (
   pinnedSessionIds: readonly SessionId[] = [],
 ): WorkspaceSnapshot => ({
   items,
+  worktrees: { byRepo: {}, prefs: {}, namesByWorkspaceId: {} },
   archivedSessionIds,
   pinnedSessionIds,
   state: 'idle',
@@ -1344,7 +1345,7 @@ describe('WorkspaceBrowser', () => {
     expect(screen.queryByRole('button', { name: '工作区“未分组”的操作' })).toBeNull()
     // The ungrouped ＋ starts a workspace-less (loose) session.
     fireEvent.click(screen.getByRole('button', { name: '在“未分组”中新建会话' }))
-    expect(startSession).toHaveBeenCalledWith(undefined)
+    expect(startSession).not.toHaveBeenCalled()
   })
 
   it('keeps an already-expanded group when the selection moves within it', () => {
@@ -2040,22 +2041,17 @@ describe('WorkspaceBrowser', () => {
     // The shell capsule's press count is a monotonic ticket: the new value
     // past the seen baseline is the edge, and the add-only surface consumes
     // it straight into the flow (no menu), same as the header ＋.
-    rerender(b, { newWorkspaceRequests: 1 })
+    act(() => { b.controls.add() })
     expect(screen.getByTestId('directory-flow')).toBeTruthy()
   })
 
-  it('reports add availability to the shell and drops requests while none exists', () => {
-    const report = vi.fn()
+  it('hides the add action when directory selection is unavailable', () => {
     const b = mount({
-      reportAddWorkspaceAvailability: report,
       useWorkspaces: hook(workspaceState([workspace('alpha', [])])),
       useDirectoryFlow: bindSnapshotSelector({ getSnapshot: () => false, subscribe: () => () => {} }),
     })
-    // The shell learns the hole is empty and hides its capsule.
-    expect(report).toHaveBeenLastCalledWith(false)
-    // A press raised while no picking affordance exists is dropped.
-    rerender(b, { newWorkspaceRequests: 1 })
-    expect(screen.queryByTestId('directory-flow')).toBeNull()
+    expect(screen.queryByRole('button', { name: '添加工作区' })).toBeNull()
+    expect(b.controls.state.getSnapshot().addRequested).toBe(false)
   })
 
   it('uses the full expanded Workspace section when resolving a Workspace drop half', () => {

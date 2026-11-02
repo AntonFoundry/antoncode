@@ -30,6 +30,114 @@ export type ModelDiscoveryOutcome =
   /** The interrogation was refused, with the Host's own diagnostic. */
   | { readonly kind: 'refused'; readonly message: string }
 
+/** What one credential describe answered. */
+export type CredentialStateOutcome =
+  /** The reference's redacted state. */
+  | { readonly kind: 'described'; readonly configured: boolean }
+  /** The describe was refused, with the Host's own diagnostic. */
+  | { readonly kind: 'refused'; readonly message: string }
+
+/** What one provider-login step answered. */
+export type LoginStepOutcome<L> =
+  /** The Host's login snapshot after the step. */
+  | { readonly kind: 'login'; readonly login: L }
+  /** The step was refused, with the Host's own diagnostic. */
+  | { readonly kind: 'refused'; readonly message: string }
+
+/** One workspace an OpenCode account may bind the login to. */
+export interface OpencodeLoginOrg {
+  readonly id: string
+  readonly name: string
+}
+
+/**
+ * Host snapshot of one OpenCode Zen device-flow login. It carries progress and
+ * outcome only; token material stays on the Host.
+ */
+export interface OpencodeLoginView {
+  readonly loginId: string
+  readonly status: 'pending' | 'awaiting-org' | 'done' | 'denied' | 'expired' | 'cancelled'
+  /** Code the user enters at {@link verificationUri}, while pending. */
+  readonly userCode?: string
+  readonly verificationUri?: string
+  /** Workspaces offered once the account approved, while awaiting a pick. */
+  readonly orgs?: readonly OpencodeLoginOrg[]
+  /** Host diagnostic for a denied, expired, or cancelled login. */
+  readonly error?: string
+}
+
+/** Host operations of the OpenCode Zen device-flow login (`dsh opencode-login` in the page). */
+export interface OpencodeLoginOperations {
+  /**
+   * Begin one device-flow login.
+   * @returns the pending login with its user code and verification link.
+   */
+  start(): Promise<LoginStepOutcome<OpencodeLoginView>>
+  /**
+   * Poll one login.
+   * @param loginId - login returned by {@link start}.
+   * @returns the login's current snapshot.
+   */
+  status(loginId: string): Promise<LoginStepOutcome<OpencodeLoginView>>
+  /**
+   * Finish one login awaiting a workspace pick and persist its session.
+   * @param loginId - login awaiting a pick.
+   * @param orgID - picked workspace, or undefined to skip binding one.
+   * @returns the settled login.
+   */
+  select(loginId: string, orgID: string | undefined): Promise<LoginStepOutcome<OpencodeLoginView>>
+  /**
+   * Abandon one login (idempotent).
+   * @param loginId - login to cancel.
+   * @returns the terminal snapshot.
+   */
+  cancel(loginId: string): Promise<LoginStepOutcome<OpencodeLoginView>>
+}
+
+/**
+ * Host snapshot of one Claude subscription paste-back login. It carries
+ * progress and outcome only; token material stays on the Host.
+ */
+export interface ClaudeLoginView {
+  readonly loginId: string
+  readonly status: 'pending' | 'done' | 'failed' | 'cancelled'
+  /** Browser approval link, while pending. */
+  readonly verificationUri?: string
+  /** Host diagnostic for a failed or cancelled login. */
+  readonly error?: string
+}
+
+/** Host operations of the Claude subscription login (`dsh claude-login` in the page). */
+export interface ClaudeLoginOperations {
+  /**
+   * Begin one paste-back login.
+   * @returns the pending login with its approval link.
+   */
+  start(): Promise<LoginStepOutcome<ClaudeLoginView>>
+  /**
+   * Redeem the code the browser showed and persist the session.
+   * @param loginId - login returned by {@link start}.
+   * @param pasted - the pasted code, as the user entered it.
+   * @returns the settled login; `done` once the session is stored.
+   */
+  submit(loginId: string, pasted: string): Promise<LoginStepOutcome<ClaudeLoginView>>
+  /**
+   * Abandon one login (idempotent).
+   * @param loginId - login to cancel.
+   * @returns the terminal snapshot.
+   */
+  cancel(loginId: string): Promise<LoginStepOutcome<ClaudeLoginView>>
+}
+
+/**
+ * Render a rejected Host call as the dialog's failure text.
+ * @param error - the rejection reason.
+ * @returns its message, or its string form for a non-Error reason.
+ */
+export function failureMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 /** The Host operations the Models page and its cards invoke. */
 export interface ModelsOperations {
   /**
@@ -45,6 +153,22 @@ export interface ModelsOperations {
    * @returns the refusal message, or undefined once removed.
    */
   removeCredential(ref: string): Promise<string | undefined>
+  /**
+   * Describe one credential reference without reading its value.
+   * @param ref - credential reference name.
+   * @returns whether a value is stored, or the refusal.
+   */
+  describeCredential(ref: string): Promise<CredentialStateOutcome>
+  /**
+   * OpenCode Zen login, present only when the Host serves its login namespace;
+   * the page offers no login control without it.
+   */
+  readonly opencodeLogin?: OpencodeLoginOperations
+  /**
+   * Claude subscription login, present only when the Host serves its login
+   * namespace; the page offers no login control without it.
+   */
+  readonly claudeLogin?: ClaudeLoginOperations
   /**
    * Apply path operations to one settings namespace.
    * @param ns - settings namespace identity.
@@ -83,6 +207,14 @@ export function createModelsOperations(ctx: ClientContext): ModelsOperations {
       const response = await ctx.remote.credentials.unset(ref)
       return response.ok ? undefined : response.error.message
     },
+    describeCredential: async (ref) => {
+      const response = await ctx.remote.credentials.describe([ref])
+      return response.ok
+        ? { kind: 'described', configured: response.value[ref]?.configured === true }
+        : { kind: 'refused', message: response.error.message }
+    },
+    // FIXME: bind `opencodeLogin` and `claudeLogin` once the Host serves the
+    // `opencodeOAuth` and `claudeOAuth` Remote namespaces.
     writeSettings: async (ns, ops, expectedRevision) => {
       const response = await ctx.remote.settings.mutate(ns, ops, expectedRevision)
       if (response.ok) return { kind: 'written', view: response.value }

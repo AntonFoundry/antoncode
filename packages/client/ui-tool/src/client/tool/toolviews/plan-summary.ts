@@ -36,7 +36,7 @@ export interface PlanSummary {
 
 /** Every node of an args tree in depth-first order; malformed `children` contribute nothing (a rejected call keeps such args verbatim). */
 function flatNodes(todos: readonly PlanItemLike[]): readonly PlanItemLike[] {
-  return todos.flatMap(node => {
+  return todos.flatMap((node) => {
     const children = Array.isArray(node.children) ? flatNodes(node.children as PlanItemLike[]) : []
     return [node, ...children]
   })

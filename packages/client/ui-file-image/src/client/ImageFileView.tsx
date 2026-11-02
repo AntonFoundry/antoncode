@@ -9,38 +9,39 @@
  * hatch hands the path to the host's default application.
  */
 import { memo, useState } from 'react'
-import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type {} from './locales.ts'
 import css from './ImageFileView.module.css'
 
-/** Full composed props of the image viewer (the file-view owner share; root scope adds nothing). */
-export type ImageFileViewProps = PropsRuntime<'file.view'>
+/** Full composed props of the image viewer: the file-view owner share plus the `fileImage` copy. */
+export type ImageFileViewProps = PropsRuntime<'file.view'> & PropsLocale<'fileImage'>
 
 /**
  * Render one image file buffer.
  * @param props - the file-view owner share (path + mediaUrl; readText and
  *   openWithOs belong to the other viewers — openWithOs is the failure-path
- *   escape hatch).
+ *   escape hatch) and the viewer copy.
  * @returns the rendered image stage.
  */
-export const ImageFileView = memo(function ImageFileView({ path, mediaUrl, openWithOs }: ImageFileViewProps) {
+export const ImageFileView = memo(function ImageFileView({ path, mediaUrl, openWithOs, t }: ImageFileViewProps) {
   const [status, setStatus] = useState<'loading' | 'ready' | 'failed'>('loading')
   const [attempt, setAttempt] = useState(0)
   return (
     <div className={css.root} data-testid="image-file-view">
-      {status === 'loading' && <p className={css.note}>{`${path} — loading…`}</p>}
+      {status === 'loading' && <p className={css.note}>{t('loading', { path })}</p>}
       {status === 'failed' && (
         <div className={css.failed} data-testid="image-file-view-failed">
-          <p className={css.note}>{`${path} — could not load this image`}</p>
+          <p className={css.note}>{t('failed', { path })}</p>
           <div className={css.actions}>
             <button
               type="button"
               className={css.action}
               onClick={() => { setStatus('loading'); setAttempt(a => a + 1) }}
             >
-              Retry
+              {t('retry')}
             </button>
             <button type="button" className={css.action} onClick={() => { openWithOs(path) }}>
-              Open with default app
+              {t('openWithOs')}
             </button>
           </div>
         </div>

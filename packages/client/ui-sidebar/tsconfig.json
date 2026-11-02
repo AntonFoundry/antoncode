@@ -24,9 +24,6 @@
       "path": "../ui-primitives"
     },
     {
-      "path": "../ui-conversation/tsconfig.client.json"
-    },
-    {
       "path": "../ui-renderer"
     },
     {

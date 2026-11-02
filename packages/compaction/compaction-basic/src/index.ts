@@ -349,10 +349,10 @@ export class BasicCompactionEngine extends CompactionEngine {
       return incomingTokens === 0
         ? durable
         : {
-            ...durable,
-            totalTokens: durable.totalTokens + incomingTokens,
-            surfaceTokens: durable.surfaceTokens + incomingTokens,
-          }
+          ...durable,
+          totalTokens: durable.totalTokens + incomingTokens,
+          surfaceTokens: durable.surfaceTokens + incomingTokens,
+        }
     }
     let measurement = measure()
     const prune = this.ctx.get('toolResultPruner')

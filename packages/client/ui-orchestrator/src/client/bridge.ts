@@ -4,9 +4,9 @@
  * (never a heuristic), parent/child links follow `parentSessionId`, and
  * archived sessions never render. No DOM, no transport.
  */
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SessionSummary } from '@deepseek-ai/dsh-host-apiproxy/api/sessions.ts'
-import type { WorkspaceView } from '@deepseek-ai/dsh-host-apiproxy/api/workspace.ts'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { type PlanNode, type PlanRow, type Run, type RunState, dedupeErrors, flattenPlan } from './contract.ts'
 
 /** Everything the board renders, exactly the `orchestrator.board` response value. */
@@ -45,7 +45,7 @@ export function stateOf(summary: SessionSummary, now: number): RunState {
  * @returns The nested tree, or undefined when the session has no tree.
  */
 export function readTodos(summary: SessionSummary): readonly PlanNode[] | undefined {
-  const todos = (summary.projections?.values as Partial<{ todos: unknown }> | undefined)?.todos
+  const todos = (summary.projectionValues as Partial<{ todos: unknown }> | undefined)?.todos
   if (!Array.isArray(todos)) return undefined
   return todos as readonly PlanNode[]
 }
@@ -76,10 +76,10 @@ function toRun(
   titles: ReadonlyMap<string, string> = new Map(),
 ): Run {
   return {
-    id: summary.sessionId,
-    parentId: summary.parentSessionId,
+    id: summary.id,
+    parentId: summary.parentId,
     role: 'custom',
-    title: titles.get(summary.sessionId) ?? summary.sessionId,
+    title: titles.get(summary.id) ?? summary.id,
     // The session's mission plan rides the wire's `todos` projection (the
     // latest todo/write snapshot); absent before the first write.
     plan: flattenTodos(summary),
@@ -120,20 +120,20 @@ export function deriveRuns(
   const keep = (s: SessionSummary) => !activeOnly || stateOf(s, now) !== 'done'
   const archived = new Set<string>(board.archivedSessionIds)
   const byId = new Map<string, SessionSummary>(
-    board.sessions.filter(s => !archived.has(s.sessionId)).map(s => [s.sessionId, s]),
+    board.sessions.filter(s => !archived.has(s.id)).map(s => [s.id, s]),
   )
   const runs: Run[] = []
   const placed = new Set<string>()
   const kidsOf = (id: string) =>
-    [...byId.values()].filter(c => c.origin === 'subagent' && c.parentSessionId === id)
+    [...byId.values()].filter(c => c.origin === 'subagent' && c.parentId === id)
   for (const w of board.items) {
     for (const id of w.sessionIds) {
       const s = byId.get(id)
-      if (s === undefined || s.origin === 'subagent' || placed.has(s.sessionId)) continue
-      placed.add(s.sessionId)
+      if (s === undefined || s.origin === 'subagent' || placed.has(s.id)) continue
+      placed.add(s.id)
       if (!keep(s)) continue // family stays hidden with its dead root
-      const children = kidsOf(s.sessionId)
-        .map((c) => { placed.add(c.sessionId); return c })
+      const children = kidsOf(s.id)
+        .map((c) => { placed.add(c.id); return c })
         .filter(keep)
         .map(c => toRun(c, stateOf(c, now), [], titles))
       runs.push(toRun(s, stateOf(s, now), children, titles))
@@ -141,7 +141,7 @@ export function deriveRuns(
   }
   // Active subagent orphans whose parent is not on the board render at top level.
   for (const s of byId.values()) {
-    if (s.origin === 'subagent' && !placed.has(s.sessionId) && keep(s)) {
+    if (s.origin === 'subagent' && !placed.has(s.id) && keep(s)) {
       runs.push(toRun(s, stateOf(s, now), [], titles))
     }
   }

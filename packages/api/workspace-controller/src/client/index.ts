@@ -13,7 +13,7 @@ import { WorkspaceController } from './service.ts'
 
 export { ClientWorkspaceModel } from './model.ts'
 export type {
-  WorkspaceFollowSink, WorkspaceListPhase, WorkspaceRemote, WorkspaceSnapshot,
+  WorkspaceFollowSink, WorkspaceListPhase, WorkspaceRemote, WorkspaceSnapshot, WorkspaceWorktreeState,
 } from './model.ts'
 export { WorkspaceArchiveError, WorkspaceController, WorkspaceCreateError } from './service.ts'
 export type { IWorkspaces, WorkspaceSource } from './service.ts'
@@ -38,15 +38,20 @@ declare module '@deepseek-ai/cordis' {
 }
 
 /** Required Client Remote services. */
-export const inject = ['remote', 'remote.workspace']
+export const inject = ['remote', 'remote.workspace', 'remote.worktree']
 
 /**
  * Install Client Workspace state, commands, and reconnecting follow control.
  * @param ctx - Client root Context.
  */
 export function apply(ctx: Context): void {
-  const model = new ClientWorkspaceModel(ctx.remote.workspace)
+  const model = new ClientWorkspaceModel(ctx.remote.workspace, ctx.remote.worktree)
   new WorkspaceController(ctx, model)
+  const refreshWorktrees = (): void => {
+    void model.refreshWorktrees().catch((error) => { ctx.logger('workspace-controller').warn(error) })
+  }
+  refreshWorktrees()
+  ctx.on('connection/reset', refreshWorktrees)
   const control = createWorkspaceStateStream(ctx.remote, {
     accept: model,
     carrierFailed: () => { model.handleCarrierFailure() },

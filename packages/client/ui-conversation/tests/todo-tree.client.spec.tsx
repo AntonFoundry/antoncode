@@ -2,18 +2,19 @@
 /**
  * Todo tree acceptance: the sidebar execution-tree body (nested three-level
  * rows, per-status counts including several `in_progress` at once, quiet empty
- * state) and its seat component reading the current session's `todos`
- * projection through the session list summary, plus the collapsed-rail form.
+ * state), its seat component and collapsed-rail form, and the Session body
+ * reading the current session's `todos` and `goal` projections.
  */
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { TodoItem } from '@deepseek-ai/dsh-client-runtime/client'
+import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-ui-renderer/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import type { TodoTreeProps } from '../src/client/skeleton/TodoTree.tsx'
-import { TodoTree, TodoTreeBody, todoTreeEntry } from '../src/client/skeleton/TodoTree.tsx'
+import type { TodoTreeOwnerProps } from '../src/client/contract/slots.ts'
+import type { TodoTreeProps, TodoTreeSessionProps } from '../src/client/skeleton/TodoTree.tsx'
+import { TodoTree, TodoTreeBody, TodoTreeSession, todoTreeEntry } from '../src/client/skeleton/TodoTree.tsx'
 import { NS, zh } from '../src/client/locales.ts'
 import { createTodoTreeStore } from '../src/client/stores.ts'
 
@@ -136,10 +137,10 @@ describe('TodoTreeBody', () => {
   })
 })
 
-/** Session-list state slice the seat reads: current id + per-session summaries. */
-interface SessionsStubState {
-  current: string | undefined
-  byId: Record<string, { projectionValues?: { todos?: readonly TodoItem[] | null; goal?: unknown } }>
+/** Projection values the Session body reads; an absent Session publishes none. */
+interface ProjectionStubState {
+  todos?: readonly TodoItem[] | null
+  goal?: unknown
 }
 
 /** One active goal snapshot as the projection publishes it. */
@@ -150,19 +151,26 @@ const GOAL = {
   updatedAt: 0,
 }
 
-/** Seat props stub: the seat reads the sessions list and the tree store; the rest of the share is unused. */
+/**
+ * Seat props stub: the seat reads the tree store and renders its Session
+ * child through `renderSlot`, which here mounts the real Session body over
+ * the stub projection store; the rest of the share is unused.
+ */
 function seatProps(
-  store: ReturnType<typeof createSnapshotStore<SessionsStubState>>,
+  store: ReturnType<typeof createSnapshotStore<ProjectionStubState>>,
   overrides: Partial<Pick<TodoTreeProps, 'wide' | 'expandSidebar'>> = {},
   tree = createTodoTreeStore().create(),
 ): TodoTreeProps {
-  const useSessions = (selector: (state: SessionsStubState) => unknown) =>
-    bindSnapshotSelector(store)(state => selector(state))
+  const read = bindSnapshotSelector(store)
+  const useProjection = ((key: 'todos' | 'goal') => read(state => state[key])) as TodoTreeSessionProps['useProjection']
+  const renderSlot = (_name: 'conversation.todo.tree', owner: TodoTreeOwnerProps) => (
+    <TodoTreeSession {...({ ...owner, useProjection, t } as unknown as TodoTreeSessionProps)} />
+  )
   return {
-    useSessions,
     useStore: (selector: (state: { collapsed: string[] }) => unknown) =>
       bindSnapshotSelector(tree.store)(state => selector(state)),
     actions: tree.actions,
+    renderSlot,
     wide: true,
     expandSidebar: vi.fn(),
     t,
@@ -172,34 +180,22 @@ function seatProps(
 
 describe('TodoTree seat', () => {
   it('reads the current session todos projection and follows pushed updates', () => {
-    const store = createSnapshotStore<SessionsStubState>({
-      current: 's1',
-      byId: { s1: { projectionValues: { todos: undefined } } },
-    })
+    const store = createSnapshotStore<ProjectionStubState>({})
     render(<TodoTree {...seatProps(store)} />)
     // Capability absent (no baseline/frame yet) renders the quiet empty state,
     // not a blank panel: the sidebar seat stays meaningful between plans.
     expect(screen.getByTestId('todo-tree-empty')).toBeTruthy()
-    act(() => { store.set({ current: 's1', byId: { s1: { projectionValues: { todos: LIST, goal: GOAL } } } }) })
+    act(() => { store.set({ todos: LIST, goal: GOAL }) })
     expect(screen.getByText('1 已完成 · 1 进行中 · 1 待处理')).toBeTruthy()
     // The session's goal leads the card the moment the projection publishes it.
     expect(screen.getByTestId('todo-goal')).toBeTruthy()
     // The pre-first-write whole value (null) returns to the empty state.
-    act(() => { store.set({ current: 's1', byId: { s1: { projectionValues: { todos: null } } } }) })
-    expect(screen.getByTestId('todo-tree-empty')).toBeTruthy()
-  })
-
-  it('renders the empty state while no session is current', () => {
-    const store = createSnapshotStore<SessionsStubState>({ current: undefined, byId: {} })
-    render(<TodoTree {...seatProps(store)} />)
+    act(() => { store.set({ todos: null }) })
     expect(screen.getByTestId('todo-tree-empty')).toBeTruthy()
   })
 
   it('renders one expand affordance in the collapsed rail instead of the tree', () => {
-    const store = createSnapshotStore<SessionsStubState>({
-      current: 's1',
-      byId: { s1: { projectionValues: { todos: LIST } } },
-    })
+    const store = createSnapshotStore<ProjectionStubState>({ todos: LIST })
     const expandSidebar = vi.fn()
     render(<TodoTree {...seatProps(store, { wide: false, expandSidebar })} />)
     const rail = screen.getByRole('button', { name: '展开任务树' })
@@ -208,17 +204,21 @@ describe('TodoTree seat', () => {
     expect(expandSidebar).toHaveBeenCalledTimes(1)
   })
 
-  it('registers into the sidebar memory seat', () => {
+  it('registers into the sidebar memory seat with its Session body', () => {
     expect(todoTreeEntry.name).toBe('conversation-todo-tree')
     expect(todoTreeEntry.inject).toEqual(['slots'])
     const register = vi.fn(() => () => undefined)
-    const inject = vi.fn((_name: string, callback: () => () => void) => callback())
+    const inject = vi.fn((_name: string, callback: () => Iterable<() => void>) => [...callback()])
     todoTreeEntry.apply({ slots: { inject, register } } as never)
     expect(inject).toHaveBeenCalledWith('sidebar.memory', expect.any(Function))
     expect(register).toHaveBeenCalledWith(
-      { name: 'sidebar.memory', id: 'todo-tree', order: 0, locale: NS, store: expect.anything() },
+      {
+        name: 'sidebar.memory', id: 'todo-tree', order: 0, locale: NS, store: expect.anything(),
+        children: { 'conversation.todo.tree': { kind: 'single', scope: 'session-maybe' } },
+      },
       TodoTree,
     )
+    expect(register).toHaveBeenCalledWith({ name: 'conversation.todo.tree', locale: NS }, TodoTreeSession)
   })
 })
 
@@ -308,10 +308,7 @@ describe('todo tree collapse store', () => {
   })
 
   it('seats collapse branches through the declared store face', () => {
-    const sessions = createSnapshotStore<SessionsStubState>({
-      current: 's1',
-      byId: { s1: { projectionValues: { todos: FLAT_PLAN } } },
-    })
+    const sessions = createSnapshotStore<ProjectionStubState>({ todos: FLAT_PLAN })
     const tree = createTodoTreeStore().create()
     render(<TodoTree {...seatProps(sessions, {}, tree)} />)
     expect(screen.getByText('host session.forkExcluding RPC')).toBeTruthy()

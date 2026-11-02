@@ -34,10 +34,17 @@ export function todosDetail(args: Record<string, unknown>, t: Translate): ToolDe
   if (!Array.isArray(args.todos)) return null
   const items: DetailItem[] = []
   const seen = new Set<string>()
-  for (const todo of args.todos) {
+  const pending: unknown[] = [...args.todos]
+  // Tree todos list each node depth-first, so nested steps stay reviewable in the flat card.
+  while (pending.length > 0) {
+    const todo = pending.shift()
     if (!detailRecord(todo) || !nonempty(todo.content)) return null
+    if (todo.children !== undefined) {
+      if (!Array.isArray(todo.children)) return null
+      pending.unshift(...todo.children)
+    }
     const status = todo.status
-    if (status !== 'completed' && status !== 'in_progress' && status !== 'pending') return null
+    if (status !== 'completed' && status !== 'in_progress' && status !== 'pending' && status !== 'cancelled') return null
     const title = todo.content.trim()
     if (seen.has(title)) return null
     seen.add(title)

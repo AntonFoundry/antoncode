@@ -9,11 +9,12 @@
  * hatch (the codecs no browser here decodes need a real player anyway).
  */
 import { memo, useState } from 'react'
-import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type {} from './locales.ts'
 import css from './VideoFileView.module.css'
 
-/** Full composed props of the video viewer (the file-view owner share; root scope adds nothing). */
-export type VideoFileViewProps = PropsRuntime<'file.view'>
+/** Full composed props of the video viewer: the file-view owner share plus the `fileVideo` copy. */
+export type VideoFileViewProps = PropsRuntime<'file.view'> & PropsLocale<'fileVideo'>
 
 /** The playback source stages: native file → remuxed stream → failure note. */
 type Stage = 'native' | 'remux' | 'failed'
@@ -22,27 +23,27 @@ type Stage = 'native' | 'remux' | 'failed'
  * Render one video file buffer.
  * @param props - the file-view owner share (path + mediaUrl; readText and
  *   openWithOs belong to the other viewers — openWithOs is the failure-path
- *   escape hatch).
+ *   escape hatch) and the viewer copy.
  * @returns the rendered video stage.
  */
-export const VideoFileView = memo(function VideoFileView({ path, mediaUrl, openWithOs }: VideoFileViewProps) {
+export const VideoFileView = memo(function VideoFileView({ path, mediaUrl, openWithOs, t }: VideoFileViewProps) {
   const [stage, setStage] = useState<Stage>('native')
   const [attempt, setAttempt] = useState(0)
   if (stage === 'failed') {
     return (
       <div className={css.root} data-testid="video-file-view">
         <div className={css.failed}>
-          <p className={css.note}>{`${path} — this video cannot be played inline`}</p>
+          <p className={css.note}>{t('failed', { path })}</p>
           <div className={css.actions}>
             <button
               type="button"
               className={css.action}
               onClick={() => { setStage('native'); setAttempt(a => a + 1) }}
             >
-              Retry
+              {t('retry')}
             </button>
             <button type="button" className={css.action} onClick={() => { openWithOs(path) }}>
-              Open with default app
+              {t('openWithOs')}
             </button>
           </div>
         </div>
@@ -68,11 +69,11 @@ export const VideoFileView = memo(function VideoFileView({ path, mediaUrl, openW
         // manual rescue: remux converts the audio to AAC, video stays
         // stream-copied.
         <p className={css.hint}>
-          No sound?{' '}
+          {t('noSound')}{' '}
           <button type="button" className={css.hintAction} onClick={() => { setStage('remux') }}>
-            Play via remux
+            {t('remux')}
           </button>
-          {' '}(converts the audio track to AAC)
+          {' '}{t('remuxHint')}
         </p>
       )}
     </div>

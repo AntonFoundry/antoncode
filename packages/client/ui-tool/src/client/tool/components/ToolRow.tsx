@@ -117,7 +117,7 @@ function stateStatus(state: ToolRowState, t: TranslateNS<'conversation'>): strin
   switch (state) {
     case 'preparing': return t('row.preparing')
     case 'running': return t('row.running')
-    case 'notice': return 'Read required before editing'
+    case 'notice': return t('row.readRequired')
     case 'error': return t('row.failed')
     case 'stopped': return t('row.stopped')
     default: return null

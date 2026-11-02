@@ -5,8 +5,8 @@ import type {
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { DirectoryListing } from '@deepseek-ai/dsh-api-workspace-controller/types'
 import type {
-  WorktreeId, WorktreeModePrefView, WorktreeStatusView, WorktreeView,
-} from '@deepseek-ai/dsh-client-connection/client'
+  WorktreeId, WorktreeModePrefView, WorktreeStatus as WorktreeStatusView, WorktreeView,
+} from '@deepseek-ai/dsh-api-workspace-controller/worktree-types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { workspaceSnapshot } from './fixtures.ts'
@@ -18,12 +18,12 @@ type WorkspaceFixtureSnapshot = FixtureSnapshot<WorkspaceSnapshot>
 /** Callable command names on the production Workspace Controller face. */
 type WorkspaceAction = {
   [Key in keyof IWorkspaces]: IWorkspaces[Key] extends (...args: never[]) => unknown ? Key : never
-}[keyof IWorkspaces]
+}[keyof IWorkspaces] | 'openPath' | 'readTextFile' | 'pickDirectory' | 'listDirectory' | 'createDirectory'
 
 /** Test replacement retaining one Controller command's parameters and result. */
-type WorkspaceStub<Key extends WorkspaceAction> = (
-  ...args: Parameters<IWorkspaces[Key]>
-) => ReturnType<IWorkspaces[Key]>
+type WorkspaceStub<Key extends WorkspaceAction> = Key extends keyof IWorkspaces
+  ? IWorkspaces[Key] extends (...args: never[]) => unknown ? IWorkspaces[Key] : never
+  : (...args: never[]) => unknown
 
 /**
  * Workspaces test double. Implements the same IWorkspaces face features
@@ -83,21 +83,18 @@ export class TestWorkspaces implements IWorkspaces {
    */
   async createWorktree(
     input: { repoPath: string; name?: string; base?: string },
-  ): Promise<{ worktree: WorktreeView; workspace: WorkspaceView | undefined }> {
+  ): Promise<WorktreeView> {
     this.calls.push({ method: 'createWorktree', args: [input] })
     const stub = this.stubs.get('createWorktree')
-    if (stub !== undefined) return await (stub(input) as Promise<{ worktree: WorktreeView; workspace: WorkspaceView | undefined }>)
+    if (stub !== undefined) return await (stub(input) as Promise<WorktreeView>)
     const slug = input.name ?? 'wt'
     return {
-      worktree: {
-        worktreeId: `wt-${input.repoPath}-${slug}` as WorktreeId,
-        repoPath: input.repoPath,
-        path: `${input.repoPath}.worktrees/${slug}`,
-        branch: `agent/${slug}`,
-        base: input.base ?? 'origin/main',
-        createdAt: new Date().toISOString(),
-      },
-      workspace: undefined,
+      worktreeId: `wt-${input.repoPath}-${slug}` as WorktreeId,
+      repoPath: input.repoPath,
+      path: `${input.repoPath}.worktrees/${slug}`,
+      branch: `agent/${slug}`,
+      base: input.base ?? 'origin/main',
+      createdAt: new Date().toISOString(),
     }
   }
 

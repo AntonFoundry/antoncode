@@ -9,6 +9,8 @@ import type {} from '@deepseek-ai/dsh-user-approval'
 import { assertNever, deepFreeze, snapshotJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
 import { TOOL_ABORTED, TOOL_ABORTED_BEFORE_DISPATCH, ToolNotFoundError, ToolOutputError } from './contracts.ts'
 import { validateJsonSchemaValue } from './json-schema.ts'
+import type { JsonSchemaNode } from './json-schema.ts'
+import { ToolArgsError, toolsMatchingArgumentKeys } from './schema.ts'
 import type { ToolsService } from './index.ts'
 import type { ResolvedToolSet, ToolDefinition, ToolExecutionInput, ToolExecutionMode, ToolExecution, ToolRunContext, ToolExecutionResult, ToolExecutionSuccess, ToolErrorInfo, ToolExecutionToken, PreToolDecision, PostToolDecision } from './contracts.ts'
 
@@ -194,6 +196,10 @@ export class ToolExecutionPipeline {
     if (this.callerCancelled(exec)) {
       return { kind: 'final-result', exec, result: toolAbortedBeforeDispatchResult() }
     }
+    const invalidArgs = this.invalidArgumentsResult(exec)
+    if (invalidArgs !== undefined) {
+      return { kind: 'final-result', exec, result: invalidArgs }
+    }
     try {
       const carrier = scopeTarget(this.tools, exec.agent)
       const gate = await this.ctx.waterfall(
@@ -229,6 +235,67 @@ export class ToolExecutionPipeline {
       return { kind: 'dispatch', exec }
     } catch (error: unknown) {
       return { kind: 'final-result', exec, result: toolErrorResult(error) }
+    }
+  }
+
+  /**
+   * Validate the snapshotted arguments against the registered parameter
+   * schema before any policy stage runs, so a call that can only fail never
+   * reaches pre-execute listeners or an approval `ask`, and the model reads
+   * the violations instead of a downstream transport error.
+   * @param exec - the prepared execution (tool name, scope, snapshotted arguments).
+   * @returns the invalid-arguments result, or undefined when the definition is not visible from this scope or the arguments validate.
+   */
+  private invalidArgumentsResult(exec: ToolRunContext): ToolExecutionResult | undefined {
+    const definition = this.get(exec.name, exec.agent, exec.toolSet)
+    if (definition === undefined) return undefined
+    const violations = validateJsonSchemaValue(definition.parameters as JsonSchemaNode, exec.arguments, '')
+    if (violations.length === 0) return undefined
+    return this.withSiblingHint(exec, toolErrorResult(new ToolArgsError(violations)))
+  }
+
+  /**
+   * Append the sibling-tool hint to an invalid-arguments failure when every
+   * violation is a missing required property and the supplied argument keys
+   * exactly cover another visible tool's parameter object. Operates on the
+   * normalized result text, never on the thrown value, so hostile thrown
+   * values keep their normalization.
+   * @param exec - the failing execution (tool name, scope, arguments).
+   * @param result - the normalized error result.
+   * @returns the result unchanged, or a failure carrying the appended hint.
+   */
+  private withSiblingHint(exec: ToolRunContext, result: ToolExecutionResult): ToolExecutionResult {
+    if (!result.isError) return result
+    const message = result.error.message
+    const prefix = 'invalid arguments: '
+    if (!message.startsWith(prefix)) return result
+    const violations = message.slice(prefix.length).split('; ')
+    if (!violations.every(violation => violation.startsWith('missing required property'))) return result
+    const args = exec.arguments
+    if (args === null || typeof args !== 'object' || Array.isArray(args)) return result
+    const keys = Object.keys(args)
+    const candidates = this.tools.definitions(exec.agent, exec.toolSet)
+      .filter(definition => definition.name !== exec.name)
+      .map((definition) => {
+        const { properties, required } = definition.parameters
+        return {
+          name: definition.name,
+          required: Array.isArray(required)
+            ? required.filter((key): key is string => typeof key === 'string')
+            : [],
+          properties: properties !== null && typeof properties === 'object' ? Object.keys(properties) : [],
+        }
+      })
+    const match = toolsMatchingArgumentKeys(keys, candidates)[0]
+    if (match === undefined) return result
+    const hinted = `${message}; the supplied properties (${keys.join(', ')}) match tool "${match}" — retry with that tool and the same arguments`
+    const info = result.error.info
+    return {
+      isError: true,
+      content: [{ type: 'text', text: `Error: ${hinted}` }],
+      error: info !== undefined ? { message: hinted, info } : { message: hinted },
+      ...result.meta !== undefined ? { meta: result.meta } : {},
+      ...result.additionalContexts !== undefined ? { additionalContexts: result.additionalContexts } : {},
     }
   }
 
@@ -278,7 +345,7 @@ export class ToolExecutionPipeline {
         ? toolAbortedResult(result)
         : result
     } catch (error: unknown) {
-      return toolErrorResult(error)
+      return this.withSiblingHint(exec, toolErrorResult(error))
     } finally {
       fused.dispose()
       exec.signal = wrapperSignal

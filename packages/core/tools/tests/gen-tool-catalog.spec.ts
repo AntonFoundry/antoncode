@@ -39,7 +39,8 @@ describe('gen-tool-catalog collectToolCatalog', () => {
       'present', 'propose_action', 'pwsh', 'pwsh', 'ralph', 'read', 'read_file', 'read_image',
       'read_mcp_resource', 'run_code', 'schedule_create', 'schedule_delete', 'schedule_list',
       'schedule_update', 'search_doc', 'send_message', 'send_message', 'session_event_read',
-      'session_event_search', 'session_event_trace', 'session_search', 'session_trace', 'skill',
+      'session_event_search', 'session_event_trace', 'session_search', 'session_trace',
+      'set_agent_model', 'skill',
       'spawn_teammate', 'stagehand_act', 'stagehand_extract', 'stagehand_navigate',
       'stagehand_observe', 'stagehand_screenshot', 'stagehand_tabs', 'str_replace_editor', 'subagent',
       'subagent_oar', 'team_task_create', 'team_task_get', 'team_task_list', 'team_task_update',
@@ -88,6 +89,7 @@ describe('gen-tool-catalog collectToolCatalog', () => {
       interrupt_agent: 'packages/subagent/tool-subagent-control/src/index.ts',
       list_agents: 'packages/subagent/tool-subagent-control/src/list-agents.ts',
       send_message: 'packages/subagent/tool-subagent-control/src/index.ts',
+      set_agent_model: 'packages/subagent/tool-subagent-control/src/index.ts',
     })
   })
 

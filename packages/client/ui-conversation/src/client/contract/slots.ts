@@ -225,8 +225,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       owner: UserTextNodeOwnerProps
       keyProps: { [Id in UserTextId]: { node: UserTextNode<Id> } }
     }
+    /**
+     * The current Session's execution tree beneath the root-scoped
+     * `sidebar.memory` todo-tree entry. Declared and occupied by this package;
+     * the Session binding supplies the `todos` and `goal` projections.
+     */
+    'conversation.todo.tree': { kind: 'single'; scope: 'session-maybe'; owner: TodoTreeOwnerProps }
     /** Conversation shell beneath its root-scoped main-panel entry. */
-    'main.conversation': { kind: 'single'; scope: 'session-maybe' }
+    'main.conversation': { kind: 'single'; scope: 'session-maybe'; owner: ConversationPaneOwnerProps }
     /** Strict per-Session Conversation body. */
     'conversation.session': {
       kind: 'single'
@@ -615,6 +621,27 @@ export interface HeroBrandMarkOwnerProps {
   className?: string | undefined
 }
 
+/** Branch-collapse state the sidebar todo-tree entry forwards to its Session body. */
+export interface TodoTreeOwnerProps {
+  /** Branch titles whose subtrees stay hidden. */
+  collapsed: readonly string[]
+  /**
+   * Toggle one branch's collapse state.
+   * @param id - the branch title.
+   */
+  onToggle: (id: string) => void
+}
+
+/** Pane facts the layout owner forwards to the resident Conversation shell. */
+export interface ConversationPaneOwnerProps {
+  /**
+   * `single` when this is the only conversation pane on screen, `multi` when
+   * it is one pane among several; scopes the composer's file-drop target.
+   * Absent behaves as `single`.
+   */
+  layoutSpan?: 'single' | 'multi' | undefined
+}
+
 /** Full props of the resident optional-Session Conversation shell. */
 export type ConversationSlotProps =
   PropsRuntime<'main.conversation'>
@@ -626,6 +653,11 @@ export interface ConversationContentInputProps {
   variant: 'main' | 'embedded'
   phase: 'settling' | 'hero' | 'active'
   hero: boolean
+  /**
+   * Layout span of the pane hosting this content, forwarded to the composer
+   * bar's file-drop scope. Absent behaves as `single`.
+   */
+  layoutSpan?: 'single' | 'multi' | undefined
 }
 
 /** Values passed from shared content to its occurrence-selected width controls. */

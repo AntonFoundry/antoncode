@@ -388,7 +388,7 @@ export function apply(ctx: Context, config: Config): void {
       }
       return {
         kind: 'block',
-        feedback: outcome.veto.content,
+        feedback: [...outcome.veto.content],
         additionalContexts: contexts,
       }
     }

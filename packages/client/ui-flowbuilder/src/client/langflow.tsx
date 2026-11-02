@@ -7,7 +7,7 @@
 import { createElement, useCallback, useEffect, useState } from 'react'
 import type { FC } from 'react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { LangflowStatusView } from '@deepseek-ai/dsh-host-apiproxy/client'
+import type { LangflowStatus as LangflowStatusView } from '@deepseek-ai/dsh-api-remotes/client'
 import type { FlowbuilderKey } from './locales.ts'
 import styles from './langflow.module.css'
 

@@ -94,6 +94,7 @@ function workspaceState(
 ): WorkspaceSnapshot {
   return {
     items,
+    worktrees: { byRepo: {}, prefs: {}, namesByWorkspaceId: {} },
     archivedSessionIds,
     pinnedSessionIds: [],
     phase,
@@ -177,6 +178,10 @@ class FakeSessions implements ISessions {
 
 class FakeWorkspaces implements IWorkspaces {
   readonly initializeDefault = vi.fn<IWorkspaces['initializeDefault']>(async () => undefined)
+  readonly refreshWorktrees = vi.fn<IWorkspaces['refreshWorktrees']>(async () => {})
+  readonly createWorktree = vi.fn<IWorkspaces['createWorktree']>(async () => { throw new Error('no git repository') })
+  readonly setWorktreePref = vi.fn<IWorkspaces['setWorktreePref']>(async () => {})
+  readonly worktreeStatus = vi.fn<IWorkspaces['worktreeStatus']>(async () => { throw new Error('no git repository') })
   readonly list: MutableSource<WorkspaceSnapshot>
   readonly archiveCalls: SessionId[] = []
   readonly unarchiveCalls: SessionId[] = []
@@ -314,7 +319,8 @@ function bench(options: BenchOptions = {}) {
   return { ctx, directoryPicker, sessions, uiWorkspace, workspaces, layout, selectPanel, view, notify, requestDraftInitialization }
 }
 
-function lastOpening(open: MockInstance<UiWorkspaceService['openWorkspace']>): Promise<void> {
+async function lastOpening(open: MockInstance<UiWorkspaceService['openWorkspace']>): Promise<void> {
+  await vi.waitFor(() => { expect(open).toHaveBeenCalled() })
   const result = open.mock.results.at(-1)
   if (result?.type !== 'return') throw new Error('startSession did not start Workspace navigation')
   return result.value
@@ -892,7 +898,7 @@ describe('UiWorkspaceService', () => {
       const expected = { ...options }
       b.uiWorkspace.startSession(wid('a'), options)
       const completion = lastOpening(opening)
-      expect(b.sessions.create).toHaveBeenCalledOnce()
+      await vi.waitFor(() => { expect(b.sessions.create).toHaveBeenCalledOnce() })
       expect(b.requestDraftInitialization).not.toHaveBeenCalled()
 
       options.clearPreviousDraft = false
@@ -914,11 +920,12 @@ describe('UiWorkspaceService', () => {
         const opening = vi.spyOn(b.uiWorkspace, 'openWorkspace')
         b.uiWorkspace.startSession(wid('a'), { prompt: 'late draft' })
         const completion = lastOpening(opening)
-        expect(b.sessions.create).toHaveBeenCalledOnce()
+        await vi.waitFor(() => { expect(b.sessions.create).toHaveBeenCalledOnce() })
         expect(b.requestDraftInitialization).not.toHaveBeenCalled()
 
         if (kind === 'workspace') {
           b.uiWorkspace.startSession(wid('b'), { prompt: 'chosen draft' })
+          await vi.waitFor(() => { expect(opening).toHaveBeenCalledTimes(2) })
           await lastOpening(opening)
         } else if (kind === 'session') b.uiWorkspace.openSession(sid('chosen'))
         else if (kind === 'panel') b.layout.selectPanel('other-panel' as MainPanelId)

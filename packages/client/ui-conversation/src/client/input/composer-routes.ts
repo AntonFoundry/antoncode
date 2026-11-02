@@ -4,9 +4,9 @@
  * registers here, and the input sink dispatches to it while that view is
  * selected instead of prompting the chat session.
  */
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
-import type { DraftAttachmentId } from './contract.ts'
+import type { DraftAttachmentId } from '../contract/input.ts'
 
 /** One submission routed away from the chat session. */
 export interface ComposerRouteRequest {

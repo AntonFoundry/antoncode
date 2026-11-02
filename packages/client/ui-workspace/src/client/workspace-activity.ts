@@ -5,7 +5,12 @@
  * below. Pure view-layer derivation — the Host/persisted order is never
  * mutated.
  */
-import type { SessionId, SessionListState, WorkspaceView } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { JobView } from '@deepseek-ai/dsh-api-job-controller/types'
+
+type ActivitySessions = Pick<SessionListState, 'byId'> & { readonly jobsBySession: Readonly<Record<SessionId, readonly JobView[]>> }
 
 /**
  * A Workspace with no running Session still counts as active while its latest
@@ -35,7 +40,7 @@ export interface WorkspaceActivityEntry {
  */
 export function isWorkspaceActive(
   workspace: WorkspaceView,
-  list: Pick<SessionListState, 'byId' | 'jobsBySession'>,
+  list: ActivitySessions,
   now: number,
 ): boolean {
   for (const sessionId of workspace.sessionIds) {
@@ -64,7 +69,7 @@ export function isLiveJob(job: { status: string }): boolean {
  * @param jobsBySession - the sessions list snapshot's job registry mirror.
  * @returns counts keyed by session id; sessions without live jobs are absent.
  */
-export function liveJobCounts(jobsBySession: SessionListState['jobsBySession']): ReadonlyMap<SessionId, number> {
+export function liveJobCounts(jobsBySession: ActivitySessions['jobsBySession']): ReadonlyMap<SessionId, number> {
   const counts = new Map<SessionId, number>()
   for (const [sessionId, jobs] of Object.entries(jobsBySession)) {
     const count = jobs.filter(isLiveJob).length
@@ -86,7 +91,7 @@ export function liveJobCounts(jobsBySession: SessionListState['jobsBySession']):
  */
 export function orderWorkspacesByActivity(
   workspaces: readonly WorkspaceView[],
-  list: Pick<SessionListState, 'byId' | 'jobsBySession'>,
+  list: ActivitySessions,
   now: number,
 ): WorkspaceActivityEntry[] {
   const entries = workspaces.map(workspace => ({

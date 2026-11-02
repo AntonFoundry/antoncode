@@ -18,6 +18,7 @@ import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import type {
   IWorkspaces, WorkspaceId, WorkspaceSnapshot, WorkspaceView,
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { WorktreeModePrefView } from '@deepseek-ai/dsh-api-workspace-controller/worktree-types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { DraftInitializationOptions } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -335,6 +336,12 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   }
 
   startSession(workspaceId?: WorkspaceId, options?: StartSessionOptions): void {
+    void this.startSessionIn(workspaceId, options).catch((reason: unknown) => {
+      console.warn('new session failed:', reason)
+    })
+  }
+
+  private async startSessionIn(workspaceId?: WorkspaceId, options?: StartSessionOptions): Promise<void> {
     const { agentPreset, ...draft } = options ?? {}
     const draftOptions = options === undefined ? undefined : draft
     const initializeDraft = draftOptions !== undefined && (draftOptions.prompt !== undefined
@@ -357,14 +364,49 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       this.clearMain()
       return
     }
-    const opening = this.openWorkspace(target, initializeDraft ? (id) => {
+    const landing = await this.worktreeTarget(target, workspace)
+    const opening = this.openWorkspace(landing, initializeDraft ? (id) => {
       const binding = this.sessions.binding(id)
       if (binding === undefined) this.draftPreparationFailed()
       this.prepareDraft(binding, draftOptions)
     } : undefined, agentPreset === undefined ? {} : { agentPreset })
-    void opening.catch(
-      (reason: unknown) => { console.warn('new session failed:', reason) },
-    )
+    await opening
+  }
+
+  private async worktreeTarget(target: WorkspaceId, snapshot: WorkspaceSnapshot): Promise<WorkspaceId> {
+    const workspace = snapshot.items.find(item => item.workspaceId === target)
+    if (workspace === undefined) return target
+    const prefs = snapshot.worktrees.prefs
+    const repoKey = Object.keys(prefs)
+      .filter(path => workspace.path === path || workspace.path.startsWith(`${path}/`) || workspace.path.startsWith(`${path}.`))
+      .sort((left, right) => right.length - left.length)[0]
+    const pref: WorktreeModePrefView | undefined = repoKey === undefined ? undefined : prefs[repoKey]
+    if (pref?.mode === 'reuse') {
+      const record = Object.values(snapshot.worktrees.byRepo).flat()
+        .find(item => item.worktreeId === pref.worktreeId)
+      if (record !== undefined) {
+        const reused = record.workspaceId === undefined ? await this.workspaces.create({ path: record.path }) : record.workspaceId
+        return typeof reused === 'string' ? reused : reused.workspaceId
+      }
+      await this.workspaces.setWorktreePref(repoKey ?? workspace.path, { mode: 'checkout' })
+      return target
+    }
+    if (pref?.mode === 'checkout') return target
+    if (pref === undefined) {
+      try { await this.workspaces.worktreeStatus(workspace.path) }
+      catch { return target }
+    }
+    try {
+      const record = await this.workspaces.createWorktree({
+        repoPath: workspace.path,
+        ...(pref?.base === undefined ? {} : { base: pref.base }),
+      })
+      const created = await this.workspaces.create({ path: record.path })
+      return created.workspaceId
+    } catch (reason: unknown) {
+      console.warn('new worktree session failed; connecting the checkout:', reason)
+      return target
+    }
   }
 
   private prepareDraft(binding: SessionBinding, options: DraftInitializationOptions): void {

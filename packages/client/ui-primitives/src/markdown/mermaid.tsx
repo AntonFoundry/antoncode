@@ -32,8 +32,8 @@ export interface MermaidDiagramProps {
   /** The fence body (diagram source). */
   code: string
   /** Localized fence copy labels for the error fallback's source view. */
-  copyLabel: string | undefined
-  copiedLabel: string | undefined
+  copyLabel: string
+  copiedLabel: string
   /** Localized labels. */
   labels: MermaidLabels
 }

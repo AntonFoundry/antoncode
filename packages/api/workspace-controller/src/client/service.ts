@@ -5,6 +5,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type { WorkspaceView } from '../types.ts'
+import type { WorktreeModePrefView, WorktreeStatus, WorktreeView } from '../worktree-types.ts'
 import type { ClientWorkspaceModel, WorkspaceSnapshot } from './model.ts'
 
 /** Structured create failure for callers that distinguish Host business errors. */
@@ -47,6 +48,14 @@ export interface WorkspaceSource {
 export interface IWorkspaces {
   /** Host-authoritative Workspace rows, order, archive set, and follow lifecycle. */
   readonly list: WorkspaceSource
+  /** Reload worktree records and preferences from the Host. */
+  refreshWorktrees(): Promise<void>
+  /** @param input - repository, optional name and base. @returns registered worktree. */
+  createWorktree(input: { repoPath: string; name?: string; base?: string }): Promise<WorktreeView>
+  /** @param repoPath - repository path. @param pref - new-session location preference. */
+  setWorktreePref(repoPath: string, pref: WorktreeModePrefView): Promise<void>
+  /** @param path - working directory. @param signal - caller lifetime. @returns live git status. */
+  worktreeStatus(path: string, signal?: AbortSignal): Promise<WorktreeStatus>
   /**
    * Register an existing path as a Workspace.
    * @param input - Host create payload.
@@ -125,6 +134,22 @@ export class WorkspaceController extends Service implements IWorkspaces {
   constructor(ctx: Context, private readonly model: ClientWorkspaceModel) {
     super(ctx, 'workspaces')
     this.list = model
+  }
+
+  refreshWorktrees(): Promise<void> {
+    return this.model.refreshWorktrees()
+  }
+
+  createWorktree(input: { repoPath: string; name?: string; base?: string }): Promise<WorktreeView> {
+    return this.model.createWorktree(input)
+  }
+
+  setWorktreePref(repoPath: string, pref: WorktreeModePrefView): Promise<void> {
+    return this.model.setWorktreePref(repoPath, pref)
+  }
+
+  worktreeStatus(path: string, signal?: AbortSignal): Promise<WorktreeStatus> {
+    return this.model.worktreeStatus(path, signal)
   }
 
   async create(input: { path: string }): Promise<WorkspaceView> {

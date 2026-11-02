@@ -10,9 +10,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import { messageOf } from './store.ts'
+import { failureMessage } from './operations.ts'
+import type { ClaudeLoginOperations, ModelsOperations } from './operations.ts'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
@@ -21,8 +21,10 @@ const OAUTH_REF = 'CLAUDE_CODE_OAUTH'
 
 /** Props of {@link ClaudeLoginDialog}. */
 export interface ClaudeLoginDialogProps {
-  /** Wire faces for session state and the login flow. */
-  api: Pick<IApiClient, 'credentials' | 'claudeOAuth'>
+  /** Credential operations reading and dropping the stored session. */
+  operations: Pick<ModelsOperations, 'describeCredential' | 'removeCredential'>
+  /** Host paste-back login operations. */
+  login: ClaudeLoginOperations
   /** Section copy. */
   t: (key: keyof typeof en) => string
   /** Disable writes (read-only settings provider). */
@@ -48,7 +50,7 @@ type Phase =
  * login.
  */
 export function ClaudeLoginDialog(props: ClaudeLoginDialogProps): ReactNode {
-  const { api, t, readOnly, onClose } = props
+  const { operations, login: flow, t, readOnly, onClose } = props
   const [phase, setPhase] = useState<Phase>('checking')
   const [loginId, setLoginId] = useState<string | undefined>(undefined)
   const [verificationUri, setVerificationUri] = useState<string | undefined>(undefined)
@@ -61,44 +63,45 @@ export function ClaudeLoginDialog(props: ClaudeLoginDialogProps): ReactNode {
   // Abandon the server login when this dialog goes away mid-flow.
   useEffect(() => () => {
     if (liveLogin.current !== undefined) {
-      void api.claudeOAuth.cancel({ loginId: liveLogin.current }).catch(() => {})
+      // The dialog is gone, so a refused or rejected cancel has nowhere to be reported.
+      void flow.cancel(liveLogin.current).catch(() => {})
     }
-  }, [api])
+  }, [flow])
 
   // Opening state: a stored session means the subscription is already logged in.
   useEffect(() => {
     let cancelled = false
-    void api.credentials.describe({ refs: [OAUTH_REF] })
-      .then((response) => {
+    void operations.describeCredential(OAUTH_REF)
+      .then((outcome) => {
         if (cancelled) return
-        if (!response.result.ok) {
-          setFailure(response.result.error.message)
+        if (outcome.kind === 'refused') {
+          setFailure(outcome.message)
           setPhase('idle')
           return
         }
-        setPhase(response.result.value.credentials[OAUTH_REF]?.configured === true ? 'active' : 'idle')
+        setPhase(outcome.configured ? 'active' : 'idle')
       })
       .catch((error: unknown) => {
         if (cancelled) return
-        setFailure(messageOf(error))
+        setFailure(failureMessage(error))
         setPhase('idle')
       })
     return () => {
       cancelled = true
     }
-  }, [api])
+  }, [operations])
 
   const begin = (): void => {
     setBusy(true)
     setFailure(undefined)
-    void api.claudeOAuth.start({})
-      .then((response) => {
-        if (!response.result.ok) {
-          setFailure(response.result.error.message)
+    void flow.start()
+      .then((outcome) => {
+        if (outcome.kind === 'refused') {
+          setFailure(outcome.message)
           setPhase('failed')
           return
         }
-        const login = response.result.value.login
+        const login = outcome.login
         setLoginId(login.loginId)
         liveLogin.current = login.loginId
         setVerificationUri(login.verificationUri)
@@ -106,7 +109,7 @@ export function ClaudeLoginDialog(props: ClaudeLoginDialogProps): ReactNode {
         setPhase('pending')
       })
       .catch((error: unknown) => {
-        setFailure(messageOf(error))
+        setFailure(failureMessage(error))
         setPhase('failed')
       })
       .finally(() => {
@@ -118,15 +121,15 @@ export function ClaudeLoginDialog(props: ClaudeLoginDialogProps): ReactNode {
     if (loginId === undefined) return
     setBusy(true)
     setFailure(undefined)
-    void api.claudeOAuth.submit({ loginId, pasted })
-      .then((response) => {
-        if (!response.result.ok) {
-          setFailure(response.result.error.message)
+    void flow.submit(loginId, pasted)
+      .then((outcome) => {
+        if (outcome.kind === 'refused') {
+          setFailure(outcome.message)
           setPhase('failed')
           return
         }
-        if (response.result.value.login.status !== 'done') {
-          setFailure(response.result.value.login.error ?? response.result.value.login.status)
+        if (outcome.login.status !== 'done') {
+          setFailure(outcome.login.error ?? outcome.login.status)
           setPhase('failed')
           return
         }
@@ -135,7 +138,7 @@ export function ClaudeLoginDialog(props: ClaudeLoginDialogProps): ReactNode {
         setPhase('done')
       })
       .catch((error: unknown) => {
-        setFailure(messageOf(error))
+        setFailure(failureMessage(error))
         setPhase('failed')
       })
       .finally(() => {
@@ -146,7 +149,8 @@ export function ClaudeLoginDialog(props: ClaudeLoginDialogProps): ReactNode {
   const abort = (): void => {
     if (loginId === undefined) return
     setBusy(true)
-    void api.claudeOAuth.cancel({ loginId })
+    // Cancel is idempotent and the dialog returns to idle either way.
+    void flow.cancel(loginId)
       .catch(() => {})
       .finally(() => {
         liveLogin.current = undefined
@@ -158,17 +162,17 @@ export function ClaudeLoginDialog(props: ClaudeLoginDialogProps): ReactNode {
   const logout = (): void => {
     setBusy(true)
     setFailure(undefined)
-    void api.credentials.unset({ ref: OAUTH_REF })
-      .then((response) => {
-        if (!response.result.ok) {
-          setFailure(response.result.error.message)
+    void operations.removeCredential(OAUTH_REF)
+      .then((refusal) => {
+        if (refusal !== undefined) {
+          setFailure(refusal)
           return
         }
         changed.current = true
         onClose(true)
       })
       .catch((error: unknown) => {
-        setFailure(messageOf(error))
+        setFailure(failureMessage(error))
       })
       .finally(() => {
         setBusy(false)

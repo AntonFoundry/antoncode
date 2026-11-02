@@ -268,6 +268,8 @@ type SessionTreeProps = Pick<
   home?: string | undefined
   /** Workspaces in Host group order with browser-projected Session order. */
   workspaces: readonly WorkspaceView[]
+  /** Display names for registered worktree Workspaces. */
+  worktreeNames: Readonly<Record<string, string>>
   /** Browser-projected order for Sessions outside every Workspace. */
   ungroupedSessionIds: readonly SessionId[]
   /** Whether the current Workspace stream has a complete Host baseline. */
@@ -316,7 +318,7 @@ function EmptySessions({ rowState, onLeaveArchivedOnly, t }: Pick<SessionTreePro
 
 /** The scrolling session tree; unmounting drops the sessions subscription and the session watermarks. */
 function SessionTree({
-  list, useSessionStatus, startSession, open, workspaces, ungroupedSessionIds,
+  list, useSessionStatus, startSession, open, workspaces, worktreeNames, ungroupedSessionIds,
   rowState, onLeaveArchivedOnly,
   workspaceReady, animationResetKey, usePanelInfo, useRemoteAccess, useSessionAccess, useWorkspaceAccess,
   onRenameRequest, onDeleteRequest, onSessionRenameRequest,
@@ -627,6 +629,7 @@ function SessionTree({
             <SessionNodeItem
               key={node.id}
               node={node}
+              worktreeName={workspaceId === undefined ? undefined : worktreeNames[workspaceId]}
               currentId={current}
               now={now}
               onOpen={open}
@@ -693,7 +696,8 @@ function SessionTree({
 
 /** The flat "In one list" body: every session is one draggable top-level row. */
 function FlatList({
-  list, sessionIds, rowState, onLeaveArchivedOnly, useSessionStatus, useSessionAccess, open, onSessionRenameRequest,
+  list, sessionIds, workspaces, worktreeNames, rowState, onLeaveArchivedOnly,
+  useSessionStatus, useSessionAccess, open, onSessionRenameRequest,
   usePanelInfo, setSessionOrder, workspaceReady, animationResetKey,
   revealSessionId, onSessionRevealed, renderSlot, home, t,
 }: Pick<
@@ -716,6 +720,8 @@ function FlatList({
 > & {
   list: SessionListState
   sessionIds: readonly SessionId[]
+  workspaces: readonly WorkspaceView[]
+  worktreeNames: Readonly<Record<string, string>>
 }) {
   const panelActive = usePanelInfo(info => info.activePanelId !== null)
   const statuses = useSessionStatus(s => s)
@@ -723,6 +729,8 @@ function FlatList({
     () => deriveFlat(list, sessionIds, rowState, statuses),
     [list, sessionIds, rowState, statuses],
   )
+  const namesBySessionId = useMemo(() => Object.fromEntries(workspaces.flatMap(workspace =>
+    (workspace.sessionIds.map(id => [id, worktreeNames[workspace.workspaceId]] as const)))), [workspaces, worktreeNames])
   const [drag, setDrag] = useState<DragState | null>(null)
   const dropCommitted = useRef(false)
   useNativeDragAcceptance(drag !== null)
@@ -758,6 +766,7 @@ function FlatList({
             <SessionNodeItem
               key={node.id}
               node={node}
+              worktreeName={namesBySessionId[node.id]}
               currentId={currentId}
               now={now}
               onOpen={open}
@@ -962,6 +971,7 @@ export function WorkspaceBrowser({
   const workspaceStreamState = useWorkspaces(state => state.state)
   const archivedSessionIds = useWorkspaces(state => state.archivedSessionIds)
   const pinnedSessionIds = useWorkspaces(state => state.pinnedSessionIds)
+  const worktreeNames = useWorkspaces(state => state.worktrees.namesByWorkspaceId)
   // Live occupancy of this surface's directory-flow hole (the same source the
   // flow reads): a composition without a picking affordance can add nothing.
   const directoryFlowAvailable = useDirectoryFlow(occupied => occupied)
@@ -1455,6 +1465,8 @@ export function WorkspaceBrowser({
                 usePanelInfo={usePanelInfo}
                 list={list}
                 sessionIds={orderedFlatSessionIds}
+                workspaces={orderedWorkspaces}
+                worktreeNames={worktreeNames}
                 rowState={rowState}
                 onLeaveArchivedOnly={leaveArchivedOnly}
                 workspaceReady={workspaceReady}
@@ -1482,6 +1494,7 @@ export function WorkspaceBrowser({
                 onSessionRenameRequest={requestSessionRename}
                 renderSlot={renderSlot}
                 workspaces={orderedWorkspaces}
+                worktreeNames={worktreeNames}
                 ungroupedSessionIds={orderedUngroupedSessionIds}
                 workspaceReady={workspaceReady}
                 nestWorkspaces={groupBy === 'workspace-tree'}

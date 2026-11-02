@@ -6,10 +6,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
-import { InvariantRegistry } from '@deepseek-ai/dsh-invariants'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
-import type { DomainChanged } from '@deepseek-ai/dsh-storage-domain'
 import { realpathNormalize, WorkspaceId as WorkspaceIdBrand } from '@deepseek-ai/dsh-workspace'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import WorktreeRegistry, {
@@ -18,7 +16,6 @@ import WorktreeRegistry, {
   WorktreeUnknownError,
 } from '../src/index.ts'
 import { worktreeDomainState } from '../src/spec.ts'
-import * as WorktreeInvariant from '../src/invariant.ts'
 
 const exec = promisify(execFile)
 
@@ -63,7 +60,7 @@ interface Harness {
   workspaceDeletes: string[]
 }
 
-/** Boot the real storage/domain/invariant composition over a recording workspace-registry stub. */
+/** Boot the real storage/domain composition over a recording workspace-registry stub. */
 async function harness(): Promise<Harness> {
   const ctx = new Context()
   await ctx.plugin(Storage)
@@ -93,9 +90,7 @@ async function harness(): Promise<Harness> {
     },
   } as never)
 
-  await ctx.plugin(InvariantRegistry)
   await ctx.plugin(WorktreeRegistry, { branchPrefix: 'agent/', parentSuffix: '.worktrees' })
-  await ctx.plugin(WorktreeInvariant)
   return { ctx, registry: ctx.worktreeRegistry, workspaceCreates, workspaceDeletes }
 }
 
@@ -374,9 +369,7 @@ describe('worktree registry', () => {
       create: async () => { throw new Error('registry unavailable') },
       delete: async () => true,
     } as never)
-    await ctx.plugin(InvariantRegistry)
     await ctx.plugin(WorktreeRegistry, { branchPrefix: 'agent/', parentSuffix: '.worktrees' })
-    await ctx.plugin(WorktreeInvariant)
     const registry = ctx.worktreeRegistry
     const record = await registry.create(repo.path, { name: 'ungrouped' })
     // The git side committed; only the grouping degraded (warn, no workspaceId).
@@ -426,58 +419,5 @@ describe('worktree durable schema', () => {
     expect(parsed.prefs['/repo']).toEqual({ mode: 'reuse', worktreeId: 'wt-1' })
     // Defaults fill fields written before they existed.
     expect(worktreeDomainState.parse({}).initialized).toBe(false)
-  })
-})
-
-describe('worktree cache/table invariant', () => {
-  /** Boot the invariant service plus the companion over a stubbed registry knowing exactly `ids`. */
-  async function invariantSetup(ids: string[]): Promise<Context> {
-    const ctx = new Context()
-    await ctx.plugin(InvariantRegistry)
-    ctx.provide('worktreeRegistry', {
-      get: (id: WorktreeId) => (ids.includes(id) ? { id } : undefined),
-    })
-    await ctx.plugin(WorktreeInvariant)
-    return ctx
-  }
-
-  type ChangeLocation = Partial<Pick<DomainChanged, 'domain' | 'table' | 'key'>>
-
-  const put = (overrides?: ChangeLocation): DomainChanged => ({
-    domain: 'worktree',
-    table: 'worktrees',
-    key: 'w1',
-    operation: 'put',
-    value: {},
-    ...overrides,
-  })
-
-  const deleted = (): DomainChanged => ({
-    domain: 'worktree',
-    table: 'worktrees',
-    key: 'w1',
-    operation: 'deleted',
-  })
-
-  it('accepts a put whose record the cache holds and ignores foreign events', async () => {
-    const ctx = await invariantSetup(['w1'])
-    expect(() => { ctx.emit('domain/changed', put()) }).not.toThrow()
-    expect(() => { ctx.emit('domain/changed', put({ domain: 'other', key: 'missing' })) }).not.toThrow()
-    expect(() => { ctx.emit('domain/changed', put({ table: 'other', key: 'missing' })) }).not.toThrow()
-  })
-
-  it('fails a put whose record the cache does not hold (bypassed write path)', async () => {
-    const ctx = await invariantSetup([])
-    expect(() => { ctx.emit('domain/changed', put()) }).toThrow(/bypassed/)
-  })
-
-  it('allows deletion after the registry removed the cache entry', async () => {
-    const ctx = await invariantSetup([])
-    expect(() => { ctx.emit('domain/changed', deleted()) }).not.toThrow()
-  })
-
-  it('fails deletion while the registry still serves the record', async () => {
-    const ctx = await invariantSetup(['w1'])
-    expect(() => { ctx.emit('domain/changed', deleted()) }).toThrow(/diverged/)
   })
 })

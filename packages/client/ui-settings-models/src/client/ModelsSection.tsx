@@ -141,6 +141,18 @@ const OAUTH_SETTINGS_NS: Readonly<Record<string, 'opencode' | 'claude'>> = {
 }
 
 /**
+ * Whether the Host serves the login flow of an OAuth route's namespace.
+ * @param operations - the page's Host operations.
+ * @param settingsNs - the route's settings namespace.
+ * @returns whether the row offers login controls.
+ */
+function loginServed(operations: ModelsOperations, settingsNs: string): boolean {
+  const route = OAUTH_SETTINGS_NS[settingsNs]
+  if (route === undefined) return false
+  return (route === 'claude' ? operations.claudeLogin : operations.opencodeLogin) !== undefined
+}
+
+/**
  * Remove a shipped route's stored credentials (API key and/or OAuth
  * session) without touching its settings profile, which the deployment
  * owns. Shipped routes have nothing settings-side to delete — that is what
@@ -694,7 +706,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                   >
                     <span className={styles['providerSwitchKnob']} />
                   </button>
-                  {OAUTH_SETTINGS_NS[target.settingsNs] === undefined
+                  {!loginServed(operations, target.settingsNs)
                     ? null
                     : row.oauthSession?.configured === true
                       ? (
@@ -989,23 +1001,27 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
       {renderSlot('settings.models.footer', {})}
       {loginTarget === undefined
         ? null
-        : loginTarget.settingsNs === 'llm-claude'
+        : OAUTH_SETTINGS_NS[loginTarget.settingsNs] === 'claude' && operations.claudeLogin !== undefined
           ? (
             <ClaudeLoginDialog
               operations={operations}
+              login={operations.claudeLogin}
               t={t}
               readOnly={!state.writable}
               onClose={closeLogin}
             />
           )
-          : (
-            <OpencodeLoginDialog
-              operations={operations}
-              t={t}
-              readOnly={!state.writable}
-              onClose={closeLogin}
-            />
-          )}
+          : OAUTH_SETTINGS_NS[loginTarget.settingsNs] === 'opencode' && operations.opencodeLogin !== undefined
+            ? (
+              <OpencodeLoginDialog
+                operations={operations}
+                login={operations.opencodeLogin}
+                t={t}
+                readOnly={!state.writable}
+                onClose={closeLogin}
+              />
+            )
+            : null}
       {resetTarget === undefined
         ? null
         : (

@@ -8,7 +8,9 @@
  * standard workspaces/sessions feeds; the inject faces carry the mode-write
  * verb and the status query from `ctx.workspaces`.
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the ui-conversation SlotMap merge (the input.left and
 // session.header.actions entries).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -39,7 +41,7 @@ export const inject = ['slots', 'workspaces', 'locale']
  * Client plugin body: the two worktree entries.
  * @param ctx - client root context.
  */
-export function apply(ctx: ClientContext): void {
+export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-worktree: dictionaries')
 
   const workspaces = ctx.workspaces

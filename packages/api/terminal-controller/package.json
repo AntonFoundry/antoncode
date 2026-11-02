@@ -62,7 +62,8 @@
     "@deepseek-ai/schemastery": "workspace:~",
     "@xterm/addon-serialize": "^0.14.0",
     "@xterm/headless": "^6.0.0",
-    "zod": "4.4.3"
+    "zod": "4.4.3",
+    "node-pty": "1.2.0-beta.15"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-subprocess": "workspace:*",
@@ -84,7 +85,8 @@
     "@deepseek-ai/dsh-subprocess": "workspace:*",
     "@deepseek-ai/dsh-subprocess-local": "workspace:*",
     "@deepseek-ai/dsh-util-crypto": "workspace:*",
-    "@deepseek-ai/dsh-working-directory": "workspace:*"
+    "@deepseek-ai/dsh-working-directory": "workspace:*",
+    "node-pty": "1.2.0-beta.15"
   },
   "files": [
     "locale/*.json",

@@ -4,14 +4,17 @@
  * filtering, the archive set, and orphan subagents.
  */
 import { describe, expect, it } from 'vitest'
-import type { SessionId, WorkspaceView } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SessionSummary as WireSummary } from '@deepseek-ai/dsh-host-apiproxy/api/sessions.ts'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { SessionSummary as WireSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import { deriveRuns, type BoardSnapshot } from '../src/client/bridge.ts'
 
 const NOW = 1_000_000
 
 const summary = (id: string, over: Partial<WireSummary> = {}): WireSummary => ({
-  sessionId: id as SessionId,
+  id: id as SessionId,
+  displayTitle: id,
+  retainedBy: {},
   updatedAt: NOW,
   running: false,
   blank: false,
@@ -43,7 +46,7 @@ describe('deriveRuns: plan folding', () => {
   it('flattens the todos projection into depth-first plan rows', () => {
     const runs = deriveRuns(board({
       items: [workspace('w', ['root'])],
-      sessions: [summary('root', { running: true, projections: { asOfSeq: 7, values: { todos } } as WireSummary['projections'] })],
+      sessions: [summary('root', { running: true, projectionValues: { todos } as WireSummary['projectionValues'] })],
     }))
     expect(runs).toHaveLength(1)
     expect(runs[0]?.plan).toEqual([
@@ -56,7 +59,7 @@ describe('deriveRuns: plan folding', () => {
   it('plans nothing without a todos projection', () => {
     const runs = deriveRuns(board({
       items: [workspace('w', ['bare'])],
-      sessions: [summary('bare'), summary('nulled', { projections: { asOfSeq: 3, values: { todos: null } } as WireSummary['projections'] })],
+      sessions: [summary('bare'), summary('nulled', { projectionValues: { todos: null } as WireSummary['projectionValues'] })],
     }))
     expect(runs[0]?.plan).toBeUndefined()
     expect(runs[1]?.plan).toBeUndefined()
@@ -90,7 +93,7 @@ describe('deriveRuns: linking and filtering', () => {
       items: [workspace('w', ['root'])],
       sessions: [
         summary('root', { running: true }),
-        summary('kid', { origin: 'subagent', parentSessionId: 'root' as SessionId, running: true }),
+        summary('kid', { origin: 'subagent', parentId: 'root' as SessionId, running: true }),
       ],
     }), { now: NOW })
     expect(runs).toHaveLength(1)
@@ -104,7 +107,7 @@ describe('deriveRuns: linking and filtering', () => {
       archivedSessionIds: ['kid', 'gone'] as SessionId[],
       sessions: [
         summary('root', { running: true }),
-        summary('kid', { origin: 'subagent', parentSessionId: 'root' as SessionId }),
+        summary('kid', { origin: 'subagent', parentId: 'root' as SessionId }),
         summary('gone'),
       ],
     }), { now: NOW })
@@ -118,10 +121,10 @@ describe('deriveRuns: linking and filtering', () => {
       items: [workspace('w', ['dead', 'live'])],
       sessions: [
         summary('dead', { updatedAt: DAY_OLD }),
-        summary('dead-kid', { origin: 'subagent', parentSessionId: 'dead' as SessionId, updatedAt: DAY_OLD }),
+        summary('dead-kid', { origin: 'subagent', parentId: 'dead' as SessionId, updatedAt: DAY_OLD }),
         summary('live', { running: true }),
-        summary('live-kid', { origin: 'subagent', parentSessionId: 'live' as SessionId }),
-        summary('orphan-done', { origin: 'subagent', parentSessionId: 'unplaced' as SessionId, updatedAt: DAY_OLD }),
+        summary('live-kid', { origin: 'subagent', parentId: 'live' as SessionId }),
+        summary('orphan-done', { origin: 'subagent', parentId: 'unplaced' as SessionId, updatedAt: DAY_OLD }),
       ],
     }), { now: NOW })
     expect(runs.map(r => r.id)).toEqual(['live'])

@@ -5,7 +5,8 @@
  * @module dsh-client-ui-worktree/helpers
  */
 
-import type { WorktreeModePrefView, WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
+import type { WorktreeModePrefView } from '@deepseek-ai/dsh-api-workspace-controller/worktree-types'
+import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 
 /** The worktree directory basename — the name the sidebar prefixes sessions with. */
 export function worktreeName(path: string): string {
@@ -20,7 +21,7 @@ export function worktreeName(path: string): string {
  */
 export function resolveRepo(
   path: string,
-  prefs: WorkspaceListState['worktrees']['prefs'],
+  prefs: WorkspaceSnapshot['worktrees']['prefs'],
 ): { key: string; pref: WorktreeModePrefView } | undefined {
   const direct = Object.entries(prefs).find(([repo]) => repo === path)
   if (direct !== undefined) return { key: direct[0], pref: direct[1] }

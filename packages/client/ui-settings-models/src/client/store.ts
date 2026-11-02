@@ -50,19 +50,22 @@ export function joinProviderDirectory(
 ): ProviderDirectoryEntry[] {
   const live = new Map(registered.map(provider => [provider.id, provider]))
   const declared = new Set(directory.map(entry => entry.provider))
-  const rows: ProviderDirectoryEntry[] = directory.map(entry => ({
-    provider: entry.provider,
-    displayName: entry.displayName,
-    settingsNs: entry.settingsNs,
-    settingsPath: [...entry.settingsPath],
-    active: live.has(entry.provider),
-    ...live.get(entry.provider)?.authConfigured === undefined ? {} : { authConfigured: live.get(entry.provider)?.authConfigured },
-    ...entry.declared === undefined ? {} : { declared: entry.declared },
-    ...entry.defaultBaseURL === undefined ? {} : { defaultBaseURL: entry.defaultBaseURL },
-    ...entry.baseURLEnv === undefined ? {} : { baseURLEnv: entry.baseURLEnv },
-    ...entry.nativeAuth === undefined ? {} : { nativeAuth: entry.nativeAuth },
-    ...entry.error === undefined ? {} : { error: entry.error },
-  }))
+  const rows: ProviderDirectoryEntry[] = directory.map((entry) => {
+    const authConfigured = live.get(entry.provider)?.authConfigured
+    return {
+      provider: entry.provider,
+      displayName: entry.displayName,
+      settingsNs: entry.settingsNs,
+      settingsPath: [...entry.settingsPath],
+      active: live.has(entry.provider),
+      ...authConfigured === undefined ? {} : { authConfigured },
+      ...entry.declared === undefined ? {} : { declared: entry.declared },
+      ...entry.defaultBaseURL === undefined ? {} : { defaultBaseURL: entry.defaultBaseURL },
+      ...entry.baseURLEnv === undefined ? {} : { baseURLEnv: entry.baseURLEnv },
+      ...entry.nativeAuth === undefined ? {} : { nativeAuth: entry.nativeAuth },
+      ...entry.error === undefined ? {} : { error: entry.error },
+    }
+  })
   for (const provider of registered) {
     if (declared.has(provider.id)) continue
     rows.push({

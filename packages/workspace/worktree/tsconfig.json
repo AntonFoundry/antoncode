@@ -28,9 +28,6 @@
     },
     {
       "path": "../workspace"
-    },
-    {
-      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

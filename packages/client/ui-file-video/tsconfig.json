@@ -12,16 +12,16 @@
       "path": "../../../vendor/cordis"
     },
     {
-      "path": "../runtime"
+      "path": "../locale/tsconfig.client.json"
     },
     {
       "path": "../ui-layout"
     },
     {
-      "path": "../ui-slots"
+      "path": "../ui-renderer"
     },
     {
-      "path": "../../runtime-diagnostics/invariants"
+      "path": "../ui-slots"
     }
   ]
 }

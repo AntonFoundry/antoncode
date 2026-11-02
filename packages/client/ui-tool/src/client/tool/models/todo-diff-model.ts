@@ -6,6 +6,13 @@ import type { TodoBaseline } from './todo-history.ts'
 import { todosDetail } from './details-card-model.ts'
 import { parsedToolCall } from './raw-tool-call.ts'
 
+type BaselineTodo = NonNullable<TodoBaseline['todos']>[number]
+
+/** Tree todos in depth-first order, matching the flat list `todosDetail` derives from call args. */
+function flatTodos(todos: readonly BaselineTodo[]): BaselineTodo[] {
+  return todos.flatMap(todo => [todo, ...flatTodos(todo.children ?? [])])
+}
+
 /**
  * Compare this write with its predecessor in the loaded call history.
  * @param block - The write being displayed.
@@ -24,7 +31,7 @@ export function todoDiffModel(
   const call = parsedToolCall(block)
   const current = call?.name === 'todo_write' ? todosDetail(call.args, t) : null
   if (current === null) return null
-  const previous: ToolDetailsModel | null = baseline?.todos === undefined ? null : { items: baseline.todos.map(todo => ({
+  const previous: ToolDetailsModel | null = baseline?.todos === undefined ? null : { items: flatTodos(baseline.todos).map(todo => ({
     title: todo.content, status: { value: todo.status, label: t(`detail.todo.${todo.status}`) }, fields: [],
   })) }
   if (baseline === undefined || (previous === null && hasMore)) {

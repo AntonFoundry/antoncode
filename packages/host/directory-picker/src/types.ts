@@ -15,6 +15,14 @@ export interface DirectoryEntry {
   path: string
   /** Hidden by the host platform's convention (dot-prefixed on POSIX); the client owns whether to show it. */
   hidden: boolean
+  /** Row kind: an enterable directory (the browser descends) versus a plain file row (only `includeFiles` listings carry these). */
+  isDirectory: boolean
+  /** Content size in bytes; absent where the backend cannot report it. */
+  size?: number
+  /** Last modification in Unix milliseconds; absent where the backend cannot report it. */
+  mtimeMs?: number
+  /** POSIX mode bits (type nibble included, e.g. `0o100644`); absent on platforms without modes. */
+  mode?: number
 }
 
 /** One directory level plus its ancestry, as a browse backend reports it. */
@@ -28,7 +36,7 @@ export interface DirectoryListing {
    * inclusive; every crumb is a jump target (crumb `hidden` is always false).
    */
   crumbs: DirectoryEntry[]
-  /** Direct child directories, name-sorted; symlinks to directories included. */
+  /** Direct child directories (plus plain files when the call set `includeFiles`), name-sorted; symlinks follow to their targets. */
   entries: DirectoryEntry[]
   /**
    * True when the backend cut `entries` at its complete-result bound: the

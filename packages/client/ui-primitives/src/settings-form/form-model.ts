@@ -185,8 +185,12 @@ export function settingsTextField(field: string): SettingsFieldSpec {
   }
 }
 
-/** A boolean field written from the literal drafts `true` or `false`. */
-export function booleanField(field: string): CardFieldSpec {
+/**
+ * A boolean field written from the literal drafts `true` or `false`; an empty draft clears it.
+ * @param field - field name inside the namespace section.
+ * @returns the field's conversion spec.
+ */
+export function settingsBooleanField(field: string): SettingsFieldSpec {
   return {
     field,
     format: value => typeof value === 'boolean' ? String(value) : '',

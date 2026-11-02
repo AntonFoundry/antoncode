@@ -8,9 +8,7 @@
   "references": [
     { "path": "../../../vendor/cordis" },
     { "path": "../ui-slots" },
-    { "path": "../runtime" },
     { "path": "../ui-layout" },
-    { "path": "../ui-theme" },
-    { "path": "../../runtime-diagnostics/invariants" }
+    { "path": "../ui-theme/tsconfig.client.json" }
   ]
 }

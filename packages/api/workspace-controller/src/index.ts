@@ -7,6 +7,7 @@ import type {} from '@deepseek-ai/dsh-api-remote-access'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { WorkspaceCommands } from './commands.ts'
 import { DirectoryPickerController } from './directory-picker.ts'
+import { WorktreeController } from './worktree-controller.ts'
 import { WorkspaceFeed, workspaceView } from './feed.ts'
 import { defaultWorkspaceDirectory, validateDocumentsDirectory } from './default-directory.ts'
 import type {
@@ -32,6 +33,8 @@ import type {
 
 export type * from './types.ts'
 export { DirectoryPickerController } from './directory-picker.ts'
+export { WorktreeController } from './worktree-controller.ts'
+export type * from './worktree-types.ts'
 
 /** First-use directory policy for the Host account. */
 export interface Config {
@@ -80,6 +83,7 @@ export class WorkspaceController extends TypertRemoteService {
     // stays pending until a picking backend is composed, so a host without one
     // registers no picking namespace instead of answering an unservable verb.
     ctx.plugin(DirectoryPickerController)
+    ctx.plugin(WorktreeController)
   }
 
   /**

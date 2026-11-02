@@ -9,9 +9,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import { messageOf } from './store.ts'
+import { failureMessage } from './operations.ts'
+import type { ModelsOperations, OpencodeLoginOperations, OpencodeLoginOrg } from './operations.ts'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
@@ -20,8 +20,10 @@ const OAUTH_REF = 'OPENCODE_ZEN_OAUTH'
 
 /** Props of {@link OpencodeLoginDialog}. */
 export interface OpencodeLoginDialogProps {
-  /** Wire faces for session state and the login flow. */
-  api: Pick<IApiClient, 'credentials' | 'opencodeOAuth'>
+  /** Credential operations reading and dropping the stored session. */
+  operations: Pick<ModelsOperations, 'describeCredential' | 'removeCredential'>
+  /** Host device-flow operations. */
+  login: OpencodeLoginOperations
   /** Section copy. */
   t: (key: keyof typeof en) => string
   /** Disable writes (read-only settings provider). */
@@ -42,22 +44,17 @@ type Phase =
   | 'failed'
   | 'logging-out'
 
-interface OrgChoice {
-  id: string
-  name: string
-}
-
 /**
  * Render the workspace login dialog, driving the server-side device flow to
  * completion or cancellation. Unmounting mid-flow cancels the server login.
  */
 export function OpencodeLoginDialog(props: OpencodeLoginDialogProps): ReactNode {
-  const { api, t, readOnly, onClose } = props
+  const { operations, login: flow, t, readOnly, onClose } = props
   const [phase, setPhase] = useState<Phase>('checking')
   const [loginId, setLoginId] = useState<string | undefined>(undefined)
   const [userCode, setUserCode] = useState<string | undefined>(undefined)
   const [verificationUri, setVerificationUri] = useState<string | undefined>(undefined)
-  const [orgs, setOrgs] = useState<OrgChoice[]>([])
+  const [orgs, setOrgs] = useState<readonly OpencodeLoginOrg[]>([])
   const [pickedOrg, setPickedOrg] = useState<string | undefined>(undefined)
   const [failure, setFailure] = useState<string | undefined>(undefined)
   const [busy, setBusy] = useState(false)
@@ -68,32 +65,33 @@ export function OpencodeLoginDialog(props: OpencodeLoginDialogProps): ReactNode 
   // Abandon the server login when this dialog goes away mid-flow.
   useEffect(() => () => {
     if (liveLogin.current !== undefined) {
-      void api.opencodeOAuth.cancel({ loginId: liveLogin.current }).catch(() => {})
+      // The dialog is gone, so a refused or rejected cancel has nowhere to be reported.
+      void flow.cancel(liveLogin.current).catch(() => {})
     }
-  }, [api])
+  }, [flow])
 
   // Opening state: a stored session means the workspace is already logged in.
   useEffect(() => {
     let cancelled = false
-    void api.credentials.describe({ refs: [OAUTH_REF] })
-      .then((response) => {
+    void operations.describeCredential(OAUTH_REF)
+      .then((outcome) => {
         if (cancelled) return
-        if (!response.result.ok) {
-          setFailure(response.result.error.message)
+        if (outcome.kind === 'refused') {
+          setFailure(outcome.message)
           setPhase('idle')
           return
         }
-        setPhase(response.result.value.credentials[OAUTH_REF]?.configured === true ? 'active' : 'idle')
+        setPhase(outcome.configured ? 'active' : 'idle')
       })
       .catch((error: unknown) => {
         if (cancelled) return
-        setFailure(messageOf(error))
+        setFailure(failureMessage(error))
         setPhase('idle')
       })
     return () => {
       cancelled = true
     }
-  }, [api])
+  }, [operations])
 
   // Approval wait: single-flight polls until the server settles the login.
   useEffect(() => {
@@ -101,14 +99,14 @@ export function OpencodeLoginDialog(props: OpencodeLoginDialogProps): ReactNode 
     const timer = setInterval(() => {
       if (polling.current) return
       polling.current = true
-      void api.opencodeOAuth.status({ loginId })
-        .then((response) => {
-          if (!response.result.ok) {
-            setFailure(response.result.error.message)
+      void flow.status(loginId)
+        .then((outcome) => {
+          if (outcome.kind === 'refused') {
+            setFailure(outcome.message)
             setPhase('failed')
             return
           }
-          const login = response.result.value.login
+          const login = outcome.login
           if (login.status === 'awaiting-org') {
             setOrgs(login.orgs ?? [])
             setPhase('awaiting-org')
@@ -122,7 +120,7 @@ export function OpencodeLoginDialog(props: OpencodeLoginDialogProps): ReactNode 
           }
         })
         .catch((error: unknown) => {
-          setFailure(messageOf(error))
+          setFailure(failureMessage(error))
           setPhase('failed')
         })
         .finally(() => {
@@ -132,19 +130,19 @@ export function OpencodeLoginDialog(props: OpencodeLoginDialogProps): ReactNode 
     return () => {
       clearInterval(timer)
     }
-  }, [api, phase, loginId])
+  }, [flow, phase, loginId])
 
   const begin = (): void => {
     setBusy(true)
     setFailure(undefined)
-    void api.opencodeOAuth.start({})
-      .then((response) => {
-        if (!response.result.ok) {
-          setFailure(response.result.error.message)
+    void flow.start()
+      .then((outcome) => {
+        if (outcome.kind === 'refused') {
+          setFailure(outcome.message)
           setPhase('failed')
           return
         }
-        const login = response.result.value.login
+        const login = outcome.login
         setLoginId(login.loginId)
         liveLogin.current = login.loginId
         setUserCode(login.userCode)
@@ -152,7 +150,7 @@ export function OpencodeLoginDialog(props: OpencodeLoginDialogProps): ReactNode 
         setPhase('pending')
       })
       .catch((error: unknown) => {
-        setFailure(messageOf(error))
+        setFailure(failureMessage(error))
         setPhase('failed')
       })
       .finally(() => {
@@ -164,11 +162,10 @@ export function OpencodeLoginDialog(props: OpencodeLoginDialogProps): ReactNode 
     if (loginId === undefined) return
     setBusy(true)
     setFailure(undefined)
-    const payload = pickedOrg === undefined ? { loginId } : { loginId, orgID: pickedOrg }
-    void api.opencodeOAuth.select(payload)
-      .then((response) => {
-        if (!response.result.ok) {
-          setFailure(response.result.error.message)
+    void flow.select(loginId, pickedOrg)
+      .then((outcome) => {
+        if (outcome.kind === 'refused') {
+          setFailure(outcome.message)
           setPhase('failed')
           return
         }
@@ -177,7 +174,7 @@ export function OpencodeLoginDialog(props: OpencodeLoginDialogProps): ReactNode 
         setPhase('done')
       })
       .catch((error: unknown) => {
-        setFailure(messageOf(error))
+        setFailure(failureMessage(error))
         setPhase('failed')
       })
       .finally(() => {
@@ -188,7 +185,8 @@ export function OpencodeLoginDialog(props: OpencodeLoginDialogProps): ReactNode 
   const abort = (): void => {
     if (loginId === undefined) return
     setBusy(true)
-    void api.opencodeOAuth.cancel({ loginId })
+    // Cancel is idempotent and the dialog returns to idle either way.
+    void flow.cancel(loginId)
       .catch(() => {})
       .finally(() => {
         liveLogin.current = undefined
@@ -200,17 +198,17 @@ export function OpencodeLoginDialog(props: OpencodeLoginDialogProps): ReactNode 
   const logout = (): void => {
     setBusy(true)
     setFailure(undefined)
-    void api.credentials.unset({ ref: OAUTH_REF })
-      .then((response) => {
-        if (!response.result.ok) {
-          setFailure(response.result.error.message)
+    void operations.removeCredential(OAUTH_REF)
+      .then((refusal) => {
+        if (refusal !== undefined) {
+          setFailure(refusal)
           return
         }
         changed.current = true
         onClose(true)
       })
       .catch((error: unknown) => {
-        setFailure(messageOf(error))
+        setFailure(failureMessage(error))
       })
       .finally(() => {
         setBusy(false)

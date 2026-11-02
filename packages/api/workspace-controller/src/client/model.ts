@@ -4,6 +4,7 @@ import { notifySubscribers } from '@deepseek-ai/dsh-client-store'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/remote'
 import { isRemoteFailure } from '@deepseek-ai/dsh-api-gateway/client'
 import type { RemoteFailure, RemoteResult, TypertClientRemote } from '@deepseek-ai/dsh-typert-protocol'
+import type { WorktreeListValue, WorktreeModePrefView, WorktreeStatus, WorktreeView } from '../worktree-types.ts'
 import type {
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
@@ -24,6 +25,15 @@ import type {
 
 /** Complete generated `ctx.remote.workspace` namespace. */
 export type WorkspaceRemote = TypertClientRemote['workspace']
+/** Complete generated `ctx.remote.worktree` namespace. */
+export type WorktreeRemote = TypertClientRemote['worktree']
+
+/** Worktrees and saved per-repository defaults used by the browser. */
+export interface WorkspaceWorktreeState {
+  readonly byRepo: Readonly<Record<string, readonly WorktreeView[]>>
+  readonly prefs: Readonly<Record<string, WorktreeModePrefView>>
+  readonly namesByWorkspaceId: Readonly<Record<string, string>>
+}
 
 /** Monotone Workspace-list arrival lifecycle. */
 export type WorkspaceListPhase = 'pending' | 'ready'
@@ -31,6 +41,7 @@ export type WorkspaceListPhase = 'pending' | 'ready'
 /** Immutable Client Workspace state. */
 export interface WorkspaceSnapshot {
   readonly items: readonly WorkspaceView[]
+  readonly worktrees: WorkspaceWorktreeState
   /** Complete registry-global archive set in Host order. */
   readonly archivedSessionIds: WorkspaceArchiveValue['archivedSessionIds']
   /** Complete registry-global pin set, most recently pinned first. */
@@ -79,6 +90,8 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
   /** Host Workspace ids are never reused, so delayed data cannot resurrect a removed row. */
   private readonly removedIds = new Set<WorkspaceId>()
   private readonly listeners = new Set<() => void>()
+  private worktrees: WorkspaceWorktreeState = { byRepo: {}, prefs: {}, namesByWorkspaceId: {} }
+  private worktreeRefreshInFlight: Promise<void> | undefined
   private snapshotCache: WorkspaceSnapshot
   private snapshotDirty = false
   private notificationPending = false
@@ -86,8 +99,60 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
   private notificationGeneration = 0
 
   /** @param remote - generated Workspace Remote namespace. */
-  constructor(private readonly remote: WorkspaceRemote) {
+  constructor(private readonly remote: WorkspaceRemote, private readonly worktreeRemote?: WorktreeRemote) {
     this.snapshotCache = this.buildSnapshot()
+  }
+
+  /** Reload worktrees and preferences from the Host, coalescing concurrent reads. */
+  async refreshWorktrees(): Promise<void> {
+    if (this.worktreeRefreshInFlight !== undefined) return this.worktreeRefreshInFlight
+    if (this.worktreeRemote === undefined) throw new Error('worktree Remote is unavailable')
+    const pull = this.worktreeRemote.list({}).then((result) => {
+      if (!result.ok) throw new Error(`worktree list failed: ${result.error.code}: ${result.error.message}`)
+      this.installWorktrees(result.value)
+    }).finally(() => { this.worktreeRefreshInFlight = undefined })
+    this.worktreeRefreshInFlight = pull
+    return pull
+  }
+
+  /** @param repoPath - repository path. @param pref - new default. */
+  async setWorktreePref(repoPath: string, pref: WorktreeModePrefView): Promise<void> {
+    if (this.worktreeRemote === undefined) throw new Error('worktree Remote is unavailable')
+    const result = await this.worktreeRemote.setPref({ repoPath, pref })
+    if (!result.ok) throw new Error(`worktree preference failed: ${result.error.code}: ${result.error.message}`)
+    this.worktrees = { ...this.worktrees, prefs: { ...this.worktrees.prefs, [repoPath]: pref } }
+    this.invalidate()
+  }
+
+  /** @param input - repository, optional name and base. @returns registered worktree. */
+  async createWorktree(input: { repoPath: string; name?: string; base?: string }): Promise<WorktreeView> {
+    if (this.worktreeRemote === undefined) throw new Error('worktree Remote is unavailable')
+    const result = await this.worktreeRemote.create(input)
+    if (!result.ok) throw new Error(`worktree create failed: ${result.error.code}: ${result.error.message}`)
+    await this.refreshWorktrees()
+    return result.value.worktree
+  }
+
+  /** @param path - working directory. @param signal - caller lifetime. @returns live git status. */
+  async worktreeStatus(path: string, signal?: AbortSignal): Promise<WorktreeStatus> {
+    if (this.worktreeRemote === undefined) throw new Error('worktree Remote is unavailable')
+    const result = await this.worktreeRemote.status({ path }, signal)
+    if (!result.ok) throw new Error(`worktree status failed: ${result.error.code}: ${result.error.message}`)
+    return result.value
+  }
+
+  private installWorktrees(value: WorktreeListValue): void {
+    const byRepo: Record<string, WorktreeView[]> = {}
+    const namesByWorkspaceId: Record<string, string> = {}
+    for (const record of value.items) {
+      (byRepo[record.repoPath] ??= []).push(record)
+      if (record.workspaceId !== undefined) {
+        namesByWorkspaceId[record.workspaceId] = record.alias
+          ?? record.path.split('/').filter(Boolean).at(-1) ?? record.path
+      }
+    }
+    this.worktrees = { byRepo, namesByWorkspaceId, prefs: { ...this.worktrees.prefs, ...value.prefs } }
+    this.invalidate()
   }
 
   /**
@@ -348,6 +413,7 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
   private buildSnapshot(): WorkspaceSnapshot {
     return {
       items: this.items,
+      worktrees: this.worktrees,
       archivedSessionIds: this.archivedSessionIds,
       pinnedSessionIds: this.pinnedSessionIds,
       state: this.state,

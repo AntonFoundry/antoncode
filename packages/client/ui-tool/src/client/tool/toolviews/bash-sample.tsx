@@ -151,7 +151,11 @@ export const BashRow = memo(function BashRow({ toolName, block, sessionId, useSe
                 {model.output !== null && (
                   <div className={css.ioSection}>
                     <span className={css.ioLabel}>{t('row.output')}</span>
-                    <span className={css.ioText} data-error={state === 'error' || undefined}>
+                    <span
+                      className={css.ioText}
+                      data-error={state === 'error' || undefined}
+                      data-notice={state === 'notice' || undefined}
+                    >
                       {model.output}
                     </span>
                   </div>

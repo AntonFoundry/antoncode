@@ -96,6 +96,11 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
+.item[data-status='cancelled']:not([data-change]) .text {
+  color: var(--dsw-alias-label-tertiary);
+  text-decoration: line-through;
+}
+
 .item[data-change='removed'] .text {
   color: var(--dsw-alias-label-tertiary);
   text-decoration: line-through;

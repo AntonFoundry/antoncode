@@ -9,7 +9,7 @@
  * @module @deepseek-ai/dsh-client-ui-terminal/client/broadcast
  */
 
-import { defineStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 
 /** Broadcast store state: the toggle plus the mounted terminal sessions. */
 export type BroadcastState = { broadcast: boolean; sessions: readonly string[] }
@@ -26,7 +26,7 @@ export type BroadcastActions = {
  * per-sessions intent, and the mounted set is live view state.
  * @returns the store handle (spec + type + identity + factory in one).
  */
-export function createBroadcastStore(): import('@deepseek-ai/dsh-client-runtime/client').EngineStoreHandle<BroadcastState, BroadcastActions> {
+export function createBroadcastStore(): EngineStoreHandle<BroadcastState, BroadcastActions> {
   return defineStore({
     init: (): BroadcastState => ({ broadcast: false, sessions: [] }),
     actions: {

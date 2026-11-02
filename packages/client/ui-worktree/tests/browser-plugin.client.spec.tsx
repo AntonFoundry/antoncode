@@ -5,16 +5,15 @@
  * conversation.input.left (the composer tool row) and the repo-status chip at
  * conversation.session.header.actions, the inject faces delegate to the
  * workspaces domain, and registration disposal rides the plugin fiber (HMR
- * safety). The node half and the invariant companion are exercised over the
- * same Context.
+ * safety). The node half is exercised over the same Context.
  */
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { SlotRegistry, type WorktreeModePrefView } from '@deepseek-ai/dsh-client-runtime/client'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type { WorktreeModePrefView } from '@deepseek-ai/dsh-api-workspace-controller/worktree-types'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject } from '../src/client/index.ts'
 import { apply as nodeApply } from '../src/index.ts'
-import * as worktreeInvariant from '../src/invariant.ts'
 
 afterEach(async () => {
   vi.restoreAllMocks()
@@ -119,14 +118,4 @@ describe('ui-worktree node half', () => {
     expect(() => { nodeApply() }).not.toThrow()
   })
 
-  it('the invariant companion registers and is a no-op installer', async () => {
-    const ctx = new Context()
-    const register = vi.fn(() => () => {})
-    ctx.provide('invariants', { register })
-    await worktreeInvariant.apply(ctx)
-    expect(register).toHaveBeenCalledWith('@deepseek-ai/dsh-client-ui-worktree', expect.any(Function))
-    // The companion owns no runtime relationship to check (pure slot surface).
-    const install = register.mock.calls[0]?.[1] as unknown as (c: Context, fail: (m: string) => never) => void
-    expect(() => { install(ctx, (message) => { throw new Error(message) }) }).not.toThrow()
-  })
 })

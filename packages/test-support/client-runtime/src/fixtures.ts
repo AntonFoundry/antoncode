@@ -110,6 +110,7 @@ export function chatSnapshot(overrides: Partial<ChatSnapshot> = {}): ChatSnapsho
 export function workspaceSnapshot(): WorkspaceSnapshot {
   return {
     items: [],
+    worktrees: { byRepo: {}, prefs: {}, namesByWorkspaceId: {} },
     archivedSessionIds: [],
     pinnedSessionIds: [],
     state: 'idle',

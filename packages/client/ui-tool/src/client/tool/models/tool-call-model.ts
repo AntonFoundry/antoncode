@@ -327,7 +327,7 @@ export function toolRowModel(toolName: string, block: ToolCallBlock, cwd?: strin
   const state: ToolRowState = !done ? block.phase === 'preparing' ? 'preparing' : 'running'
     : block.error?.code === 'interrupted' ? 'stopped'
       : isReadBeforeEditNotice(block) ? 'notice'
-      : block.isError ? 'error' : 'ok'
+        : block.isError ? 'error' : 'ok'
   // The argument view serves every stage; the raw text is the fallback when it carries nothing useful.
   const base = primary.summary !== '' || argsRaw === null ? primary.summary
     : argsRaw === '' ? block.callId

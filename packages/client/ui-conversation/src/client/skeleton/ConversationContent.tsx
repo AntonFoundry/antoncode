@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import { workspaceDisplayTitle } from '@deepseek-ai/dsh-api-workspace-controller/default-workspace'
@@ -23,7 +23,7 @@ export function ConversationContent(props: ConversationContentProps) {
   const {
     sessionId, phase, hero, useSession, useSessions, useSessionStatus,
     useWorkspaces, useInput, useComposerBlock, renderSlot, renderSlotChain,
-    selectWorkspace, t, useFactorySlot,
+    selectWorkspace, t, useFactorySlot, layoutSpan,
   } = props
   const session = useSession(snapshot => snapshot)
   const Views = useFactorySlot('views', ConversationSessionView)
@@ -66,11 +66,16 @@ export function ConversationContent(props: ConversationContentProps) {
     seatObserver.current.observe(scroller)
   }, [])
 
-  const sessionWorkspace = sessionId === undefined
-    ? undefined
-    : workspaces.items.find(workspace => workspace.sessionIds.includes(sessionId))
-  const pendingWorkspace = workspaces.items.find(
-    workspace => workspace.workspaceId === pendingWorkspaceId,
+  // Memoized: the whole-snapshot subscriptions re-render per streaming frame.
+  const sessionWorkspace = useMemo(
+    () => (sessionId === undefined
+      ? undefined
+      : workspaces.items.find(workspace => workspace.sessionIds.includes(sessionId))),
+    [sessionId, workspaces],
+  )
+  const pendingWorkspace = useMemo(
+    () => workspaces.items.find(workspace => workspace.workspaceId === pendingWorkspaceId),
+    [workspaces, pendingWorkspaceId],
   )
 
   // Clear the pending pick once the session lands in it, or when the picked
@@ -146,6 +151,7 @@ export function ConversationContent(props: ConversationContentProps) {
   const blocked = !inert && composerBlock !== undefined
   const inputBar = renderSlot('conversation.composer.bar', {
     variant: hero ? 'hero' : 'composer',
+    ...(layoutSpan !== undefined ? { layoutSpan } : {}),
     ...(inert
       ? {
         disabled: true,
@@ -163,7 +169,9 @@ export function ConversationContent(props: ConversationContentProps) {
 
   const composerBar = (
     <div className={clsx(css.composerStack, hero && css.composerHero)}>
-      {hero && <HeroShell t={t} renderSlot={renderSlot} />}
+      {/* Keyed by Session: each new Session remounts the hero mark, so its
+          opening reveal replays with a freshly randomized effect. */}
+      {hero && <HeroShell key={sessionId} t={t} renderSlot={renderSlot} />}
       {hero && heroWorkspaceRow}
       {zone !== undefined && renderSlot('conversation.input.dock', zone)}
       {inputBar}

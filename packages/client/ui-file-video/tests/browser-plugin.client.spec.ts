@@ -1,9 +1,8 @@
 /** Browser-half registration: the `video` key installs into the declared file.view slot and leaves with the fiber (HMR safety). */
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { apply as nodeApply } from '../src/index.ts'
-import * as invariant from '../src/invariant.ts'
 import { apply, inject } from '../src/client/index.ts'
 
 async function bench() {
@@ -28,18 +27,10 @@ describe('ui-file-video client apply', () => {
   })
 })
 
-describe('node half + invariant companion', () => {
+describe('node half', () => {
   it('node apply is an intentional no-op (slot-only package)', () => {
     nodeApply()
     expect(true).toBe(true) // reaching here without throw is the contract
   })
 
-  it('invariant companion registers under the package name', async () => {
-    const register = vi.fn().mockReturnValue(() => {})
-    const ctx = { invariants: { register } } as never
-    const dispose = await (invariant as { apply: (ctx: never) => Promise<() => void> }).apply(ctx)
-    expect(register).toHaveBeenCalledWith('@deepseek-ai/dsh-client-ui-file-video', expect.any(Function))
-    expect(() => { (register.mock.calls[0]![1] as (c: never) => void)(undefined as never) }).not.toThrow()
-    expect(dispose).toBeTypeOf('function')
-  })
 })

@@ -9,7 +9,7 @@
 // beside it (the inline-first opener), the always-visible current-plan view.
 
 import type { Context } from '@deepseek-ai/cordis'
-import { IconListPenOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconListPenOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '../../contract/slots.ts'
 import { toolRowModel } from '../models/tool-call-model.ts'
@@ -73,19 +73,19 @@ function planMaterial(argsRaw: string): PlanMaterial | null {
  * artifact-card interaction. Non-ok execution states keep the shared row's
  * dot semantics; the row still names the intended plan path.
  */
-export function PlanRow({ toolName, block, openFile, inspect, t }: PlanRowProps) {
-  const model = toolRowModel(toolName, block)
-  const argsRaw = ('kind' in block ? block.call?.argsRaw : block.argsRaw) ?? ''
-  const material = planMaterial(argsRaw)
+export function PlanRow({ toolName, block, cwd, home, openFile, inspect, useDisclosure, t }: PlanRowProps) {
+  const model = toolRowModel(toolName, block, cwd, home)
+  const material = planMaterial(model.bodyRaw ?? '')
   return (
     <ToolRow
+      useDisclosure={useDisclosure}
       t={t}
       variant={model.variant}
       toolName={toolName}
-      icon={<IconListPenOutline16 size={14} />}
+      icon={<IconListPenOutlineRegular />}
       title={material?.title ?? t('plan.rowTitle')}
       summary={material ? material.summary : model.summary}
-      body={null}
+      bodyRaw={model.bodyRaw}
       output={model.output}
       errorSummary={model.errorSummary}
       state={model.state}

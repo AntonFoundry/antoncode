@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import type {
-  SessionId, SessionListState, SessionSummary, WorkspaceId, WorkspaceView,
-} from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import {
   isWorkspaceActive, liveJobCounts, orderWorkspacesByActivity, WORKSPACE_ACTIVITY_WINDOW_MS,
 } from '../src/client/workspace-activity.ts'
 import { deriveGroups } from '../src/client/tree.ts'
+import type { SessionRowState } from '../src/client/tree.ts'
+import type { SessionStatuses } from '../src/client/tree.ts'
 
 const sid = (id: string) => id as SessionId
 const wid = (id: string) => id as WorkspaceId
@@ -13,13 +15,12 @@ const HOUR = 3_600_000
 const DAY = 24 * HOUR
 
 const summary = (id: string, updatedAt: number, running = false): SessionSummary => ({
-  id: sid(id), displayTitle: id, running, blank: false, updatedAt,
+  id: sid(id), title: id, displayTitle: id, running, blank: false, updatedAt, retainedBy: {},
 })
 const list = (...items: SessionSummary[]): SessionListState => ({
   ids: items.map(item => item.id),
   byId: Object.fromEntries(items.map(item => [item.id, item])),
-  current: undefined,
-  phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+  phase: 'ready', projectionsBySession: {}, jobsBySession: {},
 })
 const job = (status: 'running' | 'stopping' | 'completed' | 'killed' | 'failed') =>
   ({ id: `bash-${status}`, kind: 'bash', label: 'task', status, startedAt: 0 }) as never
@@ -113,17 +114,17 @@ describe('deriveGroups job activity', () => {
   const withJob = withJobs(base, { s1: [job('running'), job('stopping')] })
 
   it('reports the live job count on the session node so its row animates', () => {
-    const groups = deriveGroups(withJob, [workspace('w1', ['s1'])], [], {
+    const groups = deriveGroups(withJob, [workspace('w1', ['s1'])], { archivedSessionIds: [], pinnedSessionIds: [], archivedFilter: 'default' } as SessionRowState, new Map() as SessionStatuses, {
       expandedGroups: ['w1'],
-    })
+    }, { stagedSessionIds: [], runningJobCounts: liveJobCounts(withJob.jobsBySession) })
     expect(groups[0]!.sessions[0]!.runningJobCount).toBe(2)
     expect(groups[0]!.sessions[0]!.running).toBe(false)
   })
 
   it('counts zero without jobs and never invents them from nothing', () => {
-    const groups = deriveGroups(base, [workspace('w1', ['s1'])], [], {
+    const groups = deriveGroups(base, [workspace('w1', ['s1'])], { archivedSessionIds: [], pinnedSessionIds: [], archivedFilter: 'default' } as SessionRowState, new Map() as SessionStatuses, {
       expandedGroups: ['w1'],
-    })
+    }, { stagedSessionIds: [], runningJobCounts: liveJobCounts(base.jobsBySession) })
     expect(groups[0]!.sessions[0]!.runningJobCount).toBe(0)
   })
 })

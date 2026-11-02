@@ -7,7 +7,7 @@
  * @module @deepseek-ai/dsh-client-ui-terminal/client/term-font
  */
 
-import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
+import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 
 /** Terminal-relevant font selection (the sizes a live re-fit consumes). */
 export interface TermFontState {

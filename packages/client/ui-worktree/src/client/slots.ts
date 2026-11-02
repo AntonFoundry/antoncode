@@ -7,7 +7,7 @@
  * the status query.
  */
 
-import type { WorktreeModePrefView, WorktreeStatusView } from '@deepseek-ai/dsh-client-runtime/client'
+import type { WorktreeModePrefView, WorktreeStatus } from '@deepseek-ai/dsh-api-workspace-controller/worktree-types'
 
 /** Injected business face of the composer context bar. */
 export interface WorktreeBarActions {
@@ -25,7 +25,7 @@ export interface WorktreeBarActions {
    * @param signal - aborts the query when the caller supersedes it.
    * @returns the status bundle.
    */
-  status: (path: string, signal?: AbortSignal) => Promise<WorktreeStatusView>
+  status: (path: string, signal?: AbortSignal) => Promise<WorktreeStatus>
 }
 
 /** Injected business face of the session header's repo-status chip. */
@@ -36,5 +36,5 @@ export interface RepoStatusActions {
    * @param signal - aborts the query when the caller supersedes it.
    * @returns the status bundle.
    */
-  status: (path: string, signal?: AbortSignal) => Promise<WorktreeStatusView>
+  status: (path: string, signal?: AbortSignal) => Promise<WorktreeStatus>
 }

@@ -10,9 +10,12 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SessionListState, WorktreeStatusView, WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
-import { IconBranchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { WorktreeStatus } from '@deepseek-ai/dsh-api-workspace-controller/worktree-types'
+import { IconBranchOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { worktreeName } from './helpers.ts'
 import type { RepoStatusActions } from './slots.ts'
@@ -24,7 +27,7 @@ export interface RepoStatusChipProps extends RepoStatusActions {
   /** The standard sessions feed (cwd + running lookup). */
   useSessions: <S>(selector: (state: SessionListState) => S) => S
   /** The standard workspaces feed (worktree projection). */
-  useWorkspaces: <S>(selector: (state: WorkspaceListState) => S) => S
+  useWorkspaces: <S>(selector: (state: WorkspaceSnapshot) => S) => S
 }
 
 /**
@@ -38,7 +41,7 @@ export function RepoStatusChip(
   const cwd = useSessions(state => state.byId[sessionId]?.cwd)
   const running = useSessions(state => state.byId[sessionId]?.running)
   const byRepo = useWorkspaces(state => state.worktrees.byRepo)
-  const [statusView, setStatusView] = useState<WorktreeStatusView | null>(null)
+  const [statusView, setStatusView] = useState<WorktreeStatus | null>(null)
   const [tick, setTick] = useState(0)
   // A turn that just went idle may have changed branch/stash state; the ref
   // keeps the transition edge (not the flag) as the re-query trigger.
@@ -80,7 +83,7 @@ export function RepoStatusChip(
       title={aria}
       onClick={query}
     >
-      <span className={css.icon} aria-hidden><IconBranchOutline16 size={14} /></span>
+      <span className={css.icon} aria-hidden><IconBranchOutlineRegular size={14} /></span>
       <span className={css.branch}>
         {worktree === undefined ? statusView.branch : worktreeName(worktree.path)}
       </span>

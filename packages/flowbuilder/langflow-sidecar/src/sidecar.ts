@@ -8,6 +8,7 @@
 
 import { mkdir } from 'node:fs/promises'
 import type { SubprocessHandle, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
+import type { LangflowState, LangflowStatus } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -16,16 +17,9 @@ declare module '@deepseek-ai/cordis' {
 }
 
 /** Lifecycle state of the sidecar child. */
-export type LangflowState = 'stopped' | 'starting' | 'running' | 'error'
+export type { LangflowState, LangflowStatus } from './types.ts'
 
 /** Snapshot the Workflows tab renders: state plus the URL once it is known. */
-export interface LangflowStatus {
-  state: LangflowState
-  /** Base URL of the LangFlow UI; present once the child is spawning or serving. */
-  url?: string | undefined
-  /** Last failure reason; present in the `error` state. */
-  error?: string | undefined
-}
 
 /** Resolved sidecar configuration (see the plugin entry's `Config`). */
 export interface LangflowSidecarConfig {

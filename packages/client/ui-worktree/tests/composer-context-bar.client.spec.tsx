@@ -11,7 +11,10 @@
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SessionId, SessionListState, WorktreeStatusView, WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { WorktreeStatus } from '@deepseek-ai/dsh-api-workspace-controller/worktree-types'
 import { en } from '../src/client/locales.ts'
 import type { WorktreeKey } from '../src/client/locales.ts'
 import { ComposerContextBar } from '../src/client/ComposerContextBar.tsx'
@@ -51,9 +54,9 @@ const namedWorktreeRecord = {
 }
 
 function workspacesState(
-  prefs: WorkspaceListState['worktrees']['prefs'],
-  byRepo: WorkspaceListState['worktrees']['byRepo'] = {},
-): WorkspaceListState {
+  prefs: WorkspaceSnapshot['worktrees']['prefs'],
+  byRepo: WorkspaceSnapshot['worktrees']['byRepo'] = {},
+): WorkspaceSnapshot {
   return {
     items: [], byId: {}, recentWorkspaceId: undefined, defaultTarget: undefined, phase: 'ready',
     worktrees: { byRepo, prefs, namesByWorkspaceId: {}, baselinesReady: true },
@@ -64,7 +67,7 @@ function hook<T>(snapshot: T) {
   return function select<S>(selector: (state: T) => S): S { return selector(snapshot) }
 }
 
-const status = (over: Partial<WorktreeStatusView> = {}): WorktreeStatusView => ({
+const status = (over: Partial<WorktreeStatus> = {}): WorktreeStatus => ({
   path: '/repo', branch: 'agent/slug', head: 'abc1234', dirty: false, stashCount: 0, ahead: 0, behind: 0,
   bases: ['origin/main', 'origin/develop', 'HEAD'],
   ...over,
@@ -72,9 +75,9 @@ const status = (over: Partial<WorktreeStatusView> = {}): WorktreeStatusView => (
 
 function props(over: {
   summary?: { cwd?: string; running?: boolean }
-  prefs?: WorkspaceListState['worktrees']['prefs']
-  byRepo?: WorkspaceListState['worktrees']['byRepo']
-  status?: (path: string, signal?: AbortSignal) => Promise<WorktreeStatusView>
+  prefs?: WorkspaceSnapshot['worktrees']['prefs']
+  byRepo?: WorkspaceSnapshot['worktrees']['byRepo']
+  status?: (path: string, signal?: AbortSignal) => Promise<WorktreeStatus>
   setMode?: (repoPath: string, pref: { mode: string; base?: string; worktreeId?: string }) => Promise<void>
 } = {}): BarProps {
   return {

@@ -7,7 +7,10 @@
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SessionId, SessionListState, WorktreeStatusView, WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { WorktreeStatus } from '@deepseek-ai/dsh-api-workspace-controller/worktree-types'
 import { en } from '../src/client/locales.ts'
 import type { WorktreeKey } from '../src/client/locales.ts'
 import { RepoStatusChip } from '../src/client/RepoStatusChip.tsx'
@@ -44,7 +47,7 @@ const worktreeRecord = {
   createdAt: '2026-01-02T00:00:00.000Z',
 }
 
-function workspacesState(byRepo: WorkspaceListState['worktrees']['byRepo']): WorkspaceListState {
+function workspacesState(byRepo: WorkspaceSnapshot['worktrees']['byRepo']): WorkspaceSnapshot {
   return {
     items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
     baselinesReady: true, recentWorkspaceId: undefined,
@@ -54,8 +57,8 @@ function workspacesState(byRepo: WorkspaceListState['worktrees']['byRepo']): Wor
 
 function props(over: {
   summary?: { cwd?: string; running?: boolean }
-  status?: (path: string, signal?: AbortSignal) => Promise<WorktreeStatusView>
-  byRepo?: WorkspaceListState['worktrees']['byRepo']
+  status?: (path: string, signal?: AbortSignal) => Promise<WorktreeStatus>
+  byRepo?: WorkspaceSnapshot['worktrees']['byRepo']
 }): ChipProps {
   return {
     sessionId: sid('s1'),
@@ -68,7 +71,7 @@ function props(over: {
   } as unknown as ChipProps
 }
 
-const status = (over: Partial<WorktreeStatusView> = {}): WorktreeStatusView => ({
+const status = (over: Partial<WorktreeStatus> = {}): WorktreeStatus => ({
   path: '/repo', branch: 'agent/slug', head: 'abc1234', dirty: false, stashCount: 0, ahead: 0, behind: 0,
   ...over,
 })

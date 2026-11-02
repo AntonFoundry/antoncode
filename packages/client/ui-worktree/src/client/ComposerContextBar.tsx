@@ -18,8 +18,12 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { SessionId, SessionListState, WorktreeModePrefView, WorktreeStatusView, WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
-import { IconBranchOutline16, IconChevronDownOutline14, IconFolderClose16, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { WorktreeStatus } from '@deepseek-ai/dsh-api-workspace-controller/worktree-types'
+import type { WorktreeModePrefView } from '@deepseek-ai/dsh-api-workspace-controller/worktree-types'
+import { IconBranchOutlineRegular, IconChevronDownOutlineRegular, IconFolderCloseRegular, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MenuEntry, MenuItem } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { resolveRepo, worktreeName } from './helpers.ts'
@@ -32,7 +36,7 @@ export interface ComposerContextBarProps extends WorktreeBarActions {
   /** The standard sessions feed (cwd + running lookup). */
   useSessions: <S>(selector: (state: SessionListState) => S) => S
   /** The standard workspaces feed (worktree projection). */
-  useWorkspaces: <S>(selector: (state: WorkspaceListState) => S) => S
+  useWorkspaces: <S>(selector: (state: WorkspaceSnapshot) => S) => S
 }
 
 /** The mode rows one repository offers, keyed for the preference write. */
@@ -46,15 +50,15 @@ function modeRows(
     names.set(name, (names.get(name) ?? 0) + 1)
   }
   return [
-    { id: 'checkout', label: t('mode.checkout'), icon: <IconFolderClose16 size={16} /> },
-    { id: 'new', label: t('mode.new'), icon: <IconBranchOutline16 size={16} /> },
+    { id: 'checkout', label: t('mode.checkout'), icon: <IconFolderCloseRegular size={16} /> },
+    { id: 'new', label: t('mode.new'), icon: <IconBranchOutlineRegular size={16} /> },
     ...records.map((record) => {
       const name = worktreeDisplayName(record)
       const display = (names.get(name) ?? 0) > 1 ? `${name} · ${record.branch}` : name
       return {
         id: `reuse:${record.worktreeId}`,
         label: t('mode.reuseNamed', { name: display }),
-        icon: <IconBranchOutline16 size={16} />,
+        icon: <IconBranchOutlineRegular size={16} />,
       }
     }),
   ]
@@ -91,7 +95,7 @@ export function ComposerContextBar(
   const running = useSessions(state => state.byId[sessionId]?.running)
   const prefs = useWorkspaces(state => state.worktrees.prefs)
   const byRepo = useWorkspaces(state => state.worktrees.byRepo)
-  const [statusView, setStatusView] = useState<WorktreeStatusView | null>(null)
+  const [statusView, setStatusView] = useState<WorktreeStatus | null>(null)
   const [tick, setTick] = useState(0)
   const [selectOpen, setSelectOpen] = useState(false)
   const [baseOpen, setBaseOpen] = useState(false)
@@ -139,7 +143,7 @@ export function ComposerContextBar(
 
   // The effective base: the stored preference wins, then origin/main when the
   // repository has that remote, then the first candidate (HEAD alone at worst).
-  const repoStatus = isRepo ? (statusView as WorktreeStatusView) : null
+  const repoStatus = isRepo ? (statusView as WorktreeStatus) : null
   const bases = repoStatus === null ? [] : repoStatus.bases.length > 0 ? repoStatus.bases : ['HEAD']
   const effectiveBase = repo?.pref?.base
     ?? (bases.includes('origin/main') ? 'origin/main' : bases[0] as string)
@@ -147,7 +151,7 @@ export function ComposerContextBar(
   const baseItems: MenuEntry[] = bases.map(base => ({
     id: base,
     label: base,
-    icon: <IconBranchOutline16 size={16} />,
+    icon: <IconBranchOutlineRegular size={16} />,
   }))
   const chooseBase = (id: string): void => {
     setBaseOpen(false)
@@ -227,9 +231,9 @@ export function ComposerContextBar(
               setSelectOpen(!selectOpen)
             }}
           >
-            <span className={css.icon} aria-hidden><IconBranchOutline16 size={14} /></span>
+            <span className={css.icon} aria-hidden><IconBranchOutlineRegular size={14} /></span>
             <span className={css.branch}>{location}</span>
-            <span className={css.chevron} aria-hidden><IconChevronDownOutline14 /></span>
+            <span className={css.chevron} aria-hidden><IconChevronDownOutlineRegular /></span>
           </button>
         }
       />
@@ -250,9 +254,9 @@ export function ComposerContextBar(
               title={t('bar.base.aria', { base: effectiveBase })}
               onClick={() => { setBaseOpen(!baseOpen) }}
             >
-              <span className={css.icon} aria-hidden><IconBranchOutline16 size={14} /></span>
+              <span className={css.icon} aria-hidden><IconBranchOutlineRegular size={14} /></span>
               <span className={css.branch}>{t('bar.base', { base: effectiveBase })}</span>
-              <span className={css.chevron} aria-hidden><IconChevronDownOutline14 /></span>
+              <span className={css.chevron} aria-hidden><IconChevronDownOutlineRegular /></span>
             </button>
           }
         />

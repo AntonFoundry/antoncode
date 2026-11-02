@@ -8,15 +8,17 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { LangflowSidecar } from './sidecar.ts'
+import { LangflowRemote } from './remote.ts'
 import type { LangflowSidecarConfig } from './sidecar.ts'
 
 export { LangflowSidecar } from './sidecar.ts'
+export { LangflowRemote } from './remote.ts'
 export type { LangflowState, LangflowStatus } from './sidecar.ts'
 
 /** Cordis plugin name. */
 export const name = 'langflow-sidecar'
 /** The subprocess runtime must exist before the sidecar can spawn. */
-export const inject = ['subprocess']
+export const inject = ['subprocess', 'typert']
 
 /**
  * Plugin configuration. `workdir` has NO default on purpose: a `process.cwd()`
@@ -41,6 +43,7 @@ export const Config: z<Config> = z.object({
 export function apply(ctx: Context, config: Config): void {
   const sidecar = new LangflowSidecar(ctx.subprocess, config)
   ctx.provide('langflow', sidecar)
+  ctx.plugin(LangflowRemote)
   ctx.effect(() => () => {
     void sidecar.stop()
   }, 'langflow-sidecar.dispose')

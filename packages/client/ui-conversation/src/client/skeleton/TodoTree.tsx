@@ -1,39 +1,43 @@
 // TodoTree: the execution-tree seat in the sidebar's memory area (the single
-// place session task state renders, replacing the former details-panel context
-// entry). Renders the standing todo/write whole-tree snapshot — nodes nest up
-// to three levels (task → child → grandchild) with indentation; cancelled
-// nodes stay visible but struck through. Flat root items that share a
-// "Prefix: " head (two or more) group under one synthetic collapsible branch
-// so model-authored flat lists still read as a tree. No data of its own: the
-// current session's `todos` projection (published reference-stable through the
-// session list summary) feeds it, and an empty tree renders the quiet
+// place session task state renders). Renders the standing todo/write
+// whole-tree snapshot — nodes nest up to three levels (task → child →
+// grandchild) with indentation; cancelled nodes stay visible but struck
+// through. Flat root items that share a "Prefix: " head (two or more) group
+// under one synthetic collapsible branch so model-authored flat lists still
+// read as a tree. The root-scoped 'sidebar.memory' entry owns the collapsed
+// rail and the branch-collapse store (the seat unmounts on sidebar collapse,
+// so component state would not survive those remounts); its session-maybe
+// 'conversation.todo.tree' child reads the current Session's `todos` and
+// `goal` projections, and an absent Session or empty tree renders the quiet
 // empty-state line so the sidebar region stays meaningful between plans.
-// Branch collapse state lives in the entry-declared store (the seat unmounts
-// on sidebar collapse, so component state would not survive those remounts).
-// Mounted through the 'sidebar.memory' slot (list posture, root scope) via its
-// inject wrapper; the collapsed rail shrinks to one expand affordance.
 
 import type { Context } from '@deepseek-ai/cordis'
 import { useId } from 'react'
-import type { PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 // Pulls ui-sidebar's SlotMap merge (the 'sidebar.memory' entry) into this
 // program so PropsRuntime<'sidebar.memory'> resolves; type-only by design.
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
-// The domain's client-namespace pure-type outlet: one import edge delivers
-// the `todos` projection-key merge (single source, no consumer-side restated
-// declare) and the payload type. Type-only by construction — the outlet is
-// free of host value imports, so no host Context merge enters this program.
+// Type-only: the standard-kit Session props (useProjection) merge.
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+// The domain's pure-type outlets: one import edge each delivers the `todos`
+// and `goal` projection-key merges and their payload types, free of host value
+// imports.
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'
 import type { GoalProjection } from '@deepseek-ai/dsh-goal/client'
-import { IconChecklistOutline14, IconTriangleRightFill14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChecklistOutlineMedium, IconTriangleRightFillMedium } from '@deepseek-ai/dsh-client-ui-primitives'
+import type {} from '../contract/slots.ts'
 import { createTodoTreeStore } from '../stores.ts'
 import { NS } from '../locales.ts'
 import css from './TodoTree.module.css'
 
-/** Full props of the sidebar seat: sidebar owner share + store + locale. */
+/** Full props of the sidebar seat: sidebar owner share + store + Session child + locale. */
 export type TodoTreeProps = PropsRuntime<'sidebar.memory'>
   & PropsStore<ReturnType<typeof createTodoTreeStore>>
+  & PropsRenderSlots<'conversation.todo.tree'>
   & PropsLocale<'conversation'>
+
+/** Full props of the Session body: collapse share + Session projections + locale. */
+export type TodoTreeSessionProps = PropsRuntime<'conversation.todo.tree'> & PropsLocale<'conversation'>
 
 /** Local exhaustiveness helper — client packages do not depend on `dsh-llm`. */
 /* v8 ignore next 3 -- closed-union backstop; only reached if status is forged */
@@ -213,7 +217,7 @@ function TodoNodes({ nodes, depth, collapsed, onToggle }: {
                 onClick={() => { onToggle(node.content) }}
               >
                 <span className={css.disclose} aria-hidden>
-                  <IconTriangleRightFill14 size={10} className={open ? css.chevronOpen : css.chevron} />
+                  <IconTriangleRightFillMedium size={10} className={open ? css.chevronOpen : css.chevron} />
                 </span>
                 <span className={css.glyph} aria-hidden><StatusGlyph status={node.status} /></span>
                 <span className={css.content}>{node.content}</span>
@@ -258,7 +262,7 @@ export function TodoTreeBody({ todos, t, compact = false, goal, collapsed = [], 
     <section className={css.root} data-testid="todo-tree">
       {!compact && (
         <div className={css.header}>
-          <span className={css.lead} aria-hidden><IconChecklistOutline14 /></span>
+          <span className={css.lead} aria-hidden><IconChecklistOutlineMedium size={14} /></span>
           <span className={css.title}>{t('todo.title')}</span>
           <span className={css.progress}>{progressLabel(todos, t)}</span>
         </div>
@@ -283,16 +287,25 @@ export function TodoTreeBody({ todos, t, compact = false, goal, collapsed = [], 
 }
 
 /**
- * Seat component: reads the current session's `todos` projection through the
- * session list summary (no session or pre-first-write null renders the quiet
- * empty state); branch collapse rides the entry-declared store; the collapsed
- * rail renders one expand affordance instead.
+ * Session body: reads the current Session's `todos` and `goal` projections
+ * (no Session or pre-first-write null renders the quiet empty state).
+ * @param props - collapse share, Session projections, and locale.
+ * @returns the tree body.
  */
-export function TodoTree({ wide, expandSidebar, useSessions, useStore, actions, t }: TodoTreeProps) {
-  const todos = useSessions(list =>
-    list.current === undefined ? undefined : list.byId[list.current]?.projectionValues?.todos)
-  const goal = useSessions(list =>
-    list.current === undefined ? undefined : list.byId[list.current]?.projectionValues?.goal)
+export function TodoTreeSession({ useProjection, collapsed, onToggle, t }: TodoTreeSessionProps) {
+  const todos = useProjection('todos')
+  const goal = useProjection('goal')
+  return <TodoTreeBody todos={todos ?? []} t={t} goal={goal} collapsed={collapsed} onToggle={onToggle} />
+}
+
+/**
+ * Seat component: the collapsed rail renders one expand affordance; the wide
+ * column renders the current Session's tree with branch collapse riding the
+ * entry-declared store.
+ * @param props - sidebar owner share, store, Session child renderer, and locale.
+ * @returns the rail button or the Session tree.
+ */
+export function TodoTree({ wide, expandSidebar, useStore, actions, renderSlot, t }: TodoTreeProps) {
   const collapsed = useStore(state => state.collapsed)
   if (!wide) {
     return (
@@ -302,11 +315,11 @@ export function TodoTree({ wide, expandSidebar, useSessions, useStore, actions, 
         aria-label={t('todo.railExpand')}
         onClick={() => { expandSidebar() }}
       >
-        <IconChecklistOutline14 />
+        <IconChecklistOutlineMedium size={14} />
       </button>
     )
   }
-  return <TodoTreeBody todos={todos ?? []} t={t} goal={goal} collapsed={collapsed} onToggle={id => actions.toggle(id)} />
+  return renderSlot('conversation.todo.tree', { collapsed, onToggle: (id) => { actions.toggle(id) } })
 }
 
 /**
@@ -318,13 +331,22 @@ export const todoTreeEntry = {
   inject: ['slots'],
   /**
    * Register the tree into the sidebar's memory area — the execution-tree
-   * seat — above any later-stacked memory registrants. The collapse store is
-   * created at apply time so its identity follows this fiber.
+   * seat — above any later-stacked memory registrants, plus its Session body.
+   * The collapse store is created at apply time so its identity follows this fiber.
    * @param ctx - registrant context (disposal rides ctx.effect inside slots.register).
    */
   apply(ctx: Context): void {
     const store = createTodoTreeStore()
-    ctx.slots.inject('sidebar.memory', () =>
-      ctx.slots.register({ name: 'sidebar.memory', id: 'todo-tree', order: 0, locale: NS, store }, TodoTree))
+    ctx.slots.inject('sidebar.memory', function* () {
+      yield ctx.slots.register({
+        name: 'sidebar.memory',
+        id: 'todo-tree',
+        order: 0,
+        locale: NS,
+        store,
+        children: { 'conversation.todo.tree': { kind: 'single', scope: 'session-maybe' } },
+      }, TodoTree)
+      yield ctx.slots.register({ name: 'conversation.todo.tree', locale: NS }, TodoTreeSession)
+    })
   },
 }
