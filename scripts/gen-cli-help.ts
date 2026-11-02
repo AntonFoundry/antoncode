@@ -1,21 +1,15 @@
 /** Generate paired CLI references by invoking the shipped launcher and profile help. */
 
 import { execFile } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { PROFILE_TEMPLATES } from '@deepseek-ai/dsh-official-bundles'
-import {
-  computeTranslationPairingRecord,
-  renderTranslationPairingRecord,
-  translationPairPaths,
-} from './translation-pairing-record.ts'
-import { parseTranslationPairingManifest, translationPairSourcePredicate } from './translation-pairing.ts'
 import { defaultParallelism } from './parallelism.ts'
 
 const root = resolve(import.meta.dirname, '..')
-const paths = translationPairPaths('docs/cli-help.md')
+const SOURCE = 'docs/cli-help.md'
 const execFileAsync = promisify(execFile)
 
 /** Complete help text and the immediate subcommands it advertises. */
@@ -258,28 +252,12 @@ function renderHelp(pages: readonly HelpPage[], chinese: boolean): string {
   return lines.join('\n')
 }
 
-/** Regenerate both CLI reference pages, or check their bytes with --check. @returns Nothing. */
+/** Regenerate the English CLI reference, or check their bytes with --check. @returns Nothing. */
 export async function main(): Promise<void> {
   const check = process.argv.includes('--check')
   const pages = await collectHelp()
   const source = renderHelp(pages, false)
-  const zh = renderHelp(pages, true)
-  const written = new Set([paths.source, paths.zh])
-  const context = {
-    repoRoot: root,
-    isTranslationPairSource: translationPairSourcePredicate(parseTranslationPairingManifest(
-      readFileSync(resolve(root, 'scripts/translation-pairing.manifest.json'), 'utf8'),
-    )),
-    // Resolve links between the two pages as this run writes them, so a first run
-    // records the same hashes that verify-translation-pairing computes afterward.
-    repositoryFileExists: (path: string) => written.has(path)
-      || existsSync(resolve(root, path)) && statSync(resolve(root, path)).isFile(),
-  }
-  const outputs = new Map([
-    [paths.source, source],
-    [paths.zh, zh],
-    [paths.meta, renderTranslationPairingRecord(paths, computeTranslationPairingRecord(paths, source, zh, context))],
-  ])
+  const outputs = new Map([[SOURCE, source]])
   const changed: string[] = []
   for (const [path, content] of outputs) {
     const destination = resolve(root, path)

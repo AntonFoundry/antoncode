@@ -796,6 +796,8 @@ describe('ModelsSection', () => {
       removable: false,
       apiKeyEnv: 'X',
       credential,
+      oauthRef: undefined,
+      oauthSession: undefined,
       enabled: true,
     })
     expect(needsSetup(row(undefined), false)).toBe(true)
@@ -829,12 +831,12 @@ describe('ModelsSection', () => {
     expect(providerDisplayName('acme', 'My Acme')).toBe('My Acme')
 
     const scripted = scriptedFace()
-    scripted.face.llm.providers.mockImplementation(() => Promise.resolve(ok({ providers: [
+    scripted.face.llm.listConfigurableProviders.mockImplementation(() => Promise.resolve(remoteOk([
       { provider: 'nvidia', displayName: 'nvidia', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'nvidia'], active: true },
       { provider: 'zai', displayName: 'zai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'zai'], active: true },
-    ] })))
-    scripted.face.settings.describe.mockImplementation(() => Promise.resolve(ok({
-      writable: true,
+    ])))
+    scripted.face.settings.describe.mockImplementation(() => Promise.resolve(remoteOk({
+      writable: true, hasDocument: true,
       namespaces: wireNamespaces().map(namespace => namespace.ns === 'llm-pi-ai'
         ? { ...namespace, value: { providers: { nvidia: {}, zai: {} } } }
         : namespace),
@@ -2178,6 +2180,7 @@ describe('ModelsSection', () => {
 describe('catalog visibility switch', () => {
   const MODEL_CATALOG_VIEW: SettingsNamespaceView = {
     ns: 'model-catalog',
+    autoGenerate: true,
     schema: {},
     value: { disabledProviders: ['openai'] },
     applies: 'live',
@@ -2187,7 +2190,7 @@ describe('catalog visibility switch', () => {
 
   function scriptedWithCatalog(overrides: Parameters<typeof scriptedFace>[0] = {}) {
     const scripted = scriptedFace(overrides)
-    scripted.face.settings.describe.mockImplementation(() => Promise.resolve(ok({
+    scripted.face.settings.describe.mockImplementation(() => Promise.resolve(remoteOk({
       writable: true,
       hasDocument: true,
       namespaces: [...wireNamespaces(), MODEL_CATALOG_VIEW],
@@ -2205,11 +2208,9 @@ describe('catalog visibility switch', () => {
     // Enabling openai removes it from the disabled list.
     fireEvent.click(openai)
     await waitFor(() => {
-      expect(mutate).toHaveBeenCalledWith({
-        ns: 'model-catalog',
-        ops: [{ op: 'set', path: ['disabledProviders'], value: [] }],
-        expectedRevision: 7,
-      })
+      expect(mutate).toHaveBeenCalledWith('model-catalog',
+        [{ op: 'set', path: ['disabledProviders'], value: [] }],
+        7)
     })
 
     // Disabling DeepSeek extends the described list (the scripted describe
@@ -2217,21 +2218,19 @@ describe('catalog visibility switch', () => {
     // overwrites).
     fireEvent.click(screen.getByRole('switch', { name: deepSeekCopy(en.disableProvider) }))
     await waitFor(() => {
-      expect(mutate).toHaveBeenLastCalledWith({
-        ns: 'model-catalog',
-        ops: [{
+      expect(mutate).toHaveBeenLastCalledWith('model-catalog',
+        [{
           op: 'set',
           path: ['disabledProviders'],
           value: ['openai', 'deepseek-official'],
         }],
-        expectedRevision: 7,
-      })
+        7)
     })
   })
 
   it('announces a refused write instead of failing the toggle silently', async () => {
     await mountFace(scriptedWithCatalog({
-      mutate: vi.fn(() => Promise.resolve(fail('read-only document'))),
+      mutate: vi.fn(() => Promise.resolve(remoteFail('read-only document'))),
     }))
     fireEvent.click(screen.getByRole('switch', { name: openaiCopy(en.enableProvider) }))
     const alert = await screen.findByRole('alert')
@@ -2245,7 +2244,7 @@ describe('catalog visibility switch', () => {
 
   it('locks the switch on a read-only settings document', async () => {
     const scripted = scriptedWithCatalog()
-    scripted.face.settings.describe.mockImplementation(() => Promise.resolve(ok({
+    scripted.face.settings.describe.mockImplementation(() => Promise.resolve(remoteOk({
       writable: false,
       hasDocument: true,
       namespaces: [...wireNamespaces(), MODEL_CATALOG_VIEW],

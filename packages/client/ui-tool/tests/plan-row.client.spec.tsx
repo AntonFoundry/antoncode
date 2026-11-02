@@ -2,7 +2,8 @@
 /** plan_write / exit_plan_mode atomic Tool presentation: the plan-reference block. */
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ToolResultNode } from '@deepseek-ai/dsh-client-runtime/client'
+import { PartialArguments } from '@deepseek-ai/dsh-util-values'
+import type { ToolResultNode } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { PlanRow, planToolview } from '../src/client/tool/toolviews/plan-row.tsx'
@@ -17,8 +18,9 @@ afterEach(cleanup)
 
 const resultNode = (argsRaw: string, over?: Partial<ToolResultNode>): ToolResultNode => ({
   kind: 'tool-result', seq: 10, time: 2_000, callTime: 1_000, callId: 'c1',
+  name: 'plan_write', args: PartialArguments.fromText(argsRaw),
   call: { name: 'plan_write', argsRaw },
-  content: [], isError: false, callView: null, resultView: null, subCalls: [], ...over,
+  content: [], isError: false, subCalls: [], ...over,
 })
 
 function rowProps(block: unknown, openFile = vi.fn()): PlanRowProps {

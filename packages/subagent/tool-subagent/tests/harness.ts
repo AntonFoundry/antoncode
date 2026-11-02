@@ -34,8 +34,21 @@ const setupAgents = new WeakMap<Context, Agent>()
 const setupProviders = new WeakMap<Context, Awaited<ReturnType<typeof mock.mountScriptedProvider>>>()
 let setupAgentCounter = 0
 
+/** Configuration supplied before Schemastery fills volatile defaults. */
+export type RawToolConfig = Omit<toolConfig, 'childModel' | 'childModelBySession' | 'childReasoningEffort'>
+
+/** Fill runtime-only volatile fields for tests that call `apply` directly. */
+export function directConfig(config: RawToolConfig): toolConfig {
+  return {
+    childModel: createVolatile<string | undefined>(undefined),
+    childModelBySession: createVolatile<Record<string, string>>({}),
+    childReasoningEffort: createVolatile<string | undefined>(undefined),
+    ...config,
+  }
+}
+
 /** Test-only opt-in translated to the real Host setting and Session path. */
-type SetupConfig = Omit<toolConfig, 'childModel' | 'childModelBySession' | 'childReasoningEffort'> & {
+type SetupConfig = RawToolConfig & {
   withModelSelection?: boolean
   /** Host setting sampled by a `withModelSelection` setup; defaults to enabled. */
   hostSelectionEnabled?: boolean
@@ -54,12 +67,7 @@ const TEST_ALLOWED_MODELS = [
 export async function setup(toolConfig: SetupConfig, mockConfig: Partial<mock.Config> = {}): Promise<Context> {
   const ctx = ownContext(new Context())
   const { withModelSelection, hostSelectionEnabled = true, parentAgentOptions, ...options } = toolConfig
-  const config = {
-    childModel: createVolatile<string | undefined>(undefined),
-    childModelBySession: createVolatile<Record<string, string>>({}),
-    childReasoningEffort: createVolatile<string | undefined>(undefined),
-    ...options,
-  }
+  const config = directConfig(options)
   await mountAgentLoopTestDependencies(ctx)
   if (withModelSelection === true) {
     await ctx.plugin(SubagentModelSelectionConfig, {

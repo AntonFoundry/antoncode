@@ -127,11 +127,12 @@ describe('WebcamView', () => {
       video,
       mask: undefined,
       fps: 30,
-      delegate: 'GPU',
+      delegate: 'CPU',
+      segmenterIssue: undefined,
     })
     await waitFor(() => expect(screen.getByText('30 fps')).toBeDefined())
     expect(screen.getByText('1280×720')).toBeDefined()
-    expect(screen.getByText('GPU')).toBeDefined()
+    expect(screen.getByText('CPU')).toBeDefined()
   })
 
   it('shows the segmentation-health issue from frame events and clears it on recovery', async () => {

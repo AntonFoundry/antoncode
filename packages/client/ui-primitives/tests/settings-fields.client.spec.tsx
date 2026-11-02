@@ -154,7 +154,7 @@ describe('SettingsSecretField', () => {
 describe('ValueField multiline', () => {
   it('renders a textarea for long prose and stages edits from it', () => {
     const onEdit = vi.fn()
-    render(<ValueField {...frame} multiline rows={7} text="Built-in text" onEdit={onEdit} onReset={vi.fn()} />)
+    render(<SettingsValueField {...frame} multiline rows={7} text="Built-in text" onEdit={onEdit} onReset={vi.fn()} />)
 
     const control = screen.getByLabelText('Command timeout')
     expect(control.tagName).toBe('TEXTAREA')
@@ -163,7 +163,7 @@ describe('ValueField multiline', () => {
   })
 
   it('keeps single-line rendering an input when multiline is not set', () => {
-    render(<ValueField {...frame} text="60000" onEdit={vi.fn()} onReset={vi.fn()} />)
+    render(<SettingsValueField {...frame} text="60000" onEdit={vi.fn()} onReset={vi.fn()} />)
     expect(screen.getByLabelText('Command timeout').tagName).toBe('INPUT')
   })
 })

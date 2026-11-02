@@ -14,7 +14,7 @@ describe('createFontRowStore', () => {
     store.actions.sync({ ...DEFAULT_SELECTION, monoFont: 'menlo', monoSize: 13 }, 0)
     expect(store.getSnapshot().monoFont).toBe('menlo')
     expect(store.getSnapshot().monoSize).toBe(13)
-    store.actions.sync({ ...DEFAULT_SELECTION, uiFamily: 'georgia', uiScale: 120 }, 2)
+    store.actions.sync({ ...DEFAULT_SELECTION, uiFamily: 'georgia', uiSize: 18 }, 2)
     expect(store.getSnapshot().uiFamily).toBe('georgia')
     expect(store.getSnapshot().revision).toBe(2)
   })

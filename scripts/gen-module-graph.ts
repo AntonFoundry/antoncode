@@ -8,20 +8,11 @@ import {
   graphNodeId as nodeId,
   type PackageGraphNode,
 } from './package-graph.ts'
-import {
-  computeTranslationPairingRecord,
-  renderTranslationPairingRecord,
-  translationPairPaths,
-} from './translation-pairing-record.ts'
-import {
-  parseTranslationPairingManifest,
-  renderGeneratedRegion,
-  translationPairSourcePredicate,
-} from './translation-pairing.ts'
+import { renderGeneratedRegion } from './generated-regions.ts'
 
 const root = resolve(import.meta.dirname, '..')
 const SOURCE = 'docs/module-graph.md'
-const PATHS = translationPairPaths(SOURCE)
+
 type Pkg = PackageGraphNode
 type Locale = 'en' | 'zh'
 
@@ -120,33 +111,19 @@ export function renderModuleGraph(pkgs: readonly Pkg[], locale: Locale): string 
 }
 
 /**
- * Compute both localized graph documents from the current workspace manifests.
+ * Compute the English graph document from the current workspace manifests.
  * @param scanRoot - Repository root containing packages and documentation.
  * @returns Repository-relative output paths and exact generated content.
  */
 export function computeModuleGraphOutputs(scanRoot: string = root): ReadonlyMap<string, string> {
   const packages = collectPackageGraph(scanRoot, GROUP_ORDER, 'gen-module-graph')
   return new Map([
-    [PATHS.source, renderModuleGraph(packages, 'en')],
-    [PATHS.zh, renderModuleGraph(packages, 'zh')],
+    [SOURCE, renderModuleGraph(packages, 'en')],
   ])
 }
 
-/** Render the consistency record for the two computed graph documents. */
-function moduleGraphRecord(scanRoot: string, outputs: ReadonlyMap<string, string>): string {
-  const manifest = parseTranslationPairingManifest(
-    readFileSync(resolve(scanRoot, 'scripts/translation-pairing.manifest.json'), 'utf8'),
-  )
-  return renderTranslationPairingRecord(PATHS, computeTranslationPairingRecord(
-    PATHS,
-    outputs.get(PATHS.source) ?? '',
-    outputs.get(PATHS.zh) ?? '',
-    { repoRoot: scanRoot, isTranslationPairSource: translationPairSourcePredicate(manifest) },
-  ))
-}
-
 /**
- * Write both graph documents and their consistency record.
+ * Write the English graph document.
  * @param scanRoot - Repository root containing packages and documentation.
  * @returns Repository-relative paths whose content changed.
  */
@@ -159,19 +136,13 @@ export function writeModuleGraph(scanRoot: string = root): string[] {
     writeFileSync(destination, content)
     changed.push(path)
   }
-  const record = moduleGraphRecord(scanRoot, outputs)
-  const recordPath = resolve(scanRoot, PATHS.meta)
-  if (!existsSync(recordPath) || readFileSync(recordPath, 'utf8') !== record) {
-    writeFileSync(recordPath, record)
-    changed.push(PATHS.meta)
-  }
   return changed.sort()
 }
 
-/** CLI entry: regenerate by default, or verify all paired outputs with `--check`. @returns Nothing. */
+/** CLI entry: regenerate by default, or verify the English output with `--check`. @returns Nothing. */
 export function main(): void {
   const outputs = computeModuleGraphOutputs(root)
-  const expected = new Map([...outputs, [PATHS.meta, moduleGraphRecord(root, outputs)]])
+  const expected = outputs
   if (process.argv.includes('--check')) {
     const stale = [...expected].filter(([path, content]) => (
       !existsSync(resolve(root, path)) || readFileSync(resolve(root, path), 'utf8') !== content

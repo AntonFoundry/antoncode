@@ -22,6 +22,7 @@ const row = (client: boolean): DynamicCordisInventoryRow => ({
     purpose: 'show time',
     hasHostHalf: true,
     hasClientHalf: client,
+    capabilities: [],
   }],
   currentPackageId: PACKAGE,
   activeRun: { packageId: PACKAGE, pluginRunId: RUN },

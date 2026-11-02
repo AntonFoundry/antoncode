@@ -220,10 +220,10 @@ describe('request stability across the loop', () => {
     }
     const adapter = new MockAdapter([textResponse('one'), textResponse('two')], reasoning)
     const ctx = await harness(adapter)
-    const agent = ctx.agentLoop.create(SessionId('effort-seed'), {
+    const agent = await ctx.agentLoop.create(SessionId('effort-seed'), {
       provider: 'mock',
       model: 'mock',
-      reasoningEffort: 'high',
+      reasoningEffort: ReasoningEffortId('high'),
     })
 
     send(agent, 'first')

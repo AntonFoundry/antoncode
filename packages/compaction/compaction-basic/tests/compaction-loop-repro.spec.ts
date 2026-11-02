@@ -269,7 +269,6 @@ describe('CBR-001: a real-loop checkpoint is a valid boundary on both sides', ()
     const ctx = new Context()
     const adapter = new RoutedCapacityAdapter()
     await mountAgentLoopTestDependencies(ctx)
-    await mountInvariants(ctx)
     await ctx.plugin(AgentLoop, { agents: [] })
     await ctx.plugin(TokenMeter)
     ctx.llm.registerAdapter(['large', 'small'], adapter)
@@ -300,6 +299,7 @@ describe('CBR-001: a real-loop checkpoint is a valid boundary on both sides', ()
             content: [{ type: 'text', text: `routed answer ${index} ${'response detail '.repeat(index === 0 ? 35 : 2)}` }],
             source: { kind: 'model', provider: 'large', model: 'shared-id' },
           }),
+          stream: [],
         }, { surfaceOp: 'append' })
         session.append('step/end', { turn: 1, step: index + 1 })
       }
@@ -344,7 +344,6 @@ describe('CBR-001: a real-loop checkpoint is a valid boundary on both sides', ()
     const ctx = new Context()
     const adapter = new OverflowRecoveryAdapter('thrown')
     await mountAgentLoopTestDependencies(ctx)
-    await mountInvariants(ctx)
     await ctx.plugin(AgentLoop, { agents: [] })
     await ctx.plugin(TokenMeter)
     ctx.llm.registerAdapter(['mock'], adapter)
@@ -360,11 +359,11 @@ describe('CBR-001: a real-loop checkpoint is a valid boundary on both sides', ()
       const seedConfig: LlmCallConfig = { provider: 'mock', model: 'mock' }
       const header = {
         config: seedConfig,
-        system: 'old prompt',
         tools: [] as ToolSchema[],
       }
       session.append('turn/start', { turn: 1 })
       session.append('request/header', { header, reason: 'initial' })
+      session.append('system/message', { turn: 1, step: 1, message: createSystemMessage('old prompt') }, { surfaceOp: 'append' })
       session.append('request/context', { provider: 'mock', model: 'mock', contextWindow: 128 })
       const history = createUserMessage({
         content: [{ type: 'text', text: 'OLD HISTORY SENTINEL '.repeat(25) }],
@@ -437,7 +436,7 @@ describe('CBR-001: a real-loop checkpoint is a valid boundary on both sides', ()
       expect(precedingResult.seq).toBeLessThan(compactStart!.seq)
       expect(precedingStepEnd!.seq).toBeLessThan(compactStart!.seq)
       expect(compactStart!.seq).toBeLessThan(events.find(event =>
-        event.type === 'assistant/chunk' && event.seq > compactStart!.seq,
+        event.type === 'assistant/message' && event.seq > compactStart!.seq,
       )!.seq)
     } finally {
       await ctx.fiber.dispose()

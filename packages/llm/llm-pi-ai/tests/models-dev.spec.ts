@@ -6,7 +6,6 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
-import FileSettingsProvider from '@deepseek-ai/dsh-settings-file'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import { fetchModelsDevDocument, MODELS_DEV_API_URL, parseModelsDevLiveModels, ZAI_REASONING_EFFORTS } from '../src/models-dev.ts'
 import { NVIDIA_LLM_API_REFERENCE_URL } from '../src/nvidia-models.ts'
@@ -27,13 +26,12 @@ afterEach(async () => {
 })
 
 /** A throwaway $DSH_HOME with an empty settings document, as the product mounts the plugin. */
-async function harness(config: LlmPiAi.Config): Promise<Context> {
+async function harness(config: LlmPiAi.Options): Promise<Context> {
   const dir = await mkdtemp(join(tmpdir(), 'dsh-pi-models-dev-'))
   homes.push(dir)
   await writeFile(join(dir, 'settings.yaml'), '')
   const ctx = new Context()
   await ctx.plugin(LlmRuntime)
-  await ctx.plugin(FileSettingsProvider, { path: join(dir, 'settings.yaml'), watch: false })
   await ctx.plugin(LlmPiAi, config)
   return ctx
 }
@@ -116,7 +114,7 @@ describe('models.dev live model mapping', () => {
 })
 
 describe('startup ZAI catalog refresh', () => {
-  const zaiConfig = (overrides: Record<string, unknown> = {}): LlmPiAi.Config => ({
+  const zaiConfig = (overrides: Record<string, unknown> = {}): LlmPiAi.Options => ({
     providers: { zai: { apiKeyEnv: 'PI_MODELS_DEV_TEST_KEY', baseURL: 'http://127.0.0.1:1/v1', ...overrides } },
   })
 
@@ -206,7 +204,6 @@ describe('periodic models.dev refresh', () => {
     let disposed = false
     try {
       await ctx.plugin(LlmRuntime)
-      await ctx.plugin(FileSettingsProvider, { path: join(dir, 'settings.yaml'), watch: false })
       await ctx.plugin(LlmPiAi, {
         modelsDevRefreshMs: 25,
         providers: { zai: { apiKeyEnv: 'PI_MODELS_DEV_TEST_KEY', baseURL: 'http://127.0.0.1:1/v1' } },

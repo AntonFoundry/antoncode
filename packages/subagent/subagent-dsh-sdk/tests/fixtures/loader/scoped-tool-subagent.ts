@@ -4,6 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
 import type { Config } from '@deepseek-ai/dsh-tool-subagent'
+import { createVolatile } from '@deepseek-ai/cosmokit'
 
 export const name = 'scoped-tool-subagent'
 export const inject = ['agents', 'subagentModelSelection']
@@ -18,6 +19,9 @@ export function apply(ctx: Context, config: Config): void {
     agent.ctx.inject(ToolSubagent.inject, (runtimeCtx) => {
       return ToolSubagent.apply(runtimeCtx, {
         provider: config.provider,
+        childModel: createVolatile<string | undefined>(undefined),
+        childModelBySession: createVolatile<Record<string, string>>({}),
+        childReasoningEffort: createVolatile<string | undefined>(undefined),
         modelSelection: true,
         modelDiscovery: true,
         ...(config.toolName === undefined ? {} : { toolName: config.toolName }),

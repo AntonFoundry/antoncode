@@ -1,6 +1,6 @@
 /** Page-store join: directory × namespaces × credentials, with last-good rows on failure. */
 import { describe, expect, it } from 'vitest'
-import type { RpcResponse } from '@deepseek-ai/dsh-api-remotes/client'
+import type { RpcResponse, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import { settingsSchema } from './settings-schema.client.ts'
@@ -106,7 +106,7 @@ const NAMESPACES = [
 function api(overrides: {
   accountAvailable?: boolean
   providers?: () => Promise<RpcResponse<{ providers: typeof DIRECTORY }>>
-  describeSettings?: () => Promise<RemoteAnswer<{ writable: boolean; hasDocument: boolean; namespaces: typeof NAMESPACES }>>
+  describeSettings?: () => Promise<RemoteAnswer<{ writable: boolean; hasDocument: boolean; namespaces: SettingsNamespaceView[] }>>
   describeCredentials?: (refs: readonly string[]) => Promise<RemoteAnswer<Record<string, unknown>>>
 } = {}) {
   const seenRefs: string[][] = []
@@ -209,14 +209,15 @@ describe('ModelsSettingsStore', () => {
   })
 
   it('derives per-provider catalog visibility from the model-catalog namespace', async () => {
-    const { face } = api({
-      describeSettings: () => Promise.resolve(ok({
+    const { ctx, mirror } = api({
+      describeSettings: () => Promise.resolve(remoteOk({
         writable: true,
         hasDocument: true,
         namespaces: [
           ...NAMESPACES,
           {
             ns: 'model-catalog',
+            autoGenerate: true,
             schema: {},
             value: { disabledProviders: ['openai'] },
             applies: 'live' as const,
@@ -226,7 +227,7 @@ describe('ModelsSettingsStore', () => {
         ],
       })),
     })
-    const store = new ModelsSettingsStore(face)
+    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
     await store.load()
     const byProvider = new Map(store.store.getSnapshot().rows.map(row => [row.entry.provider, row]))
     expect(byProvider.get('openai')?.enabled).toBe(false)

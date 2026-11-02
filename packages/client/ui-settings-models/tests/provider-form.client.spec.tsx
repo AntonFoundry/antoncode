@@ -1838,51 +1838,49 @@ function nativeFace(options: {
   config: { toJSON(): unknown }
   routes: readonly NativeRoute[]
   /** Profiles present in the user layer (and therefore the effective value). */
-  profiles: Record<string, unknown>
+  profiles: Record<string, JsonValue>
   /** References the managed credential store holds. */
   storedCredentials?: readonly string[]
 }) {
   const namespace: SettingsNamespaceView = {
     ns: options.ns,
-    schema: JSON.parse(JSON.stringify(options.config.toJSON())) as unknown,
+    schema: JSON.parse(JSON.stringify(options.config.toJSON())) as JsonValue,
     value: { providers: options.profiles },
     base: { providers: {} },
     user: { providers: options.profiles },
+    autoGenerate: true,
     applies: 'live',
     secrets: [],
     revision: 1,
   }
-  const mutate = vi.fn(() => Promise.resolve(ok(namespace)))
-  const set = vi.fn(() => Promise.resolve(ok({})))
-  const unset = vi.fn(() => Promise.resolve(ok({})))
+  const mutate = vi.fn(() => Promise.resolve(remoteOk(namespace)))
+  const set = vi.fn(() => Promise.resolve(remoteOk(undefined)))
+  const unset = vi.fn(() => Promise.resolve(remoteOk(undefined)))
   const face = {
     llm: {
-      providers: vi.fn(() => Promise.resolve(ok({
-        providers: options.routes.map(route => ({
-          provider: route.provider,
-          displayName: route.displayName,
-          settingsNs: options.ns,
-          settingsPath: ['providers', route.provider],
-          active: route.live,
-          ...route.authConfigured === undefined ? {} : { authConfigured: route.authConfigured },
-        })),
-      }))),
-      models: vi.fn(() => Promise.resolve(ok({ groups: [], failures: [] }))),
-      discoverModels: vi.fn(() => Promise.resolve(ok({ models: [] }))),
+      listProviders: vi.fn(() => Promise.resolve(remoteOk(options.routes.filter(route => route.live).map(route => ({
+        id: route.provider, name: route.displayName,
+      }))))),
+      listConfigurableProviders: vi.fn(() => Promise.resolve(remoteOk(options.routes.map(route => ({
+        provider: route.provider,
+        displayName: route.displayName,
+        settingsNs: options.ns,
+        settingsPath: ['providers', route.provider],
+        ...route.authConfigured === undefined ? {} : { authConfigured: route.authConfigured },
+      }))))),
+      discoverModels: vi.fn(() => Promise.resolve(remoteOk([]))),
     },
     settings: {
-      describe: vi.fn(() => Promise.resolve(ok({ writable: true, namespaces: [namespace] }))),
-      update: vi.fn(),
-      replace: vi.fn(),
+      describe: vi.fn(() => Promise.resolve(remoteOk({ writable: true, hasDocument: true, namespaces: [namespace] }))),
       mutate,
     },
     credentials: {
-      describe: vi.fn((payload: { refs: string[] }) => Promise.resolve(ok({
-        credentials: Object.fromEntries(payload.refs.map(ref => [
+      describe: vi.fn((refs: string[]) => Promise.resolve(remoteOk(
+        Object.fromEntries(refs.map(ref => [
           ref,
           { configured: options.storedCredentials?.includes(ref) ?? false, writable: true },
         ])),
-      }))),
+      ))),
       set,
       unset,
     },
@@ -1892,13 +1890,16 @@ function nativeFace(options: {
 
 async function mountNative(options: Parameters<typeof nativeFace>[0]) {
   const scripted = nativeFace(options)
-  const controller = new ModelsSettingsStore(scripted.face as unknown as WireFace)
+  const ctx = ctxWith(scripted.face)
+  const controller = new ModelsSettingsStore(ctx, settingsSchema, new SettingsDescribeMirror(ctx))
   await controller.load()
-  const injected: ModelsSectionInjected = {
+  const injected: ModelsSectionProps = {
     controller,
     useSnapshot: bindSnapshotSelector(controller.store),
-    api: scripted.face as never,
+    operations: operationsWith(scripted.face),
+    schema: settingsSchema,
     t,
+    renderSlot: () => null,
   }
   render(<ModelsSection {...injected} />)
   return { ...scripted, controller }
@@ -1940,7 +1941,7 @@ describe('built-in path-addressed provider families', () => {
     fireEvent.click(screen.getByText(en.apply))
 
     await waitFor(() => { expect(set).toHaveBeenCalled() })
-    expect(set).toHaveBeenCalledWith({ ref: 'OPENAI_API_KEY', value: 'sk-openai-e2e' })
+    expect(set).toHaveBeenCalledWith('OPENAI_API_KEY', 'sk-openai-e2e')
     expect(firstMutate(mutate)).toMatchObject({
       ns: 'llm-openai',
       ops: [{ op: 'set', path: ['providers', 'openai', 'apiKeyEnv'], value: 'OPENAI_API_KEY' }],
@@ -1961,7 +1962,7 @@ describe('built-in path-addressed provider families', () => {
 
     await waitFor(() => { expect(mutate).toHaveBeenCalled() })
     // Credential removal lands first so a second-step failure stays retryable.
-    expect(unset).toHaveBeenCalledWith({ ref: 'OPENAI_API_KEY' })
+    expect(unset).toHaveBeenCalledWith('OPENAI_API_KEY')
     expect(firstMutate(mutate)).toMatchObject({
       ns: 'llm-openai',
       ops: [{ op: 'unset', path: ['providers', 'openai'] }],
@@ -2039,51 +2040,47 @@ const OPEN_GATEWAY_DEFAULTS = {
 /** A scripted wire face standing in for the OpenGateway route. */
 function gatewayFace(options: {
   /** The user layer; its presence is what the card edits. */
-  user?: Record<string, unknown>
+  user?: Record<string, JsonValue>
   storedCredentials?: readonly string[]
 } = {}) {
   const user = options.user ?? {}
   const namespace: SettingsNamespaceView = {
     ns: 'llm-opengateway',
-    schema: JSON.parse(JSON.stringify(OpenGatewayConfig.toJSON())) as unknown,
+    schema: JSON.parse(JSON.stringify(OpenGatewayConfig.toJSON())) as JsonValue,
     value: { ...OPEN_GATEWAY_DEFAULTS, ...user },
     base: {},
     user,
+    autoGenerate: true,
     applies: 'live',
     secrets: [],
     revision: 1,
   }
-  const mutate = vi.fn(() => Promise.resolve(ok(JSON.parse(JSON.stringify(namespace)) as SettingsNamespaceView)))
-  const set = vi.fn(() => Promise.resolve(ok({})))
+  const mutate = vi.fn(() => Promise.resolve(remoteOk(JSON.parse(JSON.stringify(namespace)) as SettingsNamespaceView)))
+  const set = vi.fn(() => Promise.resolve(remoteOk(undefined)))
   const face = {
     llm: {
-      providers: vi.fn(() => Promise.resolve(ok({
-        providers: [{
-          provider: 'opengateway',
-          displayName: 'OpenGateway',
-          settingsNs: 'llm-opengateway',
-          settingsPath: [],
-          active: true,
-        }],
-      }))),
-      models: vi.fn(() => Promise.resolve(ok({ groups: [], failures: [] }))),
-      discoverModels: vi.fn(() => Promise.resolve(ok({ models: [] }))),
+      listProviders: vi.fn(() => Promise.resolve(remoteOk([{ id: 'opengateway', name: 'OpenGateway' }]))),
+      listConfigurableProviders: vi.fn(() => Promise.resolve(remoteOk([{
+        provider: 'opengateway',
+        displayName: 'OpenGateway',
+        settingsNs: 'llm-opengateway',
+        settingsPath: [],
+      }]))),
+      discoverModels: vi.fn(() => Promise.resolve(remoteOk([]))),
     },
     settings: {
-      describe: vi.fn(() => Promise.resolve(ok({ writable: true, namespaces: [namespace] }))),
-      update: vi.fn(),
-      replace: vi.fn(),
+      describe: vi.fn(() => Promise.resolve(remoteOk({ writable: true, hasDocument: true, namespaces: [namespace] }))),
       mutate,
     },
     credentials: {
-      describe: vi.fn((payload: { refs: string[] }) => Promise.resolve(ok({
-        credentials: Object.fromEntries(payload.refs.map(ref => [
+      describe: vi.fn((refs: string[]) => Promise.resolve(remoteOk(
+        Object.fromEntries(refs.map(ref => [
           ref,
           { configured: options.storedCredentials?.includes(ref) ?? false, writable: true },
         ])),
-      }))),
+      ))),
       set,
-      unset: vi.fn(),
+      unset: vi.fn(() => Promise.resolve(remoteOk(undefined))),
     },
   }
   return { face, mutate, set, namespace }
@@ -2091,13 +2088,16 @@ function gatewayFace(options: {
 
 async function mountGateway(options: Parameters<typeof gatewayFace>[0] = {}) {
   const scripted = gatewayFace(options)
-  const controller = new ModelsSettingsStore(scripted.face as unknown as WireFace)
+  const ctx = ctxWith(scripted.face)
+  const controller = new ModelsSettingsStore(ctx, settingsSchema, new SettingsDescribeMirror(ctx))
   await controller.load()
-  const injected: ModelsSectionInjected = {
+  const injected: ModelsSectionProps = {
     controller,
     useSnapshot: bindSnapshotSelector(controller.store),
-    api: scripted.face as never,
+    operations: operationsWith(scripted.face),
+    schema: settingsSchema,
     t,
+    renderSlot: () => null,
   }
   render(<ModelsSection {...injected} />)
   return { ...scripted, controller }
@@ -2117,7 +2117,7 @@ describe('the OpenGateway route card', () => {
     fireEvent.click(screen.getByText(en.apply))
 
     await waitFor(() => { expect(set).toHaveBeenCalled() })
-    expect(set).toHaveBeenCalledWith({ ref: 'OPENGATEWAY_API_KEY', value: 'gw-key-e2e' })
+    expect(set).toHaveBeenCalledWith('OPENGATEWAY_API_KEY', 'gw-key-e2e')
     // The section default already names the reference, so the key alone
     // leaves `settings.yaml` untouched.
     expect(mutate).not.toHaveBeenCalled()
@@ -2149,6 +2149,6 @@ describe('the OpenGateway route card', () => {
     fireEvent.click(screen.getByText(en.apply))
 
     await waitFor(() => { expect(set).toHaveBeenCalled() })
-    expect(set).toHaveBeenCalledWith({ ref: 'MY_GATEWAY_KEY', value: 'rotated' })
+    expect(set).toHaveBeenCalledWith('MY_GATEWAY_KEY', 'rotated')
   })
 })

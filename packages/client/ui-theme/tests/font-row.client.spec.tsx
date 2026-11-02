@@ -4,12 +4,19 @@
  * the range edges. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { createSnapshotStore, type SessionListState, type WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
+import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { allowAllAccess, bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { FontRow } from '../src/client/FontRow.tsx'
 import type { FontRowComponentProps } from '../src/client/FontRow.tsx'
 import { DEFAULT_SELECTION } from '../src/client/font-runtime.ts'
 import { createFontRowStore } from '../src/client/font-store.ts'
+
+const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined, reload: () => {} })) as GlobalStandardProps['useResource']
+const usePanelInfo: GlobalStandardProps['usePanelInfo'] = selector => selector({ activePanelId: null })
+const useSessionStatus: GlobalStandardProps['useSessionStatus'] = selector => selector(new Map())
 
 afterEach(cleanup)
 
@@ -27,13 +34,13 @@ const COPY: Record<string, string> = {
 
 function emptySessions() {
   const store = createSnapshotStore<SessionListState>(
-    { ids: [], byId: {}, current: undefined, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined })
+    { ids: [], byId: {}, phase: 'ready', projectionsBySession: {} })
   return bindSnapshotSelector(store)
 }
 function emptyWorkspaces() {
-  const store = createSnapshotStore<WorkspaceListState>({
-    items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
-    baselinesReady: true, recentWorkspaceId: undefined,
+  const store = createSnapshotStore<WorkspaceSnapshot>({
+    items: [], worktrees: { byRepo: {}, prefs: {}, namesByWorkspaceId: {} },
+    archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
   })
   return bindSnapshotSelector(store)
 }
@@ -51,6 +58,8 @@ function mount(selection: Partial<typeof DEFAULT_SELECTION> = {}, uiFonts: reado
   }
   const props: FontRowComponentProps = {
     useSessions: emptySessions(),
+    useSessionStatus, usePanelInfo, useSessionRetainInfo: () => undefined, useResource,
+    ...allowAllAccess,
     useWorkspaces: emptyWorkspaces(),
     useStore: bindSnapshotSelector(store),
     actions: store.actions,

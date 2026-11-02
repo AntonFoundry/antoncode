@@ -5,7 +5,6 @@
 // contracts are covered by segmenter-adjacent specs and mask.spec.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CameraEngine, type EngineFrame } from '../src/client/engine.js'
-import { MaskStabilizer } from '../src/client/mask.js'
 
 vi.mock('../src/client/segmenter.js', () => ({
   createSegmenter: vi.fn(async () => ({
@@ -23,14 +22,15 @@ vi.mock('../src/client/segmenter.js', () => ({
   })),
 }))
 
+const pushedFrames = vi.hoisted(() => [] as Float32Array[])
+
 vi.mock('../src/client/mask.js', async importOriginal => ({
   ...(await importOriginal<object>()),
   MaskStabilizer: class {
     canvas = { width: 256, height: 256 }
     /** Records the plane the engine fed — the person plane, not background. */
-    static pushed: Float32Array[] = []
     push(frame: Uint8ClampedArray<ArrayBuffer>): void {
-      MaskStabilizer.pushed.push(new Float32Array([frame[0]! / 255]))
+      pushedFrames.push(new Float32Array([frame[0]! / 255]))
     }
     reset(): void {}
   },
@@ -165,7 +165,7 @@ describe('CameraEngine', () => {
     expect(segmented[0]!.delegate).toBe('CPU')
     // The stabilizer is fed the person plane (the single plane, 0.8) —
     // 0.8 → alpha 204 — proving the engine consumes the one real plane.
-    const pushed = MaskStabilizer.pushed.at(-1)
+    const pushed = pushedFrames.at(-1)
     expect(pushed?.[0]).toBeCloseTo(204 / 255)
     releaseSeg()
     lease.release()

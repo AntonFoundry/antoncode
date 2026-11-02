@@ -20,11 +20,13 @@ import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import { loadStoredSession } from '../../subagent/tests/persistence-helpers.ts'
 import * as mock from './scripted-provider.ts'
-import type { Config as toolConfig } from '../src/index.ts'
+
 import * as tool from '../src/index.ts'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
   callSubagent,
+  directConfig,
+  type RawToolConfig,
   disposeSetupProvider,
   ownContext,
   modelSelectionSetupAgent,
@@ -373,12 +375,12 @@ describe('dsh-tool-subagent', () => {
       },
     })
     // Direct apply with only `provider` — no toolName, no agentOptions.
-    await tool.apply(ctx, { maxDepth: 'provider-managed', provider: 'bare' })
+    await tool.apply(ctx, directConfig({ maxDepth: 'provider-managed', provider: 'bare' }))
     await new Promise(r => setTimeout(r, 10))
 
     expect(ctx.tools.schemas().some(s => s.name === 'subagent')).toBe(true)
     await callSubagent(ctx, { description: 'd', prompt: 'p' })
-    expect(seen?.agentOptions).toEqual({ model: 'auto' })
+    expect(seen?.agentOptions).toBeUndefined()
   })
 
   it('fails loud when invoked without a calling agent', async () => {
@@ -395,7 +397,7 @@ describe('dsh-tool-subagent', () => {
     // Tool first: no provider yet — the tool must be absent, not broken.
     // Direct apply (schema bypass): also covers the waiting-note's default
     // toolName fallback, which validated config pre-fills.
-    await tool.apply(ctx, { provider: 'mock' })
+    await tool.apply(ctx, directConfig({ provider: 'mock' }))
     expect(ctx.tools.schemas().some(s => s.name === 'subagent')).toBe(false)
     // Backend arrives (as a delayed sibling fiber would): the tool appears.
     await mock.mountScriptedProvider(ctx, { name: 'mock', reply: 'late but fine' })
@@ -408,10 +410,10 @@ describe('dsh-tool-subagent', () => {
     const ctx = await projectedContext()
     await mountWorkingDirectoryFixture(ctx)
     await ctx.plugin(SubagentRuntime)
-    await tool.apply(ctx, {
+    await tool.apply(ctx, directConfig({
       provider: 'later-continuable',
       maxDepth: 'provider-managed',
-    })
+    }))
 
     const assembly = await ctx.systemPrompt.assemble()
     expect(assembly.sections.find(section => section.name === 'tool:subagent')?.text).toBe('')
@@ -667,10 +669,10 @@ describe('dsh-tool-subagent', () => {
 
   it('validates maxDepth during initialization without Schemastery', async () => {
     const ctx = await projectedContext()
-    await expect(tool.apply(ctx, {
+    await expect(tool.apply(ctx, directConfig({
       provider: 'unused',
       maxDepth: Number.NaN,
-    })).rejects.toThrow('subagent maxDepth must be a non-negative safe integer')
+    }))).rejects.toThrow('subagent maxDepth must be a non-negative safe integer')
   })
 
   it.each([
@@ -707,7 +709,7 @@ describe('dsh-tool-subagent', () => {
     await ctx.plugin(tool, { provider: 'capture4', maxDepth: 'provider-managed' })
     await callSubagent(ctx, { description: 'd', prompt: 'p' })
     expect(seen).toBeDefined()
-    expect(seen).toHaveProperty('agentOptions', { model: 'auto' })
+    expect(seen?.agentOptions).toBeUndefined()
   })
 
 })
@@ -822,11 +824,11 @@ describe('dsh-tool-subagent local activation', () => {
         return {}
       },
     })
-    await tool.apply(ctx, {
+    await tool.apply(ctx, directConfig({
       provider: 'gated',
       toolName: 'subagent_gated',
       maxDepth: 3,
-    })
+    }))
 
     const execute = (callId: string, description: string, signal: AbortSignal) => executeToolFixture(ctx, {
       signal,
@@ -866,7 +868,7 @@ describe('dsh-tool-subagent local activation', () => {
 
 describe('depth budget configuration', () => {
   /** Mount the tool over a request-capturing provider with full capabilities. */
-  async function captureSetup(config: Omit<toolConfig, 'provider'> = {}) {
+  async function captureSetup(config: Omit<RawToolConfig, 'provider'> = {}) {
     const requests: SubagentStartRequest[] = []
     const ctx = await projectedContext()
     await mountWorkingDirectoryFixture(ctx)

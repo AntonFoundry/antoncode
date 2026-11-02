@@ -93,7 +93,7 @@ function mount({
   })
   const renderSlot = vi.fn(
     ((key: string, _owner: unknown, opts?: { only?: string; fallback?: import('react').ReactNode }) =>
-      SEAT_CONTENT[key] ?? opts?.fallback) as SettingsRootComponentProps['renderSlot'],
+      SEAT_CONTENT[key] ?? opts?.fallback),
   )
   const activeId = SessionId('active-session')
   const sessions: SessionListState = {
@@ -144,7 +144,7 @@ function mount({
     },
     openWindow,
     openSection,
-    renderSlot,
+    renderSlot: (key, owner, opts) => opts === undefined ? renderSlot(key, owner) : renderSlot(key, owner, opts),
   }
   const view = render(<SettingsRoot {...props} />)
   const setConnectionState = (next: typeof currentConnectionState) => {
@@ -355,7 +355,7 @@ describe('SettingsWindow body', () => {
     let currentActive = { activeId }
     const listeners = new Set<() => void>()
     const renderSlot = vi.fn(
-      ((key: string, owner: unknown, opts?: { only?: string }) => {
+      ((key: string, _owner: unknown, opts?: { only?: string }) => {
         if (key === 'settings.section') return <div data-testid={`section-${opts?.only ?? 'all'}`} />
         return SEAT_CONTENT[key] ?? null
       }) as SettingsWindowComponentProps['renderSlot'],
@@ -484,7 +484,7 @@ describe('SettingsWindow body', () => {
 it('explicitly reopens one onboarding editor during an existing session', () => {
   const { renderSlot } = mount({ onboardingActive: false })
   const launcher = renderSlot.mock.calls.find(call => call[0] === 'settings.launcher')
-  act(() => { (launcher?.[1] as { openOnboarding: (id: string) => void }).openOnboarding('credential') })
+  act(() => { if (typeof launcher?.[1] === 'object' && launcher[1] !== null && 'openOnboarding' in launcher[1] && typeof launcher[1].openOnboarding === 'function') launcher[1].openOnboarding('credential') })
   const call = renderSlot.mock.calls.filter(call => call[0] === 'settings.onboarding').at(-1)
   expect(call?.[1]).toMatchObject({ stepId: 'credential', explicit: true })
   act(() => { (call?.[1] as { complete: () => void }).complete() })
@@ -496,7 +496,7 @@ it('opens the settings window from the contributed sidebar launcher and mirrors 
   const { renderSlot, openWindow } = mount()
   const launcher = renderSlot.mock.calls.find(call => call[0] === 'settings.launcher')!
   expect(launcher[1]).toMatchObject({ settingsOpen: false })
-  act(() => { (launcher[1] as { openSettings: () => void }).openSettings() })
+  act(() => { if (typeof launcher[1] === 'object' && launcher[1] !== null && 'openSettings' in launcher[1] && typeof launcher[1].openSettings === 'function') launcher[1].openSettings() })
   expect(openWindow).toHaveBeenCalledOnce()
   expect(renderSlot.mock.calls.filter(call => call[0] === 'settings.launcher').at(-1)?.[1]).toMatchObject({ settingsOpen: true })
 })

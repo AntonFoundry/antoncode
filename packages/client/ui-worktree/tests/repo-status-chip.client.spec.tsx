@@ -50,7 +50,7 @@ const worktreeRecord = {
 function workspacesState(byRepo: WorkspaceSnapshot['worktrees']['byRepo']): WorkspaceSnapshot {
   return {
     items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
-    baselinesReady: true, recentWorkspaceId: undefined,
+    pinnedSessionIds: [],
     worktrees: { byRepo, prefs: {}, namesByWorkspaceId: {} },
   }
 }
@@ -65,14 +65,14 @@ function props(over: {
     useSessions: hook(sessionsState(over.summary ?? { cwd: '/repo' })),
     useWorkspaces: hook(workspacesState(over.byRepo ?? {})),
     status: over.status ?? (async path => ({
-      path, branch: 'agent/slug', head: 'abc1234', dirty: false, stashCount: 1, ahead: 0, behind: 0,
+      path, branch: 'agent/slug', head: 'abc1234', dirty: false, stashCount: 1, ahead: 0, behind: 0, bases: [],
     })),
     t,
   } as unknown as ChipProps
 }
 
 const status = (over: Partial<WorktreeStatus> = {}): WorktreeStatus => ({
-  path: '/repo', branch: 'agent/slug', head: 'abc1234', dirty: false, stashCount: 0, ahead: 0, behind: 0,
+  path: '/repo', branch: 'agent/slug', head: 'abc1234', dirty: false, stashCount: 0, ahead: 0, behind: 0, bases: [],
   ...over,
 })
 

@@ -20,7 +20,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as tool from '../src/index.ts'
 import { SubagentPresetSelection } from '../src/preset-selection.ts'
 import { mountScriptedProvider, type Config as ProviderConfig } from './scripted-provider.ts'
-import { callSubagent, text } from './harness.ts'
+import { callSubagent, directConfig, text, type RawToolConfig } from './harness.ts'
 
 const contexts: Context[] = []
 const roots: string[] = []
@@ -39,7 +39,7 @@ async function mountSpawn(ctx: Context, providerName: string): Promise<void> {
   await ctx.plugin(SubagentSpawn, { providerName })
 }
 
-async function setup(config: Omit<tool.Config, 'provider'>, providerConfig: Partial<ProviderConfig> = {}) {
+async function setup(config: Omit<RawToolConfig, 'provider'>, providerConfig: Partial<ProviderConfig> = {}) {
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(Loader)
@@ -141,7 +141,7 @@ describe('spawn preset selection', () => {
   it('requires the preset service when selection is configured', async () => {
     const ctx = new Context()
     contexts.push(ctx)
-    await expect(tool.apply(ctx, { provider: 'spawn', agentPreset: 'writer' })).rejects.toThrow(/requires the agent-presets service/)
+    await expect(tool.apply(ctx, directConfig({ provider: 'spawn', agentPreset: 'writer' }))).rejects.toThrow(/requires the agent-presets service/)
   })
 
   it.each([

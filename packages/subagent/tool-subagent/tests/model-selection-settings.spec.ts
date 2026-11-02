@@ -22,7 +22,7 @@ import {
   subagentModelSelectionPolicy,
   subagentModelSelectionProjectionDefinition,
 } from '../src/model-selection-state.ts'
-import { callSubagent, ownContext, text } from './harness.ts'
+import { callSubagent, directConfig, ownContext, text } from './harness.ts'
 
 const ALLOWED_MODELS = [{ provider: 'alpha', model: 'fast-model' }]
 
@@ -187,11 +187,11 @@ describe('SubagentModelSelectionConfig', () => {
       setup: async (agentCtx, agent) => {
         prepared = agent
         const fiber = agentCtx.inject(tool.inject, (runtimeCtx) => {
-          return tool.apply(runtimeCtx, {
+          return tool.apply(runtimeCtx, directConfig({
             provider: 'spawn',
             modelSelection: true,
             modelDiscovery: true,
-          })
+          }))
         })
         await fiber.await()
       },

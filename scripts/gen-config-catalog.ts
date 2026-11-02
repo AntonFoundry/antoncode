@@ -12,22 +12,11 @@ import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import ts from 'typescript'
 import { LINK_MAP } from './gen-cordis-catalog.ts'
 import { parseJsDoc, pointer, rawJsDoc } from './jsdoc.ts'
-import { rewriteTranslationLinkLocales } from './translation-links.ts'
-import {
-  computeTranslationPairingRecord,
-  renderTranslationPairingRecord,
-  translationPairPaths,
-} from './translation-pairing-record.ts'
-import {
-  languageSwitcherTargets,
-  parseTranslationPairingManifest,
-  renderGeneratedRegion,
-  translationPairSourcePredicate,
-} from './translation-pairing.ts'
+import { renderGeneratedRegion } from './generated-regions.ts'
 import { githubSlug } from './verify-md-links.ts'
 
 const root = resolve(import.meta.dirname, '..')
-const PATHS = translationPairPaths('docs/config-catalog.md')
+const SOURCE = 'docs/config-catalog.md'
 
 /** The fenced-block info string for pasted config declarations (skipped by
  * doc-typecheck, since a lone declaration referencing imports is not
@@ -1048,28 +1037,12 @@ export function render(entries: CatalogEntry[], locale: Locale = 'en'): string {
  * @param scanRoot - Repository root used to resolve paired-document links.
  * @returns Repository-relative output paths and exact generated content.
  */
-export function computeConfigCatalogOutputs(scanRoot: string = root): ReadonlyMap<string, string> {
+export function computeConfigCatalogOutputs(): ReadonlyMap<string, string> {
   const entries = collectConfigCatalog()
-  const context = {
-    repoRoot: scanRoot,
-    isTranslationPairSource: translationPairSourcePredicate(parseTranslationPairingManifest(
-      readFileSync(resolve(scanRoot, 'scripts/translation-pairing.manifest.json'), 'utf8'),
-    )),
-  }
-  const en = render(entries, 'en')
-  const zh = rewriteTranslationLinkLocales(
-    render(entries, 'zh'),
-    { ...context, sourcePath: PATHS.zh },
-    languageSwitcherTargets(PATHS.source),
-  ).content
-  return new Map([
-    [PATHS.source, en],
-    [PATHS.zh, zh],
-    [PATHS.meta, renderTranslationPairingRecord(PATHS, computeTranslationPairingRecord(PATHS, en, zh, context))],
-  ])
+  return new Map([[SOURCE, render(entries, 'en')]])
 }
 
-/** CLI entry: default writes the catalog pair and record, `--check` fails if any
+/** CLI entry: default writes the English catalog, `--check` fails if any
  * committed copy is stale. Guarded behind an entry-point check so importing this
  * module for tests neither regenerates the committed files nor calls process.exit. */
 function main(): void {

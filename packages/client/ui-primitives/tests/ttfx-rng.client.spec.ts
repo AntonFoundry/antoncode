@@ -28,7 +28,7 @@ describe('ttfx RNG compatibility', () => {
     expect(() => rng.choice([])).toThrow(RangeError)
 
     let seed = 0
-    let accepted: number
+    let accepted = -1
     for (; seed < 1000; seed += 1) {
       const probe = new Rng(seed)
       const first = probe.randbelow(RANDbelow_MAX)

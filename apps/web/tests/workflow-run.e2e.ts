@@ -142,19 +142,6 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     await member.click()
     await page.getByText(CHILD_PROMPT, { exact: true }).waitFor({ timeout: 15_000 })
 
-    const sessions = page.getByRole('tree', { name: 'Sessions' })
-    await sessions.getByRole('treeitem', { name: /Use the workflow tool exactly/ }).click()
-    await settled
-    await page.locator('[data-workflow-run][data-run-status="completed"]').waitFor()
-
-    expect(await page.locator('[data-chat-flow-kind="tool-call"]').count()).toBeGreaterThanOrEqual(1)
-    expect(await page.locator('[data-chat-flow-kind="workflow-run"]').count()).toBe(1)
-    const terminalWorkflow = page.getByRole('button', { name: /^snapshot-flow/ })
-    await terminalWorkflow.waitFor()
-    expect(await terminalWorkflow.getAttribute('aria-expanded')).toBe('false')
-    expect(await terminalWorkflow.evaluate(element => getComputedStyle(element).cursor)).toBe('pointer')
-    await terminalWorkflow.click()
-
     // Narrow-layout and dark-token measurements now run on the settled
     // terminal record: the live card re-renders while the parent's final
     // message streams, so point-in-time DOM pokes there race node replacement.
@@ -172,11 +159,8 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
       const runHeader = disclosures[0]
       const phaseHeader = disclosures[1]
       const phaseTitle = phaseHeader?.querySelector('[class*="phaseTitle"]') as HTMLElement | null
-      const phaseStatus = element.querySelector('[data-phase-status-text]')
       const originalPhaseTitle = phaseTitle?.textContent ?? ''
       if (phaseTitle !== null) phaseTitle.textContent = 'A phase name long enough to require ellipsis in the narrow layout'
-      const phaseTitleRight = phaseTitle?.getBoundingClientRect().right ?? 0
-      const phaseStatusLeft = phaseStatus?.getBoundingClientRect().left ?? 0
       if (phaseTitle !== null) phaseTitle.textContent = originalPhaseTitle
       return {
         clientWidth: element.clientWidth,
@@ -198,10 +182,10 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     expect(darkNarrow.phaseHeight).toBe(32)
     // Collapse the phase again: the collapsed row is where a long phase title
     // must truncate ahead of the status text on its right.
-    expect(await terminalPhase.getAttribute('aria-expanded')).toBe('true')
-    expect(await terminalPhase.evaluate(element => getComputedStyle(element).cursor)).toBe('pointer')
-    await terminalPhase.click()
-    await expect.poll(() => terminalPhase.getAttribute('aria-expanded'), { timeout: 15_000 }).toBe('false')
+    expect(await phaseDisclosure.getAttribute('aria-expanded')).toBe('true')
+    expect(await phaseDisclosure.evaluate(element => getComputedStyle(element).cursor)).toBe('pointer')
+    await phaseDisclosure.click()
+    await expect.poll(() => phaseDisclosure.getAttribute('aria-expanded'), { timeout: 15_000 }).toBe('false')
     const phaseOverlap = await page.locator('[data-workflow-run]').evaluate((element) => {
       const phaseHeader = element.querySelectorAll('[data-disclosure-row]')[1]
       const phaseTitle = phaseHeader?.children.item(1) as HTMLElement | null

@@ -60,7 +60,7 @@ describe('MermaidDiagram', () => {
   })
 
   it('renders the ready diagram with a copy-image control and writes the PNG to the clipboard', async () => {
-    const write = vi.fn(async () => undefined)
+    const write = vi.fn(async (_items: Array<{ types: string[] }>) => undefined)
     vi.stubGlobal('navigator', { ...navigator, clipboard: { write } })
     // jsdom has neither ClipboardItem nor a blob-url store.
     vi.stubGlobal('ClipboardItem', class {
@@ -95,8 +95,8 @@ describe('MermaidDiagram', () => {
     const button = screen.getByRole('button', { name: 'Copy image' })
     fireEvent.click(button)
     await waitFor(() => { expect(write).toHaveBeenCalled() })
-    const [items] = write.mock.calls[0] as [Array<{ types: string[] }>]
-    expect(items[0]!.types).toContain('image/png')
+    const items = write.mock.calls[0]?.[0]
+    expect(items?.[0]?.types).toContain('image/png')
   })
 
   it('downloads the PNG when the clipboard refuses', async () => {

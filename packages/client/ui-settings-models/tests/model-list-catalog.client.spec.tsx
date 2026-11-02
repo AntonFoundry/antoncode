@@ -13,6 +13,7 @@ function operations(discoverModels: ModelsOperations['discoverModels']): ModelsO
     discoverModels,
     storeCredential: vi.fn(),
     removeCredential: vi.fn(),
+    describeCredential: vi.fn(async () => ({ kind: 'described' as const, configured: false })),
     writeSettings: vi.fn(),
   }
 }
