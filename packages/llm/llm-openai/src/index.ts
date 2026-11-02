@@ -30,6 +30,7 @@ import { assertUsableApiKey, LlmError, resolveRetryPolicy, RetryPolicySchema } f
 import type { RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { launchEnvironmentOf, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
+import type {} from '@deepseek-ai/dsh-settings'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { getOrCreateAnonymousUserId, type AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import {
@@ -70,11 +71,11 @@ const DISPLAY_NAMES: Readonly<Record<string, string>> = {
  * The provider routes this plugin declares in the configurable-provider
  * directory. The declaration is static so a dormant route keeps its settings
  * address and stays offered by configuration surfaces; profiles under these
- * keys (or any other) make routes live. The official `openai` route is not
- * declared: upstream's pi-ai adapter owns it, and the directory admits one
- * declaration per provider.
+ * keys (or any other) make routes live. The shipped composition reserves
+ * `openai` in pi-ai so this adapter owns the official route.
  */
 const DECLARED: readonly { provider: string; displayName: string }[] = [
+  { provider: 'openai', displayName: 'OpenAI' },
   { provider: 'openai-compatible', displayName: COMPATIBLE_DISPLAY_NAME },
 ]
 
@@ -332,6 +333,7 @@ export function assertServiceable(config: Config): void {
 }
 
 export function apply(ctx: Context, config: Config): void {
+  ctx.inject(['settings'], (child) => { child.effect(() => child.settings.configure({ auto: false, editableConfig: true }, ctx.fiber)) })
   // Settings are Config-derived now: an edit reloads the entry and re-applies
   // the plugin, so resolution is per-route for one application with no live
   // snapshot to invalidate.

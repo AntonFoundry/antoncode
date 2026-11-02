@@ -233,6 +233,7 @@ export const VIEWER_ENDPOINT_CLASSES = {
   'pluginInventory/configure': 'owner-only', // owner plugin inventory configuration
   'pluginInventory/list': 'owner-only', // owner plugin inventory
   'pluginInventory/toggle': 'owner-only', // owner plugin inventory activation
+  'pluginInventory/togglePreset': 'owner-only', // owner session preset activation
   'commands/execute': 'owner-only', // owner executes a slash command
   'permissionPresets/catalog': 'owner-only', // owner permission presets
   'userQuestions/answer': 'owner-only', // owner answers a pending question

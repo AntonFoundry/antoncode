@@ -822,6 +822,7 @@ describe('ModelsSection', () => {
   })
 
   it('uses branded names for catalog providers whose route ids are lowercase', async () => {
+    expect(providerDisplayName('anthropic', 'anthropic')).toBe('Anthropic Claude')
     expect(providerDisplayName('kimi-coding', 'kimi-coding')).toBe('Kimi Coding')
     expect(providerDisplayName('nvidia', 'nvidia')).toBe('NVIDIA')
     expect(providerDisplayName('qwen-token-plan', 'qwen-token-plan')).toBe('Qwen Token Plan')
@@ -1947,7 +1948,7 @@ describe('ModelsSection', () => {
       await mirror.load()
       await controller.load()
     })
-    expect(screen.getByRole('button', { name: providerCopy(en.editProvider, { provider: 'anthropic', displayName: 'anthropic' }) })).toBeTruthy()
+    expect(screen.getByRole('button', { name: providerCopy(en.editProvider, { provider: 'anthropic', displayName: 'Anthropic Claude' }) })).toBeTruthy()
     expect(screen.queryAllByLabelText(en.keyInput)).toHaveLength(0)
   })
 
@@ -2237,7 +2238,7 @@ describe('catalog visibility switch', () => {
     expect(alert.textContent).toBe(openaiCopy(en.toggleFailed))
     // The switch returns to usable once the failed write settles.
     await waitFor(() => {
-      expect((screen.getByRole('switch', { name: openaiCopy(en.enableProvider) }) as HTMLButtonElement).disabled)
+      expect(screen.getByRole<HTMLButtonElement>('switch', { name: openaiCopy(en.enableProvider) }).disabled)
         .toBe(false)
     })
   })
@@ -2250,7 +2251,7 @@ describe('catalog visibility switch', () => {
       namespaces: [...wireNamespaces(), MODEL_CATALOG_VIEW],
     })))
     await mountFace(scripted)
-    expect((screen.getByRole('switch', { name: deepSeekCopy(en.disableProvider) }) as HTMLButtonElement).disabled)
+    expect(screen.getByRole<HTMLButtonElement>('switch', { name: deepSeekCopy(en.disableProvider) }).disabled)
       .toBe(true)
   })
 })

@@ -187,7 +187,7 @@ describe('SubagentCard', () => {
 
   it('renders limits without model selection when only limits are served', () => {
     renderSubagent({}, { available: false })
-    expect(screen.getByLabelText(en.subagentMaxDepth)).toBeTruthy()
+    expect(screen.getByRole('slider', { name: en.subagentMaxDepth })).toBeTruthy()
     expect(screen.queryByRole('switch')).toBeNull()
   })
 
@@ -219,13 +219,13 @@ describe('SubagentCard', () => {
     expect(screen.getByText(en.subagentCapacityHelp)).toBeTruthy()
     fireEvent.click(depthHelp)
     expect(screen.queryByText(en.subagentDepthHelp)).toBeNull()
-    expect(screen.getByLabelText(en.subagentMaxDepth)).toHaveProperty('value', '2')
+    expect(screen.getByRole('textbox', { name: en.subagentMaxDepth })).toHaveProperty('value', '2')
     expect(screen.getByRole('button', { name: en.save })).toHaveProperty('disabled', false)
   })
 
   it('keeps validation visible when the rules are collapsed and links it to the input', () => {
     renderSubagent({ dirty: true, invalid: true, maxDepth: field('1.5', { invalid: true }) })
-    const depth = screen.getByLabelText(en.subagentMaxDepth)
+    const depth = screen.getByRole('textbox', { name: en.subagentMaxDepth })
     const messageId = depth.getAttribute('aria-describedby')!
     expect(document.getElementById(messageId)?.textContent).toBe(en.subagentDepthInvalid)
     expect(screen.queryByRole('region', { name: en.subagentDepthHelpLabel })).toBeNull()
@@ -237,13 +237,19 @@ describe('SubagentCard', () => {
       maxDepth: field('3', { overridden: true }),
       maxActiveSubagents: field('8', { overridden: true }),
     })
-    fireEvent.change(screen.getByLabelText(en.subagentMaxDepth), { target: { value: '2' } })
-    fireEvent.change(screen.getByLabelText(en.subagentMaxActive), { target: { value: '12' } })
+    fireEvent.change(screen.getByRole('slider', { name: en.subagentMaxDepth }), { target: { value: '2' } })
+    fireEvent.change(screen.getByRole('slider', { name: en.subagentMaxActive }), { target: { value: '12' } })
     expect(actions.editLimit.mock.calls).toEqual([['maxDepth', '2'], ['maxActiveSubagents', '12']])
     for (const button of screen.getAllByRole('button', { name: en.reset })) fireEvent.click(button)
     expect(actions.resetLimit.mock.calls).toEqual([['maxDepth'], ['maxActiveSubagents']])
     act(() => { limits.set({ ...limits.getSnapshot(), writable: false }) })
-    expect(screen.getByLabelText(en.subagentMaxActive)).toHaveProperty('disabled', true)
+    expect(screen.getByRole('slider', { name: en.subagentMaxActive })).toHaveProperty('disabled', true)
+  })
+
+  it('keeps a larger saved limit reachable on the slider', () => {
+    renderSubagent({ maxDepth: field('50'), maxActiveSubagents: field('64') })
+    expect(screen.getByRole('slider', { name: en.subagentMaxDepth })).toHaveProperty('max', '50')
+    expect(screen.getByRole('slider', { name: en.subagentMaxActive })).toHaveProperty('value', '64')
   })
 
   it('blocks saving both sections when a model selection is invalid or conflicted', () => {
@@ -259,7 +265,7 @@ describe('SubagentCard', () => {
       limits.set({ ...limits.getSnapshot(), saving: true })
       models.set({ ...models.getSnapshot(), saving: true })
     })
-    expect(screen.getByLabelText(en.subagentMaxDepth)).toHaveProperty('disabled', true)
+    expect(screen.getByRole('slider', { name: en.subagentMaxDepth })).toHaveProperty('disabled', true)
     expect(screen.getByRole('switch')).toHaveProperty('disabled', true)
     expect(screen.getByRole('button', { name: en.saving })).toHaveProperty('disabled', true)
     act(() => { limits.set({ ...limits.getSnapshot(), saving: false, dirty: false }) })
@@ -287,6 +293,6 @@ describe('SubagentCard', () => {
   it('renders model-only deployments without limit controls', () => {
     renderSubagent({ available: false })
     expect(screen.getByRole('switch')).toBeTruthy()
-    expect(screen.queryByLabelText(en.subagentMaxDepth)).toBeNull()
+    expect(screen.queryByRole('slider', { name: en.subagentMaxDepth })).toBeNull()
   })
 })

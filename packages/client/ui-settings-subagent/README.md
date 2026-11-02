@@ -25,7 +25,7 @@ Open **Settings → Subagents** to set how deep and how wide delegation may go, 
 <a id="use-this-package"></a>
 ## Use this package
 
-**Limits** holds **Maximum recursion depth** and **Subagent parallelism limit** side by side, stacking on narrow screens; the information button beside each label discloses its rule — a two-row depth example, and the count that capacity bounds — and a draft that is not a whole number in range blocks the save and says so under the field. Depth yields to a tool's own maximum; capacity counts every live subagent under one main agent across all levels, the main agent excluded.
+**Limits** holds **Maximum recursion depth** and **Subagent parallelism limit** side by side, stacking on narrow screens. Each has a number field for exact values and a slider for quick changes; both stage the same value until Save. The information button beside each label discloses its rule — a two-row depth example, and the count that capacity bounds — and a draft that is not a whole number in range blocks the save and says so under the field. Depth yields to a tool's own maximum; capacity counts every live subagent under one main agent across all levels, the main agent excluded.
 
 **Model selection** stages its permission switch and the exact adapter routes together. Enabling requires at least one selected route; disabling keeps the selected routes for later. Routes the Host stored but no adapter advertises stay listed under **Saved but currently unavailable** and remain removable; a provider that failed to load is reported without hiding the others, and a failed load offers **Retry**.
 

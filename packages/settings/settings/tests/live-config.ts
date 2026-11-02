@@ -42,8 +42,12 @@ export async function liveConfig(ctx: Context, plugin: Plugin, initial: object =
 
 /** Assert a plugin keeps its own fiber off the generated pages while Settings is mounted and withdraws on disposal.
  * @param mount Starts the plugin under test in the supplied context and returns its fiber.
+ * @param policy Expected presentation policy.
  */
-export async function omitsGeneratedPage(mount: (ctx: Context) => Fiber | Promise<Fiber>): Promise<void> {
+export async function omitsGeneratedPage(
+  mount: (ctx: Context) => Fiber | Promise<Fiber>,
+  policy: { auto: false; editableConfig?: true } = { auto: false },
+): Promise<void> {
   const ctx = new Context()
   const release = vi.fn()
   const configure = vi.fn(() => release)
@@ -51,8 +55,8 @@ export async function omitsGeneratedPage(mount: (ctx: Context) => Fiber | Promis
   const fiber = await mount(ctx)
   await ctx.fiber.await()
   expect(configure).toHaveBeenCalledOnce()
-  const [policy, owner] = configure.mock.calls[0] as unknown[]
-  expect(policy).toEqual({ auto: false })
+  const [actualPolicy, owner] = configure.mock.calls[0] as unknown[]
+  expect(actualPolicy).toEqual(policy)
   // Identity only: printing a Fiber walks Context proxies.
   expect(Object.is(owner, fiber)).toBe(true)
   await fiber.dispose()

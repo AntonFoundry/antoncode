@@ -12,6 +12,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-settings'
 // Type-only: merges the loader's `Fiber.entry`, which names this entry's
 // settings namespace.
 import type {} from '@deepseek-ai/cordis-plugin-loader'
@@ -196,6 +197,7 @@ export function assertServiceable(config: Config): void {
 }
 
 export function apply(ctx: Context, config: Config): void {
+  ctx.inject(['settings'], (child) => { child.effect(() => child.settings.configure({ auto: false, editableConfig: true }, ctx.fiber)) })
   // Settings are derived from this plugin's Config, so an edit reloads the
   // entry and re-applies the plugin. Resolution is therefore per-route and
   // cached for the lifetime of one application, with no live source to track.

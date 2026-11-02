@@ -94,6 +94,7 @@ export interface ProviderIdentity {
 }
 
 const PROVIDER_DISPLAY_NAMES: Readonly<Record<string, string>> = {
+  anthropic: 'Anthropic Claude',
   'kimi-coding': 'Kimi Coding',
   nvidia: 'NVIDIA',
   'qwen-token-plan': 'Qwen Token Plan',

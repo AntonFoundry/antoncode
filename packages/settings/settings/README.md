@@ -9,7 +9,7 @@ English
 
 ## Summary
 
-Edit fields that plugins declare with `.volatile()` and inspect their effective values. Forms identify each plugin by its profile entry id, preserve secret values, and refuse stale writes. Changes persist through the active profile’s Cordis patch.
+Edit fields that plugins declare with `.volatile()` and inspect their effective values. Plugins can also opt into editing their full Config through the profile editor. Forms identify each plugin by its profile entry id, preserve secret values, and refuse stale writes. Changes persist through the active profile’s Cordis patch.
 
 ## Table of Contents
 
@@ -30,13 +30,13 @@ Mount this plugin with Loader and [config-editor](../../boot/config-editor/READM
   name: '@deepseek-ai/dsh-settings'
 ```
 
-This plugin has no configuration fields. Forms expose only volatile fields from active, uniquely addressed profile entries. Ordinary configuration remains editable through Cordis configuration files.
+This plugin has no configuration fields. Forms expose volatile fields from active, uniquely addressed profile entries. A plugin may expose ordinary fields with `configure({ editableConfig: true }, ctx.fiber)`; those edits reload the entry through the profile editor. Other ordinary configuration remains editable through Cordis configuration files.
 
 Once the Loader has settled every entry after Settings starts, a `settings.yaml` left in the harness home by earlier releases is imported once: each section is written into the entry of the same id (`ui-developer-tools` → `ui-settings`, `ui-onboarding` → `ui-settings-general`, `shell` → the platform's shell executor entry), the file is renamed to `settings.yaml.imported` before the first write, and a section the running composition rejects is logged and stays only in the renamed file.
 
 Reset restores the value beneath the profile override, including schema defaults. Home patches and command-line overlays take precedence; a form write that they would override is refused.
 
-Each form reports `autoGenerate`, enabled by default, for clients that build pages from the schema; no shipped client does so yet. A plugin that ships its own page registers `configure({ auto: false }, ctx.fiber)` as an effect inside an optional `ctx.inject(['settings'], ...)` child from `apply`: the child names the plugin fiber the policy belongs to, a late-loading or replaced Settings service picks the policy up, and the business plugin runs without Settings. The policy does not remove configuration reads or writes.
+Each form reports `autoGenerate`, enabled by default, for clients that build pages from the schema; no shipped client does so yet. A plugin that ships its own page registers `configure({ auto: false }, ctx.fiber)` as an effect inside an optional `ctx.inject(['settings'], ...)` child from `apply`: the child names the plugin fiber the policy belongs to, a late-loading or replaced Settings service picks the policy up, and the business plugin runs without Settings. Plugins with ordinary Config fields can add `editableConfig: true` to that policy.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation

@@ -9,6 +9,7 @@ import LlmRuntime, { BlockAssembler } from '@deepseek-ai/dsh-llm'
 import type { FinishReason } from '@deepseek-ai/dsh-llm'
 import { LocalCredentialProvider } from '@deepseek-ai/dsh-credentials-local'
 import * as LlmOpenAI from '@deepseek-ai/dsh-llm-openai'
+import { omitsGeneratedPage } from '../../../settings/settings/tests/live-config.ts'
 
 const cleanups: Array<() => Promise<void>> = []
 const servers: Server[] = []
@@ -147,6 +148,11 @@ describe('declaredDefaultEffort', () => {
 })
 
 describe('request-level dynamic profiles', () => {
+  it('registers its settings namespace without generating a plugin page', () => omitsGeneratedPage(async (ctx) => {
+    await ctx.plugin(LlmRuntime)
+    return ctx.plugin(LlmOpenAI, {})
+  }, { auto: false, editableConfig: true }))
+
   it('mounts bare and dormant, with its declared route addressed inside the providers dict', async () => {
     const dir = await home()
     const ctx = await boot(dir, {})
@@ -154,8 +160,8 @@ describe('request-level dynamic profiles', () => {
     expect(ctx.llm.listProviders()).toEqual([])
     // Dormant ≠ invisible: the declared routes keep their settings addresses
     // so configuration surfaces can offer them before any profile exists.
-    // pi-ai owns the official `openai` route, so only the compatible route is declared here.
     expect(ctx.llm.listConfigurableProviders()).toEqual([
+      { provider: 'openai', displayName: 'OpenAI', settingsNs: 'llm-openai', settingsPath: ['providers', 'openai'] },
       { provider: 'openai-compatible', displayName: 'OpenAI Compatible', settingsNs: 'llm-openai', settingsPath: ['providers', 'openai-compatible'] },
     ])
   })

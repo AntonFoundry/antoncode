@@ -10,6 +10,11 @@ export type SubagentLimitsFieldsProps = PropsLocale<'settings.subagent'>
   & Pick<SubagentLimitsCardFace, 'edit' | 'resetField'>
   & { state: SubagentLimitsCardState }
 
+function sliderValue(text: string, minimum: number): number {
+  const value = Number(text)
+  return Number.isSafeInteger(value) && value >= minimum ? value : minimum
+}
+
 /**
  * Render the depth and capacity fields with their original validation and reset behavior.
  * @param props - Locale, staged fields, and edit callbacks.
@@ -43,6 +48,12 @@ export function SubagentLimitsFields(props: SubagentLimitsFieldsProps) {
             resetLabel={t('reset')} invalidLabel={t('subagentDepthInvalid')}
             numeric disabled={!state.writable || state.saving} {...state.maxDepth}
             onEdit={(text) => { props.edit('maxDepth', text) }} onReset={() => { props.resetField('maxDepth') }} />
+          <input className={css.slider} type="range" min={0}
+            max={Math.max(10, sliderValue(state.maxDepth.text, 0))} step={1}
+            value={sliderValue(state.maxDepth.text, 0)}
+            aria-label={t('subagentMaxDepth')}
+            disabled={!state.writable || state.saving}
+            onChange={(event) => { props.edit('maxDepth', event.currentTarget.value) }} />
         </div>
         <div className={css.limit}>
           <SettingsValueField id="plugin-config-subagent-capacity" label={t('subagentMaxActive')}
@@ -50,6 +61,12 @@ export function SubagentLimitsFields(props: SubagentLimitsFieldsProps) {
             resetLabel={t('reset')} invalidLabel={t('subagentCapacityInvalid')}
             numeric disabled={!state.writable || state.saving} {...state.maxActiveSubagents}
             onEdit={(text) => { props.edit('maxActiveSubagents', text) }} onReset={() => { props.resetField('maxActiveSubagents') }} />
+          <input className={css.slider} type="range" min={1}
+            max={Math.max(32, sliderValue(state.maxActiveSubagents.text, 1))} step={1}
+            value={sliderValue(state.maxActiveSubagents.text, 1)}
+            aria-label={t('subagentMaxActive')}
+            disabled={!state.writable || state.saving}
+            onChange={(event) => { props.edit('maxActiveSubagents', event.currentTarget.value) }} />
         </div>
       </div>
     </>

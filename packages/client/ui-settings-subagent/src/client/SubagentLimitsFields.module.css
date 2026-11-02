@@ -13,6 +13,13 @@
   font-variant-numeric: tabular-nums;
 }
 
+.slider {
+  display: block;
+  width: 100%;
+  margin: 12px 0 0;
+  accent-color: var(--dsw-alias-brand-primary);
+}
+
 .depthTable {
   width: 100%;
   margin: 8px 0;

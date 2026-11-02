@@ -32,10 +32,9 @@ LLM seam. One adapter serves profile-gated provider routes with the identical
   llama.cpp, Ollama's `/v1` bridge, or a self-hosted gateway. Point
   `baseURL` at the local server and select models on the web Models page.
 
-Only `openai-compatible` is declared in the configurable-provider directory:
-upstream's `@deepseek-ai/dsh-llm-pi-ai` owns the official `openai` entry, and
-the directory admits one declaration per provider. A `providers.openai` route
-configured here still resolves with the `OpenAI` label.
+Both routes are declared in the configurable-provider directory. The shipped
+composition reserves `openai` in `@deepseek-ai/dsh-llm-pi-ai`, so the native
+adapter owns the official route and the Models page offers it while dormant.
 
 The design mirrors `@deepseek-ai/dsh-llm-deepseek` (and, in spirit, OpenCode's
 `@ai-sdk/openai-compatible` choice): transport-only adapter, connection facts
@@ -44,6 +43,10 @@ via the `llm-openai:` settings section. Like `@deepseek-ai/dsh-llm-pi-ai`, the
 adapter mounts **dormant**: a route registers only while the `providers` dict
 names it, so the web Models page can offer, add, and delete these built-ins
 exactly like user-added providers.
+
+The adapter exposes its configuration to Settings, where a provider edit reloads
+the entry and registers its revised routes. A dormant route stays available in
+the add-provider catalog.
 
 ## Configuration
 

@@ -247,6 +247,23 @@ it('edits dictionary keys and creates optional live containers', async () => {
   expect(ordinary.ctx.settings.describe().some(row => row.ns === 'first')).toBe(false)
 })
 
+it('exposes an opted-in ordinary Config and persists edits through the editor', async () => {
+  const schema = z.object({ ordinary: z.string().required(), providers: z.dict(z.object({ endpoint: z.string() })).default({}) })
+  const { ctx, profile } = await fixture({ schema, hmr: false })
+  expect(ctx.settings.describe().some(row => row.ns === 'first')).toBe(false)
+  const entry = ctx.configEditor.entries().find(row => row.options.id === 'first')!
+  const dispose = ctx.settings.configure({ auto: false, editableConfig: true }, entry.fiber)
+  expect(ctx.settings.describe().find(row => row.ns === 'first')?.value).toEqual({ ordinary: 'fixed', providers: {} })
+  await ctx.settings.mutate('first', [{ op: 'set', path: ['providers', 'openai', 'endpoint'], value: 'https://example.test/v1' }])
+  expect(ctx.settings.describe().find(row => row.ns === 'first')?.value).toEqual({ ordinary: 'fixed', providers: { openai: { endpoint: 'https://example.test/v1' } } })
+  expect(parse(readFileSync(profile.patchPath, 'utf8'))).toContainEqual({
+    id: 'first', name: 'cordis:probe',
+    config: { ordinary: 'fixed', token: 'private', providers: { openai: { endpoint: 'https://example.test/v1' } } },
+  })
+  dispose()
+  expect(ctx.settings.describe().some(row => row.ns === 'first')).toBe(false)
+})
+
 it('restores an inherited secret without returning it to remote forms', async () => {
   const { ctx } = await fixture({ hmr: false })
   await ctx.settings.update('first', { token: 'changed' })

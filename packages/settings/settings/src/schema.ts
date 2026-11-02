@@ -16,7 +16,11 @@ export function plainConfig(value: unknown): unknown {
   return value
 }
 
-function plainSchema(schema: z): z {
+/** Copy a Config schema for forms without runtime references or secret defaults.
+ * @param schema Plugin Config schema.
+ * @returns Detached form schema.
+ */
+export function plainSchema(schema: z): z {
   const result = new z(schema.toJSON())
   const walk = (node: z): void => {
     delete node.meta.volatile

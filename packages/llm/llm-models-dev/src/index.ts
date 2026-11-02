@@ -25,6 +25,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-settings'
 // Type-only: merges the loader's `Fiber.entry`, which names this entry's
 // settings namespace.
 import type {} from '@deepseek-ai/cordis-plugin-loader'
@@ -274,6 +275,7 @@ export function assertServiceable(config: Config): void {
 }
 
 export function apply(ctx: Context, config: Config): void {
+  ctx.inject(['settings'], (child) => { child.effect(() => child.settings.configure({ auto: false, editableConfig: true }, ctx.fiber)) })
   // Settings are Config-derived: an edit reloads the entry and re-applies the
   // plugin, so resolution is per-route for one application.
   const settingsNs = ctx.fiber.entry?.options.id ?? name

@@ -9,7 +9,7 @@ import { interpolate, type Entry } from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-config-editor'
 import type {} from '@deepseek-ai/dsh-app-boot'
 import { redactSecrets, type RedactedSecret } from './redact.ts'
-import { isVolatilePath, plainConfig, projectForm, volatileForm } from './schema.ts'
+import { isVolatilePath, plainConfig, plainSchema, projectForm, volatileForm } from './schema.ts'
 import type { SettingsNamespace } from './types.ts'
 
 export { redactSecrets } from './redact.ts'
@@ -225,7 +225,7 @@ export class SettingsForms extends Service {
   private revisions = new Map<string, { raw: string | undefined; revision: number; ns: SettingsNamespace; autoGenerate: boolean }>()
   private closed = false
   private scheduled = false
-  private readonly presentations = new Map<Fiber, { auto?: boolean }>()
+  private readonly presentations = new Map<Fiber, { auto?: boolean; editableConfig?: boolean }>()
 
   constructor(private readonly ownerContext: Context) {
     super(ownerContext, 'settings')
@@ -257,13 +257,13 @@ export class SettingsForms extends Service {
     this.ownerContext.logger.info('settings: imported %s into profile %s', imported, profile.name)
   }
 
-  /** Register the calling plugin instance's page policy without changing its Config.
-   * @param presentation Automatic-page policy for this instance; `auto` defaults to true.
+  /** Register the calling plugin instance's form and page policy without changing its Config.
+   * @param presentation `auto` controls generated pages; `editableConfig` exposes ordinary fields through the profile editor.
    * @param owner Plugin instance the policy belongs to; defaults to the calling fiber.
    * @returns Disposer; register it with the calling plugin's effects.
    * @throws If this instance already has a registered policy.
    */
-  configure(presentation: { auto?: boolean }, owner: Fiber = this.ctx.fiber): () => void {
+  configure(presentation: { auto?: boolean; editableConfig?: boolean }, owner: Fiber = this.ctx.fiber): () => void {
     const fiber = owner
     if (this.presentations.has(fiber)) throw new Error('Settings presentation is already configured for this plugin instance')
     const policy = { ...presentation }
@@ -305,7 +305,7 @@ export class SettingsForms extends Service {
       const schema = this.schema(entry)
       if (schema === undefined || entry.fiber === undefined
         || entry.fiber.runtime === null || entry.fiber.state !== FiberState.ACTIVE) return []
-      const form = volatileForm(schema)
+      const form = this.presentations.get(entry.fiber)?.editableConfig ? plainSchema(schema) : volatileForm(schema)
       if (form === undefined) return []
       active.add(entry.id)
       const raw = JSON.stringify([entry.fiber.uid, schema.toJSON(), entry.options.config ?? {}])
@@ -350,7 +350,7 @@ export class SettingsForms extends Service {
     await this.write(ns, current => mergeLayers(current, input) as Record<string, unknown>, expectedRevision)
   }
 
-  /** Reset all live fields, then set the supplied fields; ordinary config is preserved.
+  /** Reset editable fields, then set the supplied fields; hidden config is preserved.
    * @param ns Profile entry id.
    * @param section Complete form values.
    * @param expectedRevision Revision returned by describe.
@@ -383,10 +383,11 @@ export class SettingsForms extends Service {
     const entry = this.ownerContext.configEditor.entries().find(row => row.options.id === ns)
     const schema = entry === undefined ? undefined : this.schema(entry)
     if (entry === undefined || schema === undefined) throw new Error(`No configurable plugin entry "${ns}"`)
-    const form = volatileForm(schema)
+    const editableConfig = entry.fiber !== undefined && this.presentations.get(entry.fiber)?.editableConfig === true
+    const form = editableConfig ? plainSchema(schema) : volatileForm(schema)
     if (form === undefined) throw new Error(`Plugin entry "${ns}" has no volatile fields`)
     for (const path of paths) {
-      if (path.length && !isVolatilePath(schema, path)) throw new Error(`Config field "${path.join('.')}" is not volatile`)
+      if (path.length && !editableConfig && !isVolatilePath(schema, path)) throw new Error(`Config field "${path.join('.')}" is not volatile`)
     }
     await this.ownerContext.configEditor.edit(entry, (raw, inherited) => {
       const descriptor = this.describe().find(row => row.ns === ns)
@@ -407,7 +408,7 @@ export class SettingsForms extends Service {
           else throw new Error(`Config field "${target.join('.')}" is not volatile`)
         }
       }
-      validatePaths(next, form)
+      if (!editableConfig) validatePaths(next, form)
       const strip = (value: Record<string, unknown>, node: z, path: string[] = []): Record<string, unknown> => {
         if (isVolatilePath(schema, path)) return {}
         const result = { ...value }
@@ -418,7 +419,7 @@ export class SettingsForms extends Service {
         }
         return result
       }
-      return mergeLayers(strip(raw, form), next) as Record<string, unknown>
+      return mergeLayers(editableConfig ? raw : strip(raw, form), next) as Record<string, unknown>
     })
     this.describe()
   }
