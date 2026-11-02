@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { dirname, basename, join, resolve } from 'node:path'
 import { getChromeManager } from './chrome.ts'
 import { readNativeConsentKey } from './consent-key.ts'
+import { removeObsoleteToolsRow } from './profile-migration.ts'
 import { NativeChallengeInbox } from './consent-challenges.ts'
 import { signForwardedMailRequest } from './consent-forward.ts'
 
@@ -169,11 +170,8 @@ function resolveContextApiKey(): string {
  * instead of the conversation's own paid route. Key semantics live in the
  * plugin's own schema documentation; this file only pins deployment values.
  */
-function patchBody(toolsMode: string): string {
+function patchBody(): string {
   return [
-    '- id: tools',
-    '  config:',
-    `    mode: ${toolsMode}`,
     '- id: c0ntext-context',
     '  disabled: false',
     '  config:',
@@ -224,8 +222,7 @@ function ensureRecoveryProfile(): void {
     }, null, 2)}\n`)
   }
   if (!existsSync(patchPath)) {
-    const toolsMode = process.env.ANTON_TOOLS_MODE ?? 'paged'
-    writeFileSync(patchPath, ['- id: tools', '  config:', `    mode: ${toolsMode}`, ''].join('\n'))
+    writeFileSync(patchPath, '[]\n')
   }
 }
 
@@ -248,8 +245,7 @@ function ensureRepairProfile(): void {
     writeFileSync(manifestPath, manifest)
   }
   if (!existsSync(patchPath)) {
-    const toolsMode = process.env.ANTON_TOOLS_MODE ?? 'paged'
-    writeFileSync(patchPath, ['- id: tools', '  config:', `    mode: ${toolsMode}`, ''].join('\n'))
+    writeFileSync(patchPath, '[]\n')
   }
 }
 
@@ -470,8 +466,7 @@ function ensureHeadlessProfile(): void {
     }, null, 2)}\n`)
   }
   if (!existsSync(patchPath)) {
-    const toolsMode = process.env.ANTON_TOOLS_MODE ?? 'paged'
-    writeFileSync(patchPath, ['- id: tools', '  config:', `    mode: ${toolsMode}`, ''].join('\n'))
+    writeFileSync(patchPath, '[]\n')
   }
 }
 
@@ -483,6 +478,9 @@ function ensureBundledContextProfile(): void {
   ensureRecoveryProfile()
   ensureRepairProfile()
   ensureHeadlessProfile()
+  for (const name of ['web', 'headless', 'recovery', 'repair', profile]) {
+    removeObsoleteToolsRow(join(dshHome, 'profiles', name, 'cordis.patch.yml'))
+  }
   ensureLauncher()
   if (profile === 'web') ensureDesktopTools(join(dshHome, 'profiles', profile))
   const profileDir = join(dshHome, 'profiles', profile)
@@ -504,15 +502,7 @@ function ensureBundledContextProfile(): void {
     // one as CommonJS first and warns on every harness start.
     addProfileModuleType(manifestPath)
   }
-  if (!existsSync(patchPath)) {
-    // Tool presentation is a deployment choice on the base bundle's `tools`
-    // row (which ships none, keeping the native schema default). Anton defaults
-    // to `paged`: the model gets a compact catalog plus `tool_search` instead
-    // of every full schema on every request. ANTON_TOOLS_MODE=native restores
-    // the legacy behavior. Existing profiles keep the patch they already have.
-    const toolsMode = process.env.ANTON_TOOLS_MODE ?? 'paged'
-    writeFileSync(patchPath, `${patchBody(toolsMode)}`)
-  }
+  if (!existsSync(patchPath)) writeFileSync(patchPath, patchBody())
   try {
     if (lstatSync(pluginLink).isSymbolicLink()) {
       unlinkSync(pluginLink)
@@ -805,13 +795,6 @@ async function proxyHarness(request: Request): Promise<Response> {
   try {
     const requestUrl = new URL(request.url)
     const target = new URL(`${requestUrl.pathname}${requestUrl.search}`, harnessUrl)
-    // A browser without a Harness session cookie opens the index with this
-    // process's launch token; Harness answers with the cookie and a relative
-    // redirect, so the browser stays on the bridge origin.
-    if (request.method === 'GET' && requestUrl.pathname === '/' && !requestUrl.searchParams.has('token')
-      && harnessLaunchToken !== undefined && !(request.headers.get('cookie') ?? '').includes('dsh-auth-')) {
-      target.searchParams.set('token', harnessLaunchToken)
-    }
     const headers = new Headers(request.headers)
     headers.delete('host')
     headers.delete('connection')
@@ -831,12 +814,21 @@ async function proxyHarness(request: Request): Promise<Response> {
         headers.delete('referer')
       }
     }
-    const response = await fetch(target, {
+    let response = await fetch(target, {
       method: request.method,
       headers,
       body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,
       redirect: 'manual',
     })
+    // An index visit Harness refuses (no session cookie, or one for another
+    // Harness process or port: cookies on 127.0.0.1 are shared across ports)
+    // is retried once with this process's launch token. Harness answers with
+    // its cookie and a relative redirect, so the browser stays on the bridge.
+    if (response.status === 401 && request.method === 'GET' && requestUrl.pathname === '/'
+      && !requestUrl.searchParams.has('token') && harnessLaunchToken !== undefined) {
+      target.searchParams.set('token', harnessLaunchToken)
+      response = await fetch(target, { method: 'GET', headers, redirect: 'manual' })
+    }
     const responseHeaders = new Headers(response.headers)
     responseHeaders.delete('connection')
     // fetch() hands over a decoded body; Harness compresses its responses, so

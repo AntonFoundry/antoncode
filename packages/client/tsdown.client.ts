@@ -55,23 +55,22 @@ const INLINE_CSS_QUERY = '?inline'
  * Emit one plugin-owned style injector and an optional CSS Modules export.
  * @param css - JavaScript expression yielding the stylesheet text; see {@link stylesheetSource}.
  */
-/** Marks a virtual stylesheet id whose path is relative to the repository root. */
-const REPOSITORY_RELATIVE = 'repo:'
+/** Marks a virtual stylesheet id whose path is relative to the package being built. */
+const PACKAGE_RELATIVE = 'pkg:'
 
 /**
  * Build a virtual stylesheet module id. Rolldown prints virtual ids verbatim in
- * its `//#region` comments, so a path inside the repository is carried relative
- * to its root; an absolute id would ship the build machine's directory layout
- * in every client bundle.
+ * its `//#region` comments, so the stylesheet path is carried relative to the
+ * package being built; an absolute id would ship the build machine's directory
+ * layout in every client bundle, including plugins built outside this
+ * repository with this helper.
  * @param prefix - the plugin's virtual-id prefix.
  * @param path - the stylesheet path the import resolved to.
+ * @param packageDir - the package being built.
  * @returns the virtual id.
  */
-function cssVirtualId(prefix: string, path: string): string {
-  const inside = isAbsolute(path) ? relative(REPOSITORY_ROOT, path) : undefined
-  const carried = inside !== undefined && inside !== '' && !inside.startsWith('..') && !isAbsolute(inside)
-    ? REPOSITORY_RELATIVE + inside.split(sep).join(posix.sep)
-    : path
+function cssVirtualId(prefix: string, path: string, packageDir: string): string {
+  const carried = isAbsolute(path) ? PACKAGE_RELATIVE + relative(packageDir, path).split(sep).join(posix.sep) : path
   return prefix + carried + CSS_VIRTUAL_SUFFIX
 }
 
@@ -79,12 +78,13 @@ function cssVirtualId(prefix: string, path: string): string {
  * Recover the stylesheet path from a virtual id built by {@link cssVirtualId}.
  * @param prefix - the plugin's virtual-id prefix.
  * @param virtualId - the id Rolldown passes to `load`.
+ * @param packageDir - the package being built.
  * @returns the stylesheet path.
  */
-function cssVirtualFile(prefix: string, virtualId: string): string {
+function cssVirtualFile(prefix: string, virtualId: string, packageDir: string): string {
   const carried = virtualId.slice(prefix.length, -CSS_VIRTUAL_SUFFIX.length)
-  return carried.startsWith(REPOSITORY_RELATIVE)
-    ? resolvePath(REPOSITORY_ROOT, carried.slice(REPOSITORY_RELATIVE.length))
+  return carried.startsWith(PACKAGE_RELATIVE)
+    ? resolvePath(packageDir, carried.slice(PACKAGE_RELATIVE.length))
     : carried
 }
 
@@ -813,7 +813,7 @@ function clientConfig(
   const id = manifest.name
   let requested: ReadonlySet<string> | undefined
   const isRequested = (specifier: string): boolean => (requested ??= clientExternals(manifest)).has(specifier)
-  const isolation = clientInputIsolation(id)
+  const isolation = clientInputIsolation(id, packageDir)
   const assets = packageAssets(manifest, packageDir)
   return {
     name: `${id}/client`,
@@ -890,11 +890,11 @@ function clientConfig(
       resolveId(source: string, importer: string | undefined) {
         if (!source.endsWith('.module.css')) return null
         const abs = importer !== undefined ? sourceAssetPath(source, importer) : source
-        return cssVirtualId(CSS_VIRTUAL_PREFIX, abs)
+        return cssVirtualId(CSS_VIRTUAL_PREFIX, abs, packageDir)
       },
       async load(virtualId: string) {
         if (!virtualId.startsWith(CSS_VIRTUAL_PREFIX)) return null
-        const fileId = cssVirtualFile(CSS_VIRTUAL_PREFIX, virtualId)
+        const fileId = cssVirtualFile(CSS_VIRTUAL_PREFIX, virtualId, packageDir)
         // The virtual id otherwise hides the physical stylesheet from Rolldown's watch graph.
         this.addWatchFile(fileId)
         const source = await readFile(fileId)
@@ -918,11 +918,11 @@ function clientConfig(
         if (!source.endsWith(`.css${INLINE_CSS_QUERY}`)) return null
         const stylesheet = source.slice(0, -INLINE_CSS_QUERY.length)
         const abs = importer !== undefined ? sourceAssetPath(stylesheet, importer) : stylesheet
-        return cssVirtualId(INLINE_CSS_VIRTUAL_PREFIX, abs)
+        return cssVirtualId(INLINE_CSS_VIRTUAL_PREFIX, abs, packageDir)
       },
       async load(virtualId: string) {
         if (!virtualId.startsWith(INLINE_CSS_VIRTUAL_PREFIX)) return null
-        const fileId = cssVirtualFile(INLINE_CSS_VIRTUAL_PREFIX, virtualId)
+        const fileId = cssVirtualFile(INLINE_CSS_VIRTUAL_PREFIX, virtualId, packageDir)
         this.addWatchFile(fileId)
         const source = await readFile(fileId)
         const stylesheetAssets = assets.urlRewrite(this, fileId)
@@ -934,11 +934,11 @@ function clientConfig(
       resolveId(source: string, importer: string | undefined) {
         if (!source.endsWith('.css') || source.endsWith('.module.css')) return null
         const abs = importer !== undefined ? sourceAssetPath(source, importer) : source
-        return cssVirtualId(GLOBAL_CSS_VIRTUAL_PREFIX, abs)
+        return cssVirtualId(GLOBAL_CSS_VIRTUAL_PREFIX, abs, packageDir)
       },
       async load(virtualId: string) {
         if (!virtualId.startsWith(GLOBAL_CSS_VIRTUAL_PREFIX)) return null
-        const fileId = cssVirtualFile(GLOBAL_CSS_VIRTUAL_PREFIX, virtualId)
+        const fileId = cssVirtualFile(GLOBAL_CSS_VIRTUAL_PREFIX, virtualId, packageDir)
         this.addWatchFile(fileId)
         const source = await readFile(fileId)
         const stylesheetAssets = assets.urlRewrite(this, fileId)
@@ -972,7 +972,7 @@ function clientConfig(
 }
 
 /** Check browser bundle inputs before their original package identity is folded into an artifact. */
-function clientInputIsolation(id: string): {
+function clientInputIsolation(id: string, packageDir?: string): {
   plugin: TsdownPlugin
   sourcePath: (source: string, mapPath: string) => string
 } {
@@ -987,7 +987,7 @@ function clientInputIsolation(id: string): {
         for (const output of Object.values(bundle)) {
           if (output.type === 'chunk') {
             for (const module of Object.keys(output.modules)) {
-              inputs.assertInput(clientInputFile(module))
+              inputs.assertInput(clientInputFile(module, packageDir))
               const info = this.getModuleInfo(module)
               if (info === null) {
                 // Rolldown's runtime helper is compiler-generated and has no source module record.
@@ -995,7 +995,7 @@ function clientInputIsolation(id: string): {
                 throw new Error(`client bundle isolation (${id}): module ${module} has no bundler module record`)
               }
               for (const dependency of [...info.importedIds, ...info.dynamicallyImportedIds]) {
-                inputs.assertInput(clientInputFile(dependency))
+                inputs.assertInput(clientInputFile(dependency, packageDir))
               }
             }
             for (const external of [...output.imports, ...output.dynamicImports]) {
@@ -1009,7 +1009,7 @@ function clientInputIsolation(id: string): {
     },
     sourcePath(source, mapPath) {
       if (!experimental) {
-        const decoded = clientInputFile(source)
+        const decoded = clientInputFile(source, packageDir)
         const file = physicalBundleInput(decoded) ?? resolvePath(dirname(mapPath), decoded)
         inputs.assertSourceMapInput(file)
       }
@@ -1018,11 +1018,19 @@ function clientInputIsolation(id: string): {
   }
 }
 
-/** CSS loader ids append a JavaScript suffix to the physical stylesheet path. */
-function clientInputFile(id: string): string {
+/**
+ * Recover the physical file behind a bundle module id: CSS loader ids carry the
+ * stylesheet path ({@link cssVirtualId}) plus a JavaScript suffix.
+ * @param id - the bundler module id.
+ * @param packageDir - the package whose CSS loaders produced package-relative ids, when the config has them.
+ * @returns the physical file path, or the id itself for ordinary modules.
+ */
+function clientInputFile(id: string, packageDir?: string): string {
   const prefix = [CSS_VIRTUAL_PREFIX, GLOBAL_CSS_VIRTUAL_PREFIX, INLINE_CSS_VIRTUAL_PREFIX]
     .find(prefix => id.startsWith(prefix))
-  return prefix === undefined ? id : id.slice(prefix.length, -CSS_VIRTUAL_SUFFIX.length)
+  if (prefix === undefined) return id
+  if (packageDir !== undefined) return cssVirtualFile(prefix, id, packageDir)
+  return id.slice(prefix.length, -CSS_VIRTUAL_SUFFIX.length)
 }
 
 /** Chain tsc's emitted maps into any Client bundle that consumes `lib/types`. */
