@@ -13,6 +13,7 @@
     { "path": "../../core/agent" },
     { "path": "../../storage/storage" },
     { "path": "../../storage/storage-domain" },
-    { "path": "../../workspace/workspace" }
+    { "path": "../../workspace/workspace" },
+    { "path": "../../typert/protocol" }
   ]
 }

@@ -1,4 +1,2 @@
-/** Host loader entry for the browser-only Agent Mail conversation view. */
-
-/** No Host behavior: Agent Mail is intentionally read-only until browser authorization exists. */
+/** Browser-only Agent Mail contribution; Host mail operations live in dsh-agent-queue/mail-remote. */
 export function apply(): void {}

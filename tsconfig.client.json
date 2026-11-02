@@ -165,6 +165,7 @@
     { "path": "./packages/client/ui-file-video" },
     { "path": "./packages/client/ui-orchestrator" },
     { "path": "./packages/client/ui-flowbuilder" },
+    { "path": "./packages/client/ui-conversation-agent-mail" },
     { "path": "./packages/client/ui-settings-models" },
     { "path": "./packages/client/ui-plugin-manager/tsconfig.client.json" },
     { "path": "./packages/client/ui-plugin-market" },

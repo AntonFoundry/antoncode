@@ -17,6 +17,22 @@
       "types": "./lib/types/direct.d.ts",
       "default": "./lib/types/direct.js"
     },
+    "./mail-types": {
+      "types": "./lib/types/mail-types.d.ts",
+      "default": "./lib/types/mail-types.js"
+    },
+    "./mail-remote": {
+      "types": "./lib/types/mail-remote.d.ts",
+      "default": "./lib/types/mail-remote.js"
+    },
+    "./remote": {
+      "types": "./lib/typert.remote-client.d.ts",
+      "default": "./lib/typert.remote-client.js"
+    },
+    "./typert": {
+      "types": "./lib/typert.host.d.ts",
+      "default": "./lib/typert.host.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json"
@@ -25,6 +41,10 @@
     "lib/index.js",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts",
+    "lib/typert.host.js",
+    "lib/typert.host.d.ts",
+    "lib/typert.remote-client.js",
+    "lib/typert.remote-client.d.ts",
     "locale/*.json"
   ],
   "license": "MIT",
@@ -33,7 +53,8 @@
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-storage-domain": "workspace:*",
-    "@deepseek-ai/dsh-workspace": "workspace:*"
+    "@deepseek-ai/dsh-workspace": "workspace:*",
+    "@deepseek-ai/dsh-typert-protocol": "workspace:*"
   },
   "dependencies": {
     "zod": "^4.4.3"
@@ -44,6 +65,8 @@
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-storage": "workspace:*",
     "@deepseek-ai/dsh-storage-domain": "workspace:*",
-    "@deepseek-ai/dsh-workspace": "workspace:*"
+    "@deepseek-ai/dsh-workspace": "workspace:*",
+    "@deepseek-ai/dsh-typert-protocol": "workspace:*",
+    "@types/node": "^24.0.0"
   }
 }

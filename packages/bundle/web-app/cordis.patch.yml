@@ -92,6 +92,9 @@
     - id: agent-queue-direct
       name: '@deepseek-ai/dsh-agent-queue/direct'
 
+    - id: agent-mail-remote
+      name: '@deepseek-ai/dsh-agent-queue/mail-remote'
+
     - id: worktree
       name: '@deepseek-ai/dsh-worktree'
 

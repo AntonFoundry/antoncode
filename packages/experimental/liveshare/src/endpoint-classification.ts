@@ -133,6 +133,24 @@ export const VIEWER_ENDPOINT_CLASSES = {
   'workspace/rename': 'owner-only', // owner renames a Workspace
   'workspace/unarchiveSession': 'owner-only', // owner unarchives a Session
   'workspace/unpinSession': 'owner-only', // owner unpins a Session
+  'worktree/create': 'owner-only', // owner creates a working tree
+  'worktree/list': 'owner-only', // owner reads worktree inventory
+  'worktree/pref': 'owner-only', // owner reads repository preferences
+  'worktree/remove': 'owner-only', // owner removes a working tree
+  'worktree/setPref': 'owner-only', // owner changes repository preferences
+  'worktree/status': 'owner-only', // owner reads local git status
+  'agentMail/address': 'owner-only',
+  'agentMail/inbox': 'owner-only',
+  'agentMail/send': 'owner-only',
+  'agentMail/ack': 'owner-only',
+  'langflow/start': 'owner-only', // owner controls the local sidecar
+  'langflow/status': 'owner-only', // owner reads local sidecar status
+  'langflow/stop': 'owner-only', // owner controls the local sidecar
+  'guiTerminal/spawn': 'owner-only', // owner creates a local shell
+  'guiTerminal/read': 'owner-only', // owner reads local shell output
+  'guiTerminal/input': 'owner-only', // owner writes to a local shell
+  'guiTerminal/resize': 'owner-only', // owner resizes a local shell
+  'guiTerminal/dispose': 'owner-only', // owner ends a local shell
   'workspaceFiles/changes': 'owner-only', // owner Workspace file access
   'workspaceFiles/list': 'owner-only', // owner Workspace file access
   'workspaceFiles/read': 'owner-only', // owner Workspace file access

@@ -96,3 +96,5 @@ A durable acknowledgement by every frozen addressee is the **only** way a messag
 ## Dev Note
 
 - See the module JSDoc for the owning contract and its rationale.
+
+The Web profile mounts `@deepseek-ai/dsh-agent-queue/mail-remote` to expose the owner-only Agent Mail tab. Its generated Remote methods resolve a Session to the exact live Agent before delegating to the two queue services. Mail response types are exported separately through `./mail-types` so browser packages do not import Host queue implementation code.

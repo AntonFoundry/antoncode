@@ -4,7 +4,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { apply as applyHost } from '../src/index.ts'
 import { apply, inject } from '../src/client/index.ts'
@@ -45,9 +45,9 @@ function props(
 
 describe('Agent Mail read-only conversation view', () => {
   it('registers slots, composer routing, and the mention source', async () => {
-    expect(inject).toEqual(['slots', 'locale', 'conversation', 'inputTriggers'])
+    expect(inject).toEqual(['slots', 'locale', 'conversation', 'inputTriggers', 'remote', 'remote.agentMail'])
     const ctx = new Context()
-    await ctx.plugin(SlotRegistry, { packageName: '@deepseek-ai/dsh-client-ui-conversation' }).await()
+    await ctx.plugin(SlotRegistry).await()
     const locale = new LocaleRuntime(ctx)
     ctx.provide('locale', locale)
     ctx.provide('conversation', {
@@ -55,16 +55,19 @@ describe('Agent Mail read-only conversation view', () => {
       activeView: () => null,
     } as never)
     ctx.provide('inputTriggers', { registerSource: () => () => {} } as never)
+    ctx.provide('remote', { agentMail: { address: async () => ({ ok: false, error: { message: 'unavailable' } }) } } as never)
+    ctx.provide('remote.agentMail', {} as never)
     const stopRoot = ctx.get('slots')!.register({
       name: 'root', children: { 'conversation.view': { kind: 'list', scope: 'session' } },
     } as never, () => null)
     await ctx.plugin({ inject: [...inject], apply }).await()
     const entry = ctx.get('slots')!.entries('conversation.view')[0]
+    expect(entry).toBeDefined()
+    if (entry === undefined) throw new Error('Agent Mail slot was not registered')
     expect(entry.component).toBe(AgentMailConversationView)
     expect(entry.options.id).toBe('agent-mail')
     expect(resolveSlotLabel(entry.options.label)).toBe('Agent Mail')
-    // No provider exists in the unauthenticated composition.
-    expect(entry.inject?.('session-1' as never)).toEqual({})
+    expect(entry.inject?.('session-1' as never)).toHaveProperty('gateway')
     await ctx.fiber.dispose()
     stopRoot()
   })

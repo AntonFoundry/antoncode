@@ -57,7 +57,9 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
-    "@deepseek-ai/dsh-scope": "workspace:*"
+    "@deepseek-ai/dsh-scope": "workspace:*",
+    "@deepseek-ai/dsh-langflow-sidecar": "workspace:*",
+    "@deepseek-ai/dsh-agent-queue": "workspace:*"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-agent": "workspace:*",
@@ -99,6 +101,8 @@
     "@deepseek-ai/dsh-api-account-controller": "workspace:*",
     "@deepseek-ai/dsh-deepseek-account": "workspace:*",
     "@deepseek-ai/dsh-client-product-analytics": "workspace:*",
-    "@deepseek-ai/dsh-client-ui-trajectory": "workspace:*"
+    "@deepseek-ai/dsh-client-ui-trajectory": "workspace:*",
+    "@deepseek-ai/dsh-langflow-sidecar": "workspace:*",
+    "@deepseek-ai/dsh-agent-queue": "workspace:*"
   }
 }

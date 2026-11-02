@@ -6,7 +6,7 @@ export interface AgentMailMessage {
   at: number
 }
 
-/** Optional authorized capability: absence or non-authorized status means zero queue operations. */
+/** Browser-facing Agent Mail operations and local presentation state. */
 export interface AgentMailGateway {
   authorization(sessionId: string): {
     state: 'unpaired' | 'authorized' | 'revoked'
@@ -14,12 +14,7 @@ export interface AgentMailGateway {
     workspaceId?: string
   }
   subscribeAuthorization(listener: () => void): () => void
-  /**
-   * Authorize the local harness UI for this session's live Agent. The Host
-   * mints the grant from the bridge-proven loopback origin; no native code or
-   * user confirmation is involved.
-   * @param sessionId - the session whose Agent the UI acts as.
-   */
+  /** Open the owner-only Remote mailbox for this Session. */
   authorize(sessionId: string): Promise<void>
   inbox(sessionId: string): {
     local: { messages: readonly AgentMailMessage[]; cursor: number }

@@ -27,6 +27,8 @@ import subagentsRemote from '@deepseek-ai/dsh-subagent/remote'
 import sessionRemote from '@deepseek-ai/dsh-api-session-controller/remote'
 import jobRemote from '@deepseek-ai/dsh-api-job-controller/remote'
 import workspaceRemote from '@deepseek-ai/dsh-api-workspace-controller/remote'
+import langflowRemote from '@deepseek-ai/dsh-langflow-sidecar/remote'
+import agentMailRemote from '@deepseek-ai/dsh-agent-queue/remote'
 import terminalRemote from '@deepseek-ai/dsh-api-terminal-controller/remote'
 import workspaceFilesRemote from '@deepseek-ai/dsh-api-workspace-files/remote'
 import type { ClientRemote } from '@deepseek-ai/dsh-api-gateway/client'
@@ -71,6 +73,12 @@ export type * from '@deepseek-ai/dsh-api-session-controller/types'
 export type {} from '@deepseek-ai/dsh-api-job-controller/remote'
 export type * from '@deepseek-ai/dsh-api-job-controller/types'
 export type {} from '@deepseek-ai/dsh-api-workspace-controller/remote'
+export type {} from '@deepseek-ai/dsh-langflow-sidecar/remote'
+export type {} from '@deepseek-ai/dsh-agent-queue/remote'
+export type { LangflowState, LangflowStatus } from '@deepseek-ai/dsh-langflow-sidecar/types'
+export type {
+  WorktreeId, WorktreeListValue, WorktreeModePrefView, WorktreeStatus, WorktreeView,
+} from '@deepseek-ai/dsh-api-workspace-controller/worktree-types'
 export type * from '@deepseek-ai/dsh-api-workspace-controller/types'
 export type {} from '@deepseek-ai/dsh-api-workspace-files/remote'
 export type * from '@deepseek-ai/dsh-api-workspace-files/types'
@@ -103,7 +111,6 @@ export type {
   MessageId,
   RpcId, RpcRequest, RpcResponse, RpcResult, SessionId,
   StreamChunk,
-  WorktreeApi, WorktreeId, WorktreeModePrefView, WorktreeStatusView, WorktreeView,
 } from '@deepseek-ai/dsh-client-connection/client'
 export type {} from '@deepseek-ai/dsh-api-gateway/client'
 export type {} from '@deepseek-ai/dsh-cordis-host-runner/remote'
@@ -195,7 +202,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       pluginInventoryRemote, pluginManagerRemote, pluginMarketRemote, pluginRegistryProbeRemote, toolResultsRemote,
       messageFeedbackRemote, sessionFeedbackRemote,
       fileUploadsRemote, sessionReferencesRemote,
-      permissionPresetsRemote, subagentsRemote, sessionRemote, jobRemote, workspaceRemote, workspaceFilesRemote, terminalRemote,
+      permissionPresetsRemote, subagentsRemote, sessionRemote, jobRemote, workspaceRemote,
+      langflowRemote, agentMailRemote, workspaceFilesRemote, terminalRemote,
       officeToPdfRemote, userQuestionsRemote,
     ]) {
       disposers.push(await ctx.remote.$mount(contribution))

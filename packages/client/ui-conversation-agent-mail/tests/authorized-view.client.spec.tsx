@@ -11,9 +11,9 @@ afterEach(cleanup)
 beforeEach(() => { setAgentMailChannel('self', 'local') })
 const t = (key: string): string => en[key as keyof typeof en] ?? key
 const chat = { nodes: { values: () => [] } }
-const useSession = ((selector: (snapshot: unknown) => unknown) => selector({ chat })) as unknown as AgentMailConversationViewProps['useSession']
+const useChat = ((selector: (snapshot: unknown) => unknown) => selector(chat)) as unknown as AgentMailConversationViewProps['useChat']
 const props = (gateway?: AgentMailGateway, sessionId = 'self'): AgentMailConversationViewProps =>
-  ({ t, sessionId, gateway, useSession }) as unknown as AgentMailConversationViewProps
+  ({ t, sessionId, gateway, useChat }) as unknown as AgentMailConversationViewProps
 
 function fakeGateway() {
   let state: ReturnType<AgentMailGateway['authorization']> = { state: 'unpaired' }

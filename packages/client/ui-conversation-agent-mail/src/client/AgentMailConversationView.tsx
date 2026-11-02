@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { CSSProperties } from 'react'
-import type { ChatSnapshot, ToolCallBlock } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ChatSnapshot, ToolCallBlock } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AgentMailGateway } from './gateway.ts'
@@ -124,10 +124,11 @@ function clockText(at: number): string {
 /** One call head from a running or settled tool row. */
 function callHead(block: ToolCallBlock): { callId: string; name: string; argsRaw: string; at: number } | undefined {
   if ('kind' in block) {
-    return block.call === null
-      ? undefined
-      : { callId: block.callId, name: block.call.name, argsRaw: block.call.argsRaw, at: block.callTime ?? block.time }
+    const call = block.call
+    if (call === null || !('argsRaw' in call)) return undefined
+    return { callId: block.callId, name: call.name, argsRaw: call.argsRaw, at: block.callTime ?? block.time }
   }
+  if (!('argsRaw' in block)) return undefined
   return { callId: block.callId, name: block.name, argsRaw: block.argsRaw, at: block.time }
 }
 
@@ -158,7 +159,7 @@ function collectRelays(chat: ChatSnapshot, from: string): readonly FeedEntry[] {
   return entries
 }
 
-function AuthorizedMail({ gateway, sessionId, workspaceId, t, useSession }: AgentMailConversationViewProps & {
+function AuthorizedMail({ gateway, sessionId, workspaceId, t, useChat }: AgentMailConversationViewProps & {
   gateway: AgentMailGateway
   sessionId: NonNullable<AgentMailConversationViewProps['sessionId']>
   workspaceId: string
@@ -179,7 +180,7 @@ function AuthorizedMail({ gateway, sessionId, workspaceId, t, useSession }: Agen
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
-  const chat = useSession(snapshot => snapshot.chat)
+  const chat = useChat(snapshot => snapshot)
   const relays = useMemo(() => collectRelays(chat, sessionId), [chat, sessionId])
   useEffect(() => {
     const refresh = (): void => { setInbox({ ...gateway.inbox(sessionId) }) }
