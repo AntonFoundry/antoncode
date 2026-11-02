@@ -9,16 +9,17 @@
  * subcommand speaks: `GET /api/model` lists the server's models (each entry
  * carries its `providerID`, `cost`, `limit.context`, and `variants`), and
  * turns complete through `POST /api/session/:id/generate`, which renders
- * transient text without running the server's agent loop — no server-side
- * tool calls, so no permission prompts nobody answers and no runaway
- * sessions. A server without the generate route fails the request; the
- * adapter never delegates tool execution to OpenCode's agent loop.
+ * transient text without running the server's agent loop. Harness tools
+ * are described through a text protocol and returned as Harness tool calls;
+ * OpenCode never executes them. A server without the generate route fails.
  *
  * Responses accept either a `{data}` envelope or a bare payload.
  *
  * @module dsh-llm-opencode/adapter
  */
 
+import { augmentSystemWithTextProtocol, parseFreeTextTools } from './zen-gate.ts'
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import {
   attributionHeaders,
   LlmAdapter,
@@ -43,6 +44,8 @@ import {
 
 /** One request's validated connection facts (the plugin resolves these per settings snapshot). */
 export interface OpenCodeServerConnection extends OpenCodeServerTransportConfig {
+  /** OpenCode agent selected for the transient-generation session. */
+  agent?: string
   /** Human-readable provider name for selectors. */
   displayName: string
   /** Working directory the server scopes sessions to; defaults to the launch directory. */
@@ -245,8 +248,8 @@ function messageHasImage(message: RequestMessage): boolean {
 /**
  * Render harness messages to the single text prompt a server session admits.
  * Assistant reasoning and tool traffic render as quoted context. The transient
- * generation route accepts text only, so offered Harness tool schemas stay
- * behind while past tool traffic remains visible. Images have no text
+ * generation route accepts text only; stream() adds offered tool schemas to
+ * the system prompt. Images have no text
  * representation and are rejected instead of silently dropped.
  */
 export function renderPrompt(system: string | undefined, messages: readonly RequestMessage[]): string {
@@ -465,8 +468,15 @@ export class OpenCodeServerAdapter extends LlmAdapter {
     }
   }
 
-  override stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-    return this.run(options)
+  override async * stream(options: GenerateOptions): AsyncGenerator<StreamChunk> {
+    let toolCalls = false
+    const requestId = `call_opencode_${randomUUID()}`
+    for await (const chunk of parseFreeTextTools(this.run(augmentSystemWithTextProtocol(options)), requestId)) {
+      if (chunk.type === 'block-end' && chunk.block.type === 'tool-call') toolCalls = true
+      yield chunk.type === 'finish' && toolCalls && chunk.reason.kind === 'stop'
+        ? { ...chunk, reason: { kind: 'tool-calls' } }
+        : chunk
+    }
   }
 
   private async request(
@@ -501,8 +511,8 @@ export class OpenCodeServerAdapter extends LlmAdapter {
   }
 
   private async * run(options: GenerateOptions): AsyncGenerator<StreamChunk> {
-    // The generate route emits text only. Harness tool schemas do not cross
-    // this bridge; past tool traffic remains visible as quoted context.
+    // The server renders text; stream() maps the text tool protocol back to
+    // Harness calls, whose execution and results stay in the Harness loop.
     const connection = this.#options(options.provider)
     const timeout = AbortSignal.timeout(connection.requestTimeoutMs)
     const signal = options.signal === undefined ? timeout : AbortSignal.any([options.signal, timeout])
@@ -639,7 +649,8 @@ export class OpenCodeServerAdapter extends LlmAdapter {
   ): Promise<string> {
     const created = await this.request(transport, '/api/session', {
       method: 'POST',
-      body: { model, location: { directory: connection.directory } },
+      body: { model, location: { directory: connection.directory },
+        ...(connection.agent === undefined ? {} : { agent: connection.agent }) },
       signal,
     })
     if (created.status !== 200) throw statusError(created.status, errorMessage(created.body), transport.url)

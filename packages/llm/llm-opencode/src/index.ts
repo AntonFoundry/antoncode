@@ -139,6 +139,10 @@ export const DEFAULT_CATALOG_REFRESH_MS = 28_800_000
  * downstream verdict, not at plugin load.
  */
 export interface Config {
+  /** Use the registered OpenCode service explicitly, or select by stored credentials. */
+  transport?: 'auto' | 'service'
+  /** OpenCode agent used by service sessions; configure its system prompt for Harness delegation. */
+  agent?: string
   /** Explicit server base URL; skips file and CLI discovery. */
   serverURL?: string
   /** Basic-auth username; defaults to `opencode`. */
@@ -182,6 +186,8 @@ export interface Config {
 }
 
 export const Config: z<Config> = z.object({
+  transport: z.union(['auto', 'service']).default('auto'),
+  agent: z.string().min(1),
   serverURL: z.string(),
   username: z.string(),
   serviceFile: z.string(),
@@ -204,6 +210,8 @@ export const Config: z<Config> = z.object({
 
 /** One resolution's complete request facts: the service transport plus the direct Zen transport. */
 export interface ResolvedOpenCodeServerOptions extends OpenCodeServerConnection {
+  /** Explicit service routing bypasses direct gateway credentials and fallback. */
+  transport: 'auto' | 'service'
   /** Validated credential reference naming the Zen bearer key. */
   apiKeyEnv: CredentialRef
   /** Validated credential reference holding the Zen OAuth workspace session. */
@@ -284,6 +292,8 @@ export function resolveAdapterOptions(config: Config): ResolvedOpenCodeServerOpt
     )
   }
   return {
+    transport: config.transport ?? 'auto',
+    ...(config.agent === undefined ? {} : { agent: config.agent }),
     ...(config.serverURL === undefined ? {} : { serverURL: config.serverURL }),
     ...(config.username === undefined ? {} : { username: config.username }),
     ...(config.serviceFile === undefined ? {} : { serviceFile: config.serviceFile }),
@@ -454,6 +464,9 @@ export function apply(ctx: Context, config: Config): void {
     service,
     direct,
     resolveTransport: async (options) => {
+      if (resolved.transport === 'service') {
+        return { adapter: service, freeTier: false, via: 'service', serviceOnly: true }
+      }
       await direct.listModels(PROVIDER)
       const oauth = await resolveOAuthAccess()
       if (oauth !== undefined) {
@@ -488,6 +501,8 @@ export function apply(ctx: Context, config: Config): void {
     { provider: PROVIDER, displayName: 'OpenCode Free', settingsNs, settingsPath: [] },
   ])
   ctx.llm.registerAdapter([PROVIDER], adapter)
+
+  if (resolved.transport === 'service') return
 
   // Warm the direct transport's free tier at mount and on cadence, exactly
   // like the models.dev family: a restart converges without waiting for a

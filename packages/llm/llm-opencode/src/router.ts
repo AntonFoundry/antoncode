@@ -10,8 +10,9 @@
  *   Harness tools, never through OpenCode's local agent loop.
  * - **Stored Zen bearer key**: direct Zen gateway with the Harness's own
  *   tool schemas.
- * - **Anonymous**: the local OpenCode service's transient generator
- *   (text-only; past tool traffic stays quoted context). When the service is
+ * - **Local service**: explicit service mode or anonymous routing uses the
+ *   local transient generator with text-protocol Harness tools. In auto mode,
+ *   when the service is
  *   unreachable too, the request falls through to anonymous direct —
  *   surfacing the gateway's real verdict instead of a misleading error.
  *
@@ -40,6 +41,8 @@ import { augmentSystemWithTextProtocol, parseFreeTextTools } from './zen-gate.ts
 
 /** One resolved transport: the serving adapter plus shaping and filtering. */
 export interface OpenCodeTransport {
+  /** Require the local service without falling back to a direct gateway. */
+  serviceOnly?: boolean
   /** Adapter serving this operation (request-scoped for OAuth). */
   adapter: ModelsDevAdapter | OpenCodeServerAdapter
   /** Zero-cost shaping applies: system augment plus text-tool parsing. */
@@ -64,7 +67,7 @@ export interface OpenCodeTransport {
 
 /** Constructor options: transports plus the per-operation transport plan. */
 export interface OpenCodeRouterOptions {
-  /** Local-service transport: transient text generation, no Harness tools. */
+  /** Local-service transport: transient generation with Harness-owned text-protocol tools. */
   service: OpenCodeServerAdapter
   /** Keyed-or-anonymous direct transport: catalog discovery, protocol routing, Harness tools. */
   direct: ModelsDevAdapter
@@ -129,7 +132,7 @@ export class OpenCodeRouterAdapter extends LlmAdapter {
         // so the caller gets the gateway's real verdict instead of a
         // misleading transport error. Any other service failure (auth, rate
         // limit, server) propagates untouched.
-        if (!(error instanceof LlmError) || error.code !== 'TRANSPORT') throw error
+        if (plan.serviceOnly || !(error instanceof LlmError) || error.code !== 'TRANSPORT') throw error
         // Warm the catalog snapshot before routing: protocol selection reads
         // it synchronously, and a first request racing the mount-time refresh
         // would otherwise misroute a Responses model to chat-completions.

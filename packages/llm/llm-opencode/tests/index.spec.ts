@@ -24,6 +24,7 @@ describe('resolveAdapterOptions', () => {
     expect(resolveAdapterOptions({})).toMatchObject({
       passwordEnv: 'OPENCODE_SERVER_PASSWORD',
       autoStart: true,
+      transport: 'auto',
       displayName: 'OpenCode Free',
       maxTokens: 16_384,
       defaultContextWindow: 128_000,
@@ -42,6 +43,7 @@ describe('resolveAdapterOptions', () => {
   it('passes explicit transport fields through untouched', () => {
     expect(resolveAdapterOptions({
       serverURL: 'http://s:9',
+      transport: 'service',
       username: 'operator',
       serviceFile: '/custom/state.json',
       passwordFile: '/custom/service.json',
@@ -51,6 +53,7 @@ describe('resolveAdapterOptions', () => {
       displayName: 'Custom',
     })).toMatchObject({
       serverURL: 'http://s:9',
+      transport: 'service',
       username: 'operator',
       serviceFile: '/custom/state.json',
       passwordFile: '/custom/service.json',

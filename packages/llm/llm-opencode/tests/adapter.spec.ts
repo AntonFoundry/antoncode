@@ -4,7 +4,7 @@
  * and transport failures. Pure value mappings live in `mapping.spec.ts`.
  */
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, {
   createUserMessage,
@@ -265,7 +265,7 @@ describe('OpenCodeServerAdapter sessions', () => {
 })
 
 describe('OpenCodeServerAdapter failures', () => {
-  it('sets offered tools aside and answers as text without the server loop', async () => {
+  it('offers tools through text while leaving execution to the Harness', async () => {
     const server = await mockOpenCodeServer({ assistant: { text: 'pong', tokens: { input: 10, output: 3 } } })
     const chunks = await collect(
       adapterOf(server.url),
@@ -275,8 +275,20 @@ describe('OpenCodeServerAdapter failures', () => {
     )
     expect(chunks.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
     const generate = server.requests.find(entry => entry.path.endsWith('/generate'))
-    expect(generate?.body).toEqual({ prompt: 'User: hi' })
+    expect(generate?.body).toHaveProperty('prompt', expect.stringContaining('Available tools:\n- search: search'))
     expect(server.requests.some(entry => entry.path.endsWith('/prompt'))).toBe(false)
+  })
+
+  it('returns fenced calls as Harness tool blocks and a tool-calls finish', async () => {
+    const server = await mockOpenCodeServer({ assistant: { text: '```tool\n{"name":"search","arguments":{"query":"hello"}}\n```' } })
+    const chunks = await collect(adapterOf(server.url), streamOptions('fledge-alpha-free', [userText('search')], {
+      tools: [{ name: 'search', description: 'Search', parameters: { type: 'object' } }],
+    }))
+    const call = chunks.find(chunk => chunk.type === 'block-end' && chunk.block.type === 'tool-call')
+    if (call?.type !== 'block-end' || call.block.type !== 'tool-call') throw new Error('Missing tool call')
+    expect(call.block.id).toMatch(/^call_opencode_/)
+    expect(call.block).toEqual({ type: 'tool-call', id: call.block.id, name: 'search', arguments: '{"query":"hello"}' })
+    expect(chunks.at(-1)).toEqual({ type: 'finish', reason: { kind: 'tool-calls' } })
   })
 
   it('rejects image history instead of dropping attachments silently', async () => {
@@ -440,13 +452,18 @@ describe('OpenCodeServerAdapter through the runtime', () => {
   it('registers the opencode route and streams through ctx.llm', async () => {
     const server = await mockOpenCodeServer({ assistant: { text: 'pong', tokens: { input: 10, output: 3 } } })
     const ctx = new Context()
+    const resolveCredential = vi.fn(() => { throw new Error('Service mode must not resolve direct credentials') })
+    ctx.provide('credentials', { resolve: resolveCredential } as never)
     await ctx.plugin(LlmRuntime)
     const fiber = await ctx.plugin(LlmOpenCode, {
+      transport: 'service',
+      agent: 'anton-harness',
       serverURL: server.url,
       requestTimeoutMs: 2_000,
       directory: '/tmp/test',
     })
     expect(ctx.llm.listProviders()).toEqual([{ id: 'opencode-free', name: 'OpenCode Free' }])
+    expect(resolveCredential).not.toHaveBeenCalled()
     const kinds: string[] = []
     for await (
       const chunk of ctx.llm.stream({
@@ -458,6 +475,8 @@ describe('OpenCodeServerAdapter through the runtime', () => {
       kinds.push(chunk.type)
     }
     expect(kinds).toEqual(['block-start', 'text-delta', 'block-end', 'finish'])
+    expect(resolveCredential).not.toHaveBeenCalled()
+    expect(server.requests.find(entry => entry.path === '/api/session')?.body).toHaveProperty('agent', 'anton-harness')
     await fiber.dispose()
   })
 })

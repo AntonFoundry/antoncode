@@ -9,7 +9,11 @@ English
 
 ## Summary
 
-English
+Set `transport: service` on the `llm-opencode` profile entry to reuse the running OpenCode service and its saved login. Anton reads the local service registration and Basic password; OpenCode owns the hosted OAuth credentials and refresh. This mode bypasses direct gateway credentials, direct catalog polling, and anonymous gateway fallback. No additional Harness login or Console key is needed.
+
+The service generates text through `/api/session/:id/generate`. Offered Harness tools are included as text schemas; fenced calls return to the Harness tool executor, and their results are included in the next request. OpenCode's agent loop and tools are not invoked. Image attachments are rejected because this service endpoint accepts text. `transport: auto`, the default, retains credential-based routing.
+
+For tool-capable service use, copy [the backend agent](examples/anton-harness.md) to `~/.config/opencode/agents/anton-harness.md`, then set `agent: anton-harness` alongside `transport: service`. The dedicated agent treats the supplied Harness instructions as authoritative. Its `ask` rules retain native tool declarations; transient generation never executes those tools. The agent is not selected by ordinary OpenCode sessions.
 
 ## Table of Contents
 
@@ -53,7 +57,7 @@ switching to OpenCode tool execution. A missing service leaves the model
 list empty until discovery succeeds; an incorrect service password produces
 `AUTH`.
 
-The `llm-opencode:` settings section accepts `serverURL`, `username`,
+The `llm-opencode:` settings section accepts `transport`, `agent`, `serverURL`, `username`,
 `serviceFile`, `passwordFile`, `passwordEnv`, `autoStart`, `directory`,
 `displayName`, `apiKeyEnv`, `oauthRef`, `zenBaseURL`, `inferenceBaseURL`, `catalogURL`, `catalogRefreshMs`,
 `maxTokens`, `defaultContextWindow`, `requestTimeoutMs`, and `retryPolicy`.

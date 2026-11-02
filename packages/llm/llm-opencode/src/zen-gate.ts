@@ -261,9 +261,13 @@ export function augmentSystemWithTextProtocol(options: GenerateOptions): Generat
  * triple shaped exactly like native wire tool calls. Later block indices
  * keep their own values: parsed calls allocate above every index seen so
  * far, which holds while blocks arrive in ascending order.
+ * @param chunks Provider stream containing text protocol replies.
+ * @param idPrefix Prefix for tool-call identities; callers may supply a unique request prefix.
+ * @returns Provider chunks with parsed tool calls.
  */
 export async function* parseFreeTextTools(
   chunks: AsyncIterable<StreamChunk> | Iterable<StreamChunk>,
+  idPrefix = 'call_zen',
 ): AsyncGenerator<StreamChunk> {
   let maxIndex = -1
   let callSeq = 0
@@ -284,7 +288,7 @@ export async function* parseFreeTextTools(
     for (const call of toolCalls) {
       callSeq += 1
       maxIndex += 1
-      const id = ToolCallId(`call_zen_${callSeq}`)
+      const id = ToolCallId(`${idPrefix}_${callSeq}`)
       const block = {
         type: 'tool-call' as const,
         id,
