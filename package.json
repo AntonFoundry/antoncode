@@ -17,6 +17,7 @@
     "website"
   ],
   "scripts": {
+    "anton": "node --import tsx/esm apps/cli/src/bin.ts",
     "prepare:primary-runtime": "tsx scripts/primary-runtime/prepare.ts",
     "build": "tsx scripts/build.ts",
     "build:artifacts": "tsx scripts/build.ts --scope artifacts",
@@ -126,10 +127,7 @@
     "verify-type-equiv": "tsx scripts/verify-type-equiv.ts",
     "verify-skill-invocation-metadata": "tsx scripts/verify-skill-invocation-metadata.ts",
     "verify-upgrade-guides": "tsx scripts/verify-upgrade-guides.ts",
-    "verify-translation-prompt": "tsx scripts/verify-translation-prompt.ts",
-    "verify-translation-pairing": "tsx scripts/verify-translation-pairing.ts",
     "test:docs": "tsx scripts/run-gates.ts doc-quick",
-    "gen-translation-brief": "tsx scripts/gen-translation-brief.ts",
     "verify-doc-budgets": "tsx scripts/verify-doc-budgets.ts",
     "docs:dev": "pnpm --filter @deepseek-ai/website run dev",
     "docs:build": "tsx website/build.ts && pnpm run verify-doc-site-fragments",
@@ -211,6 +209,11 @@
     "dsh": "node --import tsx/esm apps/cli/src/bin.ts",
     "demo:ptc": "node scripts/demo-ptc.mjs",
     "demo:inspector": "node --import tsx/esm apps/cli/src/bin.ts web --patch ./packages/experimental/inspector/cordis.source.patch.yml",
+    "anton:dev": "pnpm --filter @deepseek-ai/anton-bridge run dev",
+    "anton:build": "bun build --compile --outfile dist/anton-bridge apps/anton-bridge/src/index.ts",
+    "anton:build:macos": "bun scripts/build-anton-macos.ts",
+    "anton:build:windows": "bun scripts/build-anton-windows.ts",
+    "anton:build:linux": "bun scripts/build-anton-linux.ts",
     "mock:llm": "node --import tsx packages/test-support/llm-mock-server/src/bin.ts",
     "start:web": "node --import tsx/esm apps/cli/src/bin.ts web",
     "dev:web": "tsx scripts/dev-web.ts --poll",
@@ -220,10 +223,7 @@
     "verify-official-bundle-catalog": "tsx scripts/gen-official-bundle-catalog.ts --check",
     "gen-provider-data": "tsx packages/llm/llm-pi-ai/scripts/gen-provider-data.ts",
     "verify-provider-data": "tsx packages/llm/llm-pi-ai/scripts/gen-provider-data.ts --check",
-    "verify-product-use": "tsx scripts/verify-product-use.ts",
-    "anton:dev": "pnpm --filter @deepseek-ai/anton-bridge run dev",
-    "anton:build": "bun build --compile --outfile dist/anton-bridge apps/anton-bridge/src/index.ts",
-    "anton:build:macos": "bun scripts/build-anton-macos.ts"
+    "verify-product-use": "tsx scripts/verify-product-use.ts"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-hooks-claude-code": "workspace:*",
@@ -293,6 +293,7 @@
     "tsx": "^4.23.13",
     "typescript": "^6.0.3",
     "vite": "8.2.2",
+    "unrun": "^0.3.1",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.11",
     "@deepseek-ai/dsh-skill-office": "workspace:*",

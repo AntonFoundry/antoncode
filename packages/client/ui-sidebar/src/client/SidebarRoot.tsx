@@ -6,10 +6,16 @@
  * mid-slide. At settle the wide-only content unmounts and the upper
  * controls enter the 56px rail from the same horizontal offset (one icon each,
  * same top-down order) on one fade that ends with the slide. The bottom-pinned
- * settings control only fades. The workspace/session browsing region between
- * global panel rows and the foot is the `sidebar.workspaces` registrant's,
- * and the foot holds `sidebar.settings` plus `sidebar.footer.action`; the shell
- * hands them the wide flag (plus an expand request callback for the browser).
+ * settings control only fades. The workspace/session browsing region below
+ * the New Workspace capsule and global panel rows is the `sidebar.workspaces`
+ * registrant's, the `sidebar.memory` list sits between that region and the
+ * foot, and the foot holds `sidebar.settings` plus
+ * `sidebar.footer.action`; the shell hands them the wide flag (plus an expand
+ * request callback for the browser). The brand doubles as the New Session
+ * shortcut; the capsule raises the region's add-workspace flow (a monotonic
+ * request count down, availability reported back up — it drops out entirely
+ * in a composition with no picking affordance). When the frame renders the
+ * brand (`brandInFrame`), the shell skips its own brand row and toggle.
  *
  * The column also owns whether the scroll regions nested in it draw a
  * scrollbar at all: the shell tracks the pointer and rebinds ui-theme's
@@ -19,8 +25,9 @@
 import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  FishLogo, IconAppsAddOutlineRegular, IconNewChatOutlineMedium, IconNewChatOutlineRegular, IconPanelLeftOutlineRegular,
-  isDarwinDesktop, Menu, ShortcutKeys, Toast, Tooltip, writeClipboard,
+  FishLogo, IconAppsAddOutlineRegular, IconPanelLeftOutlineRegular,
+  IconProjectAddOutlineMedium, IconProjectAddOutlineRegular,
+  isDarwinDesktop, Menu, Toast, Tooltip, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
@@ -130,6 +137,7 @@ function PanelMoreMenu({ wide, label, entries, onOpen, onPinnedChange, trackEntr
 export function SidebarRoot({
   collapsed,
   width,
+  brandInFrame,
   startSession,
   toggleSidebar,
   selectPanel,
@@ -163,7 +171,7 @@ export function SidebarRoot({
   }, [collapsed])
   const windowsTitlebar = document.documentElement.hasAttribute('data-windows-titlebar')
   const wide = windowsTitlebar ? !collapsed : !collapsed || !settled
-  // The Windows titlebar hosts the New Session controls while the sidebar is collapsed.
+  // The Windows titlebar hosts the toggle and New Workspace capsule while the sidebar is collapsed.
   const openNewSession = (): void => {
     trackEntryClick({ menu_name: 'new_session', position: windowsTitlebar && collapsed ? 'titlebar' : 'sidebar' })
     startSession()
@@ -172,6 +180,15 @@ export function SidebarRoot({
   // (that is what --dsh-windows-menu-start reserves), so a right-side bubble
   // lands under their text. Below the caption is the only clear side.
   const captionTooltipSide = windowsTitlebar ? 'bottom' : 'right'
+
+  // New Workspace: presses accumulate as a monotonic count the region
+  // consumes (one rising edge per press); the region reports back whether an
+  // add-workspace flow exists at all. The report lands in an effect after the
+  // first paint, so the default assumes the shipped composition's picker and
+  // only a no-picker composition ever corrects it (dropping the capsule).
+  const [newWorkspaceRequests, setNewWorkspaceRequests] = useState(0)
+  const [addWorkspaceAvailable, setAddWorkspaceAvailable] = useState(true)
+
   // Freeze the content at its expanded width while it fades out (collapsed
   // && wide): the sliding column then clips it instead of reflowing it. The
   // rail layout (.collapsed styles) only applies once the fade settles.
@@ -263,6 +280,54 @@ export function SidebarRoot({
     </Tooltip>
   )
 
+  // The memory region's height: by default it shares the column with the
+  // workspace browser (CSS flex), and dragging the separator pins an explicit
+  // pixel height measured from the region's bottom edge. The separator binds
+  // native listeners directly — the slot outlets between this shell and the
+  // document root keep delegated pointer props from seeing the drag. The
+  // pinned height persists across reloads via localStorage.
+  const MEMORY_HEIGHT_STORAGE_KEY = 'dsh.sidebar.memoryHeight'
+  const memoryArea = useRef<HTMLDivElement>(null)
+  const memoryResizer = useRef<HTMLDivElement>(null)
+  const [memoryHeight, setMemoryHeightState] = useState<number | undefined>(() => {
+    try {
+      const stored = Number(window.localStorage.getItem(MEMORY_HEIGHT_STORAGE_KEY))
+      return Number.isFinite(stored) && stored > 0 ? stored : undefined
+    } catch { return undefined }
+  })
+  const [draggingMemory, setDraggingMemory] = useState(false)
+  const setMemoryHeight = (value: number | undefined): void => {
+    setMemoryHeightState(value)
+    try {
+      if (value === undefined) window.localStorage.removeItem(MEMORY_HEIGHT_STORAGE_KEY)
+      else window.localStorage.setItem(MEMORY_HEIGHT_STORAGE_KEY, String(value))
+    } catch { /* storage unavailable; the drag still works for this page view */ }
+  }
+  const clampMemoryHeight = (value: number): number => Math.min(Math.max(value, 120), window.innerHeight - 240)
+  useEffect(() => {
+    const handle = memoryResizer.current
+    if (handle === null || !wide || collapsed) return undefined
+    const onDown = (event: PointerEvent): void => {
+      event.preventDefault()
+      const startY = event.clientY
+      const startHeight = memoryArea.current?.getBoundingClientRect().height ?? 0
+      setDraggingMemory(true)
+      const onMove = (move: PointerEvent): void => {
+        setMemoryHeight(clampMemoryHeight(startHeight + (startY - move.clientY)))
+      }
+      const onUp = (): void => {
+        setDraggingMemory(false)
+        window.removeEventListener('pointermove', onMove)
+        window.removeEventListener('pointerup', onUp)
+      }
+      window.addEventListener('pointermove', onMove)
+      window.addEventListener('pointerup', onUp)
+    }
+    handle.addEventListener('pointerdown', onDown)
+    return () => { handle.removeEventListener('pointerdown', onDown) }
+    // clampMemoryHeight is a pure closure over window geometry; excluded.
+  }, [wide, collapsed])
+
   return (
     <div
       ref={column}
@@ -270,6 +335,9 @@ export function SidebarRoot({
         css.root, !wide && css.collapsed, !wide && everWide.current && css.railIn,
         collapsed && wide && css.fading, !pointerInside && css.quietBars,
       )}
+      // The settled collapsed-rail state, as a stable hook for geometry e2e
+      // (the auto-collapse breakpoint in columns.ts flips it).
+      data-sidebar-collapsed={!wide || undefined}
       style={wide ? { width: collapsed ? lastWideWidth.current : width } : undefined}
       onPointerEnter={() => {
         cancelLinger()
@@ -277,10 +345,14 @@ export function SidebarRoot({
       }}
       onPointerLeave={() => { armLinger() }}
     >
-      {/* macOS hiddenInset titlebar: the strip shares the row with the
-          traffic lights and keeps the toggle at the sidebar's top-right. */}
-      {darwinDesktop && <div className={css.topStrip} data-window-drag>{toggle}</div>}
-      <div className={css.logoRow} data-window-drag>
+      {/* The frame's brand strip replaces the top strip and this row when it
+          renders the brand (owner prop brandInFrame): the logo + sidebar
+          toggle then live in the frame's fixed top strip, above the whole
+          window tree. macOS hiddenInset titlebar: the strip shares the row
+          with the traffic lights and keeps the toggle at the sidebar's
+          top-right. */}
+      {!brandInFrame && darwinDesktop && <div className={css.topStrip} data-window-drag>{toggle}</div>}
+      {!brandInFrame && <div className={css.logoRow} data-window-drag>
         {/* Expanded, the brand doubles as a New Session shortcut while the
             access snapshot allows `session/create` — except on
             macOS, where it stays part of the logo row's window-drag surface
@@ -329,27 +401,23 @@ export function SidebarRoot({
             )
         })()}
         {!darwinDesktop && toggle}
-      </div>
+      </div>}
 
-      {/* The label fades before the hover/focus shortcut, including on translucent backgrounds. */}
-      {canStartSession && (
-        <Tooltip label={t('session.new.label')} shortcutKeys={newShortcut?.keys} delayMs={500} side={captionTooltipSide} disabled={wide}>
+      {/* Expanded, the capsule carries its own label — tooltip only on the rail.
+          Hidden while the region reports no picking affordance: a composition
+          that can add nothing gets no dead control. */}
+      {addWorkspaceAvailable && (
+        <Tooltip label={t('workspace.new.label')} delayMs={500} side={captionTooltipSide} disabled={wide}>
           <button
             type="button"
-            className={css.newSession}
-            aria-label={t('session.new.label')}
-            aria-keyshortcuts={newShortcut?.aria}
-            onClick={openNewSession}
+            className={css.newWorkspace}
+            aria-label={t('workspace.new.label')}
+            onClick={() => { setNewWorkspaceRequests(count => count + 1) }}
           >
-            <span className={css.newSessionLabelMask}><span className={css.newSessionContent}>
-              {wide
-                ? <IconNewChatOutlineMedium size={14} />
-                : <IconNewChatOutlineRegular size={windowsTitlebar ? 16 : 18} />}
-              {wide && <span className={clsx(css.newSessionLabel, css.wide)}>{t('session.new')}</span>}
-            </span></span>
-            {wide && newShortcut !== undefined && newShortcut.keys.length > 0 && <span className={css.newSessionShortcut} aria-hidden="true">
-              <ShortcutKeys keys={newShortcut.keys} />
-            </span>}
+            {wide
+              ? <IconProjectAddOutlineMedium size={14} />
+              : <IconProjectAddOutlineRegular size={windowsTitlebar ? 16 : 18} />}
+            {wide && <span className={clsx(css.newWorkspaceLabel, css.wide)}>{t('workspace.new')}</span>}
           </button>
         </Tooltip>
       )}
@@ -389,9 +457,38 @@ export function SidebarRoot({
       )}
 
       {/* The browsing region fills the column between the controls and the
-          foot in both states; its rail icon column rides the same slot. */}
+          foot in both states; its rail icon column rides the same slot. The
+          owner share carries the New Workspace conversation: presses down,
+          add availability up. */}
       <div className={css.regionArea}>
         {renderSlot('sidebar.workspaces', {
+          wide,
+          expandSidebar: () => { if (collapsed) toggleSidebar() },
+          newWorkspaceRequests,
+          reportAddWorkspaceAvailability: setAddWorkspaceAvailable,
+        })}
+      </div>
+
+      {/* Memory is a first-class plugin surface, kept visible above the
+          footer without coupling the sidebar shell to any memory engine. The
+          separator above it drags to pin its height. */}
+      {wide && !collapsed && (
+        <div
+          ref={memoryResizer}
+          className={css.memoryResizer}
+          data-dragging={draggingMemory ? '' : undefined}
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label={t('memory.resize.label')}
+          title={t('memory.resize.title')}
+        />
+      )}
+      <div
+        ref={memoryArea}
+        className={css.memoryArea}
+        style={memoryHeight === undefined ? undefined : { flex: 'none', height: memoryHeight, maxHeight: 'none' }}
+      >
+        {renderSlot('sidebar.memory', {
           wide,
           expandSidebar: () => { if (collapsed) toggleSidebar() },
         })}

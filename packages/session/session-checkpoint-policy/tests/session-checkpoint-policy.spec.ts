@@ -69,7 +69,9 @@ describe('session-checkpoint-policy request boundary', () => {
     const pending = drain(ctx.llm.stream({
       provider: 'mock', model: 'mock', messages: [], sessionId: session.id,
     }))
-    await Promise.resolve()
+    // Drain a macrotask: the dispatch path validates the tool parameters
+    // before the checkpoint starts, so one microtask no longer reaches it.
+    await new Promise(resolve => setTimeout(resolve))
     expect(order).toEqual(['flush:start'])
     gate.resolve(undefined)
     await pending
@@ -125,7 +127,7 @@ describe('session-checkpoint-policy tool and step boundaries', () => {
       order.push('flush:end')
     })
     ctx.tools.register({
-      name: 'write', description: 'side effect', parameters: {},
+      name: 'write', description: 'side effect', parameters: { type: 'object' },
       output: { schema: { type: 'null' }, render: () => [] },
       execute: async () => { order.push('tool'); return null },
     })
@@ -157,7 +159,7 @@ describe('session-checkpoint-policy tool and step boundaries', () => {
       order.push('flush:end')
     })
     ctx.tools.register({
-      name: 'write', description: 'side effect', parameters: {},
+      name: 'write', description: 'side effect', parameters: { type: 'object' },
       output: { schema: { type: 'null' }, render: () => [] },
       execute: async () => { order.push('tool'); return null },
     })
@@ -189,7 +191,7 @@ describe('session-checkpoint-policy tool and step boundaries', () => {
     let ran = false
     ctx.on('session/flush', () => Promise.reject(new Error('disk unavailable')))
     ctx.tools.register({
-      name: 'write', description: 'side effect', parameters: {},
+      name: 'write', description: 'side effect', parameters: { type: 'object' },
       output: { schema: { type: 'null' }, render: () => [] },
       execute: async () => { ran = true; return null },
     })
@@ -209,7 +211,7 @@ describe('session-checkpoint-policy tool and step boundaries', () => {
     let flushes = 0
     ctx.on('session/flush', () => { flushes += 1 })
     ctx.tools.register({
-      name: 'nested', description: 'nested', parameters: {},
+      name: 'nested', description: 'nested', parameters: { type: 'object' },
       output: { schema: { type: 'null' }, render: () => [] },
       execute: async () => null,
     })

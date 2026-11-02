@@ -1,0 +1,24 @@
+/* Markdown file-view body: a readable measure over the shared MarkdownText
+   engine's own baseline (the engine's stylesheet carries the typography). */
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.note {
+  margin: 0;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  padding: 16px 24px 32px;
+  overflow: auto;
+  color: var(--dsw-alias-label-primary);
+}

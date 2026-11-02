@@ -7,6 +7,7 @@ exports[`sidebar shell snapshots > renders Windows caption controls in expanded 
 >
   <div
     class="root collapsed railIn quietBars"
+    data-sidebar-collapsed="true"
     style=""
   >
     <div
@@ -33,31 +34,31 @@ exports[`sidebar shell snapshots > renders Windows caption controls in expanded 
       </button>
     </div>
     <button
-      aria-label="New session"
-      class="newSession"
+      aria-label="New workspace"
+      class="newWorkspace"
       type="button"
     >
-      <span
-        class="newSessionLabelMask"
-      >
-        <span
-          class="newSessionContent"
-        >
-          <svg
-            aria-hidden="true"
-            data-content="6e5e38f3"
-            data-icon="dsw-icon-new-chat-outline-regular"
-            height="16"
-            width="16"
-          />
-        </span>
-      </span>
+      <svg
+        aria-hidden="true"
+        data-content="36fae357"
+        data-icon="dsw-icon-project-add-outline-regular"
+        height="16"
+        width="16"
+      />
     </button>
     <div
       class="regionArea"
     >
       <div
         data-slot="sidebar.workspaces"
+        style="display: contents;"
+      />
+    </div>
+    <div
+      class="memoryArea"
+    >
+      <div
+        data-slot="sidebar.memory"
         style="display: contents;"
       />
     </div>
@@ -118,12 +119,12 @@ exports[`sidebar shell snapshots > renders Windows caption controls in expanded 
                 class="copyVersion"
                 data-copy-version="true"
               >
-                <svg
+                <img
+                  alt=""
                   aria-hidden="true"
-                  data-content="965fe321"
-                  fill="none"
-                  height="17.6580310880829"
-                  viewBox="0 0 23.16 17.04"
+                  height="24"
+                  src="/anton-mark.png"
+                  style="display: block; border-radius: 6.720000000000001px;"
                   width="24"
                 />
               </span>
@@ -171,29 +172,21 @@ exports[`sidebar shell snapshots > renders Windows caption controls in expanded 
       </button>
     </div>
     <button
-      aria-label="New session"
-      class="newSession"
+      aria-label="New workspace"
+      class="newWorkspace"
       type="button"
     >
+      <svg
+        aria-hidden="true"
+        data-content="c4dd58be"
+        data-icon="dsw-icon-project-add-outline-medium"
+        height="14"
+        width="14"
+      />
       <span
-        class="newSessionLabelMask"
+        class="newWorkspaceLabel wide"
       >
-        <span
-          class="newSessionContent"
-        >
-          <svg
-            aria-hidden="true"
-            data-content="532cf99a"
-            data-icon="dsw-icon-new-chat-outline-medium"
-            height="14"
-            width="14"
-          />
-          <span
-            class="newSessionLabel wide"
-          >
-            New Session
-          </span>
-        </span>
+        New Workspace
       </span>
     </button>
     <div
@@ -201,6 +194,21 @@ exports[`sidebar shell snapshots > renders Windows caption controls in expanded 
     >
       <div
         data-slot="sidebar.workspaces"
+        style="display: contents;"
+      />
+    </div>
+    <div
+      aria-label="Resize the memory panel"
+      aria-orientation="horizontal"
+      class="memoryResizer"
+      role="separator"
+      title="Drag to resize the execution tree"
+    />
+    <div
+      class="memoryArea"
+    >
+      <div
+        data-slot="sidebar.memory"
         style="display: contents;"
       />
     </div>
@@ -235,6 +243,7 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
 >
   <div
     class="root collapsed railIn quietBars"
+    data-sidebar-collapsed="true"
     style=""
   >
     <div
@@ -254,12 +263,12 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
             data-slot="sidebar.brand.mark"
             style="display: contents;"
           >
-            <svg
+            <img
+              alt=""
               aria-hidden="true"
-              data-content="965fe321"
-              fill="none"
-              height="17.6580310880829"
-              viewBox="0 0 23.16 17.04"
+              height="24"
+              src="/anton-mark.png"
+              style="display: block; border-radius: 6.720000000000001px;"
               width="24"
             />
           </div>
@@ -279,31 +288,31 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
       </button>
     </div>
     <button
-      aria-label="New session"
-      class="newSession"
+      aria-label="New workspace"
+      class="newWorkspace"
       type="button"
     >
-      <span
-        class="newSessionLabelMask"
-      >
-        <span
-          class="newSessionContent"
-        >
-          <svg
-            aria-hidden="true"
-            data-content="6e5e38f3"
-            data-icon="dsw-icon-new-chat-outline-regular"
-            height="18"
-            width="18"
-          />
-        </span>
-      </span>
+      <svg
+        aria-hidden="true"
+        data-content="36fae357"
+        data-icon="dsw-icon-project-add-outline-regular"
+        height="18"
+        width="18"
+      />
     </button>
     <div
       class="regionArea"
     >
       <div
         data-slot="sidebar.workspaces"
+        style="display: contents;"
+      />
+    </div>
+    <div
+      class="memoryArea"
+    >
+      <div
+        data-slot="sidebar.memory"
         style="display: contents;"
       />
     </div>
@@ -364,12 +373,12 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
                 class="copyVersion"
                 data-copy-version="true"
               >
-                <svg
+                <img
+                  alt=""
                   aria-hidden="true"
-                  data-content="965fe321"
-                  fill="none"
-                  height="17.6580310880829"
-                  viewBox="0 0 23.16 17.04"
+                  height="24"
+                  src="/anton-mark.png"
+                  style="display: block; border-radius: 6.720000000000001px;"
                   width="24"
                 />
               </span>
@@ -417,29 +426,21 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
       </button>
     </div>
     <button
-      aria-label="New session"
-      class="newSession"
+      aria-label="New workspace"
+      class="newWorkspace"
       type="button"
     >
+      <svg
+        aria-hidden="true"
+        data-content="c4dd58be"
+        data-icon="dsw-icon-project-add-outline-medium"
+        height="14"
+        width="14"
+      />
       <span
-        class="newSessionLabelMask"
+        class="newWorkspaceLabel wide"
       >
-        <span
-          class="newSessionContent"
-        >
-          <svg
-            aria-hidden="true"
-            data-content="532cf99a"
-            data-icon="dsw-icon-new-chat-outline-medium"
-            height="14"
-            width="14"
-          />
-          <span
-            class="newSessionLabel wide"
-          >
-            New Session
-          </span>
-        </span>
+        New Workspace
       </span>
     </button>
     <div
@@ -447,6 +448,21 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
     >
       <div
         data-slot="sidebar.workspaces"
+        style="display: contents;"
+      />
+    </div>
+    <div
+      aria-label="Resize the memory panel"
+      aria-orientation="horizontal"
+      class="memoryResizer"
+      role="separator"
+      title="Drag to resize the execution tree"
+    />
+    <div
+      class="memoryArea"
+    >
+      <div
+        data-slot="sidebar.memory"
         style="display: contents;"
       />
     </div>
@@ -507,12 +523,12 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
                 class="copyVersion"
                 data-copy-version="true"
               >
-                <svg
+                <img
+                  alt=""
                   aria-hidden="true"
-                  data-content="965fe321"
-                  fill="none"
-                  height="17.6580310880829"
-                  viewBox="0 0 23.16 17.04"
+                  height="24"
+                  src="/anton-mark.png"
+                  style="display: block; border-radius: 6.720000000000001px;"
                   width="24"
                 />
               </span>
@@ -560,29 +576,21 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
       </button>
     </div>
     <button
-      aria-label="新建会话"
-      class="newSession"
+      aria-label="新建工作区"
+      class="newWorkspace"
       type="button"
     >
+      <svg
+        aria-hidden="true"
+        data-content="c4dd58be"
+        data-icon="dsw-icon-project-add-outline-medium"
+        height="14"
+        width="14"
+      />
       <span
-        class="newSessionLabelMask"
+        class="newWorkspaceLabel wide"
       >
-        <span
-          class="newSessionContent"
-        >
-          <svg
-            aria-hidden="true"
-            data-content="532cf99a"
-            data-icon="dsw-icon-new-chat-outline-medium"
-            height="14"
-            width="14"
-          />
-          <span
-            class="newSessionLabel wide"
-          >
-            新会话
-          </span>
-        </span>
+        新建工作区
       </span>
     </button>
     <div
@@ -590,6 +598,21 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
     >
       <div
         data-slot="sidebar.workspaces"
+        style="display: contents;"
+      />
+    </div>
+    <div
+      aria-label="调整记忆面板大小"
+      aria-orientation="horizontal"
+      class="memoryResizer"
+      role="separator"
+      title="拖动以调整执行树大小"
+    />
+    <div
+      class="memoryArea"
+    >
+      <div
+        data-slot="sidebar.memory"
         style="display: contents;"
       />
     </div>

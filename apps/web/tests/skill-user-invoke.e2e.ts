@@ -140,7 +140,7 @@ describe.skipIf(MODE === 'record')('web e2e: user-explicit skill invocation thro
     expect(injected).toContain('Reply with the fixture acknowledgement line.')
     expect(injected).not.toContain(ARGS_TEXT)
 
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
     const expanded = await captureExpandedTurnProcessAria(
       page,

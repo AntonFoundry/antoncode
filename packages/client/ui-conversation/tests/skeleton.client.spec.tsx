@@ -408,6 +408,16 @@ function mount(
 }
 
 describe('Hero chrome', () => {
+  it('remounts the animation for a new session but preserves it across same-session renders', () => {
+    const b = mount(conversationSnapshot({ composerPhase: 'blank', blank: true }))
+    const firstImage = b.view.container.querySelector('img[src="/anton-mark.png"]')
+    expect(firstImage).not.toBeNull()
+    b.rerender()
+    expect(b.view.container.querySelector('img[src="/anton-mark.png"]')).toBe(firstImage)
+    b.rerender(sid('s2'))
+    expect(b.view.container.querySelector('img[src="/anton-mark.png"]')).not.toBe(firstImage)
+  })
+
   it('renders the English preview badge through the hero locale seat', () => {
     const renderSlot = vi.fn<HeroShellProps['renderSlot']>(() => null)
     const view = render(<HeroShell t={makeTranslate(en, commonEn)} renderSlot={renderSlot} />)
@@ -419,9 +429,18 @@ describe('Hero chrome', () => {
     if (brandMarkOwner === undefined || !('size' in brandMarkOwner) || !('className' in brandMarkOwner)) {
       throw new Error('hero brand-mark owner must provide size and className')
     }
-    expect(brandMarkOwner.size).toBe(34)
+    expect(brandMarkOwner.size).toBe(288)
     expect(brandMarkOwner.className).toBeTypeOf('string')
     expect(renderSlot.mock.calls[0]?.[2]?.fallback).toBeTruthy()
+  })
+
+  it('falls back to the animated Anton mark when no brand-mark occupant renders', () => {
+    const renderSlot = ((_name: string, _owner: unknown, options?: { fallback?: ReactNode }) =>
+      options?.fallback ?? null) as HeroShellProps['renderSlot']
+    const view = render(<HeroShell t={makeTranslate(en, commonEn)} renderSlot={renderSlot} />)
+    const mark = view.container.querySelector('img[src="/anton-mark.png"]')
+    expect(mark).not.toBeNull()
+    expect(mark?.getAttribute('width')).toBe('288')
   })
 })
 

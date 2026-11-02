@@ -70,6 +70,8 @@ describe('web e2e: fresh round trip through the real assembly', () => {
   beforeAll(async () => {
     scaffold = await launchWebScaffold({
       compareReplaySession: true,
+      // The drive prompt calls `bash` directly, without a todo plan.
+      directToolCalls: true,
       ...(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 15 }),
     })
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { sessionEvents.push(event) })
@@ -107,7 +109,7 @@ describe('web e2e: fresh round trip through the real assembly', () => {
     await expect.poll(() => page.evaluate(() => localStorage.getItem('dsh.sessions.current'))).toBe(beforeReload)
     if (MODE !== 'record') {
       await compareOrRefreshGolden(BLANK_EXPECTED,
-        await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd), MODE)
+        await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd), MODE)
     }
     const input = page.locator('[data-composer-input]').first()
     await input.waitFor({ timeout: 10_000 })
@@ -311,11 +313,11 @@ describe('web e2e: fresh round trip through the real assembly', () => {
     await page.getByRole('button', {
       name: 'Select model, current DeepSeek-V4-Flash',
     }).waitFor({ timeout: 10_000 })
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-chat-flow]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
     const expanded = await captureExpandedTurnProcessAria(
       page,
-      '[class*="centerCol"]',
+      '[data-pane="content"]',
       scaffold.workspaceCwd,
     )
     await compareOrRefreshGolden(UI_EXPANDED_EXPECTED, expanded, MODE)

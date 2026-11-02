@@ -145,6 +145,7 @@ describe('PiAiAdapter provider routing', () => {
     expect(server.requests[0]).toMatchObject({
       model: 'deepseek-v4-pro',
       temperature: 0.2,
+      // The installed catalog declares deepseek compat.maxTokensField.
       max_tokens: 77,
       thinking: { type: 'enabled' },
       reasoning_effort: 'max',
@@ -467,8 +468,8 @@ describe('provider profile lifecycle', () => {
       },
     })
     expect(ctx.llm.listProviders()).toEqual([
-      { id: 'openai', name: 'openai' },
-      { id: 'anthropic', name: 'anthropic' },
+      { id: 'openai', name: 'OpenAI' },
+      { id: 'anthropic', name: 'Anthropic Claude' },
     ])
     expect(ctx.llm.providerRetryPolicy('openai')).toEqual({
       mode: 'always',
@@ -478,7 +479,7 @@ describe('provider profile lifecycle', () => {
     })
     expect(ctx.llm.providerRetryPolicy('anthropic')).toMatchObject({
       mode: 'normal',
-      maxRetries: 5,
+      maxRetries: Number.MAX_SAFE_INTEGER,
     })
     await fiber.dispose()
     expect(ctx.llm.listProviders()).toEqual([])
@@ -490,12 +491,25 @@ describe('provider profile lifecycle', () => {
     await ctx.plugin(LlmPiAi, { providers: { openai: {} } })
     const models = await ctx.llm.listModels('openai')
     expect(models.find(model => model.id === 'gpt-4.1')).toEqual({
-      provider: 'openai', id: 'gpt-4.1', name: 'GPT-4.1',
+      provider: 'openai', id: 'gpt-4.1', name: 'GPT 4.1',
       inputModalities: ['text', 'image'],
     })
     expect(models.every(model => model.provider === 'openai')).toBe(true)
     const info = await ctx.llm.resolveModelInfo('openai', 'gpt-4.1')
     expect(typeof info.context?.contextWindow).toBe('number')
+  })
+
+  it('humanizes NVIDIA provider/model labels without changing request ids', async () => {
+    const adapter = adapterOf({ nvidia: {
+      models: [{ id: 'z-ai/glm-5.3-flash', name: 'GLM-5.3-Flash', input: ['text', 'image'] }],
+    } })
+    expect(adapter.providerInfo('nvidia')).toEqual({ id: 'nvidia', name: 'NVIDIA' })
+    await expect(adapter.listModels('nvidia')).resolves.toContainEqual({
+      provider: 'nvidia',
+      id: 'z-ai/glm-5.3-flash',
+      name: 'GLM 5.3 Flash',
+      inputModalities: ['text', 'image'],
+    })
   })
 
   it('exposes pi-ai model thinking levels verbatim without inventing a provider default', async () => {
@@ -508,6 +522,8 @@ describe('provider profile lifecycle', () => {
     await expect(ctx.llm.resolveModelInfo('deepseek', 'deepseek-flash'))
       .resolves.toMatchObject({
         reasoning: {
+          // The installed catalog's effort ladder, verbatim — no provider
+          // default invented around it.
           efforts: [
             { id: ReasoningEffortId('off'), name: 'Off' },
             { id: ReasoningEffortId('low'), name: 'Low' },
@@ -963,12 +979,15 @@ describe('provider profile lifecycle', () => {
     expect(new LlmError('x', 'X')).toBeInstanceOf(Error)
   })
 
-  it('rejects unsupported or unresolved image input before provider I/O', async () => {
+  it('omits unsupported or unresolved image input gracefully instead of failing', async () => {
     const adapter = adapterOf({ openai: {}, deepseek: {} })
     const drain = async (options: Parameters<PiAiAdapter['stream']>[0]): Promise<void> => {
       for await (const _chunk of adapter.stream(options)) { /* drain */ }
     }
 
+    // A model without image input, an unresolvable attachment, and a nested
+    // tool-result image all degrade to the omitted placeholder: the step
+    // completes text-only instead of failing.
     await expect(drain({
       provider: 'deepseek',
       model: 'deepseek-v4-pro',
@@ -976,10 +995,7 @@ describe('provider profile lifecycle', () => {
         content: [{ type: 'image', attachment: IMAGE_REF }],
         source: { kind: 'model', provider: 'deepseek-official', model: 'deepseek-v4-flash' },
       })],
-    })).rejects.toMatchObject({
-      code: 'UNSUPPORTED_CONTENT',
-      message: 'pi-ai model "deepseek-v4-pro" does not support image input',
-    })
+    })).resolves.toBeUndefined()
     await expect(drain({
       provider: 'openai',
       model: 'gpt-4.1',
@@ -987,7 +1003,7 @@ describe('provider profile lifecycle', () => {
         content: [{ type: 'image', attachment: IMAGE_REF }],
         source: { kind: 'model', provider: 'deepseek-official', model: 'deepseek-v4-flash' },
       })],
-    })).rejects.toMatchObject({ code: 'UNSUPPORTED_CONTENT' })
+    })).resolves.toBeUndefined()
     await expect(drain({
       provider: 'openai',
       model: 'gpt-4.1',
@@ -996,7 +1012,7 @@ describe('provider profile lifecycle', () => {
         content: [{ type: 'image', attachment: IMAGE_REF }],
         isError: false,
       })],
-    })).rejects.toMatchObject({ code: 'UNSUPPORTED_CONTENT' })
+    })).resolves.toBeUndefined()
   })
 
   it('validates profiles at the shared resolver boundary', () => {

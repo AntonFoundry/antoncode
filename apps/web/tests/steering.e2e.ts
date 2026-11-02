@@ -85,6 +85,8 @@ describe('web e2e: mid-turn steering lands durably and visibly', () => {
     // Trajectory previews truncate before path normalization; pin the input length across hosts.
     scaffold = await launchWebScaffold({
       workspacePathLength: 112,
+      // The replay calls `ask_user_question` directly, without a todo plan.
+      directToolCalls: true,
       ...(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: REPLAY_PACE_MS, compareReplaySession: true }),
     })
     scaffold.ctx.on('session/event', (_session, event) => { sessionEvents.push(event) })
@@ -151,7 +153,7 @@ describe('web e2e: mid-turn steering lands durably and visibly', () => {
       expect(await page.getByText(STEER, { exact: true }).count()).toBe(1)
       expect(await pendingSteering.count()).toBe(1)
       expect(await page.getByRole('button', { name: 'Edit queued message' }).count()).toBe(0)
-      const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+      const snapshot = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
       await compareOrRefreshGolden(MID_EXPECTED, snapshot, MODE)
     }
 
@@ -189,11 +191,11 @@ describe('web e2e: mid-turn steering lands durably and visibly', () => {
     expect(await page.locator('[data-question-key]').count()).toBe(0)
     // Settled golden: steer text between the question round trip and the
     // obeying reply, composer takeover gone.
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(SETTLED_EXPECTED, snapshot, MODE)
     const expanded = await captureExpandedTurnProcessAria(
       page,
-      '[class*="centerCol"]',
+      '[data-pane="content"]',
       scaffold.workspaceCwd,
     )
     await compareOrRefreshGolden(SETTLED_EXPANDED_EXPECTED, expanded, MODE)
@@ -201,7 +203,7 @@ describe('web e2e: mid-turn steering lands durably and visibly', () => {
     await page.locator('[data-trajectory-row-key]').filter({ hasText: STEER }).waitFor({ timeout: 10_000 })
     await compareOrRefreshGolden(
       TRAJECTORY_EXPECTED,
-      await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd),
+      await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd),
       MODE,
     )
     expect(tripwire.pageErrors).toEqual([])
@@ -326,7 +328,7 @@ describe.skipIf(MODE === 'record')('web e2e: retained steering and a post-stop m
       }, { timeout: 10_000 }).toBe(true)
     }
     await page.getByText(RESPONSE, { exact: true }).waitFor()
-    await expectOrder('[class*="centerCol"]')
+    await expectOrder('[data-pane="content"]')
     await page.getByRole('tab', { name: 'Trajectory', exact: true }).click()
     await expectOrder('[data-trajectory-scroll]', true)
     await compareOrRefreshGolden(
@@ -361,7 +363,7 @@ describe.each(['reconnect', 'delayed-inbox'] as const)('web e2e: composer shortc
   }
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ replayFixture: FIXTURE, paceMs: REPLAY_PACE_MS, compareReplaySession: false })
+    scaffold = await launchWebScaffold({ replayFixture: FIXTURE, paceMs: REPLAY_PACE_MS, compareReplaySession: false, directToolCalls: true })
     scaffold.ctx.on('session/event', (_session, event) => { sessionEvents.push(event) })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
@@ -473,7 +475,7 @@ describe('web e2e: composer shortcut follows the swapped busy behavior', () => {
   const sessionEvents: SessionEvent[] = []
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ replayFixture: FIXTURE, paceMs: REPLAY_PACE_MS, compareReplaySession: false })
+    scaffold = await launchWebScaffold({ replayFixture: FIXTURE, paceMs: REPLAY_PACE_MS, compareReplaySession: false, directToolCalls: true })
     scaffold.ctx.on('session/event', (_session, event) => { sessionEvents.push(event) })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
@@ -546,6 +548,9 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
       replayFixture: STEER_ALL_FIXTURE,
       replayOverride: STEER_ALL_OVERRIDE,
       paceMs: REPLAY_PACE_MS,
+      // The override script calls `ask_user_question` directly, without a
+      // todo plan.
+      directToolCalls: true,
     })
     disposeReplayBarrier = scaffold.ctx.on('llm/stream', async function* (_options, next) {
       await releaseReplay.promise
@@ -632,7 +637,7 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
     // arguments stay gated so the mid snapshot cannot acquire a preparation row.
     await page.locator('[data-variant="think"][data-state="ok"]').first().waitFor({ state: 'attached', timeout: 10_000 })
     expect(await page.locator('[data-tool="ask_user_question"][data-state="preparing"]').count()).toBe(0)
-    const mid = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const mid = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(STEER_ALL_MID, mid, MODE)
 
     // Answer the question; the step closes, the loop drains both steerings
@@ -654,11 +659,11 @@ describe('web e2e: empty-draft Cmd+Enter steers the whole queue', () => {
     await expect.poll(() => page.getByText(STEER_ONE, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
     await expect.poll(() => page.getByText(STEER_TWO, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
     expect(await page.locator('[data-pending-steering]').count()).toBe(0)
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(STEER_ALL_SETTLED, snapshot, MODE)
     const expanded = await captureExpandedTurnProcessAria(
       page,
-      '[class*="centerCol"]',
+      '[data-pane="content"]',
       scaffold.workspaceCwd,
     )
     await compareOrRefreshGolden(STEER_ALL_SETTLED_EXPANDED, expanded, MODE)

@@ -80,7 +80,10 @@ describe('web e2e: preset roster guidance', () => {
     onTestFailed(() => saveFailureShot(page, 'preset-roster-creator'))
     // The entry stages the self-referential preset and lands a new task on it,
     // so the flow needs a connected workspace to enter.
-    await page.getByRole('dialog', { name: '设置' }).getByRole('button', { name: '关闭', exact: true }).last().click()
+    // The settings window closes through the WM frame's own Close control
+    // (scoped to the settings pane — every window frame has a Close button).
+    await page.locator('[data-buffer="settings"]').getByRole('button', { name: 'Close', exact: true }).click()
+    await page.getByRole('dialog', { name: '设置' }).waitFor({ state: 'detached', timeout: 10_000 })
     await connectFreshWorkspaceZh(page, scaffold.workspaceCwd)
     await openSettings(page, 'zh')
     const settings = page.getByRole('dialog', { name: '设置' })

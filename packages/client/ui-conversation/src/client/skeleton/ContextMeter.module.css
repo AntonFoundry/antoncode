@@ -96,6 +96,7 @@
 }
 
 .bar {
+  position: relative;
   display: flex;
   gap: 1px;
   margin: 10px 0 12px;
@@ -112,6 +113,15 @@
   height: 100%;
   border-radius: 1px;
   background: var(--meter-tint, var(--dsw-alias-label-tertiary));
+}
+
+.additionMarker {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--dsw-static-red-500, rgb(239, 68, 68));
 }
 
 .swatch {

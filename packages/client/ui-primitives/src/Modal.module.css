@@ -12,6 +12,8 @@
   align-items: center;
   justify-content: center;
   padding: max(24px, var(--dsh-frame-overlay-top, 24px)) 24px;
+  /* Portaled outside .frame, so it carries the interface zoom itself. */
+  zoom: var(--dsh-zoom-ui, 1);
 }
 
 /* Only paint excludes the native caption; the root still blocks background clicks. */

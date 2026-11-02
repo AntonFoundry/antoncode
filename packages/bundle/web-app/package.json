@@ -193,7 +193,18 @@
     "@deepseek-ai/dsh-workspace-changes": "workspace:*",
     "@deepseek-ai/schemastery": "workspace:~",
     "commander": "^15.0.0",
-    "open": "^11.0.2"
+    "open": "^11.0.2",
+    "@deepseek-ai/dsh-client-ui-file-image": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-file-markdown": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-file-video": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-flowbuilder": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-conversation-agent-mail": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-terminal": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-webcam": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-worktree": "workspace:*",
+    "@deepseek-ai/dsh-flowbuilder-service": "workspace:*",
+    "@deepseek-ai/dsh-model-intel": "workspace:*",
+    "@deepseek-ai/dsh-worktree": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",

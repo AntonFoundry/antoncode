@@ -329,7 +329,8 @@ function JobItem({ job, view, expanded, now, onToggle, kill, t }: {
  * or a settled one with retained output) starts its observation stream, and
  * collapsing (or closing the popover) stops it — output only flows while
  * someone is watching. A running row carries a two-press stop button that
- * requests a human kill through the job controller.
+ * requests a human kill through the job controller; while any row is running,
+ * a one-press stop-all button beside the trigger kills every running job.
  * @param props - runtime slot currency, the jobs snapshot hook, the roster,
  *   observation, and kill controls, and the namespace translator.
  * @returns the trigger and its popover list, or null when there is nothing to show.
@@ -348,6 +349,8 @@ export function JobListAction({ sessionId, useJobs, watchRows, observe, killJob,
   const [clearedKeys, setClearedKeys] = useState<ReadonlySet<string>>(() => new Set())
   // One kill affordance advances at a time: arming a row disarms any other.
   const [killPhase, setKillPhase] = useState<{ key: string; state: Exclude<KillState, 'idle'> } | undefined>(undefined)
+  // The header stop-all disables while its kill requests are in flight.
+  const [stopAllPending, setStopAllPending] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -515,8 +518,32 @@ export function JobListAction({ sessionId, useJobs, watchRows, observe, killJob,
     />
   )
 
+  const runningRows = liveRows.filter(job => job.status === 'running')
+  // One press stops every running job of this session; each row settles
+  // through the jobs control frames, never through the kill responses.
+  const stopAll = (): void => {
+    setStopAllPending(true)
+    void Promise.all(runningRows.map(async job => killJob(sessionId, String(job.id)))).then(() => {
+      setStopAllPending(false)
+    })
+  }
+
   return (
-    <div ref={rootRef} onKeyDown={onKeyDown}>
+    <div ref={rootRef} className={css.root} onKeyDown={onKeyDown}>
+      {runningRows.length > 0
+        ? (
+          <button
+            type="button"
+            className={css.stopAll}
+            disabled={stopAllPending}
+            aria-label={t('stop.all', { count: runningRows.length })}
+            title={t('stop.all', { count: runningRows.length })}
+            onClick={stopAll}
+          >
+            <IconStopFillRegular size={12} />
+          </button>
+        )
+        : null}
       <button
         ref={triggerRef}
         type="button"

@@ -682,6 +682,39 @@ Use only in plan mode. Present your plan for the user's review and, on approval,
     "plan": {
       "type": "string",
       "description": "The complete plan, as markdown, starting with a # heading that names it."
+    },
+    "path": {
+      "type": "string",
+      "description": "Optional workspace-relative path where the plan markdown is saved. Defaults to \"implementation_plan.md\"."
+    }
+  },
+  "required": [
+    "plan"
+  ]
+}
+```
+
+Source: [`packages/plan/plan-mode/src/index.ts`](../packages/plan/plan-mode/src/index.ts)
+
+### `plan_write`
+
+Record or update the standing implementation plan for the current work. Use this tool whenever an implementation plan has been produced (e.g. by a planning subagent) or updated. The plan persists across turns and is injected into every subsequent request as a standing guide for both the model and the user. Send the COMPLETE markdown plan, starting with a # heading.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "plan": {
+      "type": "string",
+      "description": "The complete implementation plan, as markdown, starting with a # heading that names it."
+    },
+    "title": {
+      "type": "string",
+      "description": "Optional short title for the plan."
+    },
+    "path": {
+      "type": "string",
+      "description": "Optional workspace-relative file path to save the plan markdown. Defaults to \"implementation_plan.md\"."
     }
   },
   "required": [
@@ -2695,28 +2728,124 @@ Record and update a task list to plan multi-step work and show progress; skip it
   "properties": {
     "todos": {
       "type": "array",
-      "description": "The COMPLETE task list, replacing any previous list.",
+      "description": "The COMPLETE task tree, replacing any previous tree. Up to three levels: a top-level task nests children, which may themselves nest grandchildren.",
       "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "content": {
-            "type": "string",
-            "description": "What the task is — a short imperative line."
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "content": {
+                "type": "string",
+                "description": "What the task is — a short imperative line."
+              },
+              "status": {
+                "type": "string",
+                "description": "pending (not started) | in_progress (now) | completed (done) | cancelled (dropped).",
+                "enum": [
+                  "pending",
+                  "in_progress",
+                  "completed",
+                  "cancelled"
+                ]
+              },
+              "priority": {
+                "type": "string",
+                "description": "Optional scheduling weight: high | medium | low.",
+                "enum": [
+                  "high",
+                  "medium",
+                  "low"
+                ]
+              },
+              "children": {
+                "type": "array",
+                "description": "Subtasks of this node (level two). Each child may itself nest grandchildren (level three); nothing nests below that.",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "content": {
+                          "type": "string",
+                          "description": "What the task is — a short imperative line."
+                        },
+                        "status": {
+                          "type": "string",
+                          "description": "pending (not started) | in_progress (now) | completed (done) | cancelled (dropped).",
+                          "enum": [
+                            "pending",
+                            "in_progress",
+                            "completed",
+                            "cancelled"
+                          ]
+                        },
+                        "priority": {
+                          "type": "string",
+                          "description": "Optional scheduling weight: high | medium | low.",
+                          "enum": [
+                            "high",
+                            "medium",
+                            "low"
+                          ]
+                        },
+                        "children": {
+                          "type": "array",
+                          "description": "Grandchildren of this node (level three — the deepest). Leaf shapes: no further nesting.",
+                          "items": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "additionalProperties": true,
+                                "properties": {
+                                  "content": {
+                                    "type": "string",
+                                    "description": "What the task is — a short imperative line."
+                                  },
+                                  "status": {
+                                    "type": "string",
+                                    "description": "pending (not started) | in_progress (now) | completed (done) | cancelled (dropped).",
+                                    "enum": [
+                                      "pending",
+                                      "in_progress",
+                                      "completed",
+                                      "cancelled"
+                                    ]
+                                  },
+                                  "priority": {
+                                    "type": "string",
+                                    "description": "Optional scheduling weight: high | medium | low.",
+                                    "enum": [
+                                      "high",
+                                      "medium",
+                                      "low"
+                                    ]
+                                  }
+                                }
+                              },
+                              {
+                                "type": "string",
+                                "description": "A bare task line; repaired into a pending node."
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "string",
+                      "description": "A bare task line; repaired into a pending node."
+                    }
+                  ]
+                }
+              }
+            }
           },
-          "status": {
+          {
             "type": "string",
-            "description": "pending (not started) | in_progress (now) | completed (done).",
-            "enum": [
-              "pending",
-              "in_progress",
-              "completed"
-            ]
+            "description": "A bare task line; repaired into a pending node."
           }
-        },
-        "required": [
-          "content",
-          "status"
         ]
       }
     }

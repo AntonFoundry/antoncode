@@ -5,7 +5,7 @@ kind: "package-group"
 
 # schedule/ — Host-owned reminders
 
-English | [中文](README.zh.md)
+English
 
 ## Summary
 

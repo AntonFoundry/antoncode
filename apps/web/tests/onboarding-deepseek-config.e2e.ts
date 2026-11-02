@@ -279,7 +279,9 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     expect(await settings.getByRole('group', { name: '输入类型 1' }).getByRole('checkbox', { name: '图片' }).isChecked()).toBe(true)
     await settings.getByRole('button', { name: '取消', exact: true }).click()
 
-    await page.keyboard.press('Escape')
+    // The settings window closes through the WM frame's own Close control.
+    await page.locator('[data-buffer="settings"]').getByRole('button', { name: 'Close', exact: true }).click()
+    await settings.waitFor({ state: 'detached', timeout: 10_000 })
     // A connected Workspace is what puts a live composer — and its model
     // trigger — on the page; the scaffold boots without one.
     await connectFreshWorkspaceZh(page, scaffold.workspaceCwd, 'model-fallback-e2e', false)

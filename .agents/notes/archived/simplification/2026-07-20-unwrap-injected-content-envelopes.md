@@ -3,7 +3,7 @@
 Status: implemented
 Archived: 2026-09-30
 
-English | [中文](2026-07-20-unwrap-injected-content-envelopes.zh.md)
+English
 
 ## Problem
 

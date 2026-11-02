@@ -64,7 +64,7 @@ describe('SidebarRoot.module.css', () => {
     const animation = 'rail-in 150ms var(--ds-ease-in-out) backwards'
     for (const selector of [
       '.railIn .iconButton',
-      '.railIn .newSession',
+      '.railIn .newWorkspace',
       '.railIn .regionArea',
     ]) {
       expect(declarations(selector)?.get('animation')).toBe(animation)
@@ -80,8 +80,8 @@ describe('SidebarRoot.module.css', () => {
 
   it('gives shell rail controls the same base anchor for their shared translation', () => {
     expect(declarations('.collapsed .logoRow')?.get('justify-content')).toBe('flex-start')
-    expect(declarations('.collapsed .newSession')?.get('align-self')).toBe('flex-start')
-    expect(declarations('.collapsed .newSession')?.get('width')).toBe('36px')
+    expect(declarations('.collapsed .newWorkspace')?.get('align-self')).toBe('flex-start')
+    expect(declarations('.collapsed .newWorkspace')?.get('width')).toBe('36px')
   })
 
   it('keeps full-size brand artwork with a compact mark-to-name gap', () => {

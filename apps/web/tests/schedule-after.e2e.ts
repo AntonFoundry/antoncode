@@ -310,6 +310,8 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
     overlayRoot = root
     scaffold = await launchWebScaffold({
       extraOverlayPath: [await writeEveryStepOverlay(root)],
+      // The harness calls `schedule_create` directly, without a todo plan.
+      directToolCalls: true,
     })
     scaffold.ctx.effect(
       () => scaffold.ctx.llm.registerAdapter([AFTER_PROVIDER], afterAdapter),

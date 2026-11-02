@@ -3,7 +3,7 @@
 Status: implemented
 Archived: 2026-09-30
 
-English | [中文](2026-07-23-session-telemetry-otel-revival.zh.md)
+English
 
 ## Problem
 

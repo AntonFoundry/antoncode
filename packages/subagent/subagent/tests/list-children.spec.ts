@@ -13,6 +13,8 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { generationLogPath } from '../../../session/session-persistence-jsonl/src/format.ts'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import TokenMeter from '@deepseek-ai/dsh-token-meter'
+import { createAssistantMessage } from '@deepseek-ai/dsh-llm'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubagentCatalogEntry } from '@deepseek-ai/dsh-subagent'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
@@ -36,7 +38,7 @@ afterEach(async () => {
 /** Boot the continuable stack with real JSONL session persistence. */
 async function setup(
   script: Script,
-  options: { compression?: 'none' | 'zstd' } = {},
+  options: { compression?: 'none' | 'zstd'; tokenMeter?: boolean } = {},
 ) {
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx)
@@ -51,6 +53,7 @@ async function setup(
   await ctx.plugin(TestSessionQuery)
   await mountWorkingDirectoryFixture(ctx)
   if (ctx.get('sessionProjections') === undefined) await ctx.plugin(SessionProjectionRegistry)
+  if (options.tokenMeter === true) await ctx.plugin(TokenMeter)
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
   await ctx.plugin(SubagentFork, { providerName: 'fork' })
@@ -481,5 +484,51 @@ describe('SubagentRuntime.listDescendants', () => {
     })
     await expect(ctx.subagents.listDescendants(parent.id, controller.signal)).rejects.toMatchObject({ code: 'CANCELLED' })
     expect(observed.mock.calls.every(([, options]) => options?.signal === controller.signal)).toBe(true)
+  })
+
+  it('serves the durable outcome so a master can read why a child stopped', async () => {
+    // The reason must outlive the transient `subagent/end`: after the child is
+    // gone, this row is all the master has to decide resume vs. give up.
+    const { ctx, parent } = await setup([textResponse('done')])
+    const childId = await startChild(ctx, parent, 'report')
+    const [entry] = await ctx.subagents.listDescendants(parent.id)
+    expect(entry).toMatchObject({
+      kind: 'child',
+      id: childId,
+      activity: 'inactive',
+      outcome: { stopReason: 'completed' },
+    })
+  })
+
+  it('carries the child cumulative usage and its derived cache-hit rate', async () => {
+    const { ctx, parent } = await setup([], { tokenMeter: true })
+    const live = ctx.sessions.create(SessionId('usage-child'))
+    catalog(parent.session, [child('usage-child')])
+    live.append('assistant/message', {
+      turn: 1, step: 1, stream: [], usage: { inputTokens: 10, outputTokens: 4, cacheReadTokens: 7, cacheWriteTokens: 2 },
+      message: createAssistantMessage({ content: [{ type: 'text', text: 'answer' }], source: { provider: 'mock', model: 'mock' } }),
+    }, { surfaceOp: 'append' })
+    expect(await ctx.subagents.listDescendants(parent.id)).toEqual([
+      {
+        kind: 'child', id: live.id, mode: 'continuable', label: 'usage-child',
+        activity: 'running', hasChildren: false, parentId: parent.id, depth: 1,
+        usage: {
+          uncachedInputTokens: 10, outputTokens: 4, cacheReadTokens: 7, cacheWriteTokens: 2,
+          cacheHitRate: 7 / 19,
+        },
+      },
+    ])
+  })
+
+  it('omits usage before the child reports any', async () => {
+    const { ctx, parent } = await setup([], { tokenMeter: true })
+    const live = ctx.sessions.create(SessionId('quiet-child'))
+    catalog(parent.session, [child('quiet-child')])
+    expect(await ctx.subagents.listDescendants(parent.id)).toEqual([
+      {
+        kind: 'child', id: live.id, mode: 'continuable', label: 'quiet-child',
+        activity: 'running', hasChildren: false, parentId: parent.id, depth: 1,
+      },
+    ])
   })
 })

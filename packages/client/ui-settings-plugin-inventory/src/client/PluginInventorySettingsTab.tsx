@@ -34,6 +34,10 @@ export interface PluginInventorySettingsTabInjected {
    * agent-preset dictionaries, user-authored ones keep their own metadata.
    */
   presetName: (preset: AgentPresetGroup) => string
+  /** Toggle a plugin's enabled state. */
+  toggle: (entryId: string, enabled: boolean) => Promise<void>
+  /** Merge scalar config values into a plugin entry and reload it. */
+  configure: (entryId: string, patch: Record<string, string | number | boolean | null>) => Promise<void>
 }
 type PluginFiberPhase = PluginInventoryEntry['fiberPhase']
 
@@ -120,9 +124,12 @@ function presetLabel(preset: AgentPresetGroup, t: Translate, presetName: (preset
   return name
 }
 
-/** One expandable plugin card; the caller owns the trailing status content. */
+/**
+ * One expandable plugin card; the caller owns the trailing status content and
+ * an optional control (the enable switch) beside the expand button.
+ */
 function PluginCard({
-  rowKey, moduleName, title, description, metadataError, entryId, trailing, ariaLabel, failed, expanded, onToggle, children,
+  rowKey, moduleName, title, description, metadataError, entryId, trailing, control, ariaLabel, failed, expanded, onToggle, children,
 }: {
   readonly rowKey: string
   readonly moduleName: string
@@ -131,6 +138,7 @@ function PluginCard({
   readonly metadataError: string | undefined
   readonly entryId: string | null
   readonly trailing: ReactNode
+  readonly control?: ReactNode
   readonly ariaLabel: string
   readonly failed: boolean
   readonly expanded: string | null
@@ -140,6 +148,31 @@ function PluginCard({
   const open = expanded === rowKey
   const detailId = `plugin-details-${encodeURIComponent(rowKey)}`
   const descriptionId = useId()
+  const button = (
+    <button
+      className={css.cardContent}
+      type="button"
+      aria-expanded={open}
+      aria-controls={detailId}
+      aria-label={ariaLabel}
+      aria-describedby={description === undefined ? undefined : descriptionId}
+      onClick={() => { onToggle(rowKey) }}
+    >
+      <span className={css.cardMainRow}>
+        <strong className={css.cardTitle} title={moduleName}>{title}</strong>
+        <span className={css.cardTrailing}>
+          {trailing}
+          <IconChevronDownOutlineRegular className={css.chevron} size={12} aria-hidden="true" />
+        </span>
+      </span>
+      {description === undefined ? null : <span className={css.cardDescription} id={descriptionId}>{description}</span>}
+      {idAddsToTitle(entryId, title) ? (
+        <span className={css.cardMeta}>
+          <code className={css.cardIdentity} title={entryId}>{entrySubtitle(entryId)}</code>
+        </span>
+      ) : null}
+    </button>
+  )
   return (
     <li
       className={css.card}
@@ -148,29 +181,7 @@ function PluginCard({
       data-failed={failed ? 'true' : undefined}
       data-open={open ? 'true' : undefined}
     >
-      <button
-        className={css.cardContent}
-        type="button"
-        aria-expanded={open}
-        aria-controls={detailId}
-        aria-label={ariaLabel}
-        aria-describedby={description === undefined ? undefined : descriptionId}
-        onClick={() => { onToggle(rowKey) }}
-      >
-        <span className={css.cardMainRow}>
-          <strong className={css.cardTitle} title={moduleName}>{title}</strong>
-          <span className={css.cardTrailing}>
-            {trailing}
-            <IconChevronDownOutlineRegular className={css.chevron} size={12} aria-hidden="true" />
-          </span>
-        </span>
-        {description === undefined ? null : <span className={css.cardDescription} id={descriptionId}>{description}</span>}
-        {idAddsToTitle(entryId, title) ? (
-          <span className={css.cardMeta}>
-            <code className={css.cardIdentity} title={entryId}>{entrySubtitle(entryId)}</code>
-          </span>
-        ) : null}
-      </button>
+      {control === undefined ? button : <div className={css.cardRow}>{button}{control}</div>}
       {metadataError === undefined ? null : <p className={css.brokenNote} role="status" data-package-meta-error>{metadataError}</p>}
       {open ? <div className={css.cardDetails} id={detailId}>{children}</div> : null}
     </li>
@@ -248,9 +259,14 @@ function StateTag({ kind, label }: { readonly kind: EnablementKind; readonly lab
   return kind === 'enabled' ? null : <Tag tone={TAG_TONES[kind]}>{label}</Tag>
 }
 
+/** Config keys the inventory details render as editable connection fields. */
+const EDITABLE_CONFIG_FIELDS = ['endpoint', 'apiKey'] as const
+
+type ConfigSaveState = 'idle' | 'saving' | 'saved' | 'error'
+
 /** Render the read-only plugin inventory: agent presets first, then the global plane. */
 export function PluginInventorySettingsTab(
-  { list, presetName, resolveText, t, useClientSync, retryClient }: PluginInventorySettingsTabProps,
+  { list, toggle, configure, presetName, resolveText, t, useClientSync, retryClient }: PluginInventorySettingsTabProps,
 ): ReactNode {
   const clientSync = useClientSync(snapshot => snapshot)
   const sectionId = useId()
@@ -262,6 +278,9 @@ export function PluginInventorySettingsTab(
   const [presetOpen, setPresetOpen] = useState<boolean | null>(null)
   const [globalOpen, setGlobalOpen] = useState<boolean | null>(null)
   const [state, setState] = useState<ViewState>({ status: 'loading' })
+  const [toggling, setToggling] = useState<Set<PluginInventoryEntry['entryId']>>(new Set())
+  const [drafts, setDrafts] = useState<Record<string, Record<string, string>>>({})
+  const [saveState, setSaveState] = useState<ConfigSaveState>('idle')
 
   useEffect(() => {
     let current = true
@@ -395,8 +414,30 @@ export function PluginInventorySettingsTab(
         entryId={entry.entryId}
         failed={failed}
         expanded={expanded}
-        onToggle={toggleRow}
+        onToggle={(rowKey) => {
+          setSaveState('idle')
+          toggleRow(rowKey)
+        }}
         ariaLabel={cardLabel(title, entry.entryId, stateText)}
+        control={(
+          <button
+            className={css.toggle}
+            type="button"
+            role="switch"
+            aria-checked={entry.enabled}
+            data-checked={entry.enabled ? 'true' : 'false'}
+            aria-label={entry.isProtected === true ? `${title} (Core plugin - protected)` : entry.enabled ? `Disable ${title}` : `Enable ${title}`}
+            title={entry.isProtected === true ? 'Core plugin - protected' : undefined}
+            disabled={entry.isProtected === true || toggling.has(entry.entryId)}
+            onClick={(event) => {
+              event.stopPropagation()
+              event.preventDefault()
+              if (entry.isProtected !== true) void handleToggle(entry)
+            }}
+          >
+            <span className={css.toggleThumb} />
+          </button>
+        )}
         trailing={(
           <>
             {entry.enabled && showsPhaseDot(entry.fiberPhase)
@@ -406,6 +447,37 @@ export function PluginInventorySettingsTab(
           </>
         )}
       >
+        {editableKeys(entry).length > 0 ? (
+          <form
+            className={css.configForm}
+            onSubmit={(event) => {
+              event.preventDefault()
+              void saveConfig(entry)
+            }}
+          >
+            <span className={css.configFormTitle}>{t('configuration')}</span>
+            {editableKeys(entry).map(configKey => (
+              <label key={configKey} className={css.configField}>
+                <span>{configKey === 'endpoint' ? t('apiUrlLabel') : t('apiKeyLabel')}</span>
+                <input
+                  type={configKey === 'apiKey' ? 'password' : 'url'}
+                  value={draftValue(entry, configKey)}
+                  placeholder={configKey === 'endpoint' ? 'http://127.0.0.1:8090' : 'ctx_…'}
+                  spellCheck={false}
+                  autoComplete="off"
+                  onChange={(event) => { setDraftValue(entry.entryId, configKey, event.currentTarget.value) }}
+                />
+              </label>
+            ))}
+            <div className={css.configActions}>
+              <button type="submit" disabled={saveState === 'saving'}>
+                {saveState === 'saving' ? t('saving') : t('save')}
+              </button>
+              {saveState === 'saved' ? <span className={css.configSaved}>{t('saved')}</span> : null}
+              {saveState === 'error' ? <span className={css.configError} role="alert">{t('configError')}</span> : null}
+            </div>
+          </form>
+        ) : null}
         <CardFacts
           moduleName={entry.moduleName}
           moduleLabel={t('moduleLabel')}
@@ -422,6 +494,83 @@ export function PluginInventorySettingsTab(
         />
       </PluginCard>
     )
+  }
+
+  /** Editable config keys this entry exposes. */
+  const editableKeys = (entry: PluginInventoryEntry): readonly string[] => {
+    const config = entry.config
+    return config === undefined ? [] : EDITABLE_CONFIG_FIELDS.filter(key => key in config)
+  }
+
+  /** Current editor value: the draft when touched, otherwise the live config. */
+  const draftValue = (entry: PluginInventoryEntry, key: string): string => {
+    const draft = drafts[entry.entryId]
+    if (draft !== undefined && key in draft) return draft[key] ?? ''
+    const current = entry.config?.[key]
+    return typeof current === 'string' ? current : current === undefined || current === null ? '' : String(current)
+  }
+
+  const setDraftValue = (entryId: string, key: string, value: string): void => {
+    setDrafts(current => ({ ...current, [entryId]: { ...current[entryId], [key]: value } }))
+    setSaveState('idle')
+  }
+
+  const saveConfig = async (entry: PluginInventoryEntry): Promise<void> => {
+    const draft = drafts[entry.entryId] ?? {}
+    const patch: Record<string, string> = {}
+    for (const key of editableKeys(entry)) {
+      patch[key] = draft[key] ?? draftValue(entry, key)
+    }
+    setSaveState('saving')
+    try {
+      await configure(entry.entryId, patch)
+      setSaveState('saved')
+      setRequest(value => value + 1)
+    } catch {
+      setSaveState('error')
+    }
+  }
+
+  const handleToggle = async (entry: PluginInventoryEntry): Promise<void> => {
+    const newEnabled = !entry.enabled
+    setToggling(prev => new Set(prev).add(entry.entryId))
+    // Optimistic UI update: flip switch immediately for native responsiveness
+    setState((current) => {
+      if (current.status !== 'ready') return current
+      return {
+        ...current,
+        snapshot: {
+          ...current.snapshot,
+          entries: current.snapshot.entries.map(e =>
+            e.entryId === entry.entryId ? { ...e, enabled: newEnabled } : e,
+          ),
+        },
+      }
+    })
+    try {
+      await toggle(entry.entryId, newEnabled)
+    } catch (err) {
+      console.error('Failed to toggle plugin', entry.entryId, err)
+      // Rollback to original state on failure
+      setState((current) => {
+        if (current.status !== 'ready') return current
+        return {
+          ...current,
+          snapshot: {
+            ...current.snapshot,
+            entries: current.snapshot.entries.map(e =>
+              e.entryId === entry.entryId ? { ...e, enabled: !newEnabled } : e,
+            ),
+          },
+        }
+      })
+    } finally {
+      setToggling((prev) => {
+        const next = new Set(prev)
+        next.delete(entry.entryId)
+        return next
+      })
+    }
   }
 
   return (

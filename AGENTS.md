@@ -66,6 +66,11 @@ packages/    @deepseek-ai/dsh-<pkg> workspaces at packages/<group>/<pkg>/
   mcp/                  external tools
   experimental/         evaluated capabilities without a product-support commitment
   test-support/         test infrastructure
+  document/             Office-to-PDF conversion
+  flowbuilder/          flow definitions, block library, LangFlow sidecar
+  lifecycle/            Anton lifecycle tools
+  telemetry/            OTLP event and Session-log channels
+  zai/                  native Z.AI tools
   util/                 zero-dependency utilities
 python/      Python SDK/runtime (python/README.md)
 native/      @deepseek-ai/node-addon-system source (native/README.md)
@@ -100,11 +105,23 @@ pnpm run check:windows-wine  # ONLY when diagnosing a known Windows failure (nee
 pnpm run doc-sync       # documentation gates (scripts/run-gates.ts)
 pnpm run test:docs      # quick documentation checks (no build; doc-quick aggregate)
 pnpm run website:build  # VitePress build (doubles as dead-link check)
-pnpm dsh --profile headless "task"  # run one task from source (needs DEEPSEEK_API_KEY)
+pnpm anton --profile headless "task"  # run one task from source (needs DEEPSEEK_API_KEY)
 pnpm run demo:ptc -- "task"  # headless PTC mode run (needs key)
 pnpm run dev:web | dev:desktop  # build:artifacts, then launch; Web also rebuilds client bundles on edits. start:web | start:desktop skip the build
 make web|dev-web|desktop|dev-desktop|build  # the same commands; ARGS='--no-open' forwards options
 ```
+
+### Anton macOS app (apps/anton-bridge)
+
+The app ships only built `lib/` output, so rebuild changed packages first (`npx tsc -b tsconfig.client.json` + `pnpm --filter <pkg> run bundle`, or a full `pnpm run build`; the `dsh` CLI runtime additionally needs `npm run build:lib:host`), then:
+
+```sh
+pnpm run anton:build:macos  # self-contained: quits a running Anton, builds + boot-smokes a staging bundle in dist/, installs /Applications/Anton.app (override with ANTON_INSTALL_DIR; previous bundle kept as Anton.previous.app), relaunches, and verifies
+```
+
+**Controlling the running app — always use `anton`, never hand-crafted quit/kill/open chains**: `anton status` reads bridge + harness + memory-service health; `anton restart` reloads the harness tree the bridge serves (installed bundle or this checkout under `pnpm run anton:dev`) while the app itself stays up; `anton stop`/`start` are deliberate lifecycle calls. `anton restart` replaces the raw `POST http://127.0.0.1:3742/bridge/api/harness/restart` (still available) — all are safe under an interrupted tool call: read-only or idempotent, and none can quit the app.
+
+Boot resilience, in layers: the build boot-smokes the staged bundle end to end (a broken plugin fails the build, not the launch); the profile boot retries with a failing loader entry disabled (degraded, loud — one broken plugin costs its own features, not the surface); and the Mac app's watchdog escalates persistent harness/bridge failures onto the first-party-only `recovery` profile (amber chip, "Exit Recovery Mode" menu) whose web UI is where repair happens, with a one-shot repair agent on the `repair` profile that diagnoses from `bridge.log`, fixes, rebuilds, and swaps the bundle in place (`ANTON_IN_PLACE_SWAP=1`). First run installs an `anton` launcher into `~/.local/bin` sharing the app's `~/.anton/dsh` home (profiles `web`, `recovery`, `repair`, `headless`; `anton models` lists a composition's providers and models). The app also installs the `anton` binary itself (browser driver + notification tools included) so a repairing agent can reach the same tree the app runs.
 
 ### Host sandbox failures
 
@@ -160,6 +177,7 @@ Real-API tests/demos read `DEEPSEEK_API_KEY`, optional `DEEPSEEK_BASE_URL`, and 
 - **Design each tool's UI presentation up front.** Host presenters stay pure; Web cards derive from raw events and persisted result metadata ([cookbook](docs/cookbook/adding-a-tool.md)).
 - **Plan unit, e2e, and snapshot coverage** for capability seams, lifecycle paths, and transcript output; include missing snapshot-harness support in the same change.
 - **Both SDKs project the loop.** Agent-loop, session-lifecycle, and `SessionEventMap` changes update the TypeScript and Python SDK expected outputs in the same PR; `pnpm run test` covers neither ([surfaces](docs/testing.md#when-a-snapshot-test-is-required)).
+- **Commit the tree after each feature or bug fix.** When a feature or bug fix passes its narrow checks, commit it immediately (deliberate message; its Agent Note, README, and test updates in the same commit) — do not leave a large uncommitted tree accumulating across tasks. Never commit `dist/` output or credentials.
 - **Choose PR history deliberately.** Split independent changes and fix the introducing PR before propagation. Standalone/stack branches may merge-forward or rebase. Rewrites use `--force-with-lease`, abort on remote movement, never raw `--force`; preserve an in-progress merge-forward checkpoint before taking a newer base ([rationale](.agents/notes/implemented/process/2026-08-02-native-github-stacks-and-optional-rebases.md)).
 - **Labels:** one PR `kind/*`, all material `area/*`, and native Issue Type ([taxonomy](.agents/notes/implemented/process/2026-08-08-unified-github-label-taxonomy.md)).
 - **PR descriptions:** write and update every PR description with [dsh-pr-description](.agents/skills/dsh-pr-description/SKILL.md).
@@ -176,7 +194,7 @@ Everything compiles under `strict: true` with `noImplicitAny`; every remaining `
 
 Comments and docs state complete contracts and context, not reasoning transcripts. Use direct, concrete terms. Do not use metaphors. Before writing `contract`, `boundary`, or `shape`, ask whether a more exact term names the subject: write `response fields`, `JSON validation`, or `ESM exports` instead of `response shape`, `validation boundary`, or `module shape`. Keep `contract` for preconditions, postconditions, invariants, compatibility promises, and other obligations that callers, callees, implementers, providers, producers, or consumers rely on. Keep a literal process, wire, security, transaction, or lifecycle boundary. Do not narrate control flow or tests, preserve review history, or restate code. Keep behavior, failure, timing, ownership, and safe-use facts; link the rationale. Use [dsh-prose-standard](.agents/skills/dsh-prose-standard/SKILL.md) for decisions. Wire mechanically checkable invariants into an executed top-level gate and prove each changed acceptance path rejects an invalid case. Use narrow, justified exceptions instead of disabling a rule globally.
 
-Docs accompany every code change: update affected README and JSDoc contracts together. Routine bilingual work follows [docs/AGENTS.md](docs/AGENTS.md); only explicit user invocation may run `dsh-translate-docs`. Current-state prose, one physical line per paragraph, one home per fact, and word budgets live there.
+Docs accompany every code change: update affected README and JSDoc contracts together. Documentation is English-exclusive: no Chinese docs, translations, or translation gates. Current-state prose, one physical line per paragraph, one home per fact, and word budgets live in [docs/AGENTS.md](docs/AGENTS.md).
 
 ## Editing these instructions
 

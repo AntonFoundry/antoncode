@@ -443,10 +443,13 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     // the replay cursor was fully consumed before the reload, so any stray
     // request would fail the scenario loudly at close().
     await expect.poll(() => page.getByText('LIGHTHOUSE', { exact: true }).count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(1)
-    await expect.poll(() => page.locator('[role="treeitem"][aria-selected="true"]').count(), { timeout: 10_000 }).toBe(1)
+    // The reloaded WM boot re-attaches the sidebar a beat after the frame
+    // paints (early-layout narrow drop, then re-attach on the resolved
+    // viewport), so the selection poll waits out that settle window.
+    await expect.poll(() => page.locator('[role="treeitem"][aria-selected="true"]').count(), { timeout: 20_000 }).toBe(1)
     // Golden of the recovered conversation region: rebuilt from the log, it
     // must render the same settled transcript the live turn produced.
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-chat-flow]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(RELOADED_EXPECTED, snapshot, MODE)
     const expanded = await captureExpandedTurnProcessAria(
       page,
@@ -459,11 +462,12 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
 
   it.skipIf(MODE === 'record')('cascades the dark theme from the body attribute to painted surfaces', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-lifecycle-dark'))
-    // This scenario pins the ThemeRuntime's DOM contract directly (the
-    // body[data-ds-dark-theme] attribute -> stylesheet cascade); the REAL
-    // user gesture above it (Settings -> Appearance cubes) is owned by
-    // settings-chrome.e2e.ts. Driving the attribute here keeps the cascade
-    // pinned independently of the settings surface's own lifecycle.
+    // The theme presenter applies the active palette as inline body variables
+    // (ui-layout theme-presenter), so a bare data-ds-dark-theme attribute
+    // toggle no longer flips tokens — the cascade runs from the REAL user
+    // gesture (Settings → General → Appearance cubes), which rewrites both
+    // the attribute and the inline palette. (settings-chrome.e2e.ts owns the
+    // persistence/reload side of the same gesture; this pins the cascade.)
     const sample = async (): Promise<{ token: string; sidebarBg: string; bodyBg: string }> =>
       await page.evaluate(() => {
         const sidebar = document.querySelector('[class*="sidebar"], [class*="rail"]') ?? document.body
@@ -473,17 +477,45 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
           bodyBg: getComputedStyle(document.body).backgroundColor,
         }
       })
+    await page.emulateMedia({ colorScheme: 'light' })
+    const openGeneral = async () => {
+      await page.getByRole('button', { name: 'Settings', exact: true }).click()
+      const dialog = page.getByRole('dialog', { name: 'Settings' })
+      await dialog.waitFor({ timeout: 10_000 })
+      await dialog.getByRole('button', { name: 'General', exact: true }).click()
+      await expect.poll(() => dialog.getByRole('button', { name: 'General', exact: true }).getAttribute('aria-current'), { timeout: 5_000 }).toBe('true')
+      return dialog
+    }
+    const closeSettings = async () => {
+      await page.locator('[data-buffer="settings"]').getByRole('button', { name: 'Close', exact: true }).click()
+      await expect.poll(() => page.getByRole('dialog', { name: 'Settings' }).count(), { timeout: 5_000 }).toBe(0)
+    }
+    const dialog = await openGeneral()
+    // Anchor the light baseline on an explicit Light selection: the boot
+    // shows the presenter's Aqua boot-default palette, which a durable light
+    // section deliberately replaces with the built-in light theme.
+    await dialog.getByRole('button', { name: 'Light', exact: true }).click()
+    await expect.poll(() => dialog.getByRole('button', { name: 'Light', exact: true }).getAttribute('aria-pressed'), { timeout: 5_000 }).toBe('true')
+    await closeSettings()
     const light = await sample()
-    await page.evaluate(() => { document.body.setAttribute('data-ds-dark-theme', '') })
+    await openGeneral()
+    const darkCube = dialog.getByRole('button', { name: 'Dark', exact: true })
+    await darkCube.click()
+    await expect.poll(() => darkCube.getAttribute('aria-pressed'), { timeout: 5_000 }).toBe('true')
+    await closeSettings()
     const dark = await sample()
     // The alias token itself must flip — the cascade's root fact.
     expect(dark.token).not.toBe(light.token)
+    await expect.poll(() => page.evaluate(() => document.body.hasAttribute('data-ds-dark-theme'))).toBe(true)
     // And a real painted surface must consume it (not just variables in a
     // void): at least one of the sampled backgrounds repaints.
     expect(dark.sidebarBg !== light.sidebarBg || dark.bodyBg !== light.bodyBg).toBe(true)
-    // Removing the attribute restores the light values exactly (the palettes
-    // live in one stylesheet; activation is attribute-only by design).
-    await page.evaluate(() => { document.body.removeAttribute('data-ds-dark-theme') })
+    // Switching back to Light restores the light values exactly (the gesture
+    // rewrites attribute + inline palette together).
+    await openGeneral()
+    await dialog.getByRole('button', { name: 'Light', exact: true }).click()
+    await closeSettings()
+    await page.emulateMedia({ colorScheme: 'light' })
     const restored = await sample()
     expect(restored).toEqual(light)
     expect(tripwire.pageErrors).toEqual([])

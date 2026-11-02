@@ -12,20 +12,19 @@ import { testProfileResolution } from './profiles/headless/tests/profile-resolut
  */
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
-const dshSourceBin = 'apps/cli/src/bin.ts'
+const antonSourceBin = 'apps/cli/src/bin.ts'
 
-describe('dsh SOURCE launcher (node --import tsx/esm)', () => {
+describe('anton SOURCE launcher (node --import tsx/esm)', () => {
   testProfileResolution('src')
-
   it('launches the source CLI without building', async () => {
     const rootPackage = JSON.parse(await readFile(new URL('../../../package.json', import.meta.url), 'utf8')) as {
       readonly scripts?: Record<string, string>
     }
-    expect(rootPackage.scripts?.dsh).toBe('node --import tsx/esm apps/cli/src/bin.ts')
+    expect(rootPackage.scripts?.anton).toBe('node --import tsx/esm apps/cli/src/bin.ts')
   })
 
-  it('boots the source entry and requires a profile', async () => {
-    const result = await execa(process.execPath, ['--import', 'tsx/esm', dshSourceBin], {
+  it('prints the launcher help for a bare invocation', async () => {
+    const result = await execa(process.execPath, ['--import', 'tsx/esm', antonSourceBin], {
       cwd: repoRoot,
       input: '',
       timeout: 25_000,
@@ -33,10 +32,23 @@ describe('dsh SOURCE launcher (node --import tsx/esm)', () => {
       reject: false,
     })
     if (result.timedOut) {
-      throw new Error(`dsh source launch did not exit within 25s. stdout:\n${result.stdout}\nstderr:\n${result.stderr}`)
+      throw new Error(`anton source launch did not exit within 25s. stdout:\n${result.stdout}\nstderr:\n${result.stderr}`)
     }
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Usage: anton')
+    expect(result.stdout).toContain('Examples:')
+    expect(result.stderr).toBe('')
+  }, 30_000)
+
+  it('still rejects launcher flags with no profile', async () => {
+    const result = await execa(process.execPath, ['--import', 'tsx/esm', antonSourceBin, '--patch', './extra.yml'], {
+      cwd: repoRoot,
+      input: '',
+      timeout: 25_000,
+      killSignal: 'SIGKILL',
+      reject: false,
+    })
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain('--profile <name> is required')
-    expect(result.stdout).toBe('')
   }, 30_000)
 })

@@ -365,7 +365,7 @@ describe('LlmRuntime', () => {
     expect(ctx.llm.providerRetryPolicy('configured')).toBe(configured)
     expect(ctx.llm.providerRetryPolicy('defaulted')).toMatchObject({
       mode: 'normal',
-      maxRetries: 5,
+      maxRetries: Number.MAX_SAFE_INTEGER,
     })
     expect(() => ctx.llm.providerRetryPolicy('missing')).toThrow(
       expect.objectContaining({ code: 'NO_ADAPTER' }),
@@ -710,6 +710,18 @@ describe('LlmRuntime', () => {
     expect(first?.badge).not.toBe(translated)
     expect(first?.badge?.text).not.toBe(translated.text)
     expect(second?.badge).toEqual(literal)
+  })
+
+  it('preserves adapter-owned subscription auth readiness in provider metadata', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    ctx.llm.registerAdapter(['subscription'], new CatalogAdapter(
+      { id: 'subscription', name: 'Subscription', authConfigured: true },
+      [],
+    ))
+    expect(ctx.llm.listProviders()).toEqual([
+      { id: 'subscription', name: 'Subscription', authConfigured: true },
+    ])
   })
 
   it('defaults adapters to their route name and an empty advisory model list', async () => {

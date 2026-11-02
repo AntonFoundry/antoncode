@@ -5,7 +5,7 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-client-ui-jobs
 
-English | [中文](README.zh.md)
+English
 
 ## Summary
 
@@ -31,7 +31,7 @@ Load the plugin through the web-app manifest; it renders nothing until the sessi
 
 The `job.list` stream `ctx.jobs` mirrors is the single roster: each `JobView` row carries lifecycle, duration, the live `progress` line or the terminal `detail`, and its retained byte count — a live job, or a settled one with retained output, is what makes a row expandable. There is no second roster to join.
 
-Running job rows also carry a two-press stop control: the first press arms it, the confirming press within three seconds calls `ctx.jobs.kill`, and the row converges through the roster stream (`stopping`, then the settled section, whose detail carries `cancelled by the user`). The kill claims nothing in the model's notice ledger, so the owning agent still receives the standard completion notice — the model is told the user stopped its task rather than left to infer it ([reference](../../jobs/tool-jobs/README.md)). The settled section folds behind its count while live work exists and can be cleared client-side.
+Running job rows also carry a two-press stop control: the first press arms it, the confirming press within three seconds calls `ctx.jobs.kill`, and the row converges through the roster stream (`stopping`, then the settled section, whose detail carries `cancelled by the user`). The kill claims nothing in the model's notice ledger, so the owning agent still receives the standard completion notice — the model is told the user stopped its task rather than left to infer it ([reference](../../jobs/tool-jobs/README.md)). While any row is `running`, a one-press stop-all button beside the list toggle kills every running job of the session and disables until those requests settle; a `stopping` row is not re-killed, because its cancel signal is already admitted ([browser kill control Agent Note](../../../.agents/notes/implemented/feature/2026-09-14-browser-job-kill-control.md)). The settled section folds behind its count while live work exists and can be cleared client-side.
 
 ### The expanded panel
 

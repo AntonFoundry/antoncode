@@ -5,7 +5,7 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-client-ui-conversation
 
-English | [中文](README.zh.md)
+English
 
 Desktop product events use the optional [product analytics service](../product-analytics/README.md); ordinary Web interactions are excluded.
 
@@ -129,6 +129,14 @@ File chips and editable skill references share a whole-reference hover backgroun
 When another writer owns the Session, the send-error toast asks the user to quit other running DSH instances and retry.
 
 Two independent Escape presses in the focused Chat or Composer stop its current running turn and preserve queued messages. The interval comes from the shortcuts plugin’s `stopSequenceMs` configuration (500 ms by default). A menu, approval, modal, terminal, embedded webpage, composition, repeated key, changed input region, Session or turn breaks the sequence. The shortcut uses the same scoped cancellation as the Stop button. The plugin registers Stop as a fixed action in the `input` display group. Its registration reserves plain Escape against editable shortcuts and supplies the `Esc Esc` sequence shown in the Stop button’s hover and keyboard-focus tooltip.
+
+The New Session hero shows the animated Anton mark as a 288px tile above the title and preview badge. The `conversation.hero.brand.mark` occupant replaces the mark; without one, `FishLogoAnimated` from ui-primitives renders.
+
+The resident composer belongs to the Session, not to the active View. `conversation.composerRoutes.register(viewId, route)` lets a View with its own send semantics, such as Agent Mail, take ordinary submissions while it is the active View; `conversation.activeView(sessionId)` reports the selection the header tabs show. A routed submission clears the draft and releases its attachments on success; a rejection keeps the draft and attachments and shows the error as a composer notice. Session-scope occupants receive `viewActions.activate(viewId)`, which selects a registered `conversation.view` entry and ignores unregistered ids.
+
+Task state renders as the to-do tree in ui-sidebar's root-scoped `sidebar.memory` area. Flat root items sharing a short `Prefix: ` head group under one collapsible branch, cancelled items stay visible but struck through, and branch collapse state persists under `dsh.conversation.todoTree`.
+
+The layout owner may pass `layoutSpan` (`single` or `multi`) to the composer bar; the bar forwards it to `conversation.input.attachments` so the attachment implementation can scope its drop target and overlay to one pane when several conversation panes are open. Absent behaves as `single`. A `session/agent-busy` refusal whose message is `prompt rejected` shows the Host's `reason` instead of the generic message and code.
 
 <a id="temporary-composer-entries"></a>
 ## Temporary composer entries

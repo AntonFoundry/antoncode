@@ -1,9 +1,9 @@
 # Agent Note: Automatically compose translation pairing records
 
 Status: implemented
-Archived: 2026-09-23
+Archived: 2026-10-12
 
-English | [中文](2026-08-08-automatic-translation-pairing-merges.zh.md)
+English
 
 ## Problem
 

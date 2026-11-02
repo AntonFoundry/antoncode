@@ -1,15 +1,15 @@
 ---
-description: "Shared messaging, interruption, and child discovery tools for users and maintainers composing or debugging continuable-child control."
+description: "Shared messaging, interruption, model reassignment, and child discovery tools for users and maintainers composing or debugging continuable-child control."
 kind: "package-reference"
 ---
 
 # @deepseek-ai/dsh-tool-subagent-control
 
-English | [中文](README.zh.md)
+English
 
 ## Summary
 
-`dsh-tool-subagent-control` lets agents message and interrupt subagents and list continuable children. One plugin instance registers all three tools for a scope shared by multiple delegation backends. Parents and continuable children inherit the same messaging definition and ordering. Tool presence does not select the delegation lifecycle.
+`dsh-tool-subagent-control` lets agents message, interrupt, and switch the model of subagents and list continuable children. One plugin instance registers all four tools for a scope shared by multiple delegation backends. Parents and continuable children inherit the same messaging definition and ordering. Tool presence does not select the delegation lifecycle.
 
 ## Table of Contents
 
@@ -25,11 +25,11 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this package once per tool scope. It requires `tools`, `subagents`, and `agents`.
+Mount this package once per tool scope. It requires `tools`, `subagents`, `agents`, and `llm`.
 
 ### Minimal configuration
 
-With the required services available, load the subagent service, a backend, the delegation tool, and this package to expose all three control and discovery tools:
+With the required services available, load the subagent service, a backend, the delegation tool, and this package to expose all four control and discovery tools:
 
 ```yaml
 - name: '@deepseek-ai/dsh-subagent'
@@ -40,7 +40,7 @@ With the required services available, load the subagent service, a backend, the 
 - name: '@deepseek-ai/dsh-tool-subagent-control'
 ```
 
-This package takes no configuration. Its main entry registers `send_message`, `interrupt_agent`, and `list_agents` together; existing tool restrictions can hide individual tools.
+This package takes no configuration. Its main entry registers `send_message`, `interrupt_agent`, `set_agent_model`, and `list_agents` together; existing tool restrictions can hide individual tools.
 
 ### send_message
 
@@ -50,9 +50,13 @@ Sends a message to an Agent named by `agent_id`: any exact live Agent may target
 
 External executions stop permanently and cannot receive follow-ups. Local targets stop only their current turn: queued messages stay parked until a later `send_message`, descendants keep running, and the child stays available for follow-ups. The call returns when the stop request is accepted, not when the target is quiet; interrupting an already-finished agent is an accepted no-op, and self, sibling, stale, and non-ancestor callers get errored results.
 
+### set_agent_model
+
+Switches a running descendant to another model: `agent_id`, `provider`, `model`, and an optional `reasoning_effort`. The tool validates the route through `ctx.llm.resolveCallConfig` first, so an unknown provider, model, or unsupported effort fails the call instead of becoming the child's next failed request, then passes `exec.agent` as the exact live ancestor authority to `ctx.subagents.selectModel()`. The switch reaches the child's next model step and is recorded in the child's own Session, so it also governs a later resume. An omitted effort stays omitted so the replacement model resolves its own default. Nothing queued is consumed or redirected. A target that is not loaded in this process, or a self, stale, or non-ancestor caller, becomes an errored result.
+
 ### list_agents
 
-Lists the continuable children below the calling agent: `children` (default) reads direct children from the parent catalog without opening child logs; `descendants` recursively reads child catalogs in stable pre-order, annotating each entry with its durable direct-parent session id and depth. Status comes from the live Agent registry — `running` or `inactive`. External entries are omitted without reading a child Session. Readable one-shot children are omitted from output but their catalogs remain traversal nodes. Unknown modes and unreadable child catalogs, including one-shot children, appear as diagnostics only in `descendants` scope. Ordinary Session forks are not catalog entries, so neither those forks nor their descendants are listed from the source Session.
+Lists the continuable children below the calling agent: `children` (default) reads direct children from the parent catalog without opening child logs; `descendants` recursively reads child catalogs in stable pre-order, annotating each entry with its durable direct-parent session id and depth. Status comes from the live Agent registry — `running` or `inactive`. External entries are omitted without reading a child Session. Readable one-shot children are omitted from output but their catalogs remain traversal nodes. Unknown modes and unreadable child catalogs, including one-shot children, appear as diagnostics only in `descendants` scope. Ordinary Session forks are not catalog entries, so neither those forks nor their descendants are listed from the source Session. In `descendants` scope, a child whose Session has reported provider usage carries its cumulative token usage and cache-hit rate.
 
 -----
 
@@ -80,7 +84,7 @@ The tool forwards its execution signal, which owns admission only until inbox ac
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Shared registration of all three tools |
+| [`src/index.ts`](src/index.ts) | Shared registration of all four tools |
 | [`src/list-agents.ts`](src/list-agents.ts) | `list_agents` registration: direct-child discovery and status refinement |
 
 </details>
@@ -105,7 +109,7 @@ Read these pages when the package-level contract is not enough; they move from t
 
 #### What the model sees
 
-The generated [schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-subagent-control): `send_message` takes `agent_id` and `message`; `interrupt_agent` takes `agent_id`; `list_agents` accepts an optional `scope`.
+The generated [schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-subagent-control): `send_message` takes `agent_id` and `message`; `interrupt_agent` takes `agent_id`; `set_agent_model` takes `agent_id`, `provider`, `model`, and the optional `reasoning_effort` enum; `list_agents` accepts an optional `scope`.
 
 #### Token effect
 
@@ -143,11 +147,25 @@ One short acknowledgement per call; the target's response never returns through 
 
 Append-only; newly visible content follows the reusable request prefix and does not invalidate existing KV-cache entries.
 
+### Model-switch result
+
+#### What the model sees
+
+`subagent <agent_id> now uses <provider>/<model> for its next model request` on acceptance. An unknown provider or unsupported effort, a target that is not running, or an unauthorized caller is an errored result naming the rejection; nothing is switched in that case.
+
+#### Token effect
+
+One short acknowledgement per call. The child's later requests use the replacement route and its own adapter pricing; parent history gains no other content.
+
+#### KV Cache effect
+
+Append-only; the result follows the reusable request prefix. The child's next request may differ entirely from its prior provider prefix.
+
 ### Listing result
 
 #### What the model sees
 
-One line per continuable child in stable catalog order: `<id> [<status>] — <label>` (`running` = executing a turn; `inactive` = no turn executing, whether loaded or stored; neither status describes task completion or outcome). Only `descendants` scope adds `<id> [diagnostic: <reason>]` for an unknown mode or unreadable child catalog, including an unreadable one-shot child. The `descendants` scope inserts ` parent=<id> depth=<n>` before the label dash on every line, in pre-order. Readable one-shot children are omitted; `(no subagents)` means no continuable child or diagnostic survived the projection.
+One line per continuable child in stable catalog order: `<id> [<status>] — <label>` (`running` = executing a turn; `inactive` = no turn executing, whether loaded or stored; neither status describes task completion or outcome). Only `descendants` scope adds `<id> [diagnostic: <reason>]` for an unknown mode or unreadable child catalog, including an unreadable one-shot child. The `descendants` scope inserts ` parent=<id> depth=<n>` before the label dash on every line, in pre-order. In `descendants` scope, a child whose Session has reported provider usage appends ` tokens[in=<n> out=<n> cache-read=<n> cache-write=<n> hit=<p>%]`, where `hit` is the cache-read share of the child's prompt tokens. Readable one-shot children are omitted; `(no subagents)` means no continuable child or diagnostic survived the projection.
 
 #### Token effect
 

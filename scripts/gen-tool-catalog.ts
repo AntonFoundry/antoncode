@@ -13,6 +13,7 @@ import LlmRuntime from '@deepseek-ai/dsh-llm'
 import type { ToolSchema } from '@deepseek-ai/dsh-llm'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import LlmRuntime from '@deepseek-ai/dsh-llm'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
@@ -194,6 +195,9 @@ export interface ToolPackage {
  * `packages/`). Ordered by package name (the render order); the completeness
  * guard proves it is exhaustive against the on-disk glob.
  */
+/** Scratch storage roots the flowbuilder harvest mounts; removed after the catalog run. */
+const catalogRoots: string[] = []
+
 const TOOL_PACKAGES: ToolPackage[] = [
   {
     pkg: '@deepseek-ai/dsh-plugin-manager',
@@ -582,10 +586,12 @@ const TOOL_PACKAGES: ToolPackage[] = [
       interrupt_agent: 'packages/subagent/tool-subagent-control/src/index.ts',
       list_agents: 'packages/subagent/tool-subagent-control/src/list-agents.ts',
       send_message: 'packages/subagent/tool-subagent-control/src/index.ts',
+      set_agent_model: 'packages/subagent/tool-subagent-control/src/index.ts',
     },
-    requires: ['ctx.tools', 'ctx.subagents', 'ctx.agents'],
+    requires: ['ctx.tools', 'ctx.subagents', 'ctx.agents', 'ctx.llm (set_agent_model only)'],
     writes: ['tool/call', 'tool/result', 'child session events through ctx.subagents'],
     async mount(ctx) {
+      await ctx.plugin(LlmRuntime)
       await ctx.plugin(SubagentRuntime)
       await ctx.plugin(LocalJobRegistry)
       await ctx.plugin(AgentRegistry)
@@ -593,7 +599,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
       await ctx.plugin(ToolSubagentControl)
     },
     note:
-      'The globally named discovery, interruption, and local-message tools over managed subagents: provider-bound `tool-subagent` instances register distinct delegation tools, while one instance of this package registers `send_message`, `interrupt_agent`, and `list_agents`.',
+      'The globally named discovery, interruption, local-message, and model-switch tools over managed subagents: provider-bound `tool-subagent` instances register distinct delegation tools, while one instance of this package registers `send_message`, `interrupt_agent`, `list_agents`, and `set_agent_model`. `set_agent_model` resolves the replacement route through `ctx.llm` before installing it; the other tools do not touch the model runtime.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-jobs',
@@ -883,6 +889,8 @@ export async function collectToolCatalog(packages: ToolPackage[] = TOOL_PACKAGES
       await ctx.fiber.dispose()
     }
   }
+  // Remove the harvest's scratch storage roots only after every fiber stopped.
+  for (const root of catalogRoots.splice(0)) rmSync(root, { recursive: true, force: true })
   return catalog
 }
 

@@ -67,7 +67,7 @@ export interface ToolCallCommonProps {
   cwd?: string | undefined
   /** Host account home; POSIX home-rooted summaries display as `~`. */
   home?: string | undefined
-  /** Open an argument path at its optional requested line. */
+  /** Open a Tool argument path at its optional requested line: inline buffer split for viewer families, Host open otherwise. */
   openFile: (path: string, options?: OpenFileOptions) => void
   /** Chat-supplied, Gateway-authorized loader for durable images; Tool views do not manage attachment URLs. */
   loadImage: MessageImageLoader

@@ -67,12 +67,32 @@ import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import { PiAiAdapter } from './adapter.ts'
 import { authContextFrom, credentialStoreFrom } from './auth.ts'
 import { catalogProvider, catalogProviderIds } from './catalog.ts'
-import { assertServiceable, Config, resolveProfiles } from './config.ts'
+import type { PiAiLiveModel, PiAiReasoningEfforts } from './catalog.ts'
+import { assertServiceable, Config, DEFAULT_MODELS_DEV_REFRESH_MS, resolveProfiles } from './config.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { discoverModels } from './discovery.ts'
 import type { StoredModelDiscoveryProfile } from './discovery.ts'
 import { registerPiAiFlows } from './login.ts'
+import { fetchModelsDevDocument, parseModelsDevLiveModels, ZAI_REASONING_EFFORTS } from './models-dev.ts'
+import { fetchNvidiaLlmModels, mergeNvidiaLlmModels } from './nvidia-models.ts'
 import { providerDefaultsOf } from './provider-data.ts'
+
+/**
+ * The routes whose live model list refreshes from models.dev at startup,
+ * mapped to their models.dev provider ids. Routes absent from this map never
+ * fetch: the installed catalog is their whole model surface.
+ */
+const MODELS_DEV_ROUTE_PROVIDERS: Readonly<Record<string, {
+  /** The models.dev provider entry the route reads. */
+  id: string
+  /** The effort map a reasoning-capable discovered model adopts; omitted = stay neutral. */
+  efforts?: PiAiReasoningEfforts
+}>> = {
+  zai: { id: 'zai-coding-plan', efforts: ZAI_REASONING_EFFORTS },
+  moonshotai: { id: 'moonshotai' },
+  deepseek: { id: 'deepseek' },
+  nvidia: { id: 'nvidia' },
+}
 
 export { PiAiAdapter } from './adapter.ts'
 export type { PiAiAdapterOptions } from './adapter.ts'
@@ -102,7 +122,8 @@ export { supportedProtocols } from './provider.ts'
 // installed-catalog lookup, and the two auth injectables. Re-exported rather
 // than reimplemented so both build identical collections.
 export { buildProvider } from './provider.ts'
-export { catalogModels } from './catalog.ts'
+export type { ProviderSpec } from './provider.ts'
+export { catalogModels, catalogProvider } from './catalog.ts'
 export { authContextFrom, credentialStoreFrom } from './auth.ts'
 
 export const name = 'llm-pi-ai'
@@ -142,6 +163,7 @@ function registrationFacts(profiles: ReadonlyMap<string, ResolvedPiAiProviderPro
 function directoryEntries(
   profiles: ReadonlyMap<string, ResolvedPiAiProviderProfile>,
   settingsNs: string,
+  reservedProviders: ReadonlySet<string>,
 ): LlmConfigurableProvider[] {
   const entries = new Map<string, LlmConfigurableProvider>()
   const declare = (provider: string, displayName: string, error?: string): void => {
@@ -159,8 +181,12 @@ function directoryEntries(
       ...error === undefined ? {} : { error },
     })
   }
-  for (const provider of catalogProviderIds()) declare(provider, provider)
-  for (const [provider, profile] of profiles) declare(provider, profile.displayName, profile.catalogError)
+  for (const provider of catalogProviderIds()) {
+    if (!reservedProviders.has(provider)) declare(provider, provider)
+  }
+  for (const [provider, profile] of profiles) {
+    if (!reservedProviders.has(provider)) declare(provider, profile.displayName, profile.catalogError)
+  }
   return [...entries.values()]
 }
 
@@ -168,8 +194,16 @@ function directoryEntries(
 export function apply(ctx: Context, config: Config): void {
   ctx.inject(['settings'], (child) => { child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)) })
   const settingsNs = ctx.fiber.entry?.options.id ?? NS
+  // Native protocol adapters may reserve the familiar route names they own.
+  // Keep this static composition fact outside the live settings section: a
+  // user cannot accidentally make one route belong to two adapter families.
+  const reservedProviders = new Set(config.reservedProviders ?? [])
   let lastRaw: ReturnType<Config['providers']['get']> | undefined
   let memoized: ReadonlyMap<string, ResolvedPiAiProviderProfile> | undefined
+  const liveModels = new Map<string, readonly PiAiLiveModel[]>()
+  const refreshedRoutes = new Set<string>()
+  const refreshInFlight = new Map<string, Promise<void>>()
+  let modelsDevDocument: Promise<unknown> | undefined
   /**
    * The resolved profiles for the current configuration, memoized by the raw
    * snapshot's identity — which is also what makes the adapter's own snapshot
@@ -182,9 +216,20 @@ export function apply(ctx: Context, config: Config): void {
   const profiles = (): ReadonlyMap<string, ResolvedPiAiProviderProfile> => {
     const raw = config.providers.get()
     if (raw === lastRaw && memoized !== undefined) return memoized
-    const next = resolveProfiles(structuredClone(raw) as import('./config.ts').Options['providers'], 'deferred')
+    const next = resolveProfiles(structuredClone(raw) as import('./config.ts').Options['providers'], 'deferred', liveModels)
     lastRaw = raw
     memoized = next
+    return next
+  }
+  const activeProfiles = (): ReadonlyMap<string, ResolvedPiAiProviderProfile> => {
+    const next = profiles()
+    for (const provider of next.keys()) {
+      if (reservedProviders.has(provider)) {
+        throw new Error(
+          `llm-pi-ai: provider route "${provider}" is reserved by a native adapter; configure its native settings section instead`,
+        )
+      }
+    }
     return next
   }
   profiles()
@@ -224,6 +269,119 @@ export function apply(ctx: Context, config: Config): void {
     )
   }
 
+  const modelsDevDoc = (): Promise<unknown> => {
+    modelsDevDocument ??= fetchModelsDevDocument()
+    return modelsDevDocument
+  }
+
+  const refreshModels = async (provider: string): Promise<void> => {
+    const modelsDevRoute = MODELS_DEV_ROUTE_PROVIDERS[provider]
+    if (modelsDevRoute === undefined || refreshedRoutes.has(provider)) return
+    const inFlight = refreshInFlight.get(provider)
+    if (inFlight !== undefined) return inFlight
+    const task = (async () => {
+      const raw = config.providers.get()[provider]
+      // Schemastery materializes an absent `models` as `[]`, and `[]` serves
+      // no request, so both mean "the catalog decides" — the same reading
+      // `resolveRouteModels` applies. A route that names no credential never
+      // fetches: without the key the discovery fallback cannot authenticate
+      // anyway, and a keyless profile is a deliberate catalog-only shape. A
+      // non-empty models list is strict curation unless the route opted into
+      // `liveModelUnion`, in which case the discovered ids join the list.
+      if (raw === undefined) return
+      if ((raw.models !== undefined && raw.models.length > 0) && raw.liveModelUnion !== true) return
+      if (raw.apiKeyEnv === undefined) return
+      const profile = profiles().get(provider)
+      const baseURL = profile?.baseURL ?? catalogProvider(provider)?.baseUrl
+      if (profile === undefined || baseURL === undefined) return
+      const adopt = (discovered: readonly PiAiLiveModel[]): void => {
+        liveModels.set(provider, discovered)
+        lastRaw = undefined
+        memoized = undefined
+        refreshedRoutes.add(provider)
+      }
+      const gatewayListing = (): Promise<readonly PiAiLiveModel[]> =>
+        discoverModels({
+          provider,
+          baseURL,
+          api: profile.api ?? 'openai-completions',
+          forceNetwork: true,
+        }, () => ({ headers: profile.headers, resolveApiKey: () => resolveApiKey(provider, profile) }))
+      /**
+       * NVIDIA's servable chat surface: the published LLM reference unioned
+       * with the account's own listing. Both raw sources are partial — the
+       * `/models` endpoint is a partial catalog, and the reference documents
+       * additional chat endpoints the account listing may omit — so the
+       * union is the membership truth. models.dev contributes only
+       * enrichment: its NVIDIA entry also lists embeddings, speech, image,
+       * and video endpoints that `/v1/chat/completions` does not serve, so
+       * membership from it would put unrequestable models in the pickers.
+       */
+      const nvidiaCatalog = async (): Promise<readonly PiAiLiveModel[]> => {
+        const [documented, listed] = await Promise.all([
+          fetchNvidiaLlmModels().catch(() => undefined),
+          gatewayListing().catch(() => undefined),
+        ])
+        const servable = documented !== undefined
+          ? mergeNvidiaLlmModels(documented, listed ?? [])
+          : listed
+        if (servable === undefined) {
+          throw new Error('the NVIDIA LLM API reference and the endpoint listing are both unavailable')
+        }
+        let capacities = new Map<string, PiAiLiveModel>()
+        try {
+          capacities = new Map(
+            (parseModelsDevLiveModels(await modelsDevDoc(), 'nvidia') ?? []).map(model => [model.id, model]),
+          )
+        } catch (_modelsDevUnavailable) {
+          // Capacities are enrichment only: NVIDIA's reference and the
+          // account listing already answer membership, so an unreachable
+          // models.dev costs the route nothing but the fallback defaults.
+        }
+        return servable.map((model) => {
+          const entry = capacities.get(model.id)
+          return entry === undefined ? model : { ...model, ...entry }
+        })
+      }
+      try {
+        // An explicit liveModelDiscovery asks the endpoint's own listing,
+        // whose answer is the most current thing the gateway serves. The
+        // default reads models.dev — the catalog source OpenCode serves its
+        // pickers from — so a provider's newest ids arrive at startup without
+        // a dependency bump, and falls back to the endpoint listing when that
+        // fetch fails for any reason; the models.dev error is subsumed by the
+        // fallback attempt and, if that also fails, the diagnostic below.
+        if (provider === 'nvidia') {
+          adopt(await nvidiaCatalog())
+          return
+        }
+        if (raw.liveModelDiscovery === true) {
+          adopt(await gatewayListing())
+          return
+        }
+        try {
+          const parsed = parseModelsDevLiveModels(await modelsDevDoc(), modelsDevRoute.id, modelsDevRoute.efforts)
+          if (parsed === undefined) throw new Error(`models.dev does not publish "${modelsDevRoute.id}"`)
+          adopt(parsed)
+        } catch (documentError) {
+          // Only a route that speaks the OpenAI listing has an endpoint
+          // fallback; the shared document fetch stays the single network read
+          // the other mapped routes rely on.
+          if ((profile.api ?? 'openai-completions') !== 'openai-completions') throw documentError
+          adopt(await gatewayListing())
+        }
+      } catch (error) {
+        ctx.logger.warn(`llm-pi-ai: live model discovery for "${provider}" failed; using bundled catalog (${error instanceof Error ? error.message : String(error)})`)
+      }
+    })()
+    refreshInFlight.set(provider, task)
+    try {
+      await task
+    } finally {
+      refreshInFlight.delete(provider)
+    }
+  }
+
   // One store and one ambient context for the whole plugin instance: both read
   // through `ctx` per call, so they stay correct across the collection rebuilds
   // a configuration change causes, and a sign-in survives one.
@@ -232,6 +390,7 @@ export function apply(ctx: Context, config: Config): void {
     profiles,
     resolveApiKey,
     auth,
+    refreshModels,
     resolveAttachments: () => ctx.get('attachments'),
     resolveImageAccess: (attachments, ref) => resolveImageAttachmentAccess(
       attachments,
@@ -258,7 +417,7 @@ export function apply(ctx: Context, config: Config): void {
   let directory: DirectoryRegistrationHandle | undefined
   let directoryFacts: unknown
   const ensureDirectory = (): void => {
-    const entries = directoryEntries(profiles(), settingsNs)
+    const entries = directoryEntries(activeProfiles(), settingsNs, reservedProviders)
     if (deepEqualJson(entries, directoryFacts)) return
     // Atomic replace, never dispose-then-register: a route another adapter
     // family already declares (a profile keyed `deepseek-official`) would
@@ -302,7 +461,8 @@ export function apply(ctx: Context, config: Config): void {
   let registration: AdapterRegistrationHandle | undefined
   let registeredFacts: unknown
   const ensureRegistrationFacts = (): void => {
-    const facts = registrationFacts(profiles())
+    const active = activeProfiles()
+    const facts = registrationFacts(active)
     if (deepEqualJson(facts, registeredFacts)) return
     // The registry captures the route set and each route's retry policy at
     // registration, so a change to either must re-register. The swap is
@@ -310,7 +470,7 @@ export function apply(ctx: Context, config: Config): void {
     // conflicting route leaves the previous routes serving requests, and
     // `registeredFacts` only advances once the registry actually holds the
     // new set — so returning to a working configuration always re-applies.
-    const routes = [...profiles().keys()]
+    const routes = [...active.keys()]
     if (registration === undefined) {
       // Dormant bare mount: nothing is registered until a section supplies
       // profiles, and an empty section keeps it that way.
@@ -325,8 +485,31 @@ export function apply(ctx: Context, config: Config): void {
     registeredFacts = facts
   }
   ensureRegistrationFacts()
+  // Warm the configured ZAI catalog during plugin startup from models.dev
+  // (or, with liveModelDiscovery, the endpoint itself). The static pi-ai
+  // catalog remains available while this fetch is in flight; a successful
+  // response invalidates the immutable profile snapshot and the next
+  // picker/model read sees the provider's current IDs.
+  for (const provider of Object.keys(MODELS_DEV_ROUTE_PROVIDERS)) void refreshModels(provider)
+  // Re-fetch on cadence, not only at mount: models.dev republishes its
+  // document continuously, so a long-lived process converges on a provider's
+  // newest ids without a restart. The tick reuses the mount path exactly —
+  // dropping the shared document and the refreshed set makes each mapped
+  // route's next refresh a real fetch — and `refreshModels`'s own gates
+  // (route configured, credential named) keep the tick a no-op elsewhere.
+  // Like llm-models-dev's `catalogRefreshMs`, the delay is the mount-time
+  // value; a settings-layer cadence change takes effect on restart.
+  ctx.effect(() => {
+    const timer = setInterval(() => {
+      modelsDevDocument = undefined
+      refreshedRoutes.clear()
+      for (const provider of Object.keys(MODELS_DEV_ROUTE_PROVIDERS)) void refreshModels(provider)
+    }, config.modelsDevRefreshMs ?? DEFAULT_MODELS_DEV_REFRESH_MS)
+    return () => { clearInterval(timer) }
+  })
 
   ctx.on('loader/volatile-update', () => {
+    for (const provider of Object.keys(MODELS_DEV_ROUTE_PROVIDERS)) void refreshModels(provider)
     try { ensureRegistrationFacts(); ensureDirectory() }
     catch (error) {
       ctx.logger.error('llm-pi-ai: configuration conflicts with an existing provider route')

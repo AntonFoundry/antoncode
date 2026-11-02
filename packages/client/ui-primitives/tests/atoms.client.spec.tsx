@@ -2,7 +2,7 @@
 import { createRef, useState } from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
-import { Button, ConnectionIndicator, Input, Menu, MenuItemButton, Modal, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, ConnectionIndicator, Input, Menu, MenuItemButton, Modal, Pill, ProviderLogo } from '@deepseek-ai/dsh-client-ui-primitives'
 import { POINTER_GRACE_MS } from '../src/pointer-grace.ts'
 import { focusWithoutRing } from '../src/focus.ts'
 import buttonCss from '../src/Button.module.css'
@@ -64,6 +64,27 @@ it('retains automatic focus styling while typing and restores it for keyboard na
   expect(button.hasAttribute('data-dsh-automatic-focus')).toBe(true)
   fireEvent.keyDown(button, { key: 'ArrowDown' })
   expect(button.hasAttribute('data-dsh-automatic-focus')).toBe(false)
+})
+
+describe('ProviderLogo', () => {
+  it('uses the OpenAI asset for the Codex provider route', () => {
+    const { container } = render(<ProviderLogo provider="codex" name="OpenAI Codex" />)
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('/assets/providers/openai.svg')
+  })
+})
+
+describe('ProviderLogo Claude Code', () => {
+  it('uses the Claude asset for the claude-code subscription route', () => {
+    const { container } = render(<ProviderLogo provider="claude-code" name="Claude Code" />)
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('/assets/providers/anthropic.svg')
+  })
+})
+
+describe('ProviderLogo Anthropic', () => {
+  it('uses the Claude asset for the anthropic provider route', () => {
+    const { container } = render(<ProviderLogo provider="anthropic" name="Anthropic Claude" />)
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('/assets/providers/anthropic.svg')
+  })
 })
 
 describe('Button', () => {

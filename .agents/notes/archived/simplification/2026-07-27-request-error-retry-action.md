@@ -3,7 +3,7 @@
 Status: implemented
 Archived: 2026-09-30
 
-English | [中文](2026-07-27-request-error-retry-action.zh.md)
+English
 
 ## Problem
 

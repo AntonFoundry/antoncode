@@ -1,6 +1,6 @@
 # Subagents
 
-English | [中文](subagent.zh.md)
+English
 
 The unified activation API manages local conversations and external executions.
 
@@ -130,6 +130,8 @@ interface ResolvedSubagentStartRequest extends SubagentStartRequest {
 Spawn alone supports an independent `agentPreset`; omission and fork inherit the parent's active composition. The [child preset rules](../../packages/subagent/subagent/README.md#restoring-child-composition) define explicit selection, event ordering, and historical restoration.
 
 A local child has a durable Session and at most one live activation. The manager reserves identity and capacity, prepares the child through its backend, and owns input admission, cold resume, and child-first disposal. The activation result settles after resource release and completion notification. Disposal reports cleanup failure separately without replacing a captured result. Structured capture closes input for that activation; a later cold resume does not inherit the output schema.
+
+`SubagentRuntime.selectModel(targetSessionId, selection, authority)` replaces one live child's model route under an exact live ancestor Agent. The service installs the child's Agent-scoped model selection, so a step already failing on its route retries the replacement on the next attempt and every later request keeps it until the Agent is disposed; the override is process-local, so a cold resume composes the descriptor's creation route again. Unlike interrupt, a missing live target rejects with `NOT_LIVE` rather than accepting a no-op, and self-targeting or stale ancestor objects reject with `UNAUTHORIZED`.
 
 ```ts type-equiv
 /**
@@ -408,6 +410,52 @@ Host settings owner that records Session authorization before the first model re
 
 Source: [`packages/subagent/tool-subagent/src/model-selection-settings.ts`](../../packages/subagent/tool-subagent/src/model-selection-settings.ts)
 
+<a id="ctxmodelintel--modelintelservice"></a>
+
+### `ctx.modelIntel` — `ModelIntelService`
+
+The weekly model-intel service: datasheet, resolver, and research scheduler.
+
+```ts cordis-catalog
+/** Load the datasheet on mount and start the (cheap) schedule check. */
+async start(): Promise<void>
+
+/**
+ * The current datasheet (cached; re-read when the file changes under us).
+ * @returns the current in-memory datasheet snapshot.
+ */
+getDatasheet(): ModelIntelDatasheet
+
+/**
+ * Replace the in-memory datasheet wholesale. Test and invariant seam: the
+ * scheduler owns the file, so tests seed the snapshot through this instead
+ * of fighting the persisted document.
+ * @param datasheet - the snapshot to install as the current datasheet.
+ */
+injectDatasheet(datasheet: ModelIntelDatasheet): void
+
+/**
+ * Resolve the `auto` child-model route for one delegation task: the best
+ * datasheet entry among providers whose credential resolves, scored against
+ * the task text. `undefined` = no eligible researched route (caller falls
+ * back to parent inheritance).
+ * @param taskText - the delegation task text scored against datasheet entries.
+ * @returns the child provider/model options, or `undefined` when no researched route is eligible.
+ */
+async resolveAutoRoute(taskText: string): Promise<AgentOptions | undefined>
+
+/**
+ * Run one research pass now (no-op while one is in flight). Exposed for the
+ * scheduled check and for manual triggers.
+ * @param trigger - short label for the pass's cause, carried in the log line.
+ */
+async researchNow(trigger: string): Promise<void>
+```
+
+Types: [AgentOptions](core.md)
+
+Source: [`packages/subagent/model-intel/src/index.ts:106`](../../packages/subagent/model-intel/src/index.ts)
+
 <a id="ctxsubagents--subagentruntime"></a>
 
 ### `ctx.subagents` — `SubagentRuntime`
@@ -476,6 +524,24 @@ async sendMessage( sender: Agent, targetId: SessionId, content: ContentBlock[], 
  *   live target.
  */
 interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void
+
+/**
+ * Replace one live child's model route for its next model request. The
+ * selection applies to the retry of a step whose current route is failing —
+ * an exhausted or rate-limited model does not have to keep retrying itself
+ * until the user cancels — and to every later request the child makes.
+ *
+ * The override is process-local and lasts until the child Agent is disposed;
+ * a cold resume composes the descriptor's creation route again. Unlike
+ * {@link interrupt}, a missing live target is an error, not a no-op.
+ * @param targetSessionId - durable id of the live child whose route changes.
+ * @param selection - complete provider, model, and optional reasoning effort.
+ * @param authority - the exact live ancestor Agent.
+ * @throws {SubagentError} `NOT_LIVE` when no Agent is published under the id.
+ * @throws {SubagentError} `UNAUTHORIZED` when the authority does not own the
+ *   live target.
+ */
+selectModel(targetSessionId: SessionId, selection: ModelSelection, authority: SubagentAncestorAuthority): void
 
 /**
  * Close subagent admission below exact live parent Agents, stop only their
@@ -590,7 +656,7 @@ getProvider(name: string): SubagentProvider | undefined
 list(): string[]
 ```
 
-Types: [Agent](core.md) · [ContentBlock](llm-streaming.md) · [MessageId](llm-streaming.md) · [SessionId](core.md)
+Types: [Agent](core.md) · [ContentBlock](llm-streaming.md) · [MessageId](llm-streaming.md) · [ModelSelection](core.md) · [SessionId](core.md)
 
 Source: [`packages/subagent/subagent/src/index.ts`](../../packages/subagent/subagent/src/index.ts)
 

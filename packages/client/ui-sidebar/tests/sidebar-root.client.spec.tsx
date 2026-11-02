@@ -7,8 +7,8 @@ import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { allowAllAccess, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ReactNode } from 'react'
 import type {
-  SidebarFooterActionOwnerProps, SidebarRootComponentProps, SidebarSectionOwnerProps,
-  SidebarSettingsOwnerProps,
+  SidebarFooterActionOwnerProps, SidebarRegionOwnerProps, SidebarRootComponentProps,
+  SidebarSectionOwnerProps, SidebarSettingsOwnerProps,
 } from '../src/client/contract/slots.ts'
 import { HeaderLeadingControls, type HeaderLeadingControlsProps } from '../src/client/HeaderLeadingControls.tsx'
 import { SidebarRoot } from '../src/client/SidebarRoot.tsx'
@@ -36,15 +36,17 @@ type AttentionSnapshot = Parameters<Parameters<SidebarRootComponentProps['useSes
 const noAttention: AttentionSnapshot = new Map()
 const useSessionStatus: SidebarRootComponentProps['useSessionStatus'] = selector => selector(noAttention)
 
-function mountShell({ collapsed = false, width = 300, shortcuts = [] }: {
+function mountShell({ collapsed = false, width = 300, shortcuts = [], brandInFrame }: {
   collapsed?: boolean
   width?: number
   shortcuts?: readonly ShortcutCatalogEntry[]
+  brandInFrame?: boolean
 } = {}) {
   const startSession = vi.fn()
   const toggleSidebar = vi.fn()
   const trackEntryClick = vi.fn<SidebarRootComponentProps['trackEntryClick']>()
-  let regionOwner: SidebarSectionOwnerProps | undefined
+  let regionOwner: SidebarRegionOwnerProps | undefined
+  let memoryOwner: SidebarSectionOwnerProps | undefined
   let settingsOwner: SidebarSettingsOwnerProps | undefined
   let footerActionOwner: SidebarFooterActionOwnerProps | undefined
   const brandMark = <span data-testid="custom-brand-mark">M</span>
@@ -53,6 +55,7 @@ function mountShell({ collapsed = false, width = 300, shortcuts = [] }: {
   const root = () => (
     <SidebarRoot
       collapsed={current.collapsed} width={current.width}
+      {...(brandInFrame === undefined ? {} : { brandInFrame })}
       useSessions={neverHook} useSessionStatus={useSessionStatus} useSessionRetainInfo={neverHook}
       usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])} useEntryPins={selector => selector([])}
       useEntryActions={selector => selector(false)} setPinned={vi.fn()}
@@ -62,7 +65,7 @@ function mountShell({ collapsed = false, width = 300, shortcuts = [] }: {
       startSession={startSession} toggleSidebar={toggleSidebar} trackEntryClick={trackEntryClick} t={t}
       renderSlot={((
         key: string,
-        owner: SidebarFooterActionOwnerProps | SidebarSectionOwnerProps | SidebarSettingsOwnerProps,
+        owner: SidebarFooterActionOwnerProps | SidebarRegionOwnerProps | SidebarSectionOwnerProps | SidebarSettingsOwnerProps,
       ) => {
         if (key === 'sidebar.brand.mark') return brandMark
         if (key === 'sidebar.brand.name') return brandName
@@ -75,7 +78,11 @@ function mountShell({ collapsed = false, width = 300, shortcuts = [] }: {
           footerActionOwner = owner
           return <div data-testid="footer-action-seat" data-wide={owner.wide} />
         }
-        regionOwner = owner as SidebarSectionOwnerProps
+        if (key === 'sidebar.memory') {
+          memoryOwner = owner as SidebarSectionOwnerProps
+          return <div data-testid="memory-seat" data-wide={owner.wide} />
+        }
+        regionOwner = owner as SidebarRegionOwnerProps
         return <div data-testid="region" data-wide={owner.wide} />
       }) as SidebarRootComponentProps['renderSlot']}
     />
@@ -88,6 +95,10 @@ function mountShell({ collapsed = false, width = 300, shortcuts = [] }: {
     regionOwner: () => {
       if (regionOwner === undefined) throw new Error('region owner not rendered')
       return regionOwner
+    },
+    memoryOwner: () => {
+      if (memoryOwner === undefined) throw new Error('memory owner not rendered')
+      return memoryOwner
     },
     settingsOwner: () => {
       if (settingsOwner === undefined) throw new Error('settings owner not rendered')
@@ -109,14 +120,12 @@ describe('SidebarRoot shell', () => {
     const shortcut: ShortcutCatalogEntry = { id: 'session.new' as ShortcutCommandId, label: 'New', aliases: [],
       binding: null, modified: true, conflicts: [], issue: null, keys: ['Ctrl', 'N'], aria: 'Control+N' }
     mountShell({ shortcuts: [shortcut] })
-    for (const button of screen.getAllByRole('button', { name: 'New session' })) {
-      expect(button.getAttribute('aria-keyshortcuts')).toBe('Control+N')
-    }
-    const expanded = screen.getAllByRole('button', { name: 'New session' }).find(button => button.querySelector('kbd') !== null)!
-    fireEvent.pointerEnter(expanded)
-    fireEvent.focus(expanded)
+    // The brand is the shell's only New Session control.
+    const brand = screen.getByRole('button', { name: 'New session' })
+    expect(brand.getAttribute('aria-keyshortcuts')).toBe('Control+N')
+    fireEvent.pointerEnter(brand)
+    fireEvent.focus(brand)
     expect(screen.queryByRole('tooltip')).toBeNull()
-    expect(Array.from(expanded.querySelectorAll('kbd'), key => key.textContent)).toEqual(['Ctrl', 'N'])
     cleanup()
     render(<HeaderLeadingControls toggleSidebar={vi.fn()} startSession={vi.fn()} selectPanel={vi.fn()} trackEntryClick={vi.fn()} t={t}
       usePanelInfo={neverHook} useSessions={neverHook} useSessionStatus={neverHook}
@@ -129,32 +138,53 @@ describe('SidebarRoot shell', () => {
     fireEvent.focus(button)
     expect(Array.from(screen.getByRole('tooltip').querySelectorAll('kbd'), key => key.textContent)).toEqual(['Ctrl', 'N'])
   })
-  it('routes New Session (capsule + wordmark) and the column toggle', () => {
+  it('routes New Session (wordmark) and raises New Workspace presses as region requests', () => {
     // Occupied brand slots keep New Session even when the build carries a version.
     vi.stubEnv('DSH_CLIENT_VERSION', '1.2.3')
     const b = mountShell()
     expect(screen.getByTestId('custom-brand-mark')).toBeTruthy()
     expect(screen.getByTestId('custom-brand-name')).toBeTruthy()
-    // Expanded, both the wordmark and the capsule start a session and report a sidebar New Session click first.
-    const starters = screen.getAllByRole('button', { name: 'New session' })
-    expect(starters).toHaveLength(2)
-    for (const button of starters) fireEvent.click(button)
-    expect(b.startSession).toHaveBeenCalledTimes(2)
-    expect(b.trackEntryClick.mock.calls).toEqual([
-      [{ menu_name: 'new_session', position: 'sidebar' }],
-      [{ menu_name: 'new_session', position: 'sidebar' }],
-    ])
+    // The wordmark keeps the New Session shortcut and reports a sidebar New Session click first.
+    fireEvent.click(screen.getByRole('button', { name: 'New session' }))
+    expect(b.startSession).toHaveBeenCalledTimes(1)
+    expect(b.trackEntryClick).toHaveBeenCalledExactlyOnceWith({ menu_name: 'new_session', position: 'sidebar' })
     expect(b.trackEntryClick.mock.invocationCallOrder[0]).toBeLessThan(b.startSession.mock.invocationCallOrder[0]!)
+    // Each capsule press is one monotonic request edge for the region's
+    // add-workspace flow — never a session start.
+    fireEvent.click(screen.getByRole('button', { name: 'New workspace' }))
+    expect(b.startSession).toHaveBeenCalledTimes(1)
+    expect(b.regionOwner().newWorkspaceRequests).toBe(1)
+    fireEvent.click(screen.getByRole('button', { name: 'New workspace' }))
+    expect(b.regionOwner().newWorkspaceRequests).toBe(2)
     fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
     expect(b.toggleSidebar).toHaveBeenCalledOnce()
-    expect(b.trackEntryClick).toHaveBeenCalledTimes(2)
+    expect(b.trackEntryClick).toHaveBeenCalledOnce()
   })
 
-  it('reports the collapsed rail New Session as a sidebar click outside the Windows caption', () => {
+  it('offers New Workspace, not New Session, on the collapsed rail', () => {
     const b = mountShell({ collapsed: true, width: 56 })
-    fireEvent.click(screen.getByRole('button', { name: 'New session' }))
-    expect(b.startSession).toHaveBeenCalledOnce()
-    expect(b.trackEntryClick).toHaveBeenCalledExactlyOnceWith({ menu_name: 'new_session', position: 'sidebar' })
+    expect(screen.queryByRole('button', { name: 'New session' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'New workspace' }))
+    expect(b.regionOwner().newWorkspaceRequests).toBe(1)
+    expect(b.startSession).not.toHaveBeenCalled()
+    expect(b.trackEntryClick).not.toHaveBeenCalled()
+  })
+
+  it('skips its brand row and toggle while the frame renders the brand', () => {
+    const b = mountShell({ brandInFrame: true })
+    expect(screen.queryByTestId('custom-brand-mark')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'New session' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Collapse sidebar' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'New workspace' }))
+    expect(b.regionOwner().newWorkspaceRequests).toBe(1)
+  })
+
+  it('renders the memory seat with the column state and a resize separator while expanded', () => {
+    const b = mountShell()
+    expect(b.memoryOwner().wide).toBe(true)
+    expect(screen.getByRole('separator', { name: 'Resize the memory panel' })).toBeTruthy()
+    b.memoryOwner().expandSidebar()
+    expect(b.toggleSidebar).not.toHaveBeenCalled()
   })
 
   it('offers no New Session control while the access snapshot excludes session/create', () => {
@@ -178,7 +208,7 @@ describe('SidebarRoot shell', () => {
       }) as SidebarRootComponentProps['renderSlot']}
     />)
 
-    // Neither the brand row nor the dedicated button starts a Session; the brand still renders.
+    // The brand row starts no Session; the brand still renders.
     expect(useRemoteAccess).toHaveBeenCalledWith('session/create')
     expect(screen.queryByRole('button', { name: 'New session' })).toBeNull()
     expect(screen.getByTestId('brand-mark')).toBeTruthy()
@@ -309,6 +339,17 @@ describe('SidebarRoot shell', () => {
     expect(screen.getByText('DSH Local Build')).toBeTruthy()
   })
 
+  it('hides the New Workspace capsule while the region reports no picking affordance', () => {
+    const b = mountShell()
+    // The default assumes the shipped composition's picker; a no-picker
+    // composition reports and the capsule drops out instead of going dead.
+    expect(screen.getByRole('button', { name: 'New workspace' })).toBeTruthy()
+    act(() => { b.regionOwner().reportAddWorkspaceAvailability(false) })
+    expect(screen.queryByRole('button', { name: 'New workspace' })).toBeNull()
+    act(() => { b.regionOwner().reportAddWorkspaceAvailability(true) })
+    expect(screen.getByRole('button', { name: 'New workspace' })).toBeTruthy()
+  })
+
   it('hands the region its wide flag and clamps expandSidebar to the collapsed state', () => {
     const b = mountShell()
     expect(b.regionOwner().wide).toBe(true)
@@ -333,6 +374,9 @@ describe('SidebarRoot shell', () => {
     expect(screen.getByTestId('region')).toBeTruthy()
     b.regionOwner().expandSidebar()
     expect(b.toggleSidebar).toHaveBeenCalledOnce()
+    // The rail capsule is the same New Workspace control: its press counts too.
+    fireEvent.click(screen.getByRole('button', { name: 'New workspace' }))
+    expect(b.regionOwner().newWorkspaceRequests).toBe(1)
   })
 
   it('renders statically collapsed on a cold start (no crossfade classes)', () => {
@@ -378,12 +422,11 @@ it('keeps the macOS sidebar toggle in its top strip', () => {
   fireEvent.click(screen.getByRole('button', { name: en['toggle.collapse'] }))
   expect(shell.toggleSidebar).toHaveBeenCalledOnce()
   // The brand stays part of the logo row's window-drag surface: no button
-  // role (the global no-drag rule would subtract it); only the dedicated
-  // New Session capsule starts a session.
-  expect(screen.getAllByRole('button', { name: 'New session' })).toHaveLength(1)
+  // role (the global no-drag rule would subtract it), so the sidebar column
+  // itself offers no New Session control.
+  expect(screen.queryByRole('button', { name: 'New session' })).toBeNull()
   expect(screen.getByTestId('custom-brand-mark')).toBeTruthy()
-  fireEvent.click(screen.getByRole('button', { name: 'New session' }))
-  expect(shell.trackEntryClick).toHaveBeenCalledExactlyOnceWith({ menu_name: 'new_session', position: 'sidebar' })
+  expect(shell.trackEntryClick).not.toHaveBeenCalled()
 })
 
 it('wires the shell.leading controls to the shared sidebar actions', () => {
@@ -412,25 +455,21 @@ it('wires the shell.leading controls to the shared sidebar actions', () => {
 describe('Windows caption New Session analytics', () => {
   afterEach(() => { document.documentElement.removeAttribute('data-windows-titlebar') })
 
-  it('reports the collapsed caption New Session as a titlebar click', () => {
+  it('hosts the collapsed New Workspace capsule in the caption without a session click', () => {
     document.documentElement.setAttribute('data-windows-titlebar', '')
     const b = mountShell({ collapsed: true, width: 0 })
-    fireEvent.click(screen.getByRole('button', { name: 'New session' }))
-    expect(b.startSession).toHaveBeenCalledOnce()
-    expect(b.trackEntryClick).toHaveBeenCalledExactlyOnceWith({ menu_name: 'new_session', position: 'titlebar' })
+    expect(screen.queryByRole('button', { name: 'New session' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'New workspace' }))
+    expect(b.regionOwner().newWorkspaceRequests).toBe(1)
+    expect(b.trackEntryClick).not.toHaveBeenCalled()
   })
 
-  it('reports the expanded brand and New Session button as sidebar clicks', () => {
+  it('reports the expanded brand as a sidebar click', () => {
     document.documentElement.setAttribute('data-windows-titlebar', '')
     const b = mountShell()
-    const starters = screen.getAllByRole('button', { name: 'New session' })
-    expect(starters).toHaveLength(2)
-    for (const button of starters) fireEvent.click(button)
-    expect(b.startSession).toHaveBeenCalledTimes(2)
-    expect(b.trackEntryClick.mock.calls).toEqual([
-      [{ menu_name: 'new_session', position: 'sidebar' }],
-      [{ menu_name: 'new_session', position: 'sidebar' }],
-    ])
+    fireEvent.click(screen.getByRole('button', { name: 'New session' }))
+    expect(b.startSession).toHaveBeenCalledOnce()
+    expect(b.trackEntryClick).toHaveBeenCalledExactlyOnceWith({ menu_name: 'new_session', position: 'sidebar' })
   })
 })
 
@@ -453,11 +492,11 @@ describe('Windows caption tooltips', () => {
     },
   )
 
-  it('drops the collapsed New Session bubble below the caption as well', () => {
+  it('drops the collapsed New Workspace bubble below the caption as well', () => {
     vi.useFakeTimers()
     document.documentElement.setAttribute('data-windows-titlebar', '')
     mountShell({ collapsed: true, width: 0 })
-    hover(screen.getByRole('button', { name: 'New session' }))
+    hover(screen.getByRole('button', { name: 'New workspace' }))
     expect(screen.getByRole('tooltip').getAttribute('data-side')).toBe('bottom')
   })
 

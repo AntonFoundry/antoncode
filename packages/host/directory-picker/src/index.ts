@@ -27,6 +27,12 @@ export interface DirectoryPickerNativeCapability {
   pick(signal: AbortSignal): Promise<string | null>
 }
 
+/** Options narrowing or widening one `list` call. */
+export interface DirectoryListOptions {
+  /** Include plain file rows beside the directories (dired's full listing; the folder chooser keeps directories only). */
+  includeFiles?: boolean
+}
+
 /**
  * The browse interaction: listing/creation primitives an in-app browser
  * drives one level at a time. Works for remote clients — nothing renders on
@@ -37,6 +43,7 @@ export interface DirectoryPickerBrowseCapability {
   /**
    * List one directory level.
    * @param path - absolute directory to list; absent lists the home directory.
+   * @param opts - level options; `includeFiles` widens the rows past enterable directories (dired's full listing).
    * @param signal - caller lifetime; abort stops the scan (a stalled network
    * directory must not outlive a disconnected caller) and rejects with the
    * abort reason.
@@ -46,7 +53,7 @@ export interface DirectoryPickerBrowseCapability {
    * qualified (a wire value must never resolve against the host cwd or, on
    * Windows, its current drive) or cannot be listed.
    */
-  list(path?: string, signal?: AbortSignal): Promise<DirectoryListing>
+  list(path?: string, opts?: DirectoryListOptions, signal?: AbortSignal): Promise<DirectoryListing>
   /**
    * Create one child directory under an existing parent.
    * @param path - absolute existing parent directory.

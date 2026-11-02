@@ -3,7 +3,7 @@
 Status: implemented
 Archived: 2026-09-30
 
-English | [中文](2026-06-26-file-context-as-event-gate.zh.md)
+English
 
 ## Problem
 

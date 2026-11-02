@@ -145,6 +145,7 @@ describe('web e2e: long Chat interaction contract', () => {
     const replay: ReplayOverrideDoc = [replayEntry(continuationChunks())]
     await writeFile(replayOverride, JSON.stringify(replay))
     scaffold = await launchWebScaffold({
+      directToolCalls: true,
       replayFixture: join(replayDir, 'override-only.jsonl'),
       replayOverride,
       replayContextWindow: 10_000_000,
@@ -285,12 +286,16 @@ describe('web e2e: long Chat interaction contract', () => {
     const summary1 = call1.locator('[data-sample="bash"]')
     const summary2 = call2.locator('[data-sample="bash"]')
     await expandOwningTurnProcess(page, call2)
-    expect(await summary1.getAttribute('aria-expanded')).toBe('false')
-    expect(await summary2.getAttribute('aria-expanded')).toBe('false')
+    // Terminal rows start expanded (eefdb9e795); keyboard-toggle summary2
+    // collapsed so per-row disclosure independence is still exercised.
+    expect(await summary1.getAttribute('aria-expanded')).toBe('true')
+    expect(await summary2.getAttribute('aria-expanded')).toBe('true')
     await summary2.focus()
     await summary2.press('Enter')
+    await expect.poll(() => summary2.getAttribute('aria-expanded'), { timeout: 10_000 }).toBe('false')
+    expect(await summary1.getAttribute('aria-expanded')).toBe('true')
+    await summary2.press('Enter')
     await expect.poll(() => summary2.getAttribute('aria-expanded'), { timeout: 10_000 }).toBe('true')
-    expect(await summary1.getAttribute('aria-expanded')).toBe('false')
     await call2.getByText(`${toolMarker2} output line 12`, { exact: true }).waitFor({ timeout: 10_000 })
 
     const branchUserKey = messageKey(branchUserEvent)

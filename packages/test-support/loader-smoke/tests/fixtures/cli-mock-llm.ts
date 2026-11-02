@@ -16,7 +16,10 @@ const SHELL_COMMAND = process.platform === 'win32'
   ? "Write-Output 'CLI_TOOL_ROUND_TRIP'"
   : 'printf CLI_TOOL_ROUND_TRIP'
 
-/** Keyless headless-agent adapter: one production shell call followed by a final answer. */
+/**
+ * Keyless headless-agent adapter: one production shell call followed by a final answer.
+ * `DSH_CLI_MOCK_PAGED=1` first discovers `todo_write` and the shell tool through `tool_search`.
+ */
 class CliMockAdapter extends LlmAdapter {
   override async resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
     return {
@@ -40,7 +43,32 @@ class CliMockAdapter extends LlmAdapter {
     }
     const last = options.messages.at(-1)
     const toolResult = last?.role === 'tool' ? last : undefined
-    if (toolResult === undefined) {
+    const paged = process.env.DSH_CLI_MOCK_PAGED === '1'
+    if (paged && toolResult === undefined) {
+      const args = JSON.stringify({ intent: 'Find todo_write to record a short task plan.' })
+      yield { type: 'block-start', index: 0, blockType: 'tool-call' }
+      yield { type: 'tool-call-delta', index: 0, id: ToolCallId('cli-plan-search-call'), name: 'tool_search', argumentsDelta: args }
+      yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: ToolCallId('cli-plan-search-call'), name: 'tool_search', arguments: args } }
+      yield { type: 'finish', reason: { kind: 'tool-calls' } }
+      return
+    }
+    if (paged && toolResult?.toolCallId === ToolCallId('cli-plan-search-call')) {
+      const args = JSON.stringify({ todos: [{ content: 'Run the repair profile smoke', status: 'in_progress' }] })
+      yield { type: 'block-start', index: 0, blockType: 'tool-call' }
+      yield { type: 'tool-call-delta', index: 0, id: ToolCallId('cli-plan-call'), name: 'todo_write', argumentsDelta: args }
+      yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: ToolCallId('cli-plan-call'), name: 'todo_write', arguments: args } }
+      yield { type: 'finish', reason: { kind: 'tool-calls' } }
+      return
+    }
+    if (paged && toolResult?.toolCallId === ToolCallId('cli-plan-call')) {
+      const args = JSON.stringify({ intent: `Find the ${SHELL_TOOL} tool to run a shell command.` })
+      yield { type: 'block-start', index: 0, blockType: 'tool-call' }
+      yield { type: 'tool-call-delta', index: 0, id: ToolCallId('cli-search-call'), name: 'tool_search', argumentsDelta: args }
+      yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: ToolCallId('cli-search-call'), name: 'tool_search', arguments: args } }
+      yield { type: 'finish', reason: { kind: 'tool-calls' } }
+      return
+    }
+    if (toolResult === undefined || (paged && toolResult.toolCallId === ToolCallId('cli-search-call'))) {
       const reasoning = 'Inspecting the task before the tool call.'
       const args = JSON.stringify({ command: SHELL_COMMAND, description: 'Prove the CLI tool round trip.' })
       yield { type: 'block-start', index: 0, blockType: 'reasoning' }

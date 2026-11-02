@@ -92,6 +92,9 @@
     - id: agent-queue-direct
       name: '@deepseek-ai/dsh-agent-queue/direct'
 
+    - id: worktree
+      name: '@deepseek-ai/dsh-worktree'
+
     - id: session-reference
       name: '@deepseek-ai/dsh-session-reference'
 
@@ -111,6 +114,16 @@
     # Resolve bind host, SSH launch, and display once at boot, then mount the
     # matching dual-face directory picker. Mount -native or -browse directly in
     # an overlay to pin the interaction.
+    # WM terminal buffers: the xterm.js view occupying the frame's
+    # terminal.view slot (one interactive login-shell PTY per buffer).
+    - id: ui-terminal-view
+      name: '@deepseek-ai/dsh-client-ui-terminal'
+
+    # WM webcam buffers: the GPU background-removal camera view occupying the
+    # frame's webcam.view slot (one shared capture behind every webcam pane).
+    - id: ui-webcam-view
+      name: '@deepseek-ai/dsh-client-ui-webcam'
+
     - id: directory-picker
       name: '@deepseek-ai/dsh-host-directory-picker-auto'
 
@@ -332,6 +345,10 @@
     - id: ui-settings-plugin-inventory
       name: '@deepseek-ai/dsh-client-ui-settings-plugin-inventory'
 
+    # Read-only Agent Mail conversation view until browser authorization is available.
+    - id: ui-conversation-agent-mail
+      name: '@deepseek-ai/dsh-client-ui-conversation-agent-mail'
+
     - id: ui-conversation
       name: '@deepseek-ai/dsh-client-ui-conversation'
 
@@ -384,6 +401,10 @@
     - id: ui-workflow-run
       name: '@deepseek-ai/dsh-client-ui-workflow-run'
 
+    # Worktree surface: the composer's workspace-mode select and the session
+    # header's repo-status chip (branch + stash count).
+    - id: ui-worktree
+      name: '@deepseek-ai/dsh-client-ui-worktree'
     # Input triggers: the '/' | '@' pipeline (ui-input-trigger), the command surface over
     # it (ui-commands), and the reference sources (ui-skill / ui-reference).
     - id: ui-input-trigger
@@ -477,6 +498,24 @@
     - id: ui-trajectory
       name: '@deepseek-ai/dsh-client-ui-trajectory'
 
+    # Workflows tab: the editable flow canvas owning the `dagflow` view id.
+    - id: ui-flowbuilder
+      name: '@deepseek-ai/dsh-client-ui-flowbuilder'
+
+    # Inline file viewers, one keyed row of ui-layout's file.view slot each:
+    # markdown (this row) renders .md buffers through the shared MarkdownText
+    # engine; image/video (the rows below) render from the /api/host/media
+    # streaming endpoint. An absent row degrades its extensions to the
+    # built-in plain-text fallback, never to a broken surface.
+    - id: ui-file-markdown
+      name: '@deepseek-ai/dsh-client-ui-file-markdown'
+
+    - id: ui-file-image
+      name: '@deepseek-ai/dsh-client-ui-file-image'
+
+    - id: ui-file-video
+      name: '@deepseek-ai/dsh-client-ui-file-video'
+
 # ── the agent plane moves behind agent presets ─────────────────────────────
 #
 # Every row below composes what ONE agent contributes to the host registries:
@@ -549,18 +588,26 @@
 - id: plan-mode
   disabled: true
 
-# The token METER stays on the host plane; only the compaction backend that
-# reads it moves. It owns the context-meter projection units, and that table is
-# process-wide, so preset ownership would make the meter a function of which
-# presets happen to be mounted rather than a per-session fact. Same criterion as
-# `tasks` and `goals`; the reasoning has one home in
-# `.agents/notes/implemented/architecture/2026-08-10-host-plane-ownership-after-presets.md`.
+# Context pressure is owned by the c0ntext evictor (zones + surface
+# eviction at the 40% watermark), not by generic compaction. `compaction-basic`
+# and the tool-result pruner stay off: silent pruning contradicts the
+# eviction-first policy, and the evictor mirrors raw evidence into the engine
+# BEFORE evicting, so nothing is lost that bitemporal search cannot revive.
+# `command-compact` stays on as the rare, human-invoked special command.
 
 - id: compaction-basic
-  disabled: true
+  config:
+    # Mounted service-only: `command-compact` (the human `/compact`) needs
+    # this backend, but automatic compaction is off — context pressure is
+    # owned by the c0ntext evictor (zones + surface eviction at the 40%
+    # watermark), and the evictor mirrors raw evidence into the engine
+    # BEFORE evicting, so nothing is lost that bitemporal search cannot
+    # revive. The tool-result pruner stays off for the same reason: silent
+    # pruning drops evidence the engine never saw.
+    auto: false
 
 - id: command-compact
-  disabled: true
+  disabled: false
 
 - id: tool-result-pruner
   disabled: true
@@ -587,6 +634,8 @@
 - id: tool-workflow
   disabled: true
 
+- id: tool-flowbuilder
+  disabled: true
 - id: agent-instructions
   disabled: true
 

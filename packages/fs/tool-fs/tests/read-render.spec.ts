@@ -175,6 +175,13 @@ describe('langFromPath', () => {
     expect(langFromPath('/abs/module.mjs')).toBe('js')
     expect(langFromPath('conf.yml')).toBe('yaml')
     expect(langFromPath('README.md')).toBe('md')
+    expect(langFromPath('core.janet')).toBe('janet')
+    expect(langFromPath('src/actors.ben')).toBe('bender')
+    expect(langFromPath('macros.lisp')).toBe('common-lisp')
+    expect(langFromPath('init.el')).toBe('emacs-lisp')
+    expect(langFromPath('app.hy')).toBe('hy')
+    expect(langFromPath('solver.f90')).toBe('fortran')
+    expect(langFromPath('legacy.cob')).toBe('cobol')
   })
 
   it('keeps the canonical ids the Client code surfaces use out of the persisted hint', () => {

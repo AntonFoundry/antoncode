@@ -8,7 +8,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { localizeAutoReviewDenial, normalizeAutoReviewReason } from '../src/client/tool/models/auto-review-denial.ts'
 import {
-  classifyTool, formatToolBody, resultText, toolRowModel,
+  classifyTool, formatToolBody, READ_BEFORE_EDIT_NOTICE, resultText, toolRowModel,
 } from '../src/client/tool/models/tool-call-model.ts'
 import { ToolRow } from '../src/client/tool/components/ToolRow.tsx'
 import { GenericToolCard, type GenericToolCardProps } from '../src/client/tool/toolviews/GenericToolCard.tsx'
@@ -96,10 +96,14 @@ describe('tool-call-model', () => {
     expect(t(m.titleKey)).toBe('运行命令')
   })
 
-  it('derives state across running/ok/error/interrupted', () => {
+  it('derives state across running/ok/recoverable guidance/error/interrupted', () => {
     expect(toolRowModel('bash', running()).state).toBe('running')
     expect(toolRowModel('bash', result()).state).toBe('ok')
     expect(toolRowModel('bash', result({ isError: true })).state).toBe('error')
+    expect(toolRowModel('edit', result({
+      isError: true,
+      error: { name: 'FsError', code: 'FS_NOT_OBSERVED' },
+    }))).toMatchObject({ state: 'notice', output: READ_BEFORE_EDIT_NOTICE, errorSummary: READ_BEFORE_EDIT_NOTICE })
     expect(toolRowModel('bash', result({ isError: true, error: { name: 'E', code: 'interrupted' } })).state).toBe('stopped')
   })
 
@@ -468,6 +472,17 @@ describe('ToolRow', () => {
     fireEvent.click(view.getByRole('button'))
     expect(view.getByText(/detail/)).toBeTruthy()
     expect(view.container.querySelector('[data-error]')).not.toBeNull()
+  })
+
+  it('shows a held edit as mellow guidance rather than an error', () => {
+    const view = render(
+      <ToolRow {...rowProps} state="notice" errorSummary={READ_BEFORE_EDIT_NOTICE} output={READ_BEFORE_EDIT_NOTICE} />,
+    )
+    expect(view.getByText(READ_BEFORE_EDIT_NOTICE)).toBeTruthy()
+    expect(view.container.querySelector('[data-state="notice"]')).not.toBeNull()
+    fireEvent.click(view.getByRole('button'))
+    expect(view.container.querySelector('[data-notice]')).not.toBeNull()
+    expect(view.container.querySelector('[data-error]')).toBeNull()
   })
 
   it('an error row without an error summary keeps the args summary', () => {

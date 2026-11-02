@@ -37,7 +37,7 @@ import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
 import { assertObjectJsonSchema } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Agent, ModelSelection } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { canonicalClientTimeZone } from '@deepseek-ai/dsh-util-time'
 import { Remote, RemoteError, TypertRemoteService, principalOf, type Principal } from '@deepseek-ai/dsh-typert-protocol'
@@ -73,7 +73,10 @@ import { listChildren as listSubagentChildren, listDescendants as listSubagentDe
 import type { SubagentDescendantListEntry } from './list-children.ts'
 import { installSubagentArchiveAdmission } from './archive-admission.ts'
 import type { SubagentCatalogEntry } from './projection-types.ts'
-import { subagentIdentityProjectionDefinition, subagentTimingProjectionDefinition } from './projection.ts'
+import {
+  subagentIdentityProjectionDefinition, subagentOutcomeProjectionDefinition,
+  subagentTimingProjectionDefinition,
+} from './projection.ts'
 import { subagentCatalogProjectionDefinition } from './catalog.ts'
 import { deliverSubagentPrompt } from './internal.ts'
 
@@ -125,8 +128,15 @@ export type { ChildComposition, DelegatedPolicyOverrides } from './child-agent.t
 export type { AgentMessageSource, SubagentSettledMessageSource } from './continuation-messages.ts'
 export type * from './control-types.ts'
 export type { SubagentDescendantListEntry } from './list-children.ts'
+
+/** Exact live ancestor Agent authorizing one control operation on a child. */
+export type SubagentAncestorAuthority = Extract<SubagentInterruptAuthority, { readonly kind: 'ancestor' }>
+/** Authority under which one control operation on a live child is admitted. */
+export type SubagentControlAuthority = SubagentInterruptAuthority
 export type { SubagentRunEndInfo, SubagentRunInfo } from './types.ts'
-export type { SubagentCatalogEntry, SubagentIdentityProjection, SubagentTimingProjection } from './projection-types.ts'
+export type {
+  SubagentCatalogEntry, SubagentIdentityProjection, SubagentOutcomeProjection, SubagentTimingProjection,
+} from './projection-types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -234,6 +244,7 @@ export class SubagentRuntime extends TypertRemoteService {
     await sessionProjections.register(subagentCatalogProjectionDefinition)
     await sessionProjections.register(subagentTimingProjectionDefinition)
     await sessionProjections.register(subagentIdentityProjectionDefinition)
+    await sessionProjections.register(subagentOutcomeProjectionDefinition)
   }
 
   /**
@@ -360,6 +371,53 @@ export class SubagentRuntime extends TypertRemoteService {
    */
   interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void {
     this.manager?.interrupt(targetSessionId, authority)
+  }
+
+  /**
+   * Replace one live child's model route for its next model step. The choice is
+   * recorded as the child's own `model/selection` event, so it also governs a
+   * later cold resume of that child. Unlike {@link interrupt}, a missing live
+   * target is an error, not a no-op; selecting a non-live child's route is not
+   * supported.
+   * @param targetSessionId - durable id of the live child whose route changes.
+   * @param selection - complete provider, model, and optional reasoning effort.
+   * @param authority - the exact live ancestor Agent.
+   * @throws {SubagentError} `NOT_LIVE` when no Agent is published under the id.
+   * @throws {SubagentError} `UNAUTHORIZED` when the caller is stale, targets
+   *   itself, or is not a live ancestor of the target.
+   */
+  selectModel(targetSessionId: SessionId, selection: ModelSelection, authority: SubagentAncestorAuthority): void {
+    const agents = this.ctx.get('agents')
+    const caller = authority.agent
+    if (agents?.get(caller.id) !== caller) {
+      throw new SubagentError(
+        `changing the model of "${targetSessionId}" requires the exact live ancestor agent`,
+        'UNAUTHORIZED',
+      )
+    }
+    if (caller.id === targetSessionId) {
+      throw new SubagentError(`agent "${caller.id}" cannot change its own child model`, 'UNAUTHORIZED')
+    }
+    const target = agents.get(targetSessionId)
+    if (target === undefined) {
+      throw new SubagentError(
+        `subagent "${targetSessionId}" is not running; a model switch applies only to a live child`,
+        'NOT_LIVE',
+      )
+    }
+    const visited = new Set<SessionId>([target.id])
+    let parentId = target.session.header.parentSession
+    while (parentId !== undefined && parentId !== caller.id && !visited.has(parentId)) {
+      visited.add(parentId)
+      parentId = agents.get(parentId)?.session.header.parentSession
+    }
+    if (parentId !== caller.id) {
+      throw new SubagentError(
+        `subagent "${target.id}" is not a live descendant of agent "${caller.id}"`,
+        'UNAUTHORIZED',
+      )
+    }
+    target.model.select(selection)
   }
 
   /**

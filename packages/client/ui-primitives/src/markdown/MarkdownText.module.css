@@ -163,7 +163,8 @@
 
 .markdown pre {
   margin: 16px 0;
-  font-family: var(--ds-font-family-code);
+  /* Code section tokens carry the family and the user size. */
+  font: var(--dsw-font-markdown-code-block);
   overflow: auto;
 }
 

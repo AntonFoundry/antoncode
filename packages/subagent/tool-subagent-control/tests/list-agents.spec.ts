@@ -372,6 +372,35 @@ describe('list_agents', () => {
     )
   })
 
+  it('renders a descendant usage bracket with the cache-hit percentage', async () => {
+    const { ctx, parent } = await setup([])
+    ctx.subagents.listDescendants = () => Promise.resolve([
+      {
+        kind: 'child',
+        id: SessionId('cached-child'),
+        label: 'cached child',
+        mode: 'continuable',
+        activity: 'inactive',
+        hasChildren: false,
+        parentId: parent.id,
+        depth: 1,
+        usage: {
+          uncachedInputTokens: 10,
+          outputTokens: 4,
+          cacheReadTokens: 7,
+          cacheWriteTokens: 2,
+          cacheHitRate: 7 / 19,
+        },
+      },
+    ])
+    const result = await callTool(ctx, 'list_agents', { scope: 'descendants' }, parent)
+    expect(result.isError).toBe(false)
+    expect(text(result)).toBe(
+      `cached-child [inactive] parent=${parent.id} depth=1 — cached child`
+      + ' tokens[in=10 out=4 cache-read=7 cache-write=2 hit=37%]',
+    )
+  })
+
   it('preserves explicit descendants scope and forwards the tool cancellation signal', async () => {
     const { ctx, parent } = await setup([])
     const signal = new AbortController().signal

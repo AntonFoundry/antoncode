@@ -18,7 +18,7 @@ import {
   DirectoryPicker, DirectoryPickerError,
 } from '@deepseek-ai/dsh-host-directory-picker'
 import type {
-  DirectoryEntry, DirectoryListing, DirectoryPickerCapability,
+  DirectoryEntry, DirectoryListing, DirectoryListOptions, DirectoryPickerCapability,
 } from '@deepseek-ai/dsh-host-directory-picker'
 
 /**
@@ -31,7 +31,7 @@ function ancestryCrumbs(target: string): DirectoryEntry[] {
   for (;;) {
     const parent = dirname(current)
     // basename of a root is '' — label the root crumb by its full path ('/', 'C:\').
-    crumbs.unshift({ name: parent === current ? current : basename(current), path: current, hidden: false })
+    crumbs.unshift({ name: parent === current ? current : basename(current), path: current, hidden: false, isDirectory: true })
     if (parent === current) return crumbs
     current = parent
   }
@@ -150,31 +150,39 @@ function messageOf(error: unknown): string {
 }
 
 /**
- * One listing row for a dirent, following symlinks to directories; null for
- * non-directories and broken/cyclic links (skipped silently — the browser
- * shows what can be entered, and a broken link cannot).
+ * One listing row for a dirent, stat-probed for the row kind and the dired
+ * metadata (size, mtime, mode). Symlinks follow to their target (a broken or
+ * cyclic link stats nothing and drops — the browser shows what resolves, and
+ * a broken link does not). In directories-only mode a stat that resolves to
+ * a non-directory drops too (the folder chooser lists what it can enter).
  */
 async function directoryRow(
-  parent: string, name: string, isDirectory: boolean, isSymbolicLink: boolean, signal: AbortSignal | undefined,
+  parent: string, name: string, includeFiles: boolean, signal: AbortSignal | undefined,
 ): Promise<DirectoryEntry | null> {
   const path = join(parent, name)
-  let enterable = isDirectory
-  if (!enterable && isSymbolicLink) {
-    try {
-      // The probe races the caller too: a symlink target on a stalled
-      // network filesystem must not keep a departed caller's request alive.
-      enterable = (await raceAbort(stat(path), signal)).isDirectory()
-    } catch {
-      /* v8 ignore next 2 -- an abort landing mid-probe needs a stalled stat; the per-candidate check in list covers the settled path. */
-      if (signal?.aborted) throw asError(signal.reason)
-      // Broken or cyclic symlink: stat is the probe, failure means "not enterable".
-      return null
-    }
+  let stats
+  try {
+    // The probe races the caller too: a target on a stalled network
+    // filesystem must not keep a departed caller's request alive.
+    stats = await raceAbort(stat(path), signal)
+  } catch {
+    /* v8 ignore next 2 -- an abort landing mid-probe needs a stalled stat; the per-candidate check in list covers the settled path. */
+    if (signal?.aborted) throw asError(signal.reason)
+    // Broken or cyclic symlink: stat is the probe, failure means "unresolvable".
+    return null
   }
-  if (!enterable) return null
+  if (!includeFiles && !stats.isDirectory()) return null
   // POSIX hidden convention; Windows' hidden attribute is not exposed by
   // dirents (Known Limitations). The client owns whether hidden rows show.
-  return { name, path, hidden: name.startsWith('.') }
+  return {
+    name,
+    path,
+    hidden: name.startsWith('.'),
+    isDirectory: stats.isDirectory(),
+    size: stats.size,
+    mtimeMs: stats.mtimeMs,
+    mode: stats.mode,
+  }
 }
 
 /** Validated plugin configuration. */
@@ -198,7 +206,7 @@ export default class BrowseDirectoryPicker extends DirectoryPicker {
 
   private readonly browseCapability: DirectoryPickerCapability = {
     kind: 'browse',
-    list: (path, signal) => this.list(path, signal),
+    list: (path, opts, signal) => this.list(path, opts, signal),
     createDirectory: (path, name) => this.createDirectory(path, name),
   }
 
@@ -214,7 +222,7 @@ export default class BrowseDirectoryPicker extends DirectoryPicker {
     return this.browseCapability
   }
 
-  private async list(path?: string, signal?: AbortSignal): Promise<DirectoryListing> {
+  private async list(path?: string, opts?: DirectoryListOptions, signal?: AbortSignal): Promise<DirectoryListing> {
     const home = homedir()
     // The seam contract takes fully qualified paths only; resolve() would
     // silently rebase a relative or empty wire value under the host process
@@ -254,9 +262,11 @@ export default class BrowseDirectoryPicker extends DirectoryPicker {
         for (;;) {
           const dirent = await raceAbort(level.read(), signal)
           if (dirent === null) break
-          // Only rows a browser could enter contend for the window; dirent
-          // says "directory" outright, a symlink needs the later stat probe.
-          if (!dirent.isDirectory() && !dirent.isSymbolicLink()) continue
+          // Rows contend for the window: enterable directories always, and
+          // plain files too when the caller widened the level (dired's full
+          // listing). Dirent says "directory" outright; a symlink needs the
+          // later stat probe.
+          if (opts?.includeFiles !== true && !dirent.isDirectory() && !dirent.isSymbolicLink()) continue
           const candidate = { name: dirent.name, isDirectory: dirent.isDirectory(), isSymbolicLink: dirent.isSymbolicLink() }
           if (boundedInsert(window, candidate, keep)) evicted = true
         }
@@ -285,7 +295,7 @@ export default class BrowseDirectoryPicker extends DirectoryPicker {
       // A caller that departed between reads and probes stops before the
       // next probe (each probe's own await is raced inside directoryRow).
       signal?.throwIfAborted()
-      const row = await directoryRow(target, candidate.name, candidate.isDirectory, candidate.isSymbolicLink, signal)
+      const row = await directoryRow(target, candidate.name, opts?.includeFiles === true, signal)
       if (row === null) continue
       if (entries.length === this.config.maxEntries) {
         truncated = true

@@ -1,15 +1,15 @@
 ---
-description: "The model-facing todo_write tool over the DeepSeek Harness session log: whole-list replacement, per-session ownership, and the todos projection, for users and maintainers choosing, configuring, or debugging the tool."
+description: "The model-facing todo_write tool over the DeepSeek Harness session log: whole-tree replacement, per-session ownership, and the todos projection, for users and maintainers choosing, configuring, or debugging the tool."
 kind: "package-reference"
 ---
 
 # @deepseek-ai/dsh-tool-todo
 
-English | [中文](README.zh.md)
+English
 
 ## Summary
 
-`dsh-tool-todo` gives the agent a structured task list to plan with: break multi-step work into concrete tasks, mark the task you are working on, and check tasks off as they finish. The list survives across turns and reopened sessions, so the agent and the UI always see the latest plan. One configuration flag decides whether several tasks may be in progress at once, for agents that run work in parallel. Use it wherever an agent should keep a visible task list; each update replaces the whole list, and only the owning agent session can change it.
+`dsh-tool-todo` gives the agent a structured task tree to plan with: break multi-step work into concrete tasks nested up to three levels, mark the task you are working on, and check tasks off as they finish. The list survives across turns and reopened sessions, so the agent and the UI always see the latest plan. One configuration flag decides whether several tasks may be in progress at once, for agents that run work in parallel. Use it wherever an agent should keep a visible task list; each update replaces the whole tree, and only the owning agent session can change it.
 
 ## Table of Contents
 
@@ -49,7 +49,9 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 ### What each call does
 
-The agent sends the ENTIRE list on every update; the new list replaces the previous one, so there are no partial updates or per-item edits. Each item is a short task description plus a status of `pending`, `in_progress`, or `completed`. A successful update returns the new counts — `Updated todo list: <pending> pending, <inProgress> in progress, <completed> completed.` — and the UI shows the new plan. Updates fail visibly when a task description is empty or duplicated, when an item carries fields beyond the description and status, or — when parallel work is disabled — when more than one task is marked in progress.
+The agent sends the ENTIRE tree on every update; the new tree replaces the previous one, so there are no partial updates or per-node edits. Each node is a short task description, a status of `pending`, `in_progress`, `completed`, or `cancelled`, an optional `priority` of `high`, `medium`, or `low`, and optional `children` — up to three levels (task, child, grandchild). A successful update returns the new counts over the whole tree — `Updated todo tree: <pending> pending, <inProgress> in progress, <completed> completed, <cancelled> cancelled.` — and the UI shows the new plan. Corrupted entries are repaired before validation: object keys are trimmed, a bare string becomes a `pending` node, entries without usable content are dropped, an unknown status becomes `pending`, an unknown priority is omitted, and nesting below the third level is ignored. Updates fail visibly when a task description is duplicated anywhere in the tree, when a non-empty tree has no salvageable entry, or — when parallel work is disabled — when more than one node in the tree is marked in progress.
+
+The latest tree persists across turns and is the standing plan: the `todo:standing-plan` system-prompt section renders it as a checklist on every model request, with content kept literal (including `{{…}}` groups), so a request to continue extends the real plan.
 
 ### Single owner
 
@@ -69,10 +71,10 @@ This section explains the design decisions behind the tool and points at the cod
 
 The tool is built on four commitments:
 
-- **Whole-list replace, log-backed state.** The model resends the entire list; the `todo/write` snapshot lives on the event-sourced session log, so durability, replay, and resume reconstruction come from the log rather than a service.
+- **Whole-tree replace, log-backed state.** The model resends the entire tree; the `todo/write` snapshot lives on the event-sourced session log, so durability, replay, and resume reconstruction come from the log rather than a service.
 - **Single owner.** The list belongs to the calling agent session; there is no shared or swarm scope, and non-agent callers are rejected.
 - **Deployment policy, not a coded rule.** `allowParallelInProgress` is a required composition choice because the tool cannot observe runtime concurrency.
-- **Validation keeps the logged snapshot honest.** Schema-level rejection of unknown keys and `execute`-level rejection of empty or duplicate content keep the durable snapshot equal to what the model believes it wrote.
+- **Repair, then validate.** A tolerant schema lets corrupted entries reach `execute`, which salvages them and then rejects duplicate content or excess active nodes, so one malformed node does not lose the whole call and the logged snapshot is the canonical tree the result echoes.
 
 The [todo_write tool Agent Note](../../../.agents/notes/archived/feature/2026-06-29-todo-write-tool.md) records the original design and alternatives; the [parallel in-progress Agent Note](../../../.agents/notes/archived/feature/2026-07-26-todo-parallel-in-progress.md) records the policy decision.
 
@@ -90,7 +92,7 @@ The plugin is a function/namespace plugin: it exports `name` / `inject` / `apply
 
 ### Session projection
 
-When the composition mounts `ctx.sessionProjections` ([`@deepseek-ai/dsh-session-projection`](../../session/session-projection/README.md)), this package registers the `todos` unit on an injected child: the projection is the standing plan — the latest whole `todo/write` list, `null` before the first write, cleared when the next turn starts while `turn/end` keeps the finished checklist visible. The key merges into `SessionProjectionMap` here; carriers serve the value on the history tail page and the `session/projection` push frame. Compositions without the registry are unaffected; see [src/index.ts](src/index.ts) for the unit registration.
+When the composition mounts `ctx.sessionProjections` ([`@deepseek-ai/dsh-session-projection`](../../session/session-projection/README.md)), this package registers the `todos` unit: the projection is the standing plan — the latest whole `todo/write` tree, `null` before the first write, kept across turns until the next write replaces it (`stateVersion` 4). The `todo:standing-plan` prompt section reads the same projection state. The key merges into `SessionProjectionMap` here; carriers serve the value on the history tail page and the `session/projection` push frame. See [src/index.ts](src/index.ts) for the unit registration.
 
 ### Call mechanics
 
@@ -121,7 +123,7 @@ Read these pages when the package-level contract is not enough. They move from t
 
 #### What the model sees
 
-The model sees the generated [`todo_write` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-todo): an object with one required `todos` array of `{ content, status }` items, where `status` is `pending`, `in_progress`, or `completed`. The `todos` description states that each call replaces the whole list; the tool description's active-status clause follows `allowParallelInProgress`.
+The model sees the generated [`todo_write` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-todo): an object with one required `todos` array of nodes `{ content, status, priority?, children? }` nested up to three levels, where `status` is `pending`, `in_progress`, `completed`, or `cancelled`; each level also accepts a bare string. The tool description carries the plan-first workflow (record non-trivial plans with `plan_write` first), persistence, delegation, and node-lifecycle rules; its parallelism clause follows `allowParallelInProgress`.
 
 #### Token effect
 
@@ -135,7 +137,7 @@ Prefix-stable while the definition and visibility are unchanged. Plugin lifecycl
 
 #### What the model sees
 
-Each assistant tool call retains the entire replacement list in its arguments. Success returns exactly `Updated todo list: <pending> pending, <inProgress> in progress, <completed> completed.` Stable failures are ``Error: invalid todo: `content` must be a non-empty string``, `Error: invalid todos: duplicate content "<content>"`, `Error: todo_write requires an owning agent session`, and — only where the deployment set `allowParallelInProgress: false` — `Error: invalid todos: at most one task may be in_progress (got <n>)`. The full `todo/write` session event is UI and replay state, not a second model message.
+Each assistant tool call retains the entire replacement tree in its arguments. Success returns exactly `Updated todo tree: <pending> pending, <inProgress> in progress, <completed> completed, <cancelled> cancelled.` Stable failures are `Error: invalid todos: duplicate content "<content>"`, `Error: invalid todos: no salvageable entries — every node was malformed`, `Error: todo_write requires an owning agent session`, and — only where the deployment set `allowParallelInProgress: false` — `Error: invalid todos: at most one task may be in_progress across the whole tree (got <n>)`. The latest tree also reaches every request through the `todo:standing-plan` system-prompt section.
 
 #### Token effect
 
@@ -153,8 +155,8 @@ Append-only; newly visible content follows the reusable request prefix and does 
 These limits define when the tool is a poor fit. They are current package constraints, not a task backlog.
 
 - **Single-owner scope only** — the list belongs to the one calling agent session; subagent, shared, and swarm scopes are a deliberate cut, and a non-agent caller is rejected.
-- **The item shape is deliberately minimal** — `content` plus three-state `status`; whole-list replacement needs no stable id, priority, or active-form fields.
-- **Whole-list replacement is the only operation** — no partial updates, no read-back tool, and no per-item edits; the model must resend the entire list each call.
+- **Nodes carry no stable identity** — `content`, four-state `status`, optional `priority`, and up to two nested levels; whole-tree replacement needs no id or active-form fields.
+- **Whole-tree replacement is the only operation** — no partial updates, no read-back tool, and no per-node edits; the model must resend the entire tree each call.
 
 <a id="dev-note"></a>
 ### Dev Note

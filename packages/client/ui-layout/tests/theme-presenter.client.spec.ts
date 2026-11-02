@@ -92,6 +92,25 @@ describe('ThemePresenter', () => {
     expect(document.body.style.getPropertyValue('--dsw-alias-fg')).toBe('')
   })
 
+  it('projects the theme syntax palette as --shiki-* variables and retracts it with the theme', () => {
+    const presenter = new ThemePresenter()
+    const syntax = { '--shiki-token-keyword': '#ff79c6', '--shiki-token-string': '#f1fa8c' }
+    const base = snapshot('dark')
+    presenter.apply({ ...base, active: { ...base.active, id: 'dracula-test', syntax } })
+    expect(document.body.style.getPropertyValue('--shiki-token-keyword')).toBe('#ff79c6')
+    expect(document.body.style.getPropertyValue('--shiki-token-string')).toBe('#f1fa8c')
+    // Switching to a theme without a syntax palette retracts every hue, so the
+    // shiki.css default pair stands again.
+    presenter.apply(snapshot('dark'))
+    expect(document.body.style.getPropertyValue('--shiki-token-keyword')).toBe('')
+    expect(document.body.style.getPropertyValue('--shiki-token-string')).toBe('')
+  })
+
+  it('a theme without a syntax palette projects no --shiki-* variables (defaults stand)', () => {
+    new ThemePresenter().apply(snapshot('light'))
+    expect(document.body.getAttribute('style') ?? '').not.toContain('--shiki-token-')
+  })
+
   it('publishes the content font size and follows changes', () => {
     const presenter = new ThemePresenter()
     presenter.apply(snapshot('light'))

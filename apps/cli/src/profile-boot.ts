@@ -1,8 +1,10 @@
 /**
  * Shared profile boot for every `dsh` surface: resolve the profile, stack its
  * patch layers (bundle layers in `dsh.profile.bundles` order, the profile's
- * own `cordis.patch.yml`, `--patch` overlays, the telemetry switch), mount the
- * tree over the profile's empty root config, and wire fail-loud plus bounded shutdown.
+ * own `cordis.patch.yml`, the home-level user patch, the durable plugin-state
+ * layer, `--patch` overlays, the telemetry switch), mount the tree over the
+ * profile's empty root config, and wire fail-soft boot, fail-loud loading, and
+ * bounded shutdown.
  *
  * App flags are not the launcher's business: the invocation's inner arguments
  * are provided to the tree through `ctx.cmdlineArgs`, where any injected app
@@ -17,6 +19,7 @@ import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import {
   boot,
+  BootTiming,
   readProfilePatches,
   createRuntimeResolution,
   initProfile,
@@ -188,14 +191,16 @@ export function initializeProfileFromDefault(
  * @param name - the profile name.
  * @param userLayer - `false` skips parsing `cordis.patch.yml` (the default dump).
  * @param fromDefaultProfile - shipped template that replaces the profile before loading it.
+ * @param timing - optional recorder closed after the profile root config write (`profile`).
  * @returns the loaded profile.
  * @throws when explicit initialization names an unknown template or a shipped target.
  */
-export function prepareProfile(name: string, userLayer = true, fromDefaultProfile?: string): Profile {
+export function prepareProfile(name: string, userLayer = true, fromDefaultProfile?: string, timing?: BootTiming): Profile {
   if (fromDefaultProfile !== undefined) initializeProfileFromDefault(name, fromDefaultProfile)
   const profile = loadProfile(NAME, name, INSTALL_ANCHOR, undefined, { userLayer })
   reportSkippedBundles(NAME, profile)
   writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
+  timing?.mark('profile')
   return profile
 }
 
@@ -213,12 +218,16 @@ interface ComposedProfile {
  * `dsh.profile.bundles` order (a base-backed profile gets the base bundle's
  * platform-gated shell rows), the profile's user layer, the home-level user
  * layer (`$DSH_HOME/cordis.patch.yml` — machine-local preferences that apply
- * to every profile, so it outranks the per-profile layer), `--patch` overlays,
- * then the telemetry switch.
+ * to every profile, so it outranks the per-profile layer), the durable
+ * plugin-state layer (`$DSH_HOME/plugin-state.json` — the user's disabled set
+ * and durable plugin config edits, so no restart, rebuild, or reinstall
+ * re-enables what they turned off), `--patch` overlays, then the telemetry
+ * switch.
  * @param name - the profile name.
  * @param patchFiles - `--patch` overlay paths, in argv order.
  * @param fromDefaultProfile - shipped template that replaces the named profile.
  * @param resolvedProfile - application-owned profile and installation.
+ * @param timing - optional recorder closed after the patch stack composes (`compose`).
  * @returns the profile and its patch layers.
  */
 async function composeProfile(
@@ -226,12 +235,14 @@ async function composeProfile(
   patchFiles: readonly string[],
   fromDefaultProfile?: string,
   resolvedProfile?: ResolvedProfileRuntime,
+  timing?: BootTiming,
 ): Promise<ComposedProfile> {
-  const profile = resolvedProfile?.profile ?? prepareProfile(name, true, fromDefaultProfile)
+  const profile = resolvedProfile?.profile ?? prepareProfile(name, true, fromDefaultProfile, timing)
   if (resolvedProfile !== undefined) writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
   const resolutionOptions = { installAnchor: resolvedProfile?.installAnchor ?? INSTALL_ANCHOR, profile }
   const resolution = await createRuntimeResolution(resolutionOptions)
   const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
+  timing?.mark('compose')
   return { profile, resolution, overlays }
 }
 
@@ -262,13 +273,41 @@ export interface RunProfileOptions {
 }
 
 /**
+ * Extract the include-entry id of the loader entry whose application failed,
+ * walking the error's cause chain: the loader wraps the plugin's own error
+ * ("failed to apply loader entry mail (dsh-mail-client): …").
+ * @param error - the boot failure.
+ * @returns the failing entry id, or `undefined` when the failure names none.
+ */
+function failingEntryId(error: unknown): string | undefined {
+  const pattern = /failed to apply loader entry ([^\s(]+) \(([^)]+)\)/
+  let current: unknown = error
+  for (let depth = 0; depth < 8 && current instanceof Error; depth += 1) {
+    const match = pattern.exec(current.message)
+    if (match !== null) return match[1]
+    current = (current as Error & { cause?: unknown }).cause
+  }
+  return undefined
+}
+
+/** Cap on degraded-boot retries so a pathological profile still fails loud. */
+const MAX_DEGRADED_RETRIES = 2
+
+/**
  * Boot one profile invocation end to end and leave process lifetime to the
  * mounted plugins (or to a one-shot runner the composition mounts).
+ *
+ * Fail-soft boot: when a single loader entry throws during application, the
+ * boot retries with that entry disabled and a loud degraded-mode warning —
+ * one broken plugin costs its own features, not the whole surface. The
+ * disabled overlays join the composed overlays so live reloads and any
+ * re-composition keep the entry off; every retry names the entry it drops.
  * @param options - environment snapshot, profile name, overlays, and the booted app's own arguments.
  * @returns the settled root context and the shutdown controller.
  * @throws after disposing startup resources; cleanup failures retain the original error.
  */
 export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
+  const timing = new BootTiming()
   // Before the first plugin mounts and before anything can issue a request: Node's fetch ignores the
   // proxy environment on its own, so every profile would otherwise connect directly. Resolving from
   // the launcher's snapshot — not `process.env` — is what lets a proxy declared in a `.env` layer
@@ -290,7 +329,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   })()
   try {
     const composed = await composeProfile(
-      options.profile, options.patchFiles, options.fromDefaultProfile, options.resolvedProfile,
+      options.profile, options.patchFiles, options.fromDefaultProfile, options.resolvedProfile, timing,
     )
     const appReady = createAppReady()
     const shutdown = createProcessShutdown(dispose)
@@ -306,7 +345,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     // complete; SIGINT is a user interrupt and reports 130.
     process.on('SIGTERM', () => { interrupt(0) })
     process.on('SIGINT', () => { interrupt(130) })
-    installFailLoud(NAME, process, async () => {
+    const failLoud = installFailLoud(NAME, process, async () => {
       await app.current?.fiber.dispose()
     })
 
@@ -318,26 +357,54 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       installAnchor: options.resolvedProfile?.installAnchor ?? INSTALL_ANCHOR,
       startedBundles: composed.profile.layers.map(layer => layer.packageName),
       cwd: process.cwd(), home: resolveDshHome(),
+      // Shared by reference: a degraded retry's disabled-entry overlay joins
+      // every later recomposition from this context.
       overlays: composed.overlays, telemetryDisabledEnv: process.env.DSH_TELEMETRY_DISABLED,
     }
-    const ctx = await boot(NAME, rootConfig, readProfilePatches(NAME, profileContext, composed.profile), async (hostCtx) => {
-      app.current = hostCtx
-      hostCtx.provide('profileContext', profileContext)
-      // Before any config-tree entry mounts, so plugins resolve all launch-time
-      // environment values from the same immutable launch snapshot.
-      hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
-      await hostCtx.plugin(PluginPackages, {
-        resolution: composed.resolution,
-      })
-      // The command line and bounded exit request are launcher facts available
-      // to every app plugin that injects the argument snapshot.
-      provideCmdline(hostCtx, {
-        args: options.args,
-        exit: code => void shutdown.shutdown(code),
-        ready: appReady.service,
-      })
-    })
+    let ctx: Context | undefined
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        ctx = await boot(NAME, rootConfig, readProfilePatches(NAME, profileContext, composed.profile), async (hostCtx) => {
+          app.current = hostCtx
+          hostCtx.provide('profileContext', profileContext)
+          // Before any config-tree entry mounts, so plugins resolve all launch-time
+          // environment values from the same immutable launch snapshot.
+          hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
+          await hostCtx.plugin(PluginPackages, {
+            resolution: composed.resolution,
+          })
+          // The command line and bounded exit request are launcher facts available
+          // to every app plugin that injects the argument snapshot.
+          provideCmdline(hostCtx, {
+            args: options.args,
+            exit: code => void shutdown.shutdown(code),
+            ready: appReady.service,
+          })
+        }, undefined, timing)
+        break
+      } catch (error) {
+        const entryId = failingEntryId(error)
+        if (entryId === undefined || attempt >= MAX_DEGRADED_RETRIES) throw error
+        const message = error instanceof Error ? error.message.split('\n')[0] : String(error)
+        console.error(`${NAME}: degraded boot — entry "${entryId}" failed (${message}); retrying without it`)
+        composed.overlays.push({ id: entryId, disabled: true })
+      }
+    }
+    /* v8 ignore next -- the loop exits only through break or throw */
+    if (ctx === undefined) throw new Error(`${NAME}: boot loop exited without a context`)
     app.current = ctx
+    // Opt-in diagnostic (the default surface is quiet): one line naming every
+    // boot phase, measured from process start.
+    if (process.env.DSH_BOOT_TIMING === '1') console.error(`${NAME}: boot ${timing.format()}`)
+    // The load window is over: fail-loud's whole-process exit(1) on an
+    // unhandled rejection must not outlive boot. A late background rejection
+    // degrades the surface instead of killing the harness. A handler stays
+    // installed because with none, Node turns the next rejection into an
+    // uncaught exception.
+    failLoud()
+    process.on('unhandledRejection', (err: unknown) => {
+      console.error(`${NAME}: unhandled rejection (serving; not fatal): ${err instanceof Error ? err.stack ?? err.message : String(err)}`)
+    })
     if (!signalShutdown.signal.aborted
       && ctx.fiber.state === FiberState.ACTIVE
       && ctx.get('loader') !== undefined) {

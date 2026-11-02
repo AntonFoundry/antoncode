@@ -7,6 +7,7 @@
 import { useLayoutEffect, useState } from 'react'
 import type { RefObject } from 'react'
 import { overlayTopMargin } from './overlay-top-margin.ts'
+import { fixedInsetScale } from './zoom-scale.ts'
 
 /**
  * Safe distance kept between the overlay and the viewport top edge (mirrors
@@ -23,7 +24,9 @@ const MARGIN = 12
  * @param margin - viewport top margin floor in px; the frame's overlay
  *   inset widens it. Callers under fixed chrome (the conversation header)
  *   raise it past their chrome's height.
- * @returns the max-height to apply inline, in px.
+ * @returns the max-height to apply inline, in px — the measured viewport
+ *   clearance divided by the overlay subtree's zoom, since the engine
+ *   multiplies a zoomed subtree's applied lengths by that factor.
  */
 export function useAnchoredMaxHeight(ref: RefObject<HTMLElement>, cap: number, signal: unknown, margin: number = MARGIN): number {
   const [maxHeight, setMaxHeight] = useState(cap)
@@ -31,7 +34,7 @@ export function useAnchoredMaxHeight(ref: RefObject<HTMLElement>, cap: number, s
     const el = ref.current
     if (el === null) return
     const fit = () => {
-      setMaxHeight(Math.min(cap, Math.max(0, el.getBoundingClientRect().bottom - overlayTopMargin(margin))))
+      setMaxHeight(Math.min(cap, Math.max(0, (el.getBoundingClientRect().bottom - overlayTopMargin(margin)) / fixedInsetScale(el))))
     }
     fit()
     window.addEventListener('resize', fit)

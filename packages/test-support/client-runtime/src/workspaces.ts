@@ -3,6 +3,10 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {
   IWorkspaces, WorkspaceId, WorkspaceSnapshot, WorkspaceView,
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { DirectoryListing } from '@deepseek-ai/dsh-api-workspace-controller/types'
+import type {
+  WorktreeId, WorktreeModePrefView, WorktreeStatusView, WorktreeView,
+} from '@deepseek-ai/dsh-client-connection/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { workspaceSnapshot } from './fixtures.ts'
@@ -63,6 +67,65 @@ export class TestWorkspaces implements IWorkspaces {
   }
 
   /**
+   * Worktree projection reload (recorded). The default resolves immediately;
+   * tests shape the projection through {@link update}.
+   */
+  async refreshWorktrees(): Promise<void> {
+    this.calls.push({ method: 'refreshWorktrees', args: [] })
+    await (this.stubs.get('refreshWorktrees')?.() as Promise<void> | undefined)
+  }
+
+  /**
+   * Worktree create (recorded). The default echoes a synthetic record with no
+   * workspace; stub for failure or workspace-coupled flows.
+   * @param input - the Host create payload.
+   * @returns the record plus its workspace (undefined by default).
+   */
+  async createWorktree(
+    input: { repoPath: string; name?: string; base?: string },
+  ): Promise<{ worktree: WorktreeView; workspace: WorkspaceView | undefined }> {
+    this.calls.push({ method: 'createWorktree', args: [input] })
+    const stub = this.stubs.get('createWorktree')
+    if (stub !== undefined) return await (stub(input) as Promise<{ worktree: WorktreeView; workspace: WorkspaceView | undefined }>)
+    const slug = input.name ?? 'wt'
+    return {
+      worktree: {
+        worktreeId: `wt-${input.repoPath}-${slug}` as WorktreeId,
+        repoPath: input.repoPath,
+        path: `${input.repoPath}.worktrees/${slug}`,
+        branch: `agent/${slug}`,
+        base: input.base ?? 'origin/main',
+        createdAt: new Date().toISOString(),
+      },
+      workspace: undefined,
+    }
+  }
+
+  /**
+   * Per-repo default mode write (recorded; default no-op).
+   * @param repoPath - the repository path.
+   * @param pref - the mode preference.
+   */
+  async setWorktreePref(repoPath: string, pref: WorktreeModePrefView): Promise<void> {
+    this.calls.push({ method: 'setWorktreePref', args: [repoPath, pref] })
+    await (this.stubs.get('setWorktreePref')?.(repoPath, pref) as Promise<void> | undefined)
+  }
+
+  /**
+   * Live git status query (recorded). The default serves a clean main; stub
+   * for branch/stash shapes.
+   * @param path - working directory to query.
+   * @param signal - abort signal (recorded, forwarded to stubs).
+   * @returns the status bundle.
+   */
+  async worktreeStatus(path: string, signal?: AbortSignal): Promise<WorktreeStatusView> {
+    this.calls.push({ method: 'worktreeStatus', args: [path, signal] })
+    const stub = this.stubs.get('worktreeStatus') as ((p: string, s?: AbortSignal) => Promise<WorktreeStatusView>) | undefined
+    if (stub !== undefined) return stub(path, signal)
+    return { path, branch: 'main', head: 'test00', dirty: false, stashCount: 0, ahead: 0, behind: 0, bases: ['origin/main', 'HEAD'] }
+  }
+
+  /**
    * Create a Workspace (recorded). The default echoes a view derived from
    * the input; stub for failure or list-coupled flows.
    * @param input - the Host create payload.
@@ -89,6 +152,72 @@ export class TestWorkspaces implements IWorkspaces {
     this.calls.push({ method: 'initializeDefault', args: [signal] })
     const stub = this.stubs.get('initializeDefault')
     return await (stub?.(signal) as Promise<WorkspaceView | undefined> | undefined)
+  }
+
+  async openPath(path: string): Promise<void> {
+    this.calls.push({ method: 'openPath', args: [path] })
+    await (this.stubs.get('openPath')?.(path) as Promise<void> | undefined)
+  }
+
+  async readTextFile(path: string): Promise<{ content: string; truncated: boolean }> {
+    this.calls.push({ method: 'readTextFile', args: [path] })
+    const stub = this.stubs.get('readTextFile') as ((p: string) => Promise<{ content: string; truncated: boolean }>) | undefined
+    return stub ? stub(path) : { content: '', truncated: false }
+  }
+
+  /**
+   * Directory picker (recorded). The default cancels (null); stub to select.
+   * @returns the picked path, or null.
+   */
+  async pickDirectory(): Promise<string | null> {
+    this.calls.push({ method: 'pickDirectory', args: [] })
+    const stub = this.stubs.get('pickDirectory')
+    if (stub !== undefined) return await (stub() as Promise<string | null>)
+    return null
+  }
+
+  /**
+   * Browse listing (recorded). The default serves an empty home level; stub
+   * to shape a tree.
+   * @param path - absolute directory to list; absent lists the home level.
+   * @param opts - level options (recorded and forwarded like production).
+   * @param signal - aborts the listing.
+   * @returns the level's listing.
+   */
+  async listDirectory(path?: string, opts?: { includeFiles?: boolean }, signal?: AbortSignal): Promise<DirectoryListing> {
+    // The arguments are recorded and forwarded like the production face
+    // passes them to the wire, so cancellation and widened-level integration
+    // tests can observe or reject on a superseded scan.
+    this.calls.push({ method: 'listDirectory', args: [path, opts, signal] })
+    const stub = this.stubs.get('listDirectory')
+    if (stub !== undefined) return await (stub(path, opts, signal) as Promise<DirectoryListing>)
+    // The chain runs root-to-target inclusive, per the DirectoryListing
+    // contract — a bare root crumb would mislabel the level in browsers
+    // driven by this double.
+    return {
+      path: '/home/test',
+      home: '/home/test',
+      crumbs: [
+        { name: '/', path: '/', hidden: false, isDirectory: true },
+        { name: 'home', path: '/home', hidden: false, isDirectory: true },
+        { name: 'test', path: '/home/test', hidden: false, isDirectory: true },
+      ],
+      entries: [],
+      truncated: false,
+    }
+  }
+
+  /**
+   * Browse child creation (recorded). The default joins parent and name.
+   * @param path - absolute existing parent directory.
+   * @param name - single path segment.
+   * @returns the created directory's absolute path.
+   */
+  async createDirectory(path: string, name: string): Promise<string> {
+    this.calls.push({ method: 'createDirectory', args: [path, name] })
+    const stub = this.stubs.get('createDirectory')
+    if (stub !== undefined) return await (stub(path, name) as Promise<string>)
+    return `${path}/${name}`
   }
 
   /**

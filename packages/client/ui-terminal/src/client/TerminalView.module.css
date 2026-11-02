@@ -1,0 +1,116 @@
+/* Terminal surface: fills the pane body; the xterm canvas rides inside.
+   The essential xterm.css rules are ported here (we never load xterm.css
+   itself): without them the keyboard-capture helper textarea renders as a
+   visible empty box at the container's top, and rows lose their cursor/
+   selection styling. */
+
+.host {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 4px 8px;
+  box-sizing: border-box;
+  background: var(--dsw-alias-bg-base);
+}
+
+.host :global(.xterm) {
+  cursor: text;
+  position: relative;
+  height: 100%;
+  user-select: none;
+  -ms-user-select: none;
+  -webkit-user-select: none;
+}
+
+.host :global(.xterm.focus),
+.host :global(.xterm:focus) {
+  outline: none;
+}
+
+.host :global(.xterm .xterm-helpers) {
+  position: absolute;
+  top: 0;
+  z-index: 0;
+}
+
+/* The keyboard-capture textarea: functionally required, visually nothing —
+   parked off-screen exactly as upstream xterm.css does. */
+.host :global(.xterm .xterm-helper-textarea) {
+  padding: 0;
+  border: 0;
+  margin: 0;
+  position: absolute;
+  opacity: 0;
+  left: -9999em;
+  top: 0;
+  width: 0;
+  height: 0;
+  z-index: -5;
+  overflow: hidden;
+  white-space: nowrap;
+  resize: none;
+}
+
+/* The character-width measuring rig (a visible run of `f`/`P` spans) lives
+   inside the helpers block: it must stay laid-out for measurement but never
+   paint. Park it off-screen with visibility hidden — display: none would
+   break cell-width measuring. */
+.host :global(.xterm .xterm-width-cache-measure-container) {
+  position: absolute;
+  top: 0;
+  left: -9999em;
+  visibility: hidden;
+}
+
+.host :global(.xterm .xterm-screen) {
+  position: relative;
+}
+
+.host :global(.xterm-viewport) {
+  overflow-y: scroll;
+  cursor: default;
+  position: absolute;
+  right: 0;
+  left: 0;
+  top: 0;
+  bottom: 0;
+}
+
+/* Multi-cursor toggle: a small overlay button in the terminal's top-right
+   corner; active state tints the surface border and the button. */
+.host {
+  position: relative;
+}
+
+.host[data-broadcast] {
+  outline: 1px solid var(--dsw-static-deepseek-450);
+  outline-offset: -1px;
+}
+
+.broadcastToggle {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  z-index: 5;
+  appearance: none;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-button-tool-bar-fill);
+  cursor: pointer;
+  opacity: 0.55;
+}
+
+.broadcastToggle:hover {
+  opacity: 1;
+}
+
+.broadcastToggle[data-active] {
+  color: var(--dsw-static-deepseek-450);
+  border-color: var(--dsw-static-deepseek-450);
+  opacity: 1;
+}

@@ -3,7 +3,7 @@
 Status: implemented
 Archived: 2026-09-30
 
-English | [中文](2026-06-20-collapse-trace-only-session-events.zh.md)
+English
 
 ## Problem
 

@@ -423,6 +423,28 @@ describe('Session', () => {
     }
   })
 
+  it('accepts a legacy tool result whose recorded call id is empty', () => {
+    // A provider once emitted a tool call without an id; the result echoed it.
+    // The pair is internally consistent, so replay must accept it rather than
+    // marking the whole session corrupt.
+    const event = {
+      type: 'tool/result', seq: 0, time: 1, surfaceOp: 'append',
+      data: {
+        turn: 1,
+        step: 1,
+        message: {
+          id: 'legacy-tool',
+          role: 'user',
+          content: [{ type: 'tool-result', toolCallId: '', content: [{ type: 'text', text: 'Error: unknown tool ""' }] }],
+          source: { kind: 'tool', callId: '' },
+        },
+      },
+    }
+    expect(() => Session.create(SessionId('legacy-empty-call-id'), [event as unknown as SessionEvent])).not.toThrow()
+    expect(Session.create(SessionId('legacy-empty-call-id'), [event as unknown as SessionEvent]).events)
+      .toContainEqual(event)
+  })
+
   it('snapshots message events without validating plugin-owned block details', () => {
     const boundary = snapshotSessionEvent({
       type: 'turn/start',
@@ -1251,6 +1273,23 @@ describe('Session', () => {
       { ...base, ignorable: true } as SessionEvent,
     ])
     expect(marked.snapshotEvents()[0]?.ignorable).toBe(true)
+  })
+
+  it('auto-marks appended foreign event types ignorable', () => {
+    // An out-of-vocabulary plugin event must carry the envelope marker, or a
+    // later load refuses the whole log (unknown required event). The append
+    // site marks it automatically: the writer knows a foreign reader cannot
+    // require the type, and the marker only bypasses the persistence gate —
+    // the event still enters the log for type-dispatched folds/projections.
+    const session = Session.create(SessionId('auto-ignorable'))
+    const appendForeign = session.append.bind(session) as unknown as
+      (type: string, data: unknown, opts?: { ignorable?: true }) => SessionEvent
+    const auto = appendForeign('c0ntext/page-enrichment', { startSeq: 0, endSeq: 0, topics: [], status: 'failed' })
+    expect(auto.ignorable).toBe(true)
+    // An explicit marker is preserved; a known type never gains one.
+    const explicit = appendForeign('plugin/marker', {}, { ignorable: true })
+    expect(explicit.ignorable).toBe(true)
+    expect(session.append('turn/start', { turn: 1 }).ignorable).toBeUndefined()
   })
 })
 

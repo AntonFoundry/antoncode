@@ -5,11 +5,11 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-repeat-tool-reminder
 
-English | [中文](README.zh.md)
+English
 
 ## Summary
 
-This package helps a model escape loops in which it calls the same tool with identical arguments without making progress. At configured repeat counts, it asks the model to inspect the previous result and change approach or finish. The reminder is advisory: it never blocks or delays a legitimate repeated call. Repeats are tracked separately for each agent and cleared by a new user message. The `dsh` base bundle enables the package with reminders at 3, 5, and 8 repeats.
+This package helps a model escape loops in which it calls the same tool with identical arguments without making progress. At configured repeat counts, it asks the model to inspect the previous result and change approach or finish. It also detects two calls that alternate and undo each other, and a run of failed calls to one tool. Repeat and failure reminders are advisory; only an alternation that continues after its advisory is refused, when `escalateToBlock` is on. Repeats are tracked separately for each agent and cleared by a new user message. The `dsh` base bundle enables the package with reminders at 3, 5, and 8 repeats.
 
 ## Table of Contents
 
@@ -42,6 +42,9 @@ When you want to change when reminders fire or which tools they cover, mount the
     include: []                  # track every tool; list patterns to track only some
     exclude: [todo_write]        # never track these tools
     argumentsPreviewChars: 500   # cap on arguments shown in the detailed reminder
+    cycleThreshold: 2            # complete alternations before the ping-pong advisory
+    failureThreshold: 3          # consecutive failed calls to one tool before the guessing advisory
+    escalateToBlock: true        # after an ignored ping-pong advisory, refuse the next cycle call
 ```
 
 | Field | Default | Meaning |
@@ -50,12 +53,19 @@ When you want to change when reminders fire or which tools they cover, mount the
 | `include` | `[]` | Only these tools are tracked; empty means every tool |
 | `exclude` | `[]` | These tools are never tracked; calls to them neither count nor reset |
 | `argumentsPreviewChars` | `500` | How many characters of the repeated arguments the detailed reminder shows |
+| `cycleThreshold` | `2` | Complete A-B alternations before the ping-pong advisory; at least 2 |
+| `failureThreshold` | `3` | Consecutive failed calls to one tool before the guessing advisory; at least 2 |
+| `escalateToBlock` | `true` | Refuse the next alternating call after the ping-pong advisory was ignored |
 
-Invalid configuration fails at startup with a clear error — an empty `thresholds` list, a repeat count below 2, or a duplicate — never a silent change of behavior. The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-repeat-tool-reminder) documents every accepted value.
+Invalid configuration fails at startup with a clear error — an empty `thresholds` list, a repeat count below 2, a duplicate, or a `cycleThreshold` or `failureThreshold` below 2 — never a silent change of behavior. The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-repeat-tool-reminder) documents every accepted value.
 
 ### What you get
 
 With the defaults, a model that repeats the same call with identical arguments receives a short reminder on the third repeat — to analyze the previous result before calling again — and detailed reminders on the fifth and eighth, naming the tool and the repeated arguments so it can decide whether to change approach, gather more evidence, or finish. A new user message clears the count, so a fresh instruction is never treated as a loop. Reminders appear in the conversation after the repeated call's result, attributed to the plugin, so the model reads them like any other message.
+
+Two calls that undo each other (variant A, then B, then A, then B) never form a consecutive run. When the latest calls form `cycleThreshold` complete alternations, the model receives a ping-pong advisory: stop, re-read the target, pick one direction, apply it once, or ask the user. If the alternation continues and `escalateToBlock` is on, the next alternating call fails with `Call blocked: … Do NOT retry this call or its inverse`. A new distinct call re-arms the advisory for the next episode.
+
+After `failureThreshold` consecutive failed calls to one tool, with identical or different arguments, the model receives a guessing advisory once per run: re-read the failures, use the tool surface's discovery or list tool, or ask the user with `ask_user_question`. A success or a new user message ends the run.
 
 -----
 
@@ -71,10 +81,10 @@ This section explains how the guard detects repeats and delivers reminders, and 
 
 The guard is built on four commitments:
 
-- **Advisory, not veto.** The guard enriches post-execute decisions with model context; it never blocks or rewrites a call, so `PostToolDecision` blocking stays a later listener's job.
+- **Advisory first.** The guard enriches post-execute decisions with model context and never rewrites a call. The one refusal is the ping-pong escalation: after an ignored advisory the listener throws, and the tool runtime's outer `try`/`catch` turns the throw into an error result carrying the veto text, so no later waterfall listener can override it.
 - **Count in post-execute.** Detection runs on `tools/post-execute`, which also fires for denied calls; counting there lets one listener cover every attempt with no cross-event state.
 - **Exact-match canonicalization.** Arguments reach the guard as the loop's `JSON.parse` output (or its raw-string fallback), so JSON's value domain is the whole input domain and a deep key-sort plus `JSON.stringify` is a complete, deterministic identity — no bigint, cycle, or `undefined` handling exists because no input path can produce them.
-- **Fail loud at load.** `thresholds` and `argumentsPreviewChars` validate in `apply` and throw, never falling back to defaults.
+- **Fail loud at load.** `thresholds`, `argumentsPreviewChars`, `cycleThreshold`, and `failureThreshold` validate in `apply` and throw, never falling back to defaults.
 
 ### Detection: the repeat chain
 
@@ -85,6 +95,10 @@ Each agent's chain is keyed by `(tool name, canonical arguments)` — two calls 
 - **Calls without an agent are ignored.** A direct `ctx.tools.execute()` caller has no model to remind and no live agent object to key on.
 - **Per-agent keying, reset on user prompts.** One agent's repetition never trips another's reminder; a user prompt (`agent/pre-step`) deletes the submitting agent's chain, and object lifetime bounds the weak entry without a disposal listener.
 - **In-memory only.** A session resumed from persistence starts with a fresh chain — the guard is a heuristic nudge, not a logged invariant, so reminders after a resume are the accepted cost.
+
+### Detection: cycles and failure runs
+
+Each chain also keeps a ring of the last eight call keys. A strict period-2 tail of `cycleThreshold` complete alternations is a cycle. The chain's `advisedCycle` flag records that the advisory fired for the current episode; a key that breaks the alternation clears it. Each chain also tracks the current run of failed calls to one tool. A success clears the run, a failure on another tool restarts it at 1, and the guessing advisory fires once when the run reaches `failureThreshold`.
 
 ### Reminder delivery
 

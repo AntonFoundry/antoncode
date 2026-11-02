@@ -512,6 +512,10 @@ describe('tool-terminal task integration', () => {
     stub.sessions[0]!.closeGate = Promise.withResolvers<undefined>()
     const first = ctx.terminals.kill(agent, TerminalSessionId('pty-1'))
     const second = call(ctx, 'terminal_close', { sessionId: 'pty-1' }, agent)
+    // Drain until the close dispatch reaches the service fence (record.closing
+    // set): the dispatch pipeline adds a microtask hop before execute, and the
+    // fence must be held before the gate releases or the record is gone.
+    await new Promise(resolve => setTimeout(resolve, 0))
     stub.sessions[0]!.closeGate?.resolve(undefined)
     await first
     const result = await second

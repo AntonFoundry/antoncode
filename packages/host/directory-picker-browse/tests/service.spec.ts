@@ -57,6 +57,24 @@ describe('BrowseDirectoryPicker', () => {
     expect(listing.truncated).toBe(false)
   })
 
+  it('includeFiles widens the level to plain files with their stat columns', async () => {
+    const listing = await capability.list(root, { includeFiles: true })
+    const names = listing.entries.map(entry => entry.name)
+    // Files ride beside the directories, name-sorted.
+    expect(names).toContain('notes.txt')
+    expect(names.indexOf('.hidden-dir')).toBeLessThan(names.indexOf('linked'))
+    const file = listing.entries.find(entry => entry.name === 'notes.txt')!
+    expect(file.isDirectory).toBe(false)
+    expect(file.size).toBe('not a directory'.length)
+    expect(typeof file.mtimeMs).toBe('number')
+    // POSIX mode bits with the type nibble: a regular file.
+    expect(file.mode! & 0o170000).toBe(0o100000)
+    // Directories keep the kind flag too.
+    const dir = listing.entries.find(entry => entry.name === 'projects')!
+    expect(dir.isDirectory).toBe(true)
+    expect(dir.size).toBeGreaterThan(0)
+  })
+
   it('cuts a level at maxEntries keeping the name-sorted head, and flags the cut', async () => {
     const ctx = new Context()
     const fiber = ctx.plugin(BrowseDirectoryPicker, { maxEntries: 1 })
@@ -88,22 +106,22 @@ describe('BrowseDirectoryPicker', () => {
     gone.abort(new Error('caller left'))
     // The abort surfaces as-is, not dressed as an unreadable directory —
     // and rejects even before any level row is read.
-    await expect(capability.list(root, gone.signal)).rejects.toThrow('caller left')
+    await expect(capability.list(root, undefined, gone.signal)).rejects.toThrow('caller left')
     // The abandoned open that still succeeds is closed, not leaked.
     await new Promise(resolve => setTimeout(resolve, 10))
     // Aborted against a missing target: the abandoned open rejects on its
     // own and there is nothing to close.
-    await expect(capability.list(join(root, 'no-such-dir'), gone.signal)).rejects.toThrow('caller left')
+    await expect(capability.list(join(root, 'no-such-dir'), undefined, gone.signal)).rejects.toThrow('caller left')
     await new Promise(resolve => setTimeout(resolve, 10))
     // A live signal leaves a normal listing untouched — the reads and the
     // symlink probes race it without ever losing.
     const live = new AbortController()
-    const complete = await capability.list(root, live.signal)
+    const complete = await capability.list(root, undefined, live.signal)
     expect(complete.truncated).toBe(false)
     expect(complete.entries.map(entry => entry.name)).toContain('linked')
     // A live signal changes nothing about ordinary failures.
     const missing = join(root, 'no-such-dir')
-    const failure = await capability.list(missing, live.signal).catch((error: unknown) => error)
+    const failure = await capability.list(missing, undefined, live.signal).catch((error: unknown) => error)
     expect(failure).toBeInstanceOf(DirectoryPickerError)
     expect((failure as DirectoryPickerError).code).toBe('directory-unreadable')
   })

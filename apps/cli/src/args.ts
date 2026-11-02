@@ -1,5 +1,6 @@
 /**
- * Commander adapter for the `dsh` command line.
+ * Commander adapter for the `anton` command line (the DeepSeek Harness CLI,
+ * forked and renamed).
  *
  * The launcher parses only what it owns — which profile to boot, which extra
  * patch overlays to apply, and the config dumps — and hands **everything after
@@ -7,11 +8,13 @@
  * their own flag families and print their own `--help` (see
  * `@deepseek-ai/dsh-cmdline`). Launcher flags therefore come first: the first
  * token this parser does not recognize starts the inner arguments, so
- * `dsh --profile tui --resume abc` boots the tui profile with `--resume abc`,
- * and `dsh --profile web -h` prints the web app's help, not this one's.
+ * `anton --profile tui --resume abc` boots the tui profile with `--resume abc`,
+ * and `anton --profile web -h` prints the web app's help, not this one's.
  *
- * `dsh <name>` abbreviates `dsh --profile <name>`; `plugin` manages a profile's
- * plugin dependencies by forwarding to pnpm.
+ * `anton <name>` abbreviates `anton --profile <name>`; `plugin` manages a
+ * profile's plugin dependencies by forwarding to pnpm. The app-control,
+ * rebuild, login, and `models` subcommands claim their first tokens, so those
+ * names cannot be booted through the bare-name shorthand.
  * @module @deepseek-ai/dsh/args
  */
 
@@ -57,8 +60,76 @@ interface PluginInvocation {
   args: string[]
 }
 
-/** The resolved `dsh` invocation. Help, version, and errors exit inside {@link parseDshArgs}. */
-export type DshInvocation = ProfileInvocation | DumpConfigInvocation | DumpConfigSchemaInvocation | PluginInvocation
+/** List the providers and models a profile's composition makes available. */
+interface ModelsInvocation {
+  mode: 'models'
+  profile: string
+}
+
+/** One-time OpenCode Zen workspace login over the device flow. */
+interface OpencodeLoginInvocation {
+  mode: 'opencode-login'
+  dshHome?: string
+  oauthRef?: string
+  consoleBase?: string
+  openBrowser: boolean
+  org?: string
+}
+
+/** One-time Claude Code subscription login over the browser code flow. */
+interface ClaudeLoginInvocation {
+  mode: 'claude-login'
+  dshHome?: string
+  oauthRef?: string
+  consoleBase?: string
+  openBrowser: boolean
+}
+
+/** Control the local Anton app's harness through its bridge API. */
+interface AntonInvocation {
+  mode: 'anton'
+  action: 'status' | 'start' | 'stop' | 'restart'
+}
+
+/** Start, inspect, or cancel the launchd-supervised macOS rebuild. */
+interface AntonRebuildInvocation {
+  mode: 'anton-rebuild'
+  action: 'start' | 'status' | 'cancel'
+  timeoutMinutes: number
+  checkout: string
+}
+
+/** Internal launchd entry: supervise one exact persisted rebuild job. */
+interface AntonRebuildSuperviseInvocation {
+  mode: 'anton-rebuild-supervise'
+  jobId: string
+}
+
+/** The resolved `anton` invocation. Help, version, and errors exit inside {@link parseAntonArgs}. */
+export type CliInvocation =
+  | ProfileInvocation
+  | DumpConfigInvocation
+  | DumpConfigSchemaInvocation
+  | PluginInvocation
+  | ModelsInvocation
+  | OpencodeLoginInvocation
+  | ClaudeLoginInvocation
+  | AntonInvocation
+  | AntonRebuildInvocation
+  | AntonRebuildSuperviseInvocation
+
+/** First tokens that select an Anton subcommand instead of naming a profile to boot. */
+const ANTON_COMMANDS: ReadonlySet<string> = new Set([
+  'models',
+  'opencode-login',
+  'claude-login',
+  'status',
+  'start',
+  'stop',
+  'restart',
+  'rebuild',
+  'anton-rebuild-supervise',
+])
 
 /** Launcher flags for profile boot and configuration dumps. */
 interface BootOptions {
@@ -88,15 +159,22 @@ function rejectElectronProfile(program: Command, profile: string): void {
 
 /** The launcher's own help text; each app prints its own. */
 const HELP_EXAMPLES = `
+Help:
+  anton -h | --help                            print this help
+  anton --profile <name> --help                the booted app's own flags and help
+
 Examples:
-  dsh web                                   boot the web profile (same as: dsh --profile web)
-  dsh rescue --from-default-profile web
-                                            recreate rescue from the shipped web template, then boot it
-  dsh headless "run the tests"              answer one task, print the result, and exit
-  dsh tui --patch ./extra.yml               boot a custom profile with one extra overlay
-  dsh tui --resume <session>                arguments after the launcher flags reach the app
-  dsh web --help                            the web app's own flags and help
-  dsh plugin --profile tui add <package>    install a plugin into the tui profile
+  anton web                                    boot the web profile (same as: anton --profile web)
+  anton rescue --from-default-profile web
+                                               recreate rescue from the shipped web template, then boot it
+  anton headless "run the tests"               answer one task, print the result, and exit
+  anton tui --patch ./extra.yml                boot a custom profile with one extra overlay
+  anton tui --resume <session>                 arguments after the launcher flags reach the app
+  anton web --help                             the web app's own flags and help
+  anton models                                 list the profile's providers and models
+  anton plugin --profile tui add <package>     install a plugin into the tui profile
+  anton status | start | stop | restart        control the local Anton app's Harness
+  anton rebuild start | status | cancel        rebuild and reinstall the Anton app
 `
 
 /**
@@ -108,7 +186,7 @@ Examples:
  * @param args - the leftover arguments, in argv order.
  * @returns the resolved invocation.
  */
-function resolveBoot(program: Command, profile: string, options: BootOptions, args: string[]): DshInvocation {
+function resolveBoot(program: Command, profile: string, options: BootOptions, args: string[]): CliInvocation {
   const patches = options.patch ?? []
   if (patches.includes('')) program.error('error: --patch needs a path')
   if (options.fromDefaultProfile === '') program.error('error: --from-default-profile needs a name')
@@ -143,28 +221,28 @@ function resolveBoot(program: Command, profile: string, options: BootOptions, ar
  * @param manageDesktopProfile - permit Desktop's installed carrier to manage its reserved profile's plugins.
  * @returns the resolved invocation.
  */
-export function parseDshArgs(argv: readonly string[], version: string, manageDesktopProfile = false): DshInvocation {
+export function parseAntonArgs(argv: readonly string[], version: string, manageDesktopProfile = false): CliInvocation {
   const first = argv[0]
-  let resolved: DshInvocation | undefined
+  let resolved: CliInvocation | undefined
   // Annotated, not inferred: the actions below call back into `program`, and an
   // inferred type would be circular through its own chain.
   const program: Command = new Command()
   program
-    .name('dsh')
+    .name('anton')
     .version(version, '-V, --version', 'output the version number')
-    .usage('[--profile] <name> [options] [app-args...]\n       dsh plugin --profile <name> <pnpm-args...>')
-    .description('dsh: boot a DeepSeek Harness profile — an ordered stack of plugin-bundle patch layers under your own overrides.')
+    .usage('[--profile] <name> [options] [app-args...]\n       anton plugin --profile <name> <pnpm-args...>')
+    .description('anton: boot an Anton (DeepSeek Harness) profile — an ordered stack of plugin-bundle patch layers under your own overrides.')
     .addHelpText('after', HELP_EXAMPLES)
     .exitOverride()
     // The launcher's flags come first and end at the first token it does not
     // know; everything from there on belongs to the booted app, including
-    // its -h. `dsh -h` with no profile still prints this help, below.
+    // its -h. A bare `anton -h` with no profile still prints this help, below.
     .helpOption(false)
     .helpCommand(false)
     .allowUnknownOption()
     .passThroughOptions()
     .enablePositionalOptions()
-    .argument('[args...]', 'arguments for the booted profile\'s app (see: dsh --profile <name> --help)')
+    .argument('[args...]', 'arguments for the booted profile\'s app (see: anton --profile <name> --help)')
     .option('--profile <name>', 'the profile under $DSH_HOME/profiles to boot', selectProfile)
     .option('--from-default-profile <name>', 'replace a custom profile with a fresh copy of a shipped profile template')
     .option('--patch <path>', 'extra patch-list overlay applied after the profile layer (repeatable)', collect)
@@ -173,9 +251,9 @@ export function parseDshArgs(argv: readonly string[], version: string, manageDes
     .option('--dump-default-config', 'print the profile tree without its user layer or --patch overlays and exit')
     .action((args: string[], options: BootOptions & { profile?: string }) => {
       // With the app owning -h, the launcher's own help is what a bare
-      // `dsh -h` (no profile to hand it to) must print.
+      // `anton -h` (no profile to hand it to) must print.
       if (options.profile === undefined) {
-        if (args.some(argument => argument === '-h' || argument === '--help')) program.help()
+        if (argv.length === 0 || args.some(argument => argument === '-h' || argument === '--help')) program.help()
         program.error('error: --profile <name> is required')
       }
       const profile = options.profile
@@ -202,8 +280,94 @@ export function parseDshArgs(argv: readonly string[], version: string, manageDes
       })
   }
 
+  // Anton subcommands register only when the first token selects one, so a
+  // profile's inner arguments never dispatch into them.
+  if (first !== undefined && ANTON_COMMANDS.has(first)) {
+    const models = program.command('models').description('list the LLM providers and models a profile makes available, then exit')
+    models
+      .helpOption('-h, --help', 'show this help')
+      .option('--profile <name>', 'the profile whose composition to inspect (default: web)')
+      .action((options: { profile?: string }) => {
+        const profile = options.profile !== undefined && options.profile !== '' ? options.profile : 'web'
+        resolved = { mode: 'models', profile }
+      })
+
+    const opencodeLogin = program.command('opencode-login').description('log the opencode-free route into an OpenCode Zen workspace over the device flow, then exit')
+    opencodeLogin
+      .helpOption('-h, --help', 'show this help')
+      .option('--home <path>', 'harness home holding .credentials.yaml (defaults to $DSH_HOME or ~/.dsh)')
+      .option('--oauth-ref <name>', 'credential reference holding the workspace session')
+      .option('--org <id-or-name>', 'workspace to bill against (prompts when ambiguous)')
+      .option('--no-browser', 'print the verification link without opening it')
+      .option('--console-base <url>', 'console root override (advanced; default production)')
+      .action((options: { home?: string; oauthRef?: string; org?: string; browser?: boolean; consoleBase?: string }) => {
+        resolved = {
+          mode: 'opencode-login',
+          ...(options.home === undefined ? {} : { dshHome: options.home }),
+          ...(options.oauthRef === undefined ? {} : { oauthRef: options.oauthRef }),
+          ...(options.consoleBase === undefined ? {} : { consoleBase: options.consoleBase }),
+          openBrowser: options.browser !== false,
+          ...(options.org === undefined ? {} : { org: options.org }),
+        }
+      })
+
+    const claudeLogin = program.command('claude-login').description('log the claude-code route into a Claude subscription over the browser code flow, then exit')
+    claudeLogin
+      .helpOption('-h, --help', 'show this help')
+      .option('--home <path>', 'harness home holding .credentials.yaml (defaults to $DSH_HOME or ~/.dsh)')
+      .option('--oauth-ref <name>', 'credential reference holding the subscription session')
+      .option('--no-browser', 'print the approval link without opening it')
+      .option('--console-base <url>', 'console root override (advanced; default production)')
+      .action((options: { home?: string; oauthRef?: string; browser?: boolean; consoleBase?: string }) => {
+        resolved = {
+          mode: 'claude-login',
+          ...(options.home === undefined ? {} : { dshHome: options.home }),
+          ...(options.oauthRef === undefined ? {} : { oauthRef: options.oauthRef }),
+          ...(options.consoleBase === undefined ? {} : { consoleBase: options.consoleBase }),
+          openBrowser: options.browser !== false,
+        }
+      })
+
+    // App control is rooted at the CLI name: `anton status`, with `anton
+    // rebuild` as the only nested action family.
+    for (const action of ['status', 'start', 'stop', 'restart'] as const) {
+      program.command(action)
+        .description(`${action} the local Anton app's managed Harness`)
+        .helpOption('-h, --help', 'show this help')
+        .action(() => {
+          resolved = { mode: 'anton', action }
+        })
+    }
+
+    const rebuild = program.command('rebuild').description('rebuild and reinstall the Anton app through the launchd-supervised job')
+    rebuild
+      .helpOption('-h, --help', 'show this help')
+      .argument('<action>', 'start | status | cancel')
+      .option('--timeout <minutes>', 'managed rebuild timeout in minutes', '20')
+      .option('--checkout <path>', 'DeepSeek Harness checkout to rebuild', process.cwd())
+      .action((action: string, options: { timeout: string; checkout: string }) => {
+        if (action !== 'start' && action !== 'status' && action !== 'cancel') {
+          rebuild.error('error: rebuild action must be start, status, or cancel')
+        }
+        const timeoutMinutes = Number(options.timeout)
+        if (!Number.isFinite(timeoutMinutes)) rebuild.error('error: --timeout must be a number of minutes')
+        resolved = {
+          mode: 'anton-rebuild',
+          action: action as AntonRebuildInvocation['action'],
+          timeoutMinutes,
+          checkout: options.checkout,
+        }
+      })
+
+    const supervise = program.command('anton-rebuild-supervise', { hidden: true }).description('internal managed rebuild supervisor')
+    supervise
+      .requiredOption('--job <id>')
+      .action((options: { job: string }) => {
+        resolved = { mode: 'anton-rebuild-supervise', jobId: options.job }
+      })
+  }
   try {
-    const expanded = first !== undefined && !first.startsWith('-') && first !== 'plugin'
+    const expanded = first !== undefined && !first.startsWith('-') && first !== 'plugin' && !ANTON_COMMANDS.has(first)
       ? ['--profile', ...argv]
       : argv
     program.parse(expanded, { from: 'user' })
@@ -211,6 +375,6 @@ export function parseDshArgs(argv: readonly string[], version: string, manageDes
     return process.exit(error instanceof CommanderError ? error.exitCode : 1)
   }
   /* v8 ignore next -- an action resolves or Commander throws */
-  if (resolved === undefined) throw new Error('dsh: no invocation resolved')
+  if (resolved === undefined) throw new Error('anton: no invocation resolved')
   return resolved
 }

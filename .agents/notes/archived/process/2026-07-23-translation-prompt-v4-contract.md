@@ -1,9 +1,9 @@
 # Agent Note: Calibrated translation prompt v4 contract
 
 Status: implemented
-Archived: 2026-09-04
+Archived: 2026-10-12
 
-English | [中文](2026-07-23-translation-prompt-v4-contract.zh.md)
+English
 
 ## Problem
 

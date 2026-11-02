@@ -2,10 +2,8 @@
  * Generate the per-subsystem Cordis service/event reference regions from the
  * Typert catalog projection. Every harness `ctx.<key>` service and event scope
  * maps to exactly one `docs/subsystems/` page through the curated tables below;
- * the generator injects each page's Cordis API reference between its GENERATED markers —
- * into both language sides of the pair, localizing paired document paths for
- * the Chinese side while retaining every other byte — and re-records a pair's
- * `.i18n.yaml` only when nothing outside the region changed. The
+ * the generator injects each page's Cordis API reference between its GENERATED
+ * markers while retaining every other byte. The
  * projection enforces event modes, JSDoc parameter/return completeness, and
  * signature type-link coverage; the inherited (vendor) tier renders to
  * `docs/cordis-api/inherited.md`. `--check` verifies every generated artifact.
@@ -30,11 +28,6 @@ import {
 import type { CordisCatalogPolicy } from '@deepseek-ai/dsh-typert-generator'
 import { renderCordisCoreApiPages } from './cordis-core-api.ts'
 import { contextKeyMap, contextMergeFiles, eventNameList } from './cordis-walk.ts'
-import {
-  parseTranslationPairingManifest,
-  translationPairSourcePredicate,
-} from './translation-pairing.ts'
-import { rewriteTranslationLinkLocales } from './translation-links.ts'
 
 const root = resolve(import.meta.dirname, '..')
 const SUBSYSTEMS_DIR = 'docs/subsystems'
@@ -95,6 +88,8 @@ export const SERVICE_PAGE: Record<string, string> = {
   dynamicCordisRunner: 'extensions.md',
   fileUploads: 'attachment.md',
   fileReferences: 'session-reference.md',
+  flowBuilder: 'flowbuilder.md',
+  langflow: 'flowbuilder.md',
   fs: 'filesystem.md',
   goals: 'goal.md',
   schedule: 'schedule.md',
@@ -105,10 +100,12 @@ export const SERVICE_PAGE: Record<string, string> = {
   lsp: 'lsp.md',
   messageFeedback: 'feedback.md',
   sessionFeedback: 'feedback.md',
+  modelIntel: 'subagent.md',
   permissionPresets: 'permission-presets.md',
   planMode: 'plan.md',
   terminals: 'terminal.md',
   sandbox: 'sandbox.md',
+  worktreeRegistry: 'workspace.md',
   sandboxPolicy: 'sandbox.md',
   ssh: 'ssh.md',
   sessionPersistence: 'persistence.md',
@@ -142,6 +139,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   agentTeams: 'agent-team.md',
   claudeCodeMods: 'claude-code-mods.md',
   tokenMeter: 'token-meter.md',
+  toolMatcher: 'tools.md',
   toolResultPruner: 'compaction.md',
   tools: 'tools.md',
   typert: 'typert.md',
@@ -218,6 +216,12 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   sidebarRight: 'client-side right-Sidebar navigation face — packages/client/ui-sidebar-right/README.md owns the API',
   sidebarRightTabs: 'client-side right-Sidebar tab-type registry — packages/client/ui-sidebar-right/README.md owns the API',
   documentPreviews: 'client-side document renderer registry — docs/subsystems/sidebar-right.md owns the API',
+  font: 'client-side interface-typed font service — packages/client/ui-theme/README.md owns the API',
+  agentMailGateway: 'client-side optional gateway accessor (AgentMailGateway | undefined) — packages/client/ui-conversation-agent-mail/README.md owns the API',
+  agentQueue: 'host-owned durable workspace queue service (AgentQueue) — packages/interaction/agent-queue/README.md owns the API; no subsystems page renders it',
+  agentDirectQueue: 'host-owned cross-workspace direct-message service (AgentDirectQueue) — packages/interaction/agent-queue/README.md owns the API; no subsystems page renders it',
+  claudeOAuth: 'optional host login-flow service (ClaudeLoginFlow | undefined) — packages/llm/llm-claude/README.md owns the API',
+  opencodeOAuth: 'optional host login-flow service (ZenLoginFlow | undefined) — packages/llm/llm-opencode/README.md owns the API',
 }
 
 /**
@@ -244,6 +248,7 @@ export const EVENT_SCOPE_PAGE: Record<string, string> = {
   'authorization': 'credentials.md',
   'credentials': 'credentials.md',
   'deepseek-account': 'credentials.md',
+  'flowbuilder': 'flowbuilder.md',
   'domain': 'storage.md',
   'forge': 'forge.md',
   'fs': 'filesystem.md',
@@ -284,6 +289,7 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
   'slash/input-consume-token': 'client-face slash-input protocol — packages/client/ui-input-trigger/README.md owns the API',
   'slash/input-insert-reference': 'client-face slash-input protocol — packages/client/ui-input-trigger/README.md owns the API',
   'slash/input-insert-text': 'client-face slash-input protocol — packages/client/ui-input-trigger/README.md owns the API',
+  'font/change': 'client-face font preference signal — packages/client/ui-theme/README.md owns the API',
   'slots/changed': 'client-face slot invalidation signal — packages/client/ui-renderer/README.md owns the API',
   'theme/change': 'client-face theme switch signal — packages/client/ui-theme/README.md owns the API',
 }
@@ -715,6 +721,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   SubagentSendMessageOptions: 'subagent.md',
   SubagentInterruptAuthority: 'subagent.md',
   SubagentInterruptReceipt: 'subagent.md',
+  SubagentAncestorAuthority: 'subagent.md',
+  SubagentControlAuthority: 'subagent.md',
   SubagentListEntry: 'subagent.md',
   SubagentPromptReceipt: 'subagent.md',
   SubagentPromptRequest: 'subagent.md',
@@ -1001,6 +1009,7 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   AgentPresetComposition: 'flattened composition rows are owned by packages/preset/agent-preset-registry/README.md',
   AgentPresetInspection: 'retained revision modules and isolation diagnostics are owned by packages/preset/agent-preset-registry/README.md',
   PresetMetadata: 'preset display text is owned by packages/preset/agent-preset-registry/README.md',
+  ModelIntelDatasheet: 'researched child-model datasheet is owned by packages/subagent/model-intel/README.md',
   BashEnvContributor: 'service-local extension type is owned by packages/shell/tool-bash/src/index.ts',
   BashEnvVariableInfo: 'service-local metadata type is owned by packages/shell/tool-bash/src/index.ts',
   CompactionAgentContext: 'compaction service input is owned by packages/compaction/compaction/src/index.ts',
@@ -1082,6 +1091,18 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   TerminalFrame: 'Browser terminal stream frames are owned by packages/api/terminal-controller/README.md',
   TerminalRetentionFrame: 'Browser terminal window holds are owned by packages/api/terminal-controller/README.md',
   WebTerminalId: 'Browser terminal identity is owned by packages/api/terminal-controller/README.md',
+  FlowDefinitionRecord: 'durable flow record is owned by packages/flowbuilder/flowbuilder-domain/src/schema.ts',
+  BlockLibraryEntryRecord: 'durable block-library record is owned by packages/flowbuilder/flowbuilder-domain/src/schema.ts',
+  FlowRunRecordRecord: 'durable flow-run record is owned by packages/flowbuilder/flowbuilder-domain/src/schema.ts',
+  FlowNodeRunState: 'per-node run snapshot is owned by packages/flowbuilder/flowbuilder-domain/src/types.ts',
+  FlowRunId: 'branded flow-run identity is owned by packages/flowbuilder/flowbuilder-domain/src/types.ts',
+  FlowSaveRequest: 'tool write payload is owned by packages/flowbuilder/flowbuilder-domain/src/schema.ts',
+  BlockSaveRequest: 'tool write payload is owned by packages/flowbuilder/flowbuilder-domain/src/schema.ts',
+  LangflowStatus: 'sidecar lifecycle snapshot is owned by packages/flowbuilder/langflow-sidecar/src/sidecar.ts',
+  WorktreeId: 'branded worktree identity is owned by packages/workspace/worktree/src/types.ts',
+  WorktreeModePref: 'per-repository mode preference is owned by packages/workspace/worktree/src/spec.ts',
+  WorktreeRecord: 'worktree projection record is owned by packages/workspace/worktree/src/spec.ts',
+  WorktreeStatus: 'worktree lifecycle status is owned by packages/workspace/worktree/src/types.ts',
 }
 
 /** Repository data policy consumed by the Cordis catalog projector. */
@@ -1201,17 +1222,16 @@ export interface WalkPartitionMaps {
   readonly eventWalkExemptions: Readonly<Record<string, string>>
 }
 
-/** Project paired Markdown destinations in one generated region to the page's locale. */
-export function localizePageRegion(region: string, pageRel: string, scanRoot: string = root): string {
-  if (!pageRel.endsWith('.zh.md')) return region
-  const manifest = parseTranslationPairingManifest(
-    readFileSync(resolve(scanRoot, 'scripts/translation-pairing.manifest.json'), 'utf8'),
-  )
-  return rewriteTranslationLinkLocales(region, {
-    repoRoot: scanRoot,
-    sourcePath: pageRel,
-    isTranslationPairSource: translationPairSourcePredicate(manifest),
-  }).content
+/**
+ * Return one generated region for its page. Documentation is English-only, so
+ * no page needs locale-specific link projection.
+ * @param region - rendered region text.
+ * @param _pageRel - repository-relative page path.
+ * @param _scanRoot - repository root.
+ * @returns the region unchanged.
+ */
+export function localizePageRegion(region: string, _pageRel: string, _scanRoot: string = root): string {
+  return region
 }
 
 /**
@@ -1335,15 +1355,13 @@ export function computeOutputs(): [string, string][] {
       events.filter(e => EVENT_SCOPE_PAGE[e.scope] === page),
       CORDIS_CATALOG_POLICY,
     )
-    for (const side of [page, page.replace(/\.md$/, '.zh.md')]) {
+    for (const side of [page]) {
       const rel = `${SUBSYSTEMS_DIR}/${side}`
       const localizedRegion = localizePageRegion(region, rel)
       let current: string
       try {
         current = readFileSync(resolve(root, rel), 'utf8')
       } catch {
-        // Both pair sides must exist before a region can be injected; the
-        // pairing gate owns pair completeness, this generator names the miss.
         problems.push(`${rel}: mapped subsystems page does not exist.`)
         continue
       }

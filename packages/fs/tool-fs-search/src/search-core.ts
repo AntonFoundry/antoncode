@@ -102,6 +102,13 @@ export interface RipgrepRun {
   stdout: string
   /** True when ripgrep exited 1: a successful search with zero results. */
   noMatches: boolean
+  /**
+   * When set on a `noMatches` run, a diagnostic explaining WHY there are no
+   * results even though ripgrep searched nothing (exit 2 "No files were
+   * searched"): an empty directory, or a filter that excluded every file.
+   * Presentation appends it to the zero-result text.
+   */
+  note?: string
   /** The resolved working directory the command ran in (the display-relativization base). */
   workdir: string
 }
@@ -123,8 +130,21 @@ function stderrExcerpt(stderrText: string, truncated: boolean): string {
  */
 function classifyRunFailure(toolName: string, exitCode: number, stderrText: string, stderrTruncated: boolean): SearchError {
   const stderr = stderrExcerpt(stderrText, stderrTruncated)
-  if (/regex parse error|error parsing glob/i.test(stderr)) {
-    return new SearchError(`${toolName} pattern rejected by ripgrep: ${stderr}`, 'SEARCH_INVALID_PATTERN')
+  if (/regex parse error/i.test(stderr)) {
+    // `rg`'s full parser dump contains its internal command prefix, a caret,
+    // and multiple indented lines. It is useful to a terminal user but makes a
+    // tool-result card noisy and does not tell an agent how to recover. Keep
+    // the stable typed failure, but present an immediately actionable remedy.
+    return new SearchError(
+      `${toolName} received an invalid regular expression. Check balanced (), [], and {}; escape literal regex characters (for example, use \\( to find an opening parenthesis), then retry.`,
+      'SEARCH_INVALID_PATTERN',
+    )
+  }
+  if (/error parsing glob/i.test(stderr)) {
+    return new SearchError(
+      `${toolName} received an invalid glob pattern. Check its brackets and braces, then retry with one valid positive glob.`,
+      'SEARCH_INVALID_PATTERN',
+    )
   }
   return new SearchError(`${toolName} search failed (exit ${exitCode})${stderr.length > 0 ? `: ${stderr}` : ''}`, 'SEARCH_FAILED')
 }
@@ -280,6 +300,28 @@ export async function runRipgrep(
     throw new SearchError(`${toolName} search command was killed by signal ${outcome.signal ?? '(unknown)'}`, 'SEARCH_FAILED')
   }
   if (outcome.exitCode !== 0 && outcome.exitCode !== 1) {
+    const excerpt = stderrExcerpt(stderr.text, stderr.lossy)
+    // A nonexistent target: ripgrep exits 2 with a raw filesystem error.
+    // Re-raise as an actionable typed failure instead of raw rg stderr.
+    if (/No such file or directory/.test(excerpt)) {
+      throw new SearchError(
+        `${toolName} search path does not exist. Pass an existing file or directory (relative paths resolve against the workspace).`,
+        'SEARCH_FAILED',
+      )
+    }
+    // ripgrep exits 2 with this specific stderr when it had ZERO candidate
+    // files: the target directory is empty (or contains only ignored files),
+    // or the include/type filter excluded every candidate. That is a benign
+    // zero-result search, not a failed one — surface it as `noMatches` with a
+    // diagnostic note instead of a raw `SEARCH_FAILED` error.
+    if (outcome.exitCode === 2 && /No files were searched/.test(excerpt)) {
+      return {
+        stdout: '',
+        noMatches: true,
+        workdir,
+        note: 'no candidate files were searched (the directory is empty or contains only ignored files, or the include filter excluded every file)',
+      }
+    }
     throw classifyRunFailure(toolName, outcome.exitCode, stderr.text, stderr.lossy)
   }
   const text = completeStdout(toolName, stdout, rawOutputMaxBytes)

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Ownerless-copy registrations inside the assembled web client: the five
+ * Ownerless-copy registrations inside the assembled web client: the four
  * seats, the `settings` dictionaries, the locale-following nav label, the
  * loopback-only document action over the real settings mirror, and recovery
  * across Loader rebuilds of the declaring chain.
@@ -16,7 +16,7 @@ import { LOCALE_SETTINGS_NAMESPACE, LocaleSettingsSchema } from '@deepseek-ai/ds
 import { inject } from '../src/client/index.ts'
 import type { DeveloperToolsRowInjected } from '../src/client/DeveloperToolsRow.tsx'
 import { HostReleasePrompt, type HostReleasePromptInjected } from '../src/client/HostReleasePrompt.tsx'
-import { CloseLabel, HeaderContent, TriggerContent } from '../src/client/chrome.tsx'
+import { HeaderContent, TriggerContent } from '../src/client/chrome.tsx'
 import { GeneralSection } from '../src/client/GeneralSection.tsx'
 import { SettingsDocumentAction } from '../src/client/SettingsDocumentAction.tsx'
 import type { SettingsDocumentActionInjected } from '../src/client/SettingsDocumentAction.tsx'
@@ -34,7 +34,6 @@ const SEATS = [
   ['settings.trigger', TriggerContent],
   ['settings.header', HeaderContent],
   ['settings.action', SettingsDocumentAction],
-  ['settings.close', CloseLabel],
   ['settings.section', GeneralSection],
 ] as const
 
@@ -96,10 +95,10 @@ function setPageUrl(url: string): void {
 
 describe('ui-settings-general apply', () => {
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'remote.settings', 'configForms', 'shortcuts', 'modules', 'remoteAccess'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'remote.settings', 'configForms', 'shortcuts', 'modules', 'remoteAccess', 'layout'])
   })
 
-  it('fills the five seats of the shell it declares, with the locale-following General label', async ({ mock, start }) => {
+  it('fills the four seats of the shell it declares, with the locale-following General label', async ({ mock, start }) => {
     const { c } = await client(mock, start)
     expect(c.ctx.locale.getSnapshot().active).toBe('zh')
     expectSeated(c)

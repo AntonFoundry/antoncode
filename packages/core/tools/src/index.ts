@@ -133,6 +133,11 @@ export class ToolsService extends Service {
       || (output.presentationMeta !== undefined && typeof output.presentationMeta !== 'function')) {
       throw new TypeError(`tool "${name}" must declare output { schema, render, presentationMeta? }`)
     }
+    const parameters = definition.parameters as Record<string, unknown> | null | undefined
+    if (parameters === null || typeof parameters !== 'object' || Array.isArray(parameters)
+      || parameters.type !== 'object') {
+      throw new TypeError(`tool "${name}" parameters must be a JSON Schema object with the "type: 'object'" root — the registry validates every dispatch against it, and a per-property spec leaks a schemaless declaration to the model`)
+    }
     assertSupportedJsonSchema(output.schema)
     const timeoutMs = definition.timeoutMs
     if (timeoutMs !== undefined

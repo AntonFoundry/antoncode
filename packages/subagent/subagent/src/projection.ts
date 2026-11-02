@@ -1,6 +1,6 @@
 /**
- * Pure session projections for subagent identity (mode/label) and active-turn
- * duration.
+ * Pure session projections for subagent identity (mode/label), active-turn
+ * duration, and the latest epoch's terminal outcome.
  *
  * @module @deepseek-ai/dsh-subagent/projection
  */
@@ -11,7 +11,10 @@ import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { foldSubagentDescriptor } from './descriptor.ts'
 import type { SubagentDescriptorData } from './descriptor.ts'
-import type { SubagentIdentityProjection, SubagentTimingProjection } from './projection-types.ts'
+import { epochStopReason } from './stop-reason.ts'
+import type {
+  SubagentIdentityProjection, SubagentOutcomeProjection, SubagentTimingProjection,
+} from './projection-types.ts'
 
 /** Fold state for a subagent's latest timing snapshot. */
 export interface TimingState {
@@ -181,3 +184,85 @@ export const subagentIdentityProjectionDefinition = {
   // would replay into a value the schema rejects, so it must refold instead.
   stateVersion: 2,
 } satisfies ProjectionDefinition<'subagent', IdentityState>
+
+interface OutcomeState {
+  /** The turn whose steps are being observed; absent between turns. */
+  openTurn?: number | undefined
+  /** Whether the open turn entered a model step. */
+  openStepped?: boolean | undefined
+  /** Outcome from the last accounting `turn/end`; absent before one. */
+  outcome?: SubagentOutcomeProjection | undefined
+}
+
+const outcomeValueSchema: z.ZodType<SubagentOutcomeProjection> = z.object({
+  stopReason: z.string(),
+  error: z.string().optional(),
+  seq: z.number().int().nonnegative(),
+}).strict().transform(({ stopReason, error, seq }) => ({
+  stopReason,
+  ...error === undefined ? {} : { error },
+  seq,
+}))
+
+const outcomeStateSchema: z.ZodType<OutcomeState> = z.object({
+  openTurn: z.number().int().nonnegative().optional(),
+  openStepped: z.boolean().optional(),
+  outcome: outcomeValueSchema.optional(),
+}).strict()
+
+/**
+ * Fold the durable terminal outcome from the child's own turn events.
+ *
+ * The live `subagent/end` event is dispatched once to current listeners; this
+ * projection keeps the reason readable from persistence, so a master agent
+ * inspecting the catalog later, or a human reading the child list, can tell a
+ * failed child from an idle one without resuming it.
+ *
+ * It folds the turn structure rather than a single ending, because
+ * `foldConsumedWork` (behind {@link epochStopReason}) needs the turn's steps to
+ * tell a turn that computed something from a balanced no-op.
+ *
+ * Each new epoch's outcome replaces the previous one: a child resumed after a
+ * failure reports its latest result.
+ */
+export const subagentOutcomeProjectionDefinition = {
+  key: 'subagentOutcome',
+  stateSchema: outcomeStateSchema,
+  init: () => ({}),
+  apply: (state, event) => {
+    if (event.type === 'turn/start') {
+      return { ...state, openTurn: event.data.turn, openStepped: false }
+    }
+    if (event.type === 'step/start') {
+      if (state.openTurn !== event.data.turn) return state
+      return { ...state, openStepped: true }
+    }
+    if (event.type !== 'turn/end') return state
+    const { turn, reason } = event.data
+    // The accounting turn is the one that stepped; a turn that never reached a
+    // model step accounts for no work and must not overwrite a real outcome.
+    const accounting = state.openTurn === turn && state.openStepped === true
+    const next: OutcomeState = state.openTurn === turn
+      ? { ...(state.outcome === undefined ? {} : { outcome: state.outcome }) }
+      : state
+    if (!accounting) return next
+    const stopReason = epochStopReason([
+      { type: 'turn/start', seq: event.seq, time: event.time, data: { turn } },
+      { type: 'step/start', seq: event.seq, time: event.time, data: { turn, step: 1 } },
+      event,
+    ] as SessionEvent[])
+    const error = reason.kind === 'error' && typeof reason.error?.message === 'string'
+      && reason.error.message.length > 0
+      ? reason.error.message
+      : undefined
+    return {
+      ...next,
+      outcome: { stopReason, ...(error === undefined ? {} : { error }), seq: event.seq },
+    }
+  },
+  wire: {
+    viewSchema: outcomeValueSchema.nullable(),
+    view: state => state.outcome ?? null,
+  },
+  stateVersion: 1,
+} satisfies ProjectionDefinition<'subagentOutcome', OutcomeState>

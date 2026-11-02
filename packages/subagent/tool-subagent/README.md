@@ -5,7 +5,7 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-tool-subagent
 
-English | [中文](README.zh.md)
+English
 
 ## Summary
 
@@ -52,6 +52,9 @@ Load the subagent service, an in-process or remote backend, and this tool; then 
 | `agentPreset` | — | Default independent child preset id; requires in-process spawn |
 | `allowedAgentPresets` | — | Non-empty preset-id allowlist exposed as the model's optional `agent_preset` enum; must include `agentPreset` when both are set |
 | `maxDepth` | Host setting (`1`) | Absolute delegation-depth cap (`0` forbids delegation); `'provider-managed'` sends no cap to an out-of-process provider |
+| `childModel` | — | Live default child route when a delegation names none: `provider/model`, a bare model id, or `auto`; empty inherits the parent route |
+| `childModelBySession` | `{}` | Live per-parent-Session child routes; the calling Session's row wins over `childModel` |
+| `childReasoningEffort` | — | Live default child reasoning-effort id when a delegation names none |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-tool-subagent) is the exhaustive source for every accepted field and its JSDoc.
 
@@ -62,6 +65,10 @@ Every call returns `started subagent <childId>` after the runtime accepts the ch
 Every backend’s completion notice carries its final answer. Local Spawn and Fork children can also send messages, accept more work through `send_message` while active, or resume after settling. Codex, Claude Code, ACP, and DSH SDK backends do not accept follow-up messages.
 
 `maxDepth` caps recursion (`0` forbids delegation); omission reads the current Host `subagent.maxDepth` setting, initially `1`, at each delegation. A numeric depth requires a provider with the `depthLimit` capability; `'provider-managed'` leaves the budget to an out-of-process provider. The tool stays visible at the cap; each attempted start checks the calling agent's current depth and rejects with an errored result.
+
+### Child model defaults
+
+The volatile `childModel`, `childModelBySession`, and `childReasoningEffort` fields set the swarm's child route without a restart; each delegation reads them again. A delegation that names no route takes the calling Session's `childModelBySession` row, then `childModel`, overlaid on `agentOptions`. A route naming a provider overrides the child provider for that start; a slash-bearing model id resolves against the registered provider ids, so the longest registered provider prefix wins. `auto` asks the optional `model-intel` service for a task-scored route and inherits the parent route when the service is absent or finds no match. `childReasoningEffort` applies when the delegation names no effort; the selected provider validates it per model. These defaults apply only to providers with the `agentOptions` capability.
 
 <a id="selecting-a-child-preset"></a>
 ### Selecting a child preset
@@ -108,7 +115,7 @@ The tool's description derives from `provider.inheritsParentContext`: a fresh ch
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Tool registration, provider lifecycle mirroring, activation requests |
+| [`src/index.ts`](src/index.ts) | Tool registration, provider lifecycle mirroring, activation requests, child-model defaults |
 | [`src/preset-selection.ts`](src/preset-selection.ts) | Preset defaults, model allowlist, and selection guidance |
 | [`src/model-selection.ts`](src/model-selection.ts) | Request/config merge and live LLM route preflight |
 | [`src/model-selection-settings.ts`](src/model-selection-settings.ts) | Host-owned opt-in setting sampled for new Sessions |
@@ -167,7 +174,7 @@ The schema is prefix-stable across adapter registration and catalog changes. Eac
 
 #### What the model sees
 
-Visible delegation tools share one guidance paragraph, listing tools in name order and instructing the model to start independent delegations together and keep working while they run, and to end its turn instead of sleeping or polling when only waiting for their results remains. Ending the turn works because a settled child notifies its parent and a notice that reaches an idle parent starts one independent model request; hosts that keep children progressing alternate `agent.whenIdle()` and `waitForChildren(agent)` ([`dsh-subagent`](../subagent/README.md), [`session.ts`](../../acp/acp/src/session.ts)). Hidden or unavailable tools are omitted; no guidance appears when none are visible. With both `subagent` and `subagent_fork` visible, the text is:
+Visible delegation tools share one guidance paragraph, listing tools in name order and instructing the model to start independent delegations together and keep working while they run, and to end its turn instead of sleeping or polling when only waiting for their results remains. Ending the turn works because a settled child notifies its parent and a notice that reaches an idle parent starts one independent model request; hosts that keep children progressing alternate `agent.whenIdle()` and `waitForChildren(agent)` ([`dsh-subagent`](../subagent/README.md), [`session.ts`](../../acp/acp/src/session.ts)). Hidden or unavailable tools are omitted; no guidance appears when none are visible. The paragraph continues with the delegation defaults: parallel delegation is the default for decomposable work; large plans may be drafted by a subagent, but the model records them with `plan_write` itself when delegation fails; with `modelSelection`, `provider`, `model`, and `reasoning_effort` stay unset unless the task needs a different model, so the child runs on the configured child-model default; and when `list_agents` and `send_message` are available, the model lists continuable children first and continues one whose durable label and domain already cover the task, because its conversation prefix is largely cached, starting a new child only when no existing context fits, the work must run independently, or the old context would contaminate it. Each new child is named for the durable domain it owns, not the one-off request. With both `subagent` and `subagent_fork` visible, the text opens with:
 
 ##### Tool-guidance section
 

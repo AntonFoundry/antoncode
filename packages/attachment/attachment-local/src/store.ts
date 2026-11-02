@@ -312,14 +312,16 @@ async function stageImmutableObject(
   signal?: AbortSignal,
 ): Promise<StagedImmutableObject> {
   const staging = join(root, 'tmp')
-  // Establish DSH_HOME itself against the filesystem root once per process.
-  // Every process performs that proof independently, so observing a directory
-  // another process created can never be mistaken for durable publication.
-  const boundary = await ensureDurableHome(dirname(dirname(resolve(root))))
-  await ensureDurableDirectory(staging, boundary)
   const temporary = join(staging, randomUUID())
   let handle
+  let directoriesReady = false
   try {
+    // Establish DSH_HOME itself against the filesystem root once per process.
+    // Every process performs that proof independently, so observing a directory
+    // another process created can never be mistaken for durable publication.
+    const boundary = await ensureDurableHome(dirname(dirname(resolve(root))))
+    await ensureDurableDirectory(staging, boundary)
+    directoriesReady = true
     handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600)
     const hash = createHash('sha256')
     let bytes = 0
@@ -341,7 +343,7 @@ async function stageImmutableObject(
       /* v8 ignore next -- Close failure is superseded by the storage operation that entered cleanup. */
       () => {},
     )
-    await removeTemporary(temporary)
+    if (directoriesReady) await removeTemporary(temporary)
     if (error instanceof AttachmentError || signal?.aborted === true) throw error
     throw new AttachmentError('Unable to persist attachment.', 'ATTACHMENT_WRITE_FAILED', { cause: error })
   }

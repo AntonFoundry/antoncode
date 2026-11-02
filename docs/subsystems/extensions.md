@@ -1,6 +1,6 @@
 # Extensions
 
-English | [中文](extensions.zh.md)
+English
 
 The extensions subsystem lets an agent define versioned Cordis packages, run their host and browser halves, and query approved runtime metadata before writing code. Package lifecycle and sandbox behavior belong to the [`packages/extensions`](../../packages/extensions/README.md) package group.
 
@@ -20,9 +20,14 @@ Registry and cross-page router behind the two model-facing inspect tools.
 
 ```ts cordis-catalog
 /**
- * Register one Host provider.
+ * Register one Host provider. Preset rows re-register the same static
+ * providers once per mounted session, and overlapping generations re-register
+ * while the previous handler is still live, so a validated manifest equal to
+ * the newest live one stacks: the newest handler serves queries and its
+ * disposer restores the prior one. A different manifest under a live id is a
+ * loud conflict.
  * @param registration - manifest and local query handler.
- * @returns idempotent disposer.
+ * @returns idempotent disposer releasing this registration's claim.
  */
 register(registration: HostCordisInspectProviderRegistration): () => void
 

@@ -77,7 +77,7 @@
   padding: 0;
 }
 
-:global([data-windows-titlebar]) .root:not(.collapsed) .newSession {
+:global([data-windows-titlebar]) .root:not(.collapsed) .newWorkspace {
   margin-top: 6px;
 }
 
@@ -91,7 +91,7 @@
   --dsh-windows-menu-start: 84px;
 }
 
-:global([data-windows-titlebar]) .collapsed .newSession {
+:global([data-windows-titlebar]) .collapsed .newWorkspace {
   position: fixed;
   top: calc((var(--dsh-windows-titlebar-height) - 28px) / 2);
   left: 48px;
@@ -103,12 +103,12 @@
 }
 
 :global([data-windows-titlebar]) .railIn .iconButton,
-:global([data-windows-titlebar]) .railIn .newSession {
+:global([data-windows-titlebar]) .railIn .newWorkspace {
   animation: none;
 }
 
 :global([data-windows-titlebar]) .collapsed .toggle,
-:global([data-windows-titlebar]) .collapsed .newSession {
+:global([data-windows-titlebar]) .collapsed .newWorkspace {
   width: 28px;
   height: 28px;
   border-radius: var(--dsw-radius-sm);
@@ -154,7 +154,7 @@
    horizontally fixed. Only a live collapse gets .railIn; a cold collapsed
    render stays static. */
 .railIn .iconButton,
-.railIn .newSession,
+.railIn .newWorkspace,
 .railIn .panelList,
 .railIn .regionArea {
   animation: rail-in 150ms var(--ds-ease-in-out) backwards;
@@ -220,8 +220,8 @@
    (40–100px: the strip's 52px foot with the row's -12px tuck). The brand rides
    that box (SidebarRoot renders the wordmark as a plain span there, so the
    global interactive no-drag rule never subtracts it; only the local-build
-   fallbacks opt out through .copyVersion); the dedicated New
-   Session button below keeps the pointer and keyboard paths. Safe as a drag
+   fallbacks opt out through .copyVersion); New Session there stays on its
+   keyboard shortcut. Safe as a drag
    source: it precedes the sidebar's overlay slots in document order, so their
    no-drag still wins. */
 .logoRow {
@@ -362,11 +362,11 @@
 .collapsed .iconButton {
   width: 36px;
   height: 36px;
-  /* Rail hovers share the panel rows' and New Session's 12px rounding. */
+  /* Rail hovers share the panel rows' and New Workspace's 12px rounding. */
   border-radius: var(--dsw-radius-md);
 }
 
-/* Rail logo swap: collapsed, the toggle rests as the whale mark (brand ink,
+/* Rail logo swap: collapsed, the toggle rests as the Anton mark (brand ink,
    no hover circle) and hovering reveals the panel icon — the expand
    affordance (figma sidebar-hover flow). Expanded it is a plain panel icon. */
 .collapsed .toggle .panelIcon {
@@ -411,16 +411,17 @@
   white-space: nowrap;
 }
 
-/* New Session: 38px bar, 12px radius (figma 133:7634 geometry, squared-off
-   corners); collapsed it renders as the rail's plain icon control. */
-.newSession {
-  container-type: inline-size;
+/* New Workspace: 38px bar, 12px radius (same figma 133:7634 geometry the New
+   Session capsule used, squared-off corners); collapsed it renders as the
+   rail's plain icon control. The press raises the region's add-workspace
+   flow; ui-workspace owns everything after the click. */
+.newWorkspace {
   position: relative;
   flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0;
+  gap: 6px;
   height: 38px;
   padding: 8px 12px;
   margin: 0 calc(var(--dsh-sidebar-paint-inset) + 1px) 10px;
@@ -437,7 +438,7 @@
 }
 
 @media (hover: hover) {
-  .newSession:hover {
+  .newWorkspace:hover {
     background: var(--dsw-alias-button-floating-hover);
   }
 }
@@ -445,27 +446,27 @@
 /* macOS: the themed elevated fill reads as a foreign slab on the vibrancy
    sidebar; a white wash sits in the glass like native macOS sidebar
    controls. Dark keeps the same white ink at lower alpha. */
-:global([data-platform='darwin']) .newSession {
+:global([data-platform='darwin']) .newWorkspace {
   background: rgb(255 255 255 / 0.55);
 }
 
 @media (hover: hover) {
-  :global([data-platform='darwin']) .newSession:hover {
+  :global([data-platform='darwin']) .newWorkspace:hover {
     background: rgb(255 255 255 / 0.3);
   }
 }
 
-:global([data-platform='darwin']) :global([data-ds-dark-theme]) .newSession {
+:global([data-platform='darwin']) :global([data-ds-dark-theme]) .newWorkspace {
   background: rgb(255 255 255 / 0.15);
 }
 
 @media (hover: hover) {
-  :global([data-platform='darwin']) :global([data-ds-dark-theme]) .newSession:hover {
+  :global([data-platform='darwin']) :global([data-ds-dark-theme]) .newWorkspace:hover {
     background: rgb(255 255 255 / 0.2);
   }
 }
 
-.collapsed .newSession {
+.collapsed .newWorkspace {
   align-self: flex-start;
   width: 36px;
   height: 36px;
@@ -477,53 +478,19 @@
 }
 
 @media (hover: hover) {
-  .collapsed .newSession:hover {
+  .collapsed .newWorkspace:hover {
     background-color: var(--dsw-alias-interactive-bg-hover);
   }
 }
 
-.newSessionLabel {
+.newWorkspaceLabel {
   max-width: 200px;
   overflow: hidden;
   white-space: nowrap;
 }
 
-.collapsed .newSessionLabel {
+.collapsed .newWorkspaceLabel {
   max-width: 0;
-}
-
-.newSessionLabelMask { flex: 1; min-width: 0; }
-
-.newSession:focus-visible .newSessionLabelMask:has(+ .newSessionShortcut) {
-  overflow: hidden;
-  mask-image: linear-gradient(to right, black calc(100% - 16px), transparent);
-}
-
-@media (hover: hover) {
-  .newSession:hover .newSessionLabelMask:has(+ .newSessionShortcut) {
-    overflow: hidden;
-    mask-image: linear-gradient(to right, black calc(100% - 16px), transparent);
-  }
-}
-.newSessionContent { display: flex; width: 100cqw; align-items: center; justify-content: center; gap: 6px; }
-.newSessionContent > svg { flex: none; }
-
-.newSessionShortcut {
-  opacity: 0;
-  display: inline-flex;
-  flex: none;
-  pointer-events: none;
-  font-weight: 400;
-}
-
-.newSession:focus-visible .newSessionShortcut {
-  opacity: 1;
-}
-
-@media (hover: hover) {
-  .newSession:hover .newSessionShortcut {
-    opacity: 1;
-  }
 }
 
 .panelList {
@@ -534,7 +501,7 @@
   margin-bottom: 8px;
 }
 
-/* Panel entries use a 3px paint inset, the New Session bar's 12px radius,
+/* Panel entries use a 3px paint inset, the New Workspace bar's 12px radius,
    the session rows' hover/selected fill, and the primary ink. */
 .panelRow {
   display: flex;
@@ -637,6 +604,59 @@
   padding-left: 0;
 }
 
+/* A plugin-owned region immediately below navigation, sharing the column with
+   the workspace browser: at least half the free height by default, resizable
+   by the separator above it. It does not participate in the workspace
+   browser's scroll model, so a memory plugin can remain visible while a long
+   session list still scrolls independently. */
+.memoryResizer {
+  flex: none;
+  height: 7px;
+  margin: -3px 0 0;
+  cursor: row-resize;
+  border-radius: 4px;
+  position: relative;
+}
+
+/* The split line itself: a faint centered hairline so the draggable boundary
+   between Workspaces (above) and the Execution tree (below) is discoverable
+   without hovering, brightening on hover and while a drag is live. */
+.memoryResizer::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: 50%;
+  height: 1px;
+  transform: translateY(-50%);
+  background: var(--dsw-alias-stroke-subtle, var(--dsw-alias-label-tertiary, currentColor));
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.memoryResizer:hover::after,
+.memoryResizer[data-dragging]::after {
+  opacity: 0.9;
+}
+
+.memoryResizer:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.memoryArea {
+  flex: 1 1 50%;
+  min-width: 0;
+  min-height: 120px;
+  overflow: auto;
+}
+
+.collapsed .memoryArea {
+  flex: none;
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
+}
+
 /* Footer seats: additive actions stack above Settings. Each occupant owns its
    button geometry and hover chrome. */
 .footArea {
@@ -671,7 +691,7 @@
   .wide,
   .fading > *,
   .railIn .iconButton,
-  .railIn .newSession,
+  .railIn .newWorkspace,
   .railIn .panelList,
   .railIn .footArea,
   .railIn .regionArea {

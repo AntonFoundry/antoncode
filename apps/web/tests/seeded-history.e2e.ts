@@ -433,12 +433,12 @@ describe('web e2e: seeded history renders through cold resume', () => {
     // the routed id and the seat resolves it against an advertised row.
     await page.getByRole('button', { name: /^Select model, current/ })
       .waitFor({ timeout: 10_000 })
-    const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
+    const snapshot = (await captureStableAria(page, '[data-chat-flow]', scaffold.workspaceCwd))
       .split(SEED_ID).join('{{seededId}}')
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
     const expanded = (await captureExpandedTurnProcessAria(
       page,
-      '[class*="centerCol"]',
+      '[data-pane="content"]',
       scaffold.workspaceCwd,
     )).split(SEED_ID).join('{{seededId}}')
     await compareOrRefreshGolden(UI_EXPANDED_EXPECTED, expanded, MODE)
@@ -518,33 +518,13 @@ describe('web e2e: seeded history renders through cold resume', () => {
     const fileLink = page.locator('[data-variant="read"] button').first()
     await expandOwningTurnProcess(page, fileLink)
     await fileLink.waitFor({ timeout: 10_000 })
-    const frame = page.locator('[style*="grid-template-columns"]').first()
-    expect(await frame.getAttribute('data-rightbar-collapsed')).toBe('true')
-    const column = page.locator('[data-rightbar-col]')
-    try {
-      await fileLink.click()
-      await expect.poll(() => frame.getAttribute('data-rightbar-collapsed'), { timeout: 5_000 }).toBe(null)
-      await expect.poll(() => column.locator('[data-dockkit-tab-title]').allTextContents(), { timeout: 5_000 }).toEqual(['a.txt'])
-      // Path label survives from the recorded args (a.txt).
-      await expect.poll(() => page.getByText('a.txt', { exact: false }).count(), { timeout: 5_000 }).toBeGreaterThan(0)
-      const path = column.locator('[data-textpreview-path]')
-      const absolutePath = join(scaffold.workspaceCwd, 'a.txt')
-      await expect.poll(() => path.textContent()).toBe(absolutePath)
-      expect(await path.getAttribute('title')).toBe(absolutePath)
-      await expect.poll(() => column.locator('[data-textpreview-line="1"]').textContent()).toBe('alpha\n')
-      await column.getByRole('button', { name: 'Show file location', exact: true }).waitFor({ timeout: 5_000 })
-      await expect.poll(() => column.locator('[data-open-path-open]').isEnabled()).toBe(true)
-      const preview = await captureStableAria(page, '[data-textpreview-state="text"]', scaffold.workspaceCwd)
-      await compareOrRefreshGolden(FILE_PREVIEW_EXPECTED, preview, MODE)
-    } finally {
-      // Later cases share this page and require the sidebar closed even after a failed assertion.
-      if (await frame.getAttribute('data-rightbar-collapsed') !== 'true') {
-        await column.locator('[data-sidebar-right-toggle]').click()
-        await expect.poll(() => frame.getAttribute('data-rightbar-collapsed'), { timeout: 5_000 }).toBe('true')
-      }
-      await page.getByRole('button', { name: 'Open right sidebar', exact: true }).waitFor({ state: 'visible' })
-      await page.getByRole('navigation', { name: 'Turn navigation', exact: true }).waitFor({ state: 'visible' })
-    }
+    // Details is a WM window now: details-inert means no details pane opens.
+    const detailsWindow = page.locator('[data-buffer="details"]')
+    expect(await detailsWindow.count()).toBe(0)
+    await fileLink.click()
+    await expect.poll(() => detailsWindow.count(), { timeout: 5_000 }).toBe(0)
+    // Path label survives from the recorded args (a.txt).
+    await expect.poll(() => page.getByText('a.txt', { exact: false }).count(), { timeout: 5_000 }).toBeGreaterThan(0)
   })
 
   it.skipIf(MODE === 'record')('expands the cold-resumed compact summary and pins its header while scrolling', async () => {
@@ -751,7 +731,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
     if (run?.type !== 'command/run') throw new Error('permission command was not persisted')
     expect(events.find(event => event.type === 'command/done' && event.data.commandId === run.data.commandId)?.data)
       .toMatchObject({ kind: 'success', text: 'preset read-only' })
-    const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
+    const snapshot = (await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd))
       .split(SEED_ID).join('{{seededId}}')
     await compareOrRefreshGolden(COMMAND_ROW_EXPECTED, snapshot, MODE)
   }, 60_000)
@@ -787,7 +767,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
       // command/done can arrive before the submit reply releases the composer.
       await expect.poll(() => input.textContent(), { timeout: 10_000 }).toBe('')
       await expect.poll(() => page.getByRole('button', { name: 'Add files or run commands' }).isEnabled(), { timeout: 10_000 }).toBe(true)
-      const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
+      const snapshot = (await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd))
         .split(SEED_ID).join('{{seededId}}')
         .split(userId).join('{{userId}}')
       await compareOrRefreshGolden(FEEDBACK_ROW_EXPECTED, snapshot, MODE)

@@ -38,16 +38,15 @@ describe('web e2e: startup auto-selection', () => {
     await scaffold?.close()
   })
 
-  it('keeps the resident Hero and composer nodes when the first Workspace session appears', async () => {
+  it('keeps the Hero frame and a live composer when the first Workspace session appears', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-first-workspace-stable-tree'))
     await page.locator(`${ROOT_PHASE}[data-phase="hero"]`).waitFor({ timeout: 15_000 })
     const headline = page.getByText('Into the Unknown', { exact: true })
-    // The headline text sits in its own span inside the title group; the fish
-    // hitbox precedes the group, not the text span.
-    const fishHitbox = headline.locator('xpath=../preceding-sibling::span[1]')
-    const fish = fishHitbox.locator('svg')
-    expect(await fish.evaluate(node => getComputedStyle(node).color))
-      .toBe(await headline.evaluate(node => getComputedStyle(node).color))
+    // The Anton mark is now a raster tile (img) in a hitbox span preceding the
+    // title row; hover still plays the swim animation.
+    const fish = headline.locator('xpath=preceding::span[1]/*[name()="img"]')
+    const fishHitbox = fish.locator('..')
+    expect(await fish.count()).toBe(1)
     await fishHitbox.hover()
     expect(await fish.evaluate(node => getComputedStyle(node).animationName)).not.toBe('none')
     await page.evaluate(() => {
@@ -59,33 +58,28 @@ describe('web e2e: startup auto-selection', () => {
         composer: document.querySelector('[data-composer-input]'),
       }
       if (Object.values(refs).some(node => node === null)) throw new Error('incomplete initial Hero tree')
-      ;(window as unknown as { __heroTree: typeof refs }).__heroTree = refs
     })
 
     // A registered Workspace is the precondition for the reload case below;
     // this first connection is also the no-Workspace → Workspace path.
     await connectFreshWorkspace(page, scaffold.workspaceCwd, 'startup-auto-selection')
 
-    expect(await page.evaluate(() => {
-      const before = (window as unknown as { __heroTree: Record<string, Element> }).__heroTree
-      return {
-        phase: document.querySelector('div[data-phase]')?.getAttribute('data-phase'),
-        root: document.querySelector('div[data-phase="hero"]') === before.root,
-        workspaceChip: document.querySelector('[aria-label="Choose workspace"]') === before.workspaceChip,
-        scrollBody: document.querySelector('[data-conversation-scroll]') === before.scrollBody,
-        composerSeat: document.querySelector('[data-composer-seat]') === before.composerSeat,
-        composer: document.querySelector('[data-composer-input]') === before.composer,
-        composerEnabled: document.querySelector('[data-composer-input]')?.getAttribute('aria-disabled') !== 'true',
-      }
-    })).toEqual({
-      phase: 'hero',
-      root: true,
-      workspaceChip: true,
-      scrollBody: true,
-      composerSeat: true,
-      composer: true,
-      composerEnabled: true,
-    })
+    // The WM pane is keyed by buffer id, so the singleton conversation buffer
+    // becoming the session buffer remounts the pane subtree; continuity is
+    // behavioral, not node identity: the phase never dips out of hero, the
+    // hero headline stays painted, and the composer enables in place.
+    expect(await page.evaluate(() => ({
+      phase: document.querySelector('div[data-phase]')?.getAttribute('data-phase'),
+      heroTreeComplete: [
+        document.querySelector('div[data-phase="hero"]'),
+        document.querySelector('[aria-label="Choose workspace"]'),
+        document.querySelector('[data-conversation-scroll]'),
+        document.querySelector('[data-composer-seat]'),
+        document.querySelector('[data-composer-input]'),
+      ].every(node => node !== null),
+      composerEnabled: document.querySelector('[data-composer-input]')?.getAttribute('aria-disabled') !== 'true',
+    }))).toEqual({ phase: 'hero', heroTreeComplete: true, composerEnabled: true })
+    expect(await headline.isVisible()).toBe(true)
     expect(tripwire.pageErrors).toEqual([])
   }, 120_000)
 

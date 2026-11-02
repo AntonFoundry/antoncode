@@ -39,6 +39,7 @@ export {
   readProfilePlugins, reconcileProfilePlugins, writeProfileBundles,
   type ProfilePluginLocation, type ProfilePluginDependency, type ProfilePluginInventory, type ProfilePluginReconciliation,
 } from './profile-plugins.ts'
+import type { BootTiming } from './boot-timing.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -1169,6 +1170,9 @@ export async function auditStartupEntries(
   if (failures.length > 0) warn(activationDiagnostic(binName, failures))
 }
 
+export * from './plugin-state.ts'
+export * from './boot-timing.ts'
+
 /**
  * Boot the Loader against `absoluteConfigPath` and return only after the whole
  * tree settles. Relative entry names resolve against the config directory;
@@ -1192,6 +1196,8 @@ export async function auditStartupEntries(
  * @param bareModuleBaseUrl - optional installed-host base for bare package
  * names; use it when the host, rather than the configuration project, owns the
  * complete plugin set.
+ * @param timing - optional recorder for the boot phases this call owns
+ * (`setup`, `mount`, `settle`, `activate`); see {@link BootTiming}.
  * @returns the root context after the initial startup audit, or as soon as a
  * surface disposed the tree while startup was still in flight.
  * @throws {@link StartupError} for an inactive required entry, including all inactive plugins in its message;
@@ -1206,6 +1212,7 @@ export async function boot(
   patches?: PatchOptions[],
   prepare?: (ctx: Context) => Promise<void> | void,
   bareModuleBaseUrl?: string,
+  timing?: BootTiming,
 ): Promise<Context> {
   const ctx = new Context()
   const startupLogs: StartupLogRecord[] = []
@@ -1231,8 +1238,10 @@ export async function boot(
     }, { global: true, prepend: true })
     await ctx.plugin(Loader)
     await prepare?.(ctx)
+    timing?.mark('setup')
     stage = 'plugin tree failed to load'
     await mountRootInclude(ctx, absoluteConfigPath, patches, bareModuleBaseUrl, binName)
+    timing?.mark('mount')
     // A surface can finish and dispose the whole tree while startup is still
     // in flight, before the last entry settles. The Loader service goes with
     // it, and the activation audit describes a live tree — reading `ctx.loader`
@@ -1240,7 +1249,9 @@ export async function boot(
     // as asked. Re-check after settlement before auditing the tree.
     await ctx.get('loader')?.await()
     if (ctx.get('loader') === undefined) return ctx
+    timing?.mark('settle')
     await auditStartupEntries(ctx, binName)
+    timing?.mark('activate')
     return ctx
   } catch (cause) {
     if (cause instanceof StartupError) {

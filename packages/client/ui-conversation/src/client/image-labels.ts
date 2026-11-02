@@ -44,6 +44,7 @@ export function attachmentErrorText(
     case 'INVALID_IMAGE':
     case 'IMAGE_TYPE_MISMATCH':
       return t('image.unsupportedType')
+    case 'ATTACHMENT_WRITE_FAILED': return t('image.storageUnavailable')
     case 'TOO_MANY_IMAGES':
       if (limits !== undefined) return t('image.tooMany', { count: limits.maxImagesPerMessage })
       break

@@ -110,9 +110,12 @@ describe('web e2e: Goal keeps one assistant action row per completed turn', () =
   /** Boot the real Web composition and connect a fresh package fixture workspace. */
   async function launch(): Promise<void> {
     sessionEvents = []
-    scaffold = await launchWebScaffold(
-      MODE === 'record' ? {} : { replayFixture: FIXTURE, replayOverride: OVERRIDE },
-    )
+    // The recorded turns call `bash` and `get_goal` directly; the shipped
+    // paged catalog would deny them before the tool rows under test.
+    scaffold = await launchWebScaffold({
+      directToolCalls: true,
+      ...(MODE === 'record' ? {} : { replayFixture: FIXTURE, replayOverride: OVERRIDE }),
+    })
     await seedPackageInventory(scaffold.workspaceCwd)
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { sessionEvents.push(event) })
     browser = await chromium.launch()
@@ -190,7 +193,11 @@ describe('web e2e: Goal keeps one assistant action row per completed turn', () =
     expect(await branchButtons.evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-disabled'))))
       .toEqual([null, null])
     await branchButtons.last().focus()
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
+    // The two `random.choice` pick outputs are live on every replay; the
+    // scenario pins the action rows, not which package a random roll lands
+    // on, so the bare pick lines normalize to a placeholder.
+    const snapshot = (await captureStableAria(page, '[data-pane="content"]', scaffold!.workspaceCwd))
+      .replace(/^- text: packages\/[a-z-]+\/[a-z-]+$/gm, '- text: {{pick}}')
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
     const expanded = await captureExpandedTurnProcessAria(
       page,

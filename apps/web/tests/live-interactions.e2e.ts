@@ -165,7 +165,7 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     await page.locator('[data-streaming="true"]:not([inert] *)')
       .getByText('partial', { exact: true })
       .waitFor({ timeout: 30_000 })
-    const loadingSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
+    const loadingSnapshot = await captureStableAria(page, '[data-pane="content"]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(LOADING_EXPECTED, loadingSnapshot, MODE)
 
     const input = page.locator('[data-composer-input]').first()
@@ -176,7 +176,7 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     await send.waitFor({ timeout: 10_000 })
     expect(await page.getByRole('button', { name: 'Stop generating', exact: true }).count()).toBe(0)
     expect(await page.getByRole('button', { name: 'Send message', exact: true }).count()).toBe(0)
-    const runningDraftSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
+    const runningDraftSnapshot = await captureStableAria(page, '[data-pane="content"]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(RUNNING_DRAFT_EXPECTED, runningDraftSnapshot, MODE)
     await send.click()
     await expect.poll(() => input.textContent(), { timeout: 10_000 }).toBe('')
@@ -200,11 +200,11 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     await expect.poll(() => page.getByRole('tooltip').count()).toBe(0)
     // Golden of the aborted end-state: the prompt bubble plus the frozen
     // partial ('partial' is the hang entry's replayed prefix) and no more.
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-chat-flow]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(CANCEL_EXPECTED, snapshot, MODE)
     const expanded = await captureExpandedTurnProcessAria(
       page,
-      '[class*="centerCol"]',
+      '[data-pane="content"]',
       scaffold!.workspaceCwd,
     )
     await compareOrRefreshGolden(CANCEL_EXPANDED_EXPECTED, expanded, MODE)
@@ -229,7 +229,7 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     expect(await errorStatus.textContent()).toContain('API key is invalid')
     expect(await errorStatus.textContent()).toContain('AUTH')
     expect(await page.locator('body').textContent()).not.toContain('sk-preview-secret')
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-chat-flow]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(ERROR_EXPECTED, snapshot, MODE)
     await page.getByRole('tab', { name: 'Trajectory' }).click()
     const requestMarker = page.locator('tr[data-request-only="true"]').last()
@@ -394,11 +394,11 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     expect(tripwire.warnings).toEqual([])
     // Golden of the recovered end-state: the discarded partial stays absent,
     // while the settled retry row remains as durable recovery context.
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-chat-flow]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(RETRY_EXPECTED, snapshot, MODE)
     const expanded = await captureExpandedTurnProcessAria(
       page,
-      '[class*="centerCol"]',
+      '[data-pane="content"]',
       scaffold!.workspaceCwd,
     )
     await compareOrRefreshGolden(RETRY_EXPANDED_EXPECTED, expanded, MODE)
@@ -441,7 +441,7 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     expect(await errorStatus.textContent()).toContain('SERVER')
     // The settled retry chain stays alongside the terminal row as recovery
     // context; the golden pins both.
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-pane="content"]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(RETRY_EXHAUSTED_EXPECTED, snapshot, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])

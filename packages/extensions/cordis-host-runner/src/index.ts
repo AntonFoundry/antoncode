@@ -5,10 +5,12 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
+import { detectCapabilities } from './capabilities.ts'
 import type { Fiber } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
     'cordis-host-runner': { kind: 'cordis-host-runner' }
@@ -152,6 +154,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
   private readonly starting = new Map<CordisDynamicPluginId, Promise<DynamicCordisHostHalfResult>>()
   private readonly resolved: ResolvedConfig
   private group: Fiber | undefined
+  private agentGroups: Map<SessionId, Fiber> | undefined
 
   /** Create the service under the Host composition. */
   constructor(ctx: Context, config: Config) {
@@ -207,6 +210,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
       purpose,
       ...request.code.host === undefined ? {} : { hostCode: request.code.host },
       ...request.code.client === undefined ? {} : { clientCode: request.code.client },
+      capabilities: detectCapabilities(request.code),
     }
     plugin.packages.set(packageId, definition)
     return {
@@ -216,6 +220,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
       purpose,
       hasHostHalf: definition.hostCode !== undefined,
       hasClientHalf: definition.clientCode !== undefined,
+      capabilities: definition.capabilities,
     }
   }
 
@@ -551,6 +556,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
         purpose: definition.purpose,
         hasHostHalf: definition.hostCode !== undefined,
         hasClientHalf: definition.clientCode !== undefined,
+        capabilities: definition.capabilities,
       })),
       ...plugin.currentPackageId === undefined ? {} : { currentPackageId: plugin.currentPackageId },
       ...plugin.nextPackageId === undefined ? {} : { nextPackageId: plugin.nextPackageId },
@@ -578,6 +584,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
         purpose: definition.purpose,
         hasHostHalf: definition.hostCode !== undefined,
         hasClientHalf: definition.clientCode !== undefined,
+        capabilities: definition.capabilities,
       })),
       ...plugin.run === undefined ? {} : {
         activeRun: {
@@ -649,6 +656,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
         purpose: definition.purpose,
         hasHostHalf: definition.hostCode !== undefined,
         hasClientHalf: definition.clientCode !== undefined,
+        capabilities: definition.capabilities,
       })),
     }
   }
@@ -922,7 +930,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
           : 'the Host half must return a Plugin function or an object with apply(ctx)')
       }
       run.fiber = await startHostHalf(
-        this.requireGroup(),
+        this.requireAgentGroup(plugin.sessionId),
         evaluated,
         (error) => { this.steerGuardFailure(plugin, run, 'Host', errorDetails(error)) },
       )
@@ -1253,6 +1261,24 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
   private requireGroup(): Fiber {
     this.group ??= this.rootCtx.plugin({ name: 'cordis-dynamic', apply: () => {} })
     return this.group
+  }
+
+  /**
+   * Mounting group for one session's dynamic Plugins: hang them under the
+   * OWNING AGENT's context so scope-aware registries (human commands, and
+   * any other scoped view) see the registrations from that agent's view.
+   * Falls back to the process-global group when the agent is gone.
+   */
+  private requireAgentGroup(sessionId: SessionId): Fiber {
+    const agents = this.rootCtx.get('agents')
+    const agent = agents?.get(sessionId)
+    if (agent === undefined) return this.requireGroup()
+    this.agentGroups ??= new Map()
+    const existing = this.agentGroups.get(sessionId)
+    if (existing !== undefined) return existing
+    const group = agent.ctx.plugin({ name: `cordis-dynamic:${sessionId}`, apply: () => {} })
+    this.agentGroups.set(sessionId, group)
+    return group
   }
 }
 

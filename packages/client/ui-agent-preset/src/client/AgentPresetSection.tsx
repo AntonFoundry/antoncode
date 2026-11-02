@@ -1,8 +1,8 @@
-/** Preset selection settings: the roster, its default, mode help, a read-only view of each composition, and the Creator-mode entry. */
+/** The Agents settings section: a default-agent dropdown, the roster, its default, mode help, a read-only view of each composition, and the Creator-mode entry. */
 import type { ReactNode } from 'react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
-  Button, IconBrowseOutlineRegular, IconPlusOutlineRegular, Modal, Tag, Tooltip,
+  Button, IconBrowseOutlineRegular, IconChevronDownOutlineRegular, IconPlusOutlineRegular, Menu, Modal, Tag, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -57,7 +57,7 @@ function CardDescription({ text }: { text: string }): ReactNode {
   )
 }
 
-/** Render the roster with its default, mode help, composition viewer, and the guidance to Creator mode.
+/** Render the default-agent dropdown, the roster with its default, mode help, composition viewer, and the guidance to Creator mode.
  * @param props Settings actions, snapshot hooks and localized text.
  * @returns The preset settings section.
  */
@@ -71,6 +71,7 @@ export function AgentPresetSection({
     content: NonNullable<ReturnType<typeof presetGuide>>
     page: PresetGuidePage
   } | null>(null)
+  const [defaultOpen, setDefaultOpen] = useState(false)
   const viewTrigger = useRef<HTMLButtonElement | null>(null)
   const closeViewOnUnmount = useRef(closeView)
   useEffect(() => { void load() }, [load])
@@ -98,10 +99,60 @@ export function AgentPresetSection({
         {t('creatorDraft')}
       </button>
     )
+  // The default-agent dropdown offers what the cards offer: a broken preset
+  // cannot compose a session, and Coding Tools off hides the presets that need it.
+  const selectableRows = state.rows.filter(row => row.broken === undefined
+    && (developerTools || !requiresCodingTools(row)))
+  const currentDefault = state.rows.find(row => row.isDefault)
+  const defaultLabel = currentDefault === undefined ? t('loading') : presetDisplayText(currentDefault, t).name
+  const defaultMenuOpen = defaultOpen && selectableRows.length > 0
   return <section className={css.section}>
     <h2 className={css.title}>{t('nav')}</h2>
     <p className={css.intro}>{t('sectionIntro')}</p>
     {state.error === null ? null : <p className={css.error} role="alert">{state.error}</p>}
+    <div className={css.defaultRow}>
+      <div className={css.defaultText}>
+        <span className={css.fieldLabel}>{t('defaultAgentLabel')}</span>
+        <span className={css.intro}>{t('defaultAgentHint')}</span>
+      </div>
+      <Menu
+        open={defaultMenuOpen}
+        onClose={() => { setDefaultOpen(false) }}
+        items={selectableRows.map((row) => {
+          const text = presetDisplayText(row, t)
+          return {
+            id: row.id,
+            // Name and description stacked: a picker shows what each preset is for.
+            label: (
+              <span className={css.optionLabel}>
+                <span className={css.optionName}>{text.name}</span>
+                {text.description === undefined ? null : <span className={css.optionDesc}>{text.description}</span>}
+              </span>
+            ),
+          }
+        })}
+        selectedId={currentDefault?.id ?? ''}
+        onSelect={(id) => {
+          setDefaultOpen(false)
+          void makeDefault(id)
+        }}
+        align="end"
+        portal
+        anchor={(
+          <button
+            type="button"
+            className={css.defaultSelector}
+            aria-haspopup="menu"
+            aria-expanded={defaultMenuOpen}
+            disabled={selectableRows.length === 0 || state.saving}
+            onClick={() => { setDefaultOpen(value => !value) }}
+          >
+            {defaultLabel}
+            <IconChevronDownOutlineRegular className={css.defaultChevron} />
+          </button>
+        )}
+      />
+    </div>
     {([true, false] as const).map((builtIn) => {
       const rows = state.rows.filter(row => isBuiltInPreset(row) === builtIn
         && (developerTools || !requiresCodingTools(row)))

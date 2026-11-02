@@ -3,7 +3,7 @@
 Status: implemented
 Archived: 2026-09-04
 
-English | [中文](2026-07-24-adapter-owned-reasoning-effort-capabilities.zh.md)
+English
 
 ## Problem
 
@@ -13,9 +13,11 @@ Reasoning strength was adapter configuration only, so a conversation could not d
 
 `dsh-llm` represents a reasoning effort as the opaque branded `ReasoningEffortId`. One adapter-owned `resolveModel(provider, model, signal?)` query returns `LlmResolvedModelInfo`: exact model identity plus optional context and reasoning metadata. `LlmRuntime.resolveModelInfo()` validates and detaches that aggregate. When present, `reasoning.efforts` is a non-empty ordered list of ids with display metadata and may name one configured default. The core requires an explicit or configured effort to appear exactly in that list and never clamps or aliases a value.
 
-`LlmCallConfig` and `GenerateOptions` carry the optional effort. The agent loop prepares the post-`agent/request` config under the active turn signal before writing `request/header`, so defaults and dynamic changes are model-visible only after becoming durable facts. The prepared call retains the exact adapter registration across asynchronous exact-model resolution, durable header logging, and dispatch; direct `LlmRuntime.stream()` calls likewise capture their final registration before awaiting resolution. A route with no registered adapter retains its proposed config so an `llm/stream` middleware can own and short-circuit it; terminal dispatch still rejects an unhandled route. A resumed loop retains the logged effort only when its initial provider/model route is unchanged; a route change discards the previous model's opaque id.
+`LlmCallConfig` and `GenerateOptions` carry the optional effort. The agent loop prepares the post-`agent/request` config under the active turn signal before writing `request/header`, so defaults and dynamic changes are model-visible only after becoming durable facts. The prepared call retains the exact adapter registration across asynchronous exact-model resolution, durable header logging, and dispatch; direct `LlmRuntime.stream()` calls likewise capture their final registration before awaiting resolution. A route with no registered adapter retains its proposed config so an `llm/stream` middleware can own and short-circuit it; terminal dispatch still rejects an unhandled route. A resumed loop retains the logged effort only when its initial provider/model route is unchanged; a route change discards the previous model's opaque id. A session whose usable header names no effort falls back to `AgentOptions.reasoningEffort` and seeds the header from it — the per-delegation inheritance the [subagent effort note](../feature/2026-09-13-subagent-per-delegation-reasoning-effort.md) builds on.
 
 The native DeepSeek adapter advertises `off`, `low`, `high`, and `max` when deployment policy permits thinking, and defaults to the configured effort or `high`. Its adapter-owned `off` maps to `thinking.type: disabled` with no `reasoning_effort`; `low`, `high`, and `max` enable thinking and carry their same-named official wire effort. A `thinking: disabled` deployment publishes only `off` and rejects attempts to enable thinking before provider I/O. The pi-ai adapter publishes each exact model's `getSupportedThinkingLevels()` result unchanged, including `off`, preserves an absent profile default as a provider default, and leaves provider wire-value mapping inside pi-ai. Its common stream options represent `off` by omitting `reasoning`, as required by pi-ai's own API.
+
+The Codex adapter consumes each model's exact choices and default from the account-specific Codex model catalog cache (`models_cache.json`) when available. Its shipped GPT-5.6 Sol, Terra, and Luna entries also carry the currently advertised fallback choices, so the picker remains useful before the cache is populated or after a stale cache read; live cache metadata still enriches newly discovered models. GPT-5.6 Sol exposes `low`, `medium`, `high`, `xhigh`, `max`, and `ultra` (default `low`), Terra exposes the same set (default `medium`), and Luna exposes `low`, `medium`, `high`, `xhigh`, and `max` (default `medium`). The adapter sends the selected value unchanged to the Responses API. Models with no catalog effort metadata retain the adapter's legacy fallback set.
 
 ## Alternatives considered
 

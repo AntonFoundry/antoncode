@@ -439,7 +439,7 @@ describe('recovery without a retry action', () => {
     const ctx = await harness(adapter)
     const agent = await ctx.agentLoop.create(SessionId('recovery-no-retry'), { provider: 'mock', model: 'mock' })
     let recoveries = 0
-    ctx.on('agent/request-error', async () => { recoveries += 1 })
+    ctx.on('agent/request-error', async () => { recoveries += 1; return undefined })
 
     send(agent, 'go')
     await agent.whenIdle()

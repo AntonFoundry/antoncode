@@ -5,12 +5,15 @@
  * under the profile's reference, deriving `<ROUTE>_API_KEY` when the profile
  * has none. The pi-ai profile records that derivation as `apiKeyEnv` only when
  * a key is entered; a blank key materializes a reference-free profile for
- * provider-native authentication);
- * the collapsed 自定义设置 area carries the per-family extras (`baseURL` for
- * both families, DeepSeek's id/name/context-window model catalog, and the
- * display name and wire protocol of a pi-ai route the adapter does not ship —
- * the two fields the create card asked that route for, editable here for the
- * same reason).
+ * provider-native authentication — as does the OpenAI family, whose routes
+ * then fall back to their derived-reference default, and the OpenGateway
+ * route, whose section default already names `OPENGATEWAY_API_KEY`);
+ * the collapsed custom-settings area carries the per-family extras (`baseURL` for
+ * the deepseek, pi-ai, and OpenAI families, DeepSeek's id/name/context-window
+ * model catalog, and the display name and wire protocol of a pi-ai route the
+ * adapter does not ship — the two fields the create card asked that route for,
+ * editable here for the same reason). The Codex card carries no key field at
+ * all: that route authenticates through the shared subscription login.
  * Reasoning effort is deliberately absent: it is a per-MODEL capability, and
  * the models under one provider disagree about it, so a provider-scoped
  * control can only be set to a value some of them reject. The composer's
@@ -44,7 +47,7 @@ import { ApiKeyInput } from './ApiKeyInput.tsx'
 import styles from './ModelsSection.module.css'
 
 /** Per-adapter-family curated field sets (unknown namespaces get the hint alone). */
-type EditorLayout = 'deepseek' | 'pi-ai' | 'unknown'
+type EditorLayout = 'deepseek' | 'pi-ai' | 'openai' | 'models-dev' | 'codex' | 'antigravity' | 'unknown'
 
 
 
@@ -150,10 +153,20 @@ export function pathOps(
   return ops
 }
 
-/** The editor layout the owning namespace selects. */
+/**
+ * The editor layout the owning namespace selects. OpenGateway shares the
+ * OpenAI family's card because it is the same route shape — one section, one
+ * key, one endpoint, and a catalog the adapter discovers rather than the
+ * profile listing — and its section default already names the reference the
+ * card stores under, so that card adds nothing to `cordis.patch.yml` for a key.
+ */
 function layoutOf(ns: string): EditorLayout {
   if (ns === 'llm-deepseek') return 'deepseek'
   if (ns === 'llm-pi-ai') return 'pi-ai'
+  if (ns === 'llm-openai' || ns === 'llm-opengateway') return 'openai'
+  if (ns === 'llm-models-dev') return 'models-dev'
+  if (ns === 'llm-codex') return 'codex'
+  if (ns === 'llm-antigravity') return 'antigravity'
   return 'unknown'
 }
 
@@ -267,9 +280,11 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
    */
   const applyOnce = async (): Promise<string | undefined> => {
     const ns = namespace.ns
-    // A pi-ai profile names the conventional reference only when this page is
-    // about to store a key. Otherwise the provider keeps its native auth path.
-    const next = layout === 'pi-ai' && stringAt(draft, 'apiKeyEnv') === undefined
+    // A profile names the conventional reference only when this page is about
+    // to store a key. Otherwise the provider keeps its own auth path — for the
+    // OpenAI family that is the route's derived reference default, for pi-ai
+    // the provider's native discovery.
+    const next = (layout === 'pi-ai' || layout === 'openai' || layout === 'models-dev') && stringAt(draft, 'apiKeyEnv') === undefined
       && stringAt(fallback, 'apiKeyEnv') === undefined && keyValue.length > 0
       ? schema.setPath(draft, ['apiKeyEnv'], keyRef)
       : draft
@@ -289,7 +304,9 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       const sectionError = schema.validate(node, next)
       if (sectionError !== undefined) return sectionError
     }
-    const materializesNativeProfile = layout === 'pi-ai'
+    // A brand-new path-addressed profile the card leaves empty still has to
+    // materialize: the dict key's presence IS the route's registration.
+    const materializesNativeProfile = (layout === 'pi-ai' || layout === 'openai' || layout === 'models-dev' || layout === 'codex' || layout === 'antigravity')
       && fallback === undefined
       && committedOriginal === undefined
       && Object.keys(next).length === 0
@@ -349,9 +366,11 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   /**
    * The curated fields of one known adapter family. The family arrives
    * narrowed so the per-family branches below are total: an unknown namespace
-   * renders the hint instead and never reaches this body.
+   * renders the hint instead and never reaches this body. `openai` carries a
+   * key and an endpoint; `codex` carries neither — its card only switches the
+   * subscription-auth route on.
    */
-  const curatedFields = (family: 'deepseek' | 'pi-ai'): ReactNode => {
+  const curatedFields = (family: 'deepseek' | 'pi-ai' | 'openai' | 'models-dev' | 'codex' | 'antigravity'): ReactNode => {
     // What a hand-declared route names for itself and nothing else can supply.
     // A whole-section `llm-deepseek` profile is a composition fact with no
     // per-route identity for its schema to carry, hence the family test.
@@ -399,8 +418,12 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     )
     // A provider with no native key authentication has no key for this field to store.
     const keylessNativeAuth = nativeAuth?.env.length === 0 && nativeAuth.oauth
+    // The OpenAI and models.dev families fall back to their route's own
+    // authentication when the field is left blank.
     const keyPlaceholder = keyHint === undefined || props.credentialRequired === true
-      ? t('keyPlaceholder')
+      ? (family === 'openai' || family === 'models-dev') && props.credentialRequired !== true
+        ? t('keyPlaceholderNative')
+        : t('keyPlaceholder')
       : t(savedCredential ? 'keyPlaceholderSaved' : 'keyPlaceholderFallback').replace('{hint}', () => keyHint)
     /** What both family editors take: the rows, whose layer owns them, and the two writes. */
     const catalogProps = {
@@ -415,129 +438,150 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     }
     return (
       <>
-        {keylessNativeAuth
-          ? null
-          : <div className={styles['field']}>
-            <span className={styles['fieldLabel']}>
-              {t('keyInput')}
-              {authHelp}
-            </span>
-            <ApiKeyInput
-              t={t}
-              value={keyDraft}
-              placeholder={keyPlaceholder}
-              aria-label={t('keyInput')}
-              aria-invalid={shownKeyFailure !== undefined}
-              aria-describedby={credentialHint === undefined ? undefined : `${props.provider}-credential-hint`}
-              required={props.credentialRequired === true}
-              autoFocus={props.autoFocusCredential === true}
-              disabled={disabled}
-              onChange={(event) => { setKeyDraft(event.target.value) }}
-            />
-            {credentialHint === undefined ? null : <p id={`${props.provider}-credential-hint`} className={styles[missingRefs ? 'notice' : detectedRef === undefined ? 'advancedHint' : 'savedNotice']}>{credentialHint}</p>}
-            {shownKeyFailure === undefined ? null : <p className={styles['error']}>{t(shownKeyFailure)}</p>}
-          </div>}
-        {props.credentialOnly === true ? null : <details className={styles['customized']}>
-          <summary className={styles['customizedSummary']}>{t('customized')}</summary>
-          <div className={styles['customizedBody']}>
-            {/* The name and the protocol are the create card's two remaining
+        {family === 'codex' || family === 'antigravity'
+          // No key input by design: the route authenticates through the
+          // shared Codex / Antigravity OAuth login, so the card says so instead.
+          ? (
+            <p className={styles['advancedHint']}>
+              {family === 'codex' ? t('subscriptionHint') : t('antigravitySubscriptionHint')}
+            </p>
+          )
+          : keylessNativeAuth
+            ? null
+            : <div className={styles['field']}>
+              {family === 'models-dev'
+                ? (
+                  <p className={styles['advancedHint']}>
+                    {props.provider.startsWith('openrouter')
+                      ? t('modelsDevKeyHintOpenrouter')
+                      : t('modelsDevKeyHintOpencode')}
+                  </p>
+                )
+                : null}
+              <span className={styles['fieldLabel']}>
+                {t('keyInput')}
+                {authHelp}
+              </span>
+              <ApiKeyInput
+                t={t}
+                value={keyDraft}
+                placeholder={keyPlaceholder}
+                aria-label={t('keyInput')}
+                aria-invalid={shownKeyFailure !== undefined}
+                aria-describedby={credentialHint === undefined ? undefined : `${props.provider}-credential-hint`}
+                required={props.credentialRequired === true}
+                autoFocus={props.autoFocusCredential === true}
+                disabled={disabled}
+                onChange={(event) => { setKeyDraft(event.target.value) }}
+              />
+              {credentialHint === undefined ? null : <p id={`${props.provider}-credential-hint`} className={styles[missingRefs ? 'notice' : detectedRef === undefined ? 'advancedHint' : 'savedNotice']}>{credentialHint}</p>}
+              {shownKeyFailure === undefined ? null : <p className={styles['error']}>{t(shownKeyFailure)}</p>}
+            </div>}
+        {props.credentialOnly === true || family === 'codex' || family === 'antigravity' || family === 'models-dev'
+          ? null : <details className={styles['customized']}>
+            <summary className={styles['customizedSummary']}>{t('customized')}</summary>
+            <div className={styles['customizedBody']}>
+              {/* The name and the protocol are the create card's two remaining
                 profile fields; a route the adapter ships defaults both from
                 its catalog entry and neither belongs on its card. */}
-            {ownsIdentity
-              ? (
-                <div className={styles['field']}>
-                  <span className={styles['fieldLabel']}>{t('customDisplayName')}</span>
-                  <input
-                    className={styles['input']}
-                    type="text"
-                    value={stringAt(draft, 'displayName') ?? ''}
-                    // What this route is called the moment the field is
-                    // cleared, which is the layer beneath the one this field
-                    // edits: a `cordis.yml` may pin a name for a route the
-                    // catalog does not ship, and only when nothing does is
-                    // the answer the route id. Reading the effective value
-                    // instead would echo the stored override back as the
-                    // thing clearing restores.
-                    placeholder={stringAt(schema.getPath(namespace.base, settingsPath), 'displayName')
-                      ?? props.provider}
-                    aria-label={t('customDisplayName')}
-                    disabled={disabled}
-                    onChange={(event) => { setField('displayName', event.target.value) }}
-                  />
-                </div>
-              )
-              : null}
-            <div className={styles['field']}>
-              <span className={styles['fieldLabel']}>{t('baseUrl')}</span>
-              <input
-                className={styles['input']}
-                type="text"
-                value={stringAt(draft, 'baseURL') ?? ''}
-                placeholder={family === 'deepseek'
-                  ? t('deepSeekBaseUrl')
-                  : baseURL === undefined ? t(endpointEnv.length > 0 ? 'baseUrlConfigured' : 'baseUrlDefault')
-                    : t('baseUrlPlaceholder').replace('{url}', () => baseURL)}
-                aria-describedby={endpointHint === undefined ? undefined : `${props.provider}-endpoint-hint`}
-                aria-label={t('baseUrl')}
-                disabled={disabled}
-                onChange={(event) => {
-                  setField('baseURL', event.target.value === '' ? undefined : event.target.value)
-                }}
-              />
-              {endpointHint === undefined ? null : <span id={`${props.provider}-endpoint-hint`} className={styles['advancedHint']}>{endpointHint}</span>}
-            </div>
-            {/* The protocol sits beside the endpoint it describes, as it does
+              {ownsIdentity
+                ? (
+                  <div className={styles['field']}>
+                    <span className={styles['fieldLabel']}>{t('customDisplayName')}</span>
+                    <input
+                      className={styles['input']}
+                      type="text"
+                      value={stringAt(draft, 'displayName') ?? ''}
+                      // What this route is called the moment the field is
+                      // cleared, which is the layer beneath the one this field
+                      // edits: a `cordis.yml` may pin a name for a route the
+                      // catalog does not ship, and only when nothing does is
+                      // the answer the route id. Reading the effective value
+                      // instead would echo the stored override back as the
+                      // thing clearing restores.
+                      placeholder={stringAt(schema.getPath(namespace.base, settingsPath), 'displayName')
+                        ?? props.provider}
+                      aria-label={t('customDisplayName')}
+                      disabled={disabled}
+                      onChange={(event) => { setField('displayName', event.target.value) }}
+                    />
+                  </div>
+                )
+                : null}
+              <div className={styles['field']}>
+                <span className={styles['fieldLabel']}>{t('baseUrl')}</span>
+                <input
+                  className={styles['input']}
+                  type="text"
+                  value={stringAt(draft, 'baseURL') ?? ''}
+                  placeholder={family === 'deepseek'
+                    ? t('deepSeekBaseUrl')
+                    : baseURL === undefined ? t(endpointEnv.length > 0 ? 'baseUrlConfigured' : 'baseUrlDefault')
+                      : t('baseUrlPlaceholder').replace('{url}', () => baseURL)}
+                  aria-describedby={endpointHint === undefined ? undefined : `${props.provider}-endpoint-hint`}
+                  aria-label={t('baseUrl')}
+                  disabled={disabled}
+                  onChange={(event) => {
+                    setField('baseURL', event.target.value === '' ? undefined : event.target.value)
+                  }}
+                />
+                {endpointHint === undefined ? null : <span id={`${props.provider}-endpoint-hint`} className={styles['advancedHint']}>{endpointHint}</span>}
+              </div>
+              {/* The protocol sits beside the endpoint it describes, as it does
                 on the create card. */}
-            {ownsIdentity
-              ? (
-                <div className={styles['field']}>
-                  <span className={styles['fieldLabel']}>{t('customApi')}</span>
-                  <select
-                    className={`${styles['input']} ${styles['selectInput']}`}
-                    value={probeApi ?? ''}
-                    aria-label={t('customApi')}
-                    disabled={disabled}
-                    onChange={(event) => { setField('api', event.target.value) }}
-                  >
-                    {/* A profile naming no protocol — hand-written into
+              {ownsIdentity
+                ? (
+                  <div className={styles['field']}>
+                    <span className={styles['fieldLabel']}>{t('customApi')}</span>
+                    <select
+                      className={`${styles['input']} ${styles['selectInput']}`}
+                      value={probeApi ?? ''}
+                      aria-label={t('customApi')}
+                      disabled={disabled}
+                      onChange={(event) => { setField('api', event.target.value) }}
+                    >
+                      {/* A profile naming no protocol — hand-written into
                         cordis.patch.yml with no model to need one — selects
                         nothing rather than reading as if it had picked the
                         first choice. The option is named because a screen
                         reader announces it either way, and an empty one is
                         announced as a choice with no identity. */}
-                    {probeApi === undefined ? <option value="">{t('customApiUnset')}</option> : null}
-                    {protocols.map(choice => <option key={choice} value={choice}>{protocolLabel(t, choice)}</option>)}
-                  </select>
-                </div>
-              )
-              : null}
-            {/* Both families edit the same rows through the same contract; only
-                the extras differ — DeepSeek's inherited capacities, pi-ai's
-                endpoint interrogation. */}
-            {family === 'deepseek'
-              ? (
-                <DeepSeekModelsEditor
-                  {...catalogProps}
-                  defaultContextWindow={typeof defaultContextWindow === 'number'
-                    ? defaultContextWindow
-                    : undefined}
-                  defaultMaxTokens={typeof defaultMaxTokens === 'number' ? defaultMaxTokens : undefined}
-                />
-              )
-              : (
-                <ModelListEditor
-                  {...catalogProps}
-                  catalogProvider={props.declared === true ? undefined : props.provider}
-                  reasoningLevels={reasoningLevels}
-                  defaultInput={Array.isArray(defaultInput) ? defaultInput : undefined}
-                  probe={probe}
-                  probeBlocked={keyFailure}
-                  operations={operations}
-                  onBusyChange={setListBusy}
-                />
-              )}
-          </div>
-        </details>}
+                      {probeApi === undefined ? <option value="">{t('customApiUnset')}</option> : null}
+                      {protocols.map(choice => <option key={choice} value={choice}>{protocolLabel(t, choice)}</option>)}
+                    </select>
+                  </div>
+                )
+                : null}
+              {/* The deepseek and pi-ai families edit the same rows through the
+                same contract; only the extras differ — DeepSeek's inherited
+                capacities, pi-ai's endpoint interrogation. The OpenAI family's
+                catalog stays in cordis.patch.yml: its profile owns no models. */}
+              {family === 'deepseek'
+                ? (
+                  <DeepSeekModelsEditor
+                    {...catalogProps}
+                    defaultContextWindow={typeof defaultContextWindow === 'number'
+                      ? defaultContextWindow
+                      : undefined}
+                    defaultMaxTokens={typeof defaultMaxTokens === 'number' ? defaultMaxTokens : undefined}
+                  />
+                )
+                : family === 'pi-ai'
+                  ? (
+                    <ModelListEditor
+                      {...catalogProps}
+                      catalogProvider={props.declared === true ? undefined : props.provider}
+                      reasoningLevels={reasoningLevels}
+                      defaultInput={Array.isArray(defaultInput) ? defaultInput : undefined}
+                      probe={probe}
+                      probeBlocked={keyFailure}
+                      operations={operations}
+                      onBusyChange={setListBusy}
+                    />
+                  )
+                  : null}
+            </div>
+          </details>}
       </>
     )
   }

@@ -1,6 +1,6 @@
 // Web e2e scenarios: the settings surface — the modal shell (trigger, nav,
 // section switching, both close paths), the Appearance preference row (the
-// real theme gesture — click 深色 and the whole cascade runs: ThemeRuntime preference -> Host settings
+// real theme gesture — click Dark and the whole cascade runs: ThemeRuntime preference -> Host settings
 // -> theme/change -> ui-layout's presenter -> body attribute -> alias token +
 // browser theme-color metadata)
 // the Language row and busy-state Enter preference (both Host-backed), plus
@@ -46,6 +46,26 @@ describe('web e2e: settings modal and General preferences', () => {
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
 
+  /** The window manager owns the settings window: closing is the frame's own
+ * Close control — Escape and the old dialog mask are retired surfaces. */
+  async function closeSettingsWindow(target: Page = page): Promise<void> {
+    await target.locator('[data-buffer="settings"]').getByRole('button', { name: 'Close', exact: true }).click()
+    await expect.poll(() => target.getByRole('dialog', { name: '设置' }).count(), { timeout: 5_000 }).toBe(0)
+  }
+
+  /** Open settings and force the General section: the window manager restores
+ * the last active section per host-durable UI state, so tests that assume
+ * General must select it explicitly instead of relying on the default. */
+  async function openGeneralSettings(target: Page = page): Promise<ReturnType<Page['getByRole']>> {
+    await openSettings(target, 'zh')
+    const dialog = target.getByRole('dialog', { name: '设置' })
+    await dialog.waitFor({ timeout: 10_000 })
+    await dialog.getByRole('button', { name: '通用设置' }).click()
+    await expect.poll(() => dialog.getByRole('button', { name: '通用设置' }).getAttribute('aria-current'), { timeout: 5_000 }).toBe('true')
+    return dialog
+  }
+
+
   beforeAll(async () => {
     scaffold = await launchWebScaffold({
       developerTools: false,
@@ -72,7 +92,7 @@ describe('web e2e: settings modal and General preferences', () => {
     onTestFailed(() => saveSettingsFailureShot(page, 'settings-shell'))
     onTestFinished(async () => {
       const dialog = page.getByRole('dialog', { name: '设置' })
-      if (await dialog.isVisible()) await page.keyboard.press('Escape')
+      if (await dialog.isVisible()) await closeSettingsWindow()
       await dialog.waitFor({ state: 'hidden' })
     })
     const trigger = page.getByRole('button', { name: '账号菜单', exact: true })
@@ -217,14 +237,14 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(await dialog.locator('[data-plugin-entry="tool-subagent-fork"] button')
       .getAttribute('aria-expanded')).toBe('true')
     await pluginSearch.fill('')
-    // Close path 1: Escape.
-    await page.keyboard.press('Escape')
-    await expect.poll(() => page.getByRole('dialog', { name: '设置' }).count(), { timeout: 5_000 }).toBe(0)
+    // The window manager owns the window: no mask, no Escape — closing is the
+    // settings frame's own Close control.
+    await closeSettingsWindow()
     expect(await trigger.getAttribute('aria-expanded')).toBe('false')
-    // Close path 2: the header close button.
+    // Reopen and close again: the same control dismisses the reopened window.
     await openSettings(page, 'zh')
-    await page.getByRole('dialog', { name: '设置' }).getByRole('button', { name: '关闭' }).click()
-    await expect.poll(() => page.getByRole('dialog', { name: '设置' }).count(), { timeout: 5_000 }).toBe(0)
+    await page.getByRole('dialog', { name: '设置' }).waitFor({ timeout: 10_000 })
+    await closeSettingsWindow()
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
@@ -341,7 +361,7 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(Math.round(lastBox!.x + lastBox!.width)).toBeLessThanOrEqual(390)
     await last.click()
     await expect.poll(() => last.getAttribute('aria-current')).toBe('true')
-    await phone.keyboard.press('Escape')
+    await closeSettingsWindow(phone)
     await dialog.waitFor({ state: 'hidden' })
     await openSettings(phone, 'zh')
     const active = dialog.locator('[aria-current="true"]')
@@ -375,9 +395,7 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(existing.snapshotEvents().find(event => event.type === 'permission/preset')?.data)
       .toEqual({ preset: 'workspace-write' })
 
-    await openSettings(page, 'zh')
-    const dialog = page.getByRole('dialog', { name: '设置' })
-    await dialog.waitFor({ timeout: 10_000 })
+    const dialog = await openGeneralSettings()
     const selector = dialog.getByRole('button', { name: '工作区内修改' })
     await selector.waitFor({ timeout: 10_000 })
     await expect.poll(() => selector.isEnabled(), { timeout: 5_000 }).toBe(true)
@@ -414,7 +432,7 @@ describe('web e2e: settings modal and General preferences', () => {
       ['sandbox/mode', { mode: 'danger-full-access' }],
       ['approval/policy', { policy: 'never' }],
     ])
-    await page.keyboard.press('Escape')
+    await closeSettingsWindow()
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
@@ -442,14 +460,13 @@ describe('web e2e: settings modal and General preferences', () => {
   it('uses the persisted dark preference while plugins are still loading', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-boot-theme'))
     await page.emulateMedia({ colorScheme: 'light' })
-    await openSettings(page, 'zh')
-    const initialDialog = page.getByRole('dialog', { name: '设置' })
+    const initialDialog = await openGeneralSettings()
     const darkCube = initialDialog.getByRole('button', { name: '深色' })
     await selectTheme(darkCube, 'dark')
     await expect.poll(() => darkCube.getAttribute('aria-pressed'), { timeout: 5_000 }).toBe('true')
     await expect.poll(async () => readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8'), { timeout: 5_000 })
       .toContain('preference: dark')
-    await page.keyboard.press('Escape')
+    await closeSettingsWindow()
 
     // Hold the real application batch so the shell-owned loading page remains observable.
     const pluginPattern = /\/plugins\/\?\?.+\/client\.js,.+\/client\.js&rev=[a-f\d]{12}$/
@@ -488,8 +505,7 @@ describe('web e2e: settings modal and General preferences', () => {
 
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     acknowledgeReloadConnectionLoss(tripwire, warningStart)
-    await openSettings(page, 'zh')
-    const restoredDialog = page.getByRole('dialog', { name: '设置' })
+    const restoredDialog = await openGeneralSettings()
     const systemCube = restoredDialog.getByRole('button', { name: '跟随系统' })
     // The boot palette precedes the settings mirror's saved preference.
     const restoredDarkCube = restoredDialog.getByRole('button', { name: '深色' })
@@ -499,7 +515,7 @@ describe('web e2e: settings modal and General preferences', () => {
     await expect.poll(() => page.evaluate(() => document.body.hasAttribute('data-ds-dark-theme')), {
       timeout: 5_000,
     }).toBe(false)
-    await page.keyboard.press('Escape')
+    await closeSettingsWindow()
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
@@ -542,9 +558,7 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(light.faviconPaths).toEqual(['/favicon.svg'])
     expectThemeColorSynchronized(light)
 
-    await openSettings(page, 'zh')
-    const dialog = page.getByRole('dialog', { name: '设置' })
-    await dialog.waitFor({ timeout: 10_000 })
+    const dialog = await openGeneralSettings()
     const darkCube = dialog.getByRole('button', { name: '深色' })
     expect(await darkCube.getAttribute('aria-pressed')).toBe('false')
     await selectTheme(darkCube, 'dark')
@@ -559,7 +573,7 @@ describe('web e2e: settings modal and General preferences', () => {
     expectThemeColorSynchronized(dark)
     await expect.poll(async () => readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8'), { timeout: 5_000 })
       .toContain('preference: dark')
-    await page.keyboard.press('Escape')
+    await closeSettingsWindow()
 
     // Reload: the preference survives the background Host read + presenter update.
     const warningStart = tripwire.warnings.length
@@ -596,8 +610,7 @@ describe('web e2e: settings modal and General preferences', () => {
     }
 
     // `system` follows the emulated OS scheme (dark stays dark, light clears).
-    await openSettings(page, 'zh')
-    const systemCube = page.getByRole('dialog', { name: '设置' }).getByRole('button', { name: '跟随系统' })
+    const systemCube = (await openGeneralSettings()).getByRole('button', { name: '跟随系统' })
     await selectTheme(systemCube, 'system')
     await expect.poll(() => systemCube.getAttribute('aria-pressed'), { timeout: 5_000 }).toBe('true')
     await expect.poll(async () => (await readState()).attr, { timeout: 5_000 }).toBe(false)
@@ -614,14 +627,14 @@ describe('web e2e: settings modal and General preferences', () => {
     await page.emulateMedia({ colorScheme: 'light' })
     await expect.poll(async () => (await readState()).faviconPaths).toEqual(['/favicon.svg'])
     expectThemeColorSynchronized(await readState())
-    await page.keyboard.press('Escape')
+    await closeSettingsWindow()
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
   it('steps the content font size, applies it to body, and persists across reload', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-font-size'))
     onTestFinished(async () => {
-      await page.keyboard.press('Escape')
+      await closeSettingsWindow()
       await page.getByRole('dialog', { name: '设置', exact: true }).waitFor({ state: 'hidden' })
     })
     const readFontSize = async (target: Page = page): Promise<string> => await target.evaluate(
@@ -658,9 +671,7 @@ describe('web e2e: settings modal and General preferences', () => {
     }
     expect(await readFontSize()).toBe('14px')
     expect(await readSecondaryFontSize()).toBe('13px')
-    await openSettings(page, 'zh')
-    const dialog = page.getByRole('dialog', { name: '设置' })
-    await dialog.waitFor({ timeout: 10_000 })
+    const dialog = await openGeneralSettings()
     // The stepper reveals its arrows on hover; the up arrow steps 14 → 15 → 16.
     await dialog.getByText('14', { exact: true }).hover()
     const increase = dialog.getByRole('button', { name: '增大字号' })
@@ -670,7 +681,7 @@ describe('web e2e: settings modal and General preferences', () => {
     await expect.poll(readSecondaryFontSize, { timeout: 5_000 }).toBe('13px')
     await stepFontSize(increase, 16)
     await expect.poll(readSecondaryFontSize, { timeout: 5_000 }).toBe('14px')
-    await page.keyboard.press('Escape')
+    await closeSettingsWindow()
 
     // Reload: the boot script embeds the durable size and ThemeRuntime seeds
     // its initial snapshot from the boot-written body variable, so activation
@@ -690,14 +701,14 @@ describe('web e2e: settings modal and General preferences', () => {
     const decrease = restored.getByRole('button', { name: '减小字号' })
     await stepFontSize(decrease, 15)
     await stepFontSize(decrease, 14)
-    await page.keyboard.press('Escape')
+    await closeSettingsWindow()
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
   it('sets text and code fonts and the code size independently, applies them, and persists across reload', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-font-family'))
     onTestFinished(async () => {
-      await page.keyboard.press('Escape')
+      await closeSettingsWindow()
       await page.getByRole('dialog', { name: '设置', exact: true }).waitFor({ state: 'hidden' })
     })
     // Computed font-family lists: body text, code, and the two built-in stacks.
@@ -759,7 +770,7 @@ describe('web e2e: settings modal and General preferences', () => {
     await expect.poll(readFonts, { timeout: 5_000 }).toEqual({ ...defaults, text: `Georgia, ${textStack}`, code: `"Courier New", monospace, ${codeStack}` })
     // The snapshot updates optimistically; reload only after the Host has persisted both lists.
     await expect.poll(async () => readFile(patchFile, 'utf8'), { timeout: 5_000 }).toContain('Georgia')
-    await page.keyboard.press('Escape')
+    await closeSettingsWindow()
 
     const warningStart = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })
@@ -769,8 +780,7 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(await readCodeSize()).toBe('12px')
 
     // Clearing each field restores the built-in stacks for the specs that follow.
-    await openSettings(page, 'zh')
-    const reloaded = page.getByRole('dialog', { name: '设置' })
+    const reloaded = await openGeneralSettings()
     await expandFonts()
     expect(await reloaded.getByRole('textbox', { name: '代码字体', exact: true }).inputValue()).toBe('"Courier New", monospace')
     await commit('正文字体', '')
@@ -780,7 +790,7 @@ describe('web e2e: settings modal and General preferences', () => {
     await expect.poll(readCodeSize, { timeout: 5_000 }).toBe('11px')
     await expect.poll(async () => readFile(patchFile, 'utf8'), { timeout: 5_000 }).toContain('codeFontSize: 11')
     await expect.poll(async () => readFile(patchFile, 'utf8'), { timeout: 5_000 }).not.toContain('Courier New')
-    await page.keyboard.press('Escape')
+    await closeSettingsWindow()
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
@@ -788,9 +798,7 @@ describe('web e2e: settings modal and General preferences', () => {
     ['compact', '简洁'], ['standard', '标准'], ['verbose', '完全展开'],
   ] as const)('persists the %s work-details mode across reload', async (mode, label) => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-transcript-view'))
-    await openSettings(page, 'zh')
-    const dialog = page.getByRole('dialog', { name: '设置' })
-    await dialog.waitFor({ timeout: 10_000 })
+    const dialog = await openGeneralSettings()
     await dialog.getByText('工作步骤展示', { exact: true }).waitFor({ timeout: 10_000 })
     const details = dialog.getByText('工作步骤展示', { exact: true }).locator('../..')
     await details.getByRole('button', { name: '详细', exact: true }).click()
@@ -798,14 +806,13 @@ describe('web e2e: settings modal and General preferences', () => {
     await details.getByRole('button', { name: label, exact: true }).waitFor({ timeout: 10_000 })
     await expect.poll(async () => readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8'), { timeout: 5_000 })
       .toContain(`transcriptView: ${mode}`)
-    await page.keyboard.press('Escape')
+    await closeSettingsWindow()
 
     const warningStart = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     acknowledgeReloadConnectionLoss(tripwire, warningStart)
-    await openSettings(page, 'zh')
-    const reloaded = page.getByRole('dialog', { name: '设置' })
+    const reloaded = await openGeneralSettings()
     const restoredDetails = reloaded.getByText('工作步骤展示', { exact: true }).locator('../..')
     await restoredDetails.getByRole('button', { name: label, exact: true }).waitFor({ timeout: 10_000 })
 
@@ -814,29 +821,26 @@ describe('web e2e: settings modal and General preferences', () => {
     await restoredDetails.getByRole('button', { name: '详细', exact: true }).waitFor({ timeout: 10_000 })
     await expect.poll(async () => readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8'), { timeout: 5_000 })
       .toContain('transcriptView: detailed')
-    await page.keyboard.press('Escape')
+    await closeSettingsWindow()
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
   it('persists the busy-state Enter behavior across reload and a distinct port', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-enter-behavior'))
-    await openSettings(page, 'zh')
-    const dialog = page.getByRole('dialog', { name: '设置' })
-    await dialog.waitFor({ timeout: 10_000 })
+    const dialog = await openGeneralSettings()
     await dialog.getByRole('button', { name: '排队发送' }).click()
     await page.getByRole('menuitem', { name: '插话发送' }).click()
     await dialog.getByRole('button', { name: '插话发送' }).waitFor({ timeout: 10_000 })
     expect(await page.evaluate(() => localStorage.getItem('dsh.conversation.busyEnter'))).toBeNull()
     await expect.poll(async () => readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8'), { timeout: 5_000 })
       .toContain('busyEnter: steer')
-    await page.keyboard.press('Escape')
+    await closeSettingsWindow()
 
     const warningStart = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     acknowledgeReloadConnectionLoss(tripwire, warningStart)
-    await openSettings(page, 'zh')
-    const reloaded = page.getByRole('dialog', { name: '设置' })
+    const reloaded = await openGeneralSettings()
     await reloaded.getByRole('button', { name: '插话发送' }).waitFor({ timeout: 10_000 })
 
     const second = await launchWebScaffold({ developerTools: false, harnessHome: scaffold.harnessHome })
@@ -863,15 +867,13 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(await page.evaluate(() => localStorage.getItem('dsh.conversation.busyEnter'))).toBeNull()
     await expect.poll(async () => readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8'), { timeout: 5_000 })
       .toContain('busyEnter: queue')
-    await page.keyboard.press('Escape')
+    await closeSettingsWindow()
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
   it('persists the settings language across reload and a distinct port', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-language'))
-    await openSettings(page, 'zh')
-    const zhDialog = page.getByRole('dialog', { name: '设置' })
-    await zhDialog.waitFor({ timeout: 10_000 })
+    const zhDialog = await openGeneralSettings()
     // The document language follows the active locale in the assembled app, not
     // only on a directly-mounted plugin. This is a zh browser, so the served
     // markup's `en` must already have been replaced — asserting it here (rather
@@ -896,7 +898,7 @@ describe('web e2e: settings modal and General preferences', () => {
     await expect.poll(async () => readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8'), { timeout: 5_000 })
       .toContain('preference: en')
     // Reload keeps English; then restore zh so shared page state (and the
-    // other specs' 设置-anchored selectors + goldens) see the default again.
+    // other specs' Settings-anchored selectors + goldens) see the default again.
     const warningStart = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
@@ -931,7 +933,7 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(await page.evaluate(() => localStorage.getItem('dsh.locale'))).toBeNull()
     await expect.poll(async () => readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8'), { timeout: 5_000 })
       .toContain('preference: zh')
-    await page.keyboard.press('Escape')
+    await closeSettingsWindow()
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
@@ -960,7 +962,7 @@ describe('web e2e: settings modal and General preferences', () => {
       expect(await presetSwitcher.textContent()).toBe('Standard mode (default)')
       // The plugin manager speaks the en dictionary too: its sidebar entry
       // and the unavailable notice a scaffold without a profile runtime shows.
-      await enPage.keyboard.press('Escape')
+      await enPage.locator('[data-buffer="settings"]').getByRole('button', { name: 'Close', exact: true }).click()
       await expect.poll(() => enPage.getByRole('dialog', { name: 'Settings' }).count(), { timeout: 5_000 }).toBe(0)
       await enPage.getByRole('navigation', { name: 'Global panels' }).getByRole('button', { name: 'Plugins', exact: true }).click()
       await enPage.getByRole('button', { name: 'Add plugin', exact: true })

@@ -186,6 +186,7 @@ describe('web e2e: continuous conversation grown through the composer', () => {
     const replayOverride = join(replayDir, 'replay.override.json')
     await writeFile(replayOverride, JSON.stringify(replayScript(specs)))
     scaffold = await launchWebScaffold({
+      directToolCalls: true,
       replayFixture: join(replayDir, 'override-only.jsonl'),
       replayOverride,
       replayContextWindow: 10_000_000,
@@ -324,14 +325,16 @@ describe('web e2e: continuous conversation grown through the composer', () => {
       expect(await toolRow.textContent()).toContain(spec.toolResultMarker)
       await expandOwningTurnProcess(page, toolRow)
       const disclosure = toolRow.locator('[data-sample="bash"]')
-      expect(await disclosure.getAttribute('aria-expanded')).toBe('false')
+      // Terminal rows start expanded (eefdb9e795); collapse first so both
+      // states of this call's disclosure are exercised.
+      expect(await disclosure.getAttribute('aria-expanded')).toBe('true')
+      await disclosure.click()
+      await expect.poll(() => disclosure.getAttribute('aria-expanded'), { timeout: 10_000 }).toBe('false')
       await disclosure.click()
       await expect.poll(() => disclosure.getAttribute('aria-expanded'), { timeout: 10_000 }).toBe('true')
       // The collapsed summary deliberately repeats the result marker; the
       // last exact match is the expanded terminal output owned by this call.
       await toolRow.getByText(spec.toolResultMarker, { exact: true }).last().waitFor({ timeout: 10_000 })
-      await disclosure.click()
-      await expect.poll(() => disclosure.getAttribute('aria-expanded'), { timeout: 10_000 }).toBe('false')
     }
 
     if (sessionId === undefined) throw new Error('continuous conversation completed no turn')

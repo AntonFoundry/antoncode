@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, type KeyboardEvent } from 'react'
+import { memo, useCallback, useLayoutEffect, useMemo, type KeyboardEvent } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import clsx from 'clsx'
 import {
@@ -56,7 +56,10 @@ export const BashRow = memo(function BashRow({ toolName, block, sessionId, useSe
     ? 'error'
     : model.state
   const status = stateStatus(state, t)
-  const { expanded, toggle: toggleExpand } = useDisclosure()
+  const { expanded, setExpanded, toggle: toggleExpand } = useDisclosure()
+  // The command and its output ARE the row's content: start expanded so the
+  // transcript is readable without a click per call (collapse stays one click).
+  useLayoutEffect(() => { setExpanded(true) }, [setExpanded])
   const background = isBackgroundShellCall(block)
   // Failed or interrupted background launches retain raw input/output, as do
   // other execution failures, persistent results, and spill previews.

@@ -40,7 +40,12 @@ describe.each(MODE === 'record' ? ['button'] as const : ['button', 'keyboard'] a
   const sessionEvents: SessionEvent[] = []
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 15, compareReplaySession: true })
+    scaffold = await launchWebScaffold({
+      // The recorded script calls `bash` directly, without the plan the
+      // shipped todo-plan gate requires.
+      directToolCalls: true,
+      ...(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 15, compareReplaySession: true }),
+    })
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { sessionEvents.push(event) })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)

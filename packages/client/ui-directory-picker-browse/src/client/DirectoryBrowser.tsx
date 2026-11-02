@@ -50,11 +50,12 @@ export interface DirectoryBrowserProps {
   open: boolean
   /**
    * List one directory level (absent path = the Host home directory); the
-   * signal aborts a superseded scan on the wire. A rejection may carry
+   * signal aborts a superseded scan on the wire. This dialog never sets
+   * `includeFiles`; the parameter matches the widened listing call. A rejection may carry
    * `{ rpcError: { message: string } }`; the dialog prefers that Host
    * business message over the ordinary Error text.
    */
-  listDirectory: (path?: string, signal?: AbortSignal) => Promise<DirectoryListing>
+  listDirectory: (path?: string, opts?: { includeFiles?: boolean }, signal?: AbortSignal) => Promise<DirectoryListing>
   /**
    * Create one child directory under an existing parent. A rejection may
    * carry `{ rpcError: { message: string } }`; the dialog prefers that Host
@@ -117,7 +118,7 @@ function displayCrumbs(listing: DirectoryListing, homeLabel: string): DirectoryE
   const homeIndex = listing.crumbs.findIndex(crumb => crumb.path === listing.home)
   if (homeIndex === -1) return listing.crumbs
   const tail = listing.crumbs.slice(homeIndex + 1)
-  return [{ name: homeLabel, path: listing.home, hidden: false }, ...tail]
+  return [{ name: homeLabel, path: listing.home, hidden: false, isDirectory: true }, ...tail]
 }
 
 /**
@@ -339,7 +340,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
     const controller = new AbortController()
     scanController.current = controller
     restartSlowScanWindow()
-    return { seq, scan: listDirectory(path, controller.signal) }
+    return { seq, scan: listDirectory(path, undefined, controller.signal) }
   }, [supersede, restartSlowScanWindow, listDirectory])
 
   /**
@@ -350,7 +351,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
     const controller = new AbortController()
     scanController.current = controller
     restartSlowScanWindow()
-    return listDirectory(path, controller.signal)
+    return listDirectory(path, undefined, controller.signal)
   }, [restartSlowScanWindow, listDirectory])
 
   /**
@@ -634,7 +635,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
         if (seq !== requestSeq.current) return
         setParent(level)
         setLoading(false)
-        select({ name, path: createdPath, hidden: false })
+        select({ name, path: createdPath, hidden: false, isDirectory: true })
       }, (reason: unknown) => {
         /* v8 ignore next -- same fence as navigate/select; the modal blocks superseding input */
         if (seq !== requestSeq.current) return

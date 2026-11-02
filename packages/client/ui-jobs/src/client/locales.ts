@@ -45,6 +45,7 @@ export const zh = {
   'terminal.collapseAria': '收起输出',
   'terminal.expand': '展开其余 {n} 行',
   'terminal.expandAria': '展开被折叠的 {n} 行输出',
+  'stop.all': '停止 {count} 个运行中的任务',
 } as const
 
 /** English dictionary, key-identical to the Chinese source of truth. */
@@ -89,6 +90,7 @@ export const en: Record<JobKey, string> = {
   'terminal.collapseAria': 'Collapse output',
   'terminal.expand': 'Show {n} more lines',
   'terminal.expandAria': 'Expand {n} collapsed output lines',
+  'stop.all': 'Stop {count} running jobs',
 }
 
 /** Key domain of the `job` namespace (zh is the source of truth). */
@@ -136,6 +138,7 @@ export const ja = {
   'terminal.collapseAria': '出力を折りたたむ',
   'terminal.expand': '残り {n} 行を表示',
   'terminal.expandAria': '折りたたまれた出力 {n} 行を展開',
+  'stop.all': '実行中のジョブ {count} 件を停止',
 } satisfies Record<keyof typeof en, string>
 
 /** Spanish dictionary, checked against the English keys. */
@@ -180,6 +183,7 @@ export const es = {
   'terminal.collapseAria': 'Contraer salida',
   'terminal.expand': 'Mostrar {n} más líneas',
   'terminal.expandAria': 'Expandir líneas de salida colapsadas {n}',
+  'stop.all': 'Detener {count} trabajos en ejecución',
 } satisfies Record<keyof typeof en, string>
 
 /** French dictionary, checked against the English keys. */
@@ -224,6 +228,7 @@ export const fr = {
   'terminal.collapseAria': 'Réduire la sortie',
   'terminal.expand': 'Afficher {n} plus de lignes',
   'terminal.expandAria': 'Développer les lignes de sortie réduites {n}',
+  'stop.all': 'Arrêter {count} tâches en cours',
 } satisfies Record<keyof typeof en, string>
 
 /** German dictionary, checked against the English keys. */
@@ -268,6 +273,7 @@ export const de = {
   'terminal.collapseAria': 'Ausgabe reduzieren',
   'terminal.expand': 'Zeige {n} weitere Zeilen',
   'terminal.expandAria': 'Erweitern Sie die minimierten Ausgabezeilen {n}',
+  'stop.all': '{count} laufende Jobs stoppen',
 } satisfies Record<keyof typeof en, string>
 
 /** Russian dictionary, checked against the English keys. */
@@ -312,6 +318,7 @@ export const ru = {
   'terminal.collapseAria': 'Свернуть вывод',
   'terminal.expand': 'Показать {n} больше строк',
   'terminal.expandAria': 'Развернуть свернутые выходные строки {n}',
+  'stop.all': 'Остановить запущенные задания: {count}',
 } satisfies Record<keyof typeof en, string>
 
 /** Portuguese dictionary, checked against the English keys. */
@@ -356,4 +363,5 @@ export const pt = {
   'terminal.collapseAria': 'Recolher saída',
   'terminal.expand': 'Mostrar mais {n} linhas',
   'terminal.expandAria': 'Expanda {n} linhas de saída recolhidas',
+  'stop.all': 'Parar {count} trabalhos em execução',
 } satisfies Record<keyof typeof en, string>

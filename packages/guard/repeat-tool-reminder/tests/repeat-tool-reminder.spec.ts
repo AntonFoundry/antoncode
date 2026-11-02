@@ -53,6 +53,48 @@ function reminders(agent: Agent): { text: string; source: unknown }[] {
     }))
 }
 
+describe('guessing advisory (consecutive failed calls)', () => {
+  it('advises discovery or asking after the failure threshold is reached with varying arguments', async () => {
+    const ctx = await harness({ failureThreshold: 2 })
+    ctx.tools.register(defineContentToolFixture({ name: 'flaky', description: 'f', parameters: {}, async execute() { throw new Error('no such referent') } }))
+    const adapter = new MockAdapter([
+      toolCallResponse('f1', 'flaky', { provider: 'host' }),
+      toolCallResponse('f2', 'flaky', { provider: 'slots' }),
+      textResponse('done'),
+    ])
+    ctx.llm.registerAdapter(['mock'], adapter)
+    const agent = ctx.agentLoop.create(SessionId('a2'), { provider: 'mock', model: 'mock' })
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+
+    const found = reminders(agent).filter(entry => String((entry.source as { summary?: string }).summary ?? '').includes('failed ×'))
+    expect(found).toHaveLength(1)
+    expect(found[0]!.text).toContain('Do not guess argument values again')
+    expect(found[0]!.text).toContain('ask_user_question')
+  })
+
+  it('a successful call resets the failure run', async () => {
+    const ctx = await harness({ failureThreshold: 2 })
+    ctx.tools.register(defineContentToolFixture({ name: 'flaky', description: 'f', parameters: {}, async execute() { throw new Error('no') } }))
+    const adapter = new MockAdapter([
+      toolCallResponse('f1', 'flaky', { a: 1 }),
+      toolCallResponse('f2', 'probe', { q: 'ok' }),
+      toolCallResponse('f3', 'flaky', { b: 2 }),
+      textResponse('done'),
+    ])
+    ctx.llm.registerAdapter(['mock'], adapter)
+    const agent = ctx.agentLoop.create(SessionId('a3'), { provider: 'mock', model: 'mock' })
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+
+    expect(reminders(agent).filter(entry => String((entry.source as { summary?: string }).summary ?? '').includes('failed ×'))).toHaveLength(0)
+  })
+
+  it('rejects a non-integer or too-small failureThreshold at load', async () => {
+    await expect(harness({ failureThreshold: 1 })).rejects.toThrow('failureThreshold 1')
+  })
+})
+
 // The reminder is a `notice`-form context; its summary names the repeated
 // call so a reader sees it without expanding the row.
 const guardSource = (tool: string, count: number) => ({
@@ -406,5 +448,84 @@ describe('config validation fails loud', () => {
     await expect(ctx.plugin(RepeatToolGuard, { argumentsPreviewChars: 0 })).rejects.toThrow(/argumentsPreviewChars/)
     const ctx2 = await spine()
     await expect(ctx2.plugin(RepeatToolGuard, { argumentsPreviewChars: 12.5 })).rejects.toThrow(/argumentsPreviewChars/)
+  })
+})
+
+describe('alternating ping-pong (edit flip-flop)', () => {
+  /** Failed tool calls in the session log: a veto surfaces as an isError tool-result. */
+  function toolErrors(agent: Agent): string[] {
+    return [...agent.session.events]
+      .filter((e): e is SessionEvent<'tool/result'> => e.type === 'tool/result')
+      .flatMap(e => e.data.message.content)
+      .filter(b => b.type === 'tool-result' && b.isError === true)
+      .map(b => b.content.map(c => c.type === 'text' ? c.text ?? '' : '').join(''))
+  }
+
+  it('advises once at cycleThreshold complete alternations, then vetoes the next cycle call', async () => {
+    const ctx = await harness()
+    const adapter = new MockAdapter([
+      toolCallResponse('c1', 'probe', { q: 'a' }),
+      toolCallResponse('c2', 'probe', { q: 'b' }),
+      toolCallResponse('c3', 'probe', { q: 'a' }),
+      toolCallResponse('c4', 'probe', { q: 'b' }), // 2 full cycles → advisory
+      toolCallResponse('c5', 'probe', { q: 'a' }), // advisory ignored → veto
+      textResponse('done'),
+    ])
+    ctx.llm.registerAdapter(['mock'], adapter)
+    const agent = ctx.agentLoop.create(SessionId('pp1'), { provider: 'mock', model: 'mock' })
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+
+    const found = reminders(agent)
+    const pingPong = found.filter(r => r.text.includes('alternated between two argument sets'))
+    expect(pingPong).toHaveLength(1)
+    expect(pingPong[0]!.text).toContain('Stop making these calls')
+    const blocked = toolErrors(agent).filter(t => t.includes('Call blocked'))
+    expect(blocked).toHaveLength(1)
+    expect(blocked[0]).toContain('ping-pong')
+    expect(blocked[0]).toContain('Do NOT retry this call or its inverse')
+  })
+
+  it('escalation continues while the cycle persists and re-arms after the cycle breaks', async () => {
+    const ctx = await harness()
+    const adapter = new MockAdapter([
+      toolCallResponse('c1', 'probe', { q: 'a' }),
+      toolCallResponse('c2', 'probe', { q: 'b' }),
+      toolCallResponse('c3', 'probe', { q: 'a' }),
+      toolCallResponse('c4', 'probe', { q: 'b' }), // advisory
+      toolCallResponse('c5', 'probe', { q: 'a' }), // veto 1
+      toolCallResponse('c6', 'probe', { q: 'c' }), // cycle breaks → allowed, re-arms
+      toolCallResponse('c7', 'probe', { q: 'a' }),
+      toolCallResponse('c8', 'probe', { q: 'b' }),
+      toolCallResponse('c9', 'probe', { q: 'a' }),
+      toolCallResponse('c10', 'probe', { q: 'b' }), // new episode → advisory again
+      textResponse('done'),
+    ])
+    ctx.llm.registerAdapter(['mock'], adapter)
+    const agent = ctx.agentLoop.create(SessionId('pp2'), { provider: 'mock', model: 'mock' })
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+
+    expect(toolErrors(agent).filter(t => t.includes('Call blocked'))).toHaveLength(1) // only the post-advisory cycle call was refused
+    expect(reminders(agent).filter(r => r.text.includes('alternated between two argument sets'))).toHaveLength(2)
+  })
+
+  it('escalateToBlock: false keeps the guard advisory-only through any number of cycles', async () => {
+    const ctx = await harness({ escalateToBlock: false })
+    const adapter = new MockAdapter([
+      ...Array.from({ length: 6 }, (_, i) => toolCallResponse(`c${i}`, 'probe', { q: i % 2 === 0 ? 'a' : 'b' })),
+      textResponse('done'),
+    ])
+    ctx.llm.registerAdapter(['mock'], adapter)
+    const agent = ctx.agentLoop.create(SessionId('pp3'), { provider: 'mock', model: 'mock' })
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+
+    expect(toolErrors(agent).filter(t => t.includes('Call blocked'))).toHaveLength(0)
+    expect(reminders(agent).filter(r => r.text.includes('alternated between two argument sets'))).toHaveLength(1)
+  })
+
+  it('rejects a cycleThreshold below 2 at load', async () => {
+    await expect(harness({ cycleThreshold: 1 })).rejects.toThrow(/cycleThreshold/)
   })
 })

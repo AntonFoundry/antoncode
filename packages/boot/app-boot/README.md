@@ -5,7 +5,7 @@ kind: "package-library"
 
 # @deepseek-ai/dsh-app-boot
 
-English | [中文](README.zh.md)
+English
 
 ## Summary
 
@@ -61,6 +61,7 @@ Your machine-local preferences also live in the Harness home:
 
 - **`.env`** — your ordinary environment layers: the invoking directory's file outranks the Harness-home file, and both sit below the inherited environment. Variables that decide how the process starts (`PATH`, `DSH_*`, `XDG_*` and similar) are rejected from files: export them instead. The four proxy names (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`) are accepted from the Harness-home file only, never from the invoking directory's, which arrives with a clone. For a non-product bin that just wants one directory's `.env`, a missing file is fine and an unloadable one prints one labelled warning line.
 - **`cordis.patch.yml`** — your tweak layer, applied after every bundle layer (per-profile first, then the home-level file, which therefore outranks it): replace one entry's whole config (restating the fields you keep), insert new entries, or interpolate `!!js` expressions at boot. A patch naming an entry that does not exist prints a stderr warning; an empty or comments-only file fails boot — disable the layer with `[]` instead.
+- **`plugin-state.json`** (home level) — the machine's durable plugin toggle/configure state, written by the plugin inventory and applied by profile boot as a patch layer above `cordis.patch.yml`: a row disabled here stays disabled across restarts, rebuilds, and reinstalls, and a re-enable is stored explicitly (`disabled: false`). A config edit whose live values cannot survive JSON storage stays runtime-scoped with a warning instead of being stored lossily.
 
 The enabled `dsh-hmr` plugin watches the profile manifest and both user patch files, re-reads the ordered bundle layers, and applies the [reload failure policy](#startup-and-reload-failures). [DSH HMR](../hmr/README.md) serializes these reloads with [Plugin Manager](../plugin-manager/README.md) configuration writes; package operations run outside its queue. The launcher does not install HMR or watchers; disabled or absent HMR means changes require restart.
 
@@ -163,6 +164,8 @@ The exports each own one stage of the boot: config resolution and snapshot repla
 | [`src/profile-sanitize.ts`](src/profile-sanitize.ts) | Profile patch backup and recovery bundle activation |
 | [`src/config-schema/`](src/config-schema/) | Profile schema generation, discovery, native projection, and result types |
 | [`src/profile-resolution/`](src/profile-resolution/) | Runtime resolver, package-metadata service, and built Worker bootstrap |
+| [`src/plugin-state.ts`](src/plugin-state.ts) | Durable `$DSH_HOME/plugin-state.json` plugin toggle/config state and its boot patch rows |
+| [`src/boot-timing.ts`](src/boot-timing.ts) | Passive `BootTiming` recorder for the `setup`, `mount`, `settle`, and `activate` boot phases |
 
 </details>
 

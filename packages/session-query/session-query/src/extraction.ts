@@ -1,8 +1,13 @@
 /** First-party semantic text extraction for session-query consumers. */
 
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session'
 // Type-only: includes the first-party todo event consumed below.
 import type {} from '@deepseek-ai/dsh-tool-todo'
+
+/** Every node of a todo tree in depth-first order — children nest up to three levels. */
+function flatTodoNodes(todos: SessionEventMap['todo/write']['todos']): typeof todos {
+  return todos.flatMap(todo => [todo, ...flatTodoNodes(todo.children ?? [])])
+}
 
 /**
  * Extract searchable semantic text from one first-party session event.
@@ -27,7 +32,7 @@ export function extractSessionEventText(event: SessionEvent): string {
         event.data.error?.code ?? '',
       ])
     case 'todo/write':
-      return joinText(event.data.todos.flatMap(todo => [todo.status, todo.content]))
+      return joinText(flatTodoNodes(event.data.todos).flatMap(todo => [todo.status, todo.content]))
     case 'turn/end':
       return turnEndText(event.data.reason)
     case 'turn/start':

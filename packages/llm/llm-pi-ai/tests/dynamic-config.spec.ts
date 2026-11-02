@@ -76,6 +76,14 @@ describe('login flows in a real composition', () => {
 })
 
 describe('request-level dynamic profiles', () => {
+  it('leaves a native-owned provider route out of pi-ai\'s configurable directory', async () => {
+    const dir = await home()
+    const ctx = await boot(dir, { reservedProviders: ['openai'] })
+    expect(ctx.llm.listConfigurableProviders().some(entry => entry.provider === 'openai')).toBe(false)
+    // Other catalog providers remain configurable; the reservation is narrow.
+    expect(ctx.llm.listConfigurableProviders().some(entry => entry.provider === 'kimi-coding')).toBe(true)
+  })
+
   it('keeps stored catalog failures editable while isolating requests and validating changed providers', async () => {
     vi.stubEnv('PI_DYNAMIC_KEY', '')
     const dir = await home()
@@ -90,7 +98,7 @@ describe('request-level dynamic profiles', () => {
     const failure = 'llm-pi-ai: provider "openrouter" model "111" needs an api; '
       + 'the installed catalog does not describe it, so set the route\'s api to the wire protocol its endpoint speaks'
 
-    expect(ctx.llm.listProviders()).toEqual([{ id: 'openrouter', name: 'openrouter' }])
+    expect(ctx.llm.listProviders()).toEqual([{ id: 'openrouter', name: 'Openrouter' }])
     expect(ctx.llm.listConfigurableProviders()).toContainEqual({
       provider: 'openrouter', displayName: 'openrouter', settingsNs: 'llm-pi-ai',
       settingsPath: ['providers', 'openrouter'], declared: false,
@@ -116,7 +124,7 @@ describe('request-level dynamic profiles', () => {
     })
     await configurations.get(ctx)!.update({ providers: { openrouter: { api: 'openai-completions' } } })
     expect(diagnostics).toEqual([undefined])
-    expect(ctx.llm.listProviders()[0]).toEqual({ id: 'openrouter', name: 'openrouter' })
+    expect(ctx.llm.listProviders()[0]).toEqual({ id: 'openrouter', name: 'Openrouter' })
     const repaired = await assemble(ctx, { provider: 'openrouter', model: '111', messages: [] })
     expect(repaired.message.content).toEqual([{ type: 'text', text: 'hello' }])
     expect(server.requests).toHaveLength(2)
@@ -137,7 +145,7 @@ describe('request-level dynamic profiles', () => {
     await expect(ctx.llm.resolveModelInfo('anthropic', 'removed-model')).rejects.toThrow('modelOverrides names "removed-model"')
     await expect(ctx.llm.resolveModelInfo('retired-route', 'anything')).rejects.toThrow('resolves no models')
     await configurations.get(ctx)!.replace({ providers: { anthropic: {} } })
-    expect(ctx.llm.listProviders()).toEqual([{ id: 'anthropic', name: 'anthropic' }])
+    expect(ctx.llm.listProviders()).toEqual([{ id: 'anthropic', name: 'Anthropic Claude' }])
     expect(ctx.llm.listConfigurableProviders().find(entry => entry.provider === 'retired-route')).toBeUndefined()
     expect(ctx.llm.listConfigurableProviders().find(entry => entry.provider === 'anthropic')?.error).toBeUndefined()
   })

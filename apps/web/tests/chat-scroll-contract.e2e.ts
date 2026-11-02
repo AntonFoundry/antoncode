@@ -198,6 +198,9 @@ async function launchScrollWorld(options: ScrollWorldOptions): Promise<ScrollWor
         replayOverride,
         paceMs: options.paceMs ?? STREAM_PACE_MS,
         replayContextWindow: REPLAY_CONTEXT_WINDOW,
+        // The replayed model contract calls `bash` directly, without the plan
+        // the shipped todo-plan gate requires.
+        directToolCalls: true,
       })
     } else {
       scaffold = await launchWebScaffold({})
@@ -309,8 +312,16 @@ async function loadedFlowRows(page: Page): Promise<number> {
 }
 
 async function openSeed(page: Page, fixture: ChatScrollFixture, tailMarker?: string): Promise<void> {
-  // Search collapsed into a header action; expand it before filling.
+  // The WM shell drops the sidebar leaf entirely below its narrow breakpoint,
+  // so session search only exists at wide width; openSeed must run wide. When
+  // the leaf is absent anyway (a persisted tree without the sidebar), the
+  // brand-strip toggle re-attaches it.
   const searchButton = page.getByRole('button', { name: 'Search sessions' })
+  if (!await searchButton.isVisible()) {
+    await page.getByRole('button', { name: 'Toggle workspace sidebar', exact: true }).click()
+    await searchButton.waitFor({ timeout: 10_000 })
+  }
+  // Search collapsed into a header action; expand it before filling.
   if (await searchButton.getAttribute('aria-expanded') !== 'true') await searchButton.click()
   const search = page.getByRole('textbox', { name: 'Search session names', exact: true })
   // Cold summaries initially show the temporary workspace basename, so the
@@ -321,7 +332,7 @@ async function openSeed(page: Page, fixture: ChatScrollFixture, tailMarker?: str
   const results = page.getByRole('tree', { name: 'Search results' }).getByRole('treeitem')
   await expect.poll(() => results.count(), { timeout: 60_000 }).toBe(1)
   await results.click()
-  await page.getByRole('tab', { name: 'Chat', exact: true }).waitFor({ timeout: 30_000 })
+  await page.getByRole('banner').getByRole('tab', { name: 'Chat', exact: true }).waitFor({ timeout: 30_000 })
   if (tailMarker !== undefined) {
     await page.getByText(tailMarker, { exact: false }).last().waitFor({ timeout: 30_000 })
   }
@@ -1605,6 +1616,10 @@ describe('web e2e: long Chat scroll contract', () => {
         await composer.fill(LIVE_TOOL_PROMPT)
         await world.page.getByRole('button', { name: 'Send message', exact: true }).click()
         await expect.poll(() => fileExists(readyPath), { timeout: 15_000 }).toBe(true)
+          .catch(async (error: unknown) => {
+            console.error('DIAG events:', JSON.stringify(world.events.filter(event => event.type === 'tool/result').map(event => JSON.stringify(event).slice(0, 1500)), null, 1))
+            throw error
+          })
         const liveRow = world.page.locator(`[data-chat-call-id="${LIVE_TOOL_CALL_ID}"] [data-sample="bash"]`)
         await expandOwningTurnProcess(world.page, liveRow)
         await liveRow.waitFor({ timeout: 15_000 })
@@ -1663,8 +1678,12 @@ describe('web e2e: long Chat scroll contract', () => {
           top: flow.getBoundingClientRect().top - host.getBoundingClientRect().top,
         }
       })
+      // Bash rows start expanded (readable without a click per call); the
+      // click proves the toggle, then the scroll-away cycle proves the
+      // collapsed disclosure state survives the virtualized remount.
+      expect(await liveRow.getAttribute('aria-expanded')).toBe('true')
       await liveRow.click()
-      await expect.poll(() => liveRow.getAttribute('aria-expanded'), { timeout: 10_000 }).toBe('true')
+      await expect.poll(() => liveRow.getAttribute('aria-expanded'), { timeout: 10_000 }).toBe('false')
       await expectSameFlowTop(world.page, toolAnchor)
       await wheelToHistoryStart(world.page)
       await world.page.getByRole('button', { name: 'Back to bottom', exact: true }).click()
@@ -1672,7 +1691,9 @@ describe('web e2e: long Chat scroll contract', () => {
       await wheelUntilMounted(world.page, liveRowSelector, -1_100)
       const restoredRow = world.page.locator(liveRowSelector)
       await restoredRow.waitFor({ timeout: 10_000 })
-      expect(await restoredRow.getAttribute('aria-expanded')).toBe('true')
+      expect(await restoredRow.getAttribute('aria-expanded')).toBe('false')
+      await restoredRow.click()
+      await expect.poll(() => restoredRow.getAttribute('aria-expanded'), { timeout: 10_000 }).toBe('true')
       expect(await world.page.getByText(LIVE_TOOL_RESULT, { exact: false }).count()).toBeGreaterThan(0)
       assertClean(world)
     })
@@ -1699,11 +1720,7 @@ describe('web e2e: long Chat scroll contract', () => {
 
       await world.page.getByRole('tab', { name: 'Trajectory', exact: true }).click()
       await world.page.getByLabel('Trajectory timeline').waitFor({ timeout: 30_000 })
-      await world.page.setViewportSize({ width: 700, height: 900 })
-      // The narrow breakpoint auto-collapses the sidebar. Re-open it because
-      // this scenario switches sessions while pinning the narrow Chat scroll owner.
-      await world.page.getByRole('button', { name: 'Open sidebar', exact: true }).click()
-      await world.page.getByRole('tab', { name: 'Chat', exact: true }).click()
+      await world.page.getByRole('banner').getByRole('tab', { name: 'Chat', exact: true }).click()
       await nextPaint(world.page)
       await expectSameFlowTop(world.page, sessionAnchor, RESPONSIVE_REFLOW_TOLERANCE)
 
@@ -1730,7 +1747,7 @@ describe('web e2e: long Chat scroll contract', () => {
         trajectory.click()
       })
       await world.page.getByLabel('Trajectory timeline').waitFor({ timeout: 30_000 })
-      await world.page.getByRole('tab', { name: 'Chat', exact: true }).click()
+      await world.page.getByRole('banner').getByRole('tab', { name: 'Chat', exact: true }).click()
       await expectBottom(world.page)
       await openSeed(
         world.page,
@@ -1743,6 +1760,11 @@ describe('web e2e: long Chat scroll contract', () => {
         RESTORE_FIXTURE_A.markers.assistant(RESTORE_FIXTURE_A.turns),
       )
       await expectBottom(world.page)
+      // Session search only exists at wide width (the WM shell drops the
+      // sidebar leaf below its narrow breakpoint), so all session switches
+      // run wide; the narrow viewport comes in only for the pinned-owner
+      // composer-resize checks below.
+      await world.page.setViewportSize({ width: 700, height: 900 })
       const composer = world.page.locator('[data-composer-input][contenteditable="true"]').last()
       const longDraft = Array.from(
         { length: 18 },

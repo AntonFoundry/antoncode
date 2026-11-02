@@ -372,9 +372,12 @@ function assertMessageEventShape(event: Record<string, unknown>, subject: string
     return
   }
   if (type !== 'tool/result') return
+  // A legacy log may carry an empty call id: a provider emitted a tool call
+  // without one and the result echoed it. Accept it only when the message's
+  // tool-result block carries the same id, which the correlation check below
+  // enforces; an id-less or mismatched source stays invalid.
   if (sourceRecord['kind'] !== 'tool'
-    || typeof sourceRecord['callId'] !== 'string'
-    || sourceRecord['callId'] === '') {
+    || typeof sourceRecord['callId'] !== 'string') {
     throw new Error(`${subject} message must have tool source`)
   }
   if (messageRecord['toolCallId'] !== sourceRecord['callId']) {

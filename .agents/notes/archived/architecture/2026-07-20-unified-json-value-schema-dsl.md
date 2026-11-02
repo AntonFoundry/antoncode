@@ -3,7 +3,7 @@
 Status: implemented
 Archived: 2026-09-30
 
-English | [中文](2026-07-20-unified-json-value-schema-dsl.zh.md)
+English
 
 ## Problem
 

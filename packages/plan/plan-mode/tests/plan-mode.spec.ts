@@ -4,11 +4,11 @@ import { join } from 'node:path'
 import { executeToolFixture, executeModelToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import * as PtcToolExecutor from '@deepseek-ai/dsh-tool-executor-ptc'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { provideWorkingDirectoryFixture } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { RUN_CODE_NAME } from '@deepseek-ai/dsh-tools'
 import type { ToolExecutionToken, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { defineContentToolFixture } from '@deepseek-ai/dsh-tool-testkit'
@@ -21,7 +21,7 @@ import UserQuestionService, {
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import { PtcRuntime, type PtcRunRequest, type PtcRunResult } from '@deepseek-ai/dsh-ptc-runtime'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
-import PlanModeController, { EXIT_PLAN_MODE, PLAN_WRITE, planProjectionDefinition, resolveConfig } from '../src/index.ts'
+import PlanModeController, { EXIT_PLAN_MODE, PLAN_WRITE, planProjectionDefinition, resolveConfig, standingImplementationPlanSection } from '../src/index.ts'
 import type { PlanModeConfig } from '../src/index.ts'
 import type { PlanUnitState } from '../src/types.ts'
 
@@ -189,11 +189,11 @@ function expectPlanPtcSdkBindings(sdk: string): void {
 }
 
 let callCounter = 0
-function execute(ctx: Context, name: string, agent?: Agent) {
+function execute(ctx: Context, name: string, agent?: Agent, args: Record<string, unknown> = {}) {
   return executeToolFixture(ctx, {
     callId: ToolCallId(`call-${++callCounter}`),
     name,
-    arguments: {},
+    arguments: args,
     signal: new AbortController().signal,
     ...agent ? { agent } : {},
   })
@@ -791,22 +791,27 @@ describe('/plan', () => {
   })
 })
 
-describe('exit_plan_mode', () => {
-  async function setupWithReview(answer?: { selected: string[]; custom?: string }) {
-    const ctx = await setup()
-    await ctx.plugin(UserQuestionService)
-    const asked: AskUserQuestionRequest[] = []
-    if (answer !== undefined) {
-      registerQuestionAnswerer(ctx, {
-        ask: (request) => {
-          asked.push(request)
-          return Promise.resolve({ answers: [{ id: 'plan-review', ...answer }] })
-        },
-      })
-    }
-    const agent = await agentWithSession(ctx, 'agent-1', { active: true })
-    return { ctx, agent, asked }
+async function setupWithReview(answer?: { selected: string[]; custom?: string }) {
+  const ctx = await setup()
+  await ctx.plugin(UserQuestionService)
+  const asked: AskUserQuestionRequest[] = []
+  if (answer !== undefined) {
+    registerQuestionAnswerer(ctx, {
+      ask: (request) => {
+        asked.push(request)
+        return Promise.resolve({ answers: [{ id: 'plan-review', ...answer }] })
+      },
+    })
   }
+  const agent = await agentWithSession(ctx, 'agent-1', { active: true })
+  return { ctx, agent, asked }
+}
+
+describe('exit_plan_mode', () => {
+  afterEach(async () => {
+    const { rmSync, existsSync } = await import('node:fs')
+    if (existsSync('implementation_plan.md')) rmSync('implementation_plan.md')
+  })
 
   async function callExit(ctx: Context, agent: Agent | undefined, plan = '# The plan\n\ndo things') {
     const signal = new AbortController().signal
@@ -826,7 +831,7 @@ describe('exit_plan_mode', () => {
     const schema = ctx.tools.schemas().find(entry => entry.name === EXIT_PLAN_MODE)
     const parameters = schema?.parameters as { required?: string[]; properties?: Record<string, unknown> }
     expect(schema?.description).toMatch(/^Use only in plan mode\./)
-    expect(Object.keys(parameters.properties ?? {})).toEqual(['plan'])
+    expect(Object.keys(parameters.properties ?? {})).toEqual(['plan', 'path'])
     expect(parameters.required).toEqual(['plan'])
   })
 
@@ -1183,12 +1188,14 @@ describe('exit_plan_mode', () => {
       card: 'generic',
       title: 'Fix the flake',
       kind: 'other',
+      locations: [{ path: 'implementation_plan.md' }],
       content: [{ type: 'text', text: '## Fix the flake\n\nsteps' }],
     })
     expect(def.presentCall?.({ plan: 'no heading here' })).toEqual({
       card: 'generic',
       title: 'Plan',
       kind: 'other',
+      locations: [{ path: 'implementation_plan.md' }],
       content: [{ type: 'text', text: 'no heading here' }],
     })
   })
@@ -1200,8 +1207,66 @@ describe('exit_plan_mode', () => {
     expect(def.presentResult?.({ plan: '# P' }, { content, isError: false })).toEqual({
       card: 'generic',
       title: 'Plan review',
+      locations: [{ path: 'implementation_plan.md' }],
       content,
     })
+  })
+})
+
+describe('plan:standing-plan', () => {
+  it('is empty when no plan/write event exists', async () => {
+    const ctx = await setup()
+    const agent = await agentWithSession(ctx)
+    const assembly = await assembleFor(ctx, agent)
+    expect(assembly.sections.find(s => s.name === 'plan:standing-plan')?.text).toBe('')
+  })
+
+  it('renders the latest plan/write event in order after plan:policy', async () => {
+    const ctx = await setup()
+    const agent = await agentWithSession(ctx)
+    agent.session.append('plan/write', { plan: '# Initial Plan\nStep 1', title: 'Initial' })
+    const assembly1 = await assembleFor(ctx, agent)
+    const policyIdx = assembly1.sections.findIndex(s => s.name === 'plan:policy')
+    const standingIdx = assembly1.sections.findIndex(s => s.name === 'plan:standing-plan')
+    expect(standingIdx).toBeGreaterThan(policyIdx)
+    expect(assembly1.sections[standingIdx]?.interpolate).toBe(false)
+    expect(assembly1.sections[standingIdx]?.text).toBe(standingImplementationPlanSection('# Initial Plan\nStep 1', 'Initial'))
+
+    // Second write replaces standing plan
+    agent.session.append('plan/write', { plan: '# Revised Plan\nStep 1 & 2', title: 'Revised' })
+    const assembly2 = await assembleFor(ctx, agent)
+    const standingIdx2 = assembly2.sections.findIndex(s => s.name === 'plan:standing-plan')
+    expect(assembly2.sections[standingIdx2]?.text).toBe(standingImplementationPlanSection('# Revised Plan\nStep 1 & 2', 'Revised'))
+  })
+
+  it('is populated when exit_plan_mode approves a plan', async () => {
+    const { ctx, agent } = await setupWithReview({ selected: ['Approve'] })
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-plan-exit-'))
+    const planPath = join(dir, 'implementation_plan.md')
+    try {
+      await execute(ctx, EXIT_PLAN_MODE, agent, { plan: '# Approved Feature\nScope', path: planPath })
+      const planWriteEvent = agent.session.snapshotEvents().find(e => e.type === 'plan/write')
+      expect(planWriteEvent).toBeDefined()
+      expect(planWriteEvent?.data).toEqual({
+        plan: '# Approved Feature\nScope',
+        title: 'Approved Feature',
+        path: planPath,
+      })
+      expect(await readFile(planPath, 'utf-8')).toBe('# Approved Feature\nScope')
+      const assembly = await assembleFor(ctx, agent)
+      expect(assembly.sections.find(s => s.name === 'plan:standing-plan')?.text)
+        .toBe(standingImplementationPlanSection('# Approved Feature\nScope', 'Approved Feature'))
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps template-looking implementation-plan text literal', async () => {
+    const ctx = await setup()
+    const agent = await agentWithSession(ctx)
+    agent.session.append('plan/write', { plan: '# Plan\nKeep {{source}} verbatim.' })
+    const assembly = await assembleFor(ctx, agent)
+    expect(renderPrompt(assembly)).toContain('Keep {{source}} verbatim.')
   })
 })
 
@@ -1218,12 +1283,16 @@ describe('HMR disposal', () => {
     ctx.planMode.set(agent, true)
     expect(ctx.get('planMode')).toBeInstanceOf(PlanModeController)
     expect(ctx.tools.get(EXIT_PLAN_MODE)).toBeDefined()
+    expect(ctx.tools.get(PLAN_WRITE)).toBeDefined()
     expect((await ctx.systemPrompt.assemble()).sections.map(section => section.name)).toContain('plan:policy')
+    expect((await ctx.systemPrompt.assemble()).sections.map(section => section.name)).toContain('plan:standing-plan')
 
     await fiber.dispose()
     expect(ctx.get('planMode')).toBeUndefined()
     expect(ctx.tools.get(EXIT_PLAN_MODE)).toBeUndefined()
+    expect(ctx.tools.get(PLAN_WRITE)).toBeUndefined()
     expect((await ctx.systemPrompt.assemble()).sections.map(section => section.name)).not.toContain('plan:policy')
+    expect((await ctx.systemPrompt.assemble()).sections.map(section => section.name)).not.toContain('plan:standing-plan')
     await boundary(ctx, agent, 'step-start')
     expect(agent.session.snapshotEvents().some(event => event.type === 'plan/mode')).toBe(false)
   })

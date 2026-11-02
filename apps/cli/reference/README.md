@@ -1,6 +1,6 @@
 # `dsh` CLI behavior reference
 
-English | [中文](README.zh.md)
+English
 
 This reference defines the profile, plugin-management, and config-dump command modes. Argv is parsed once through [`src/args.ts`](../src/args.ts), and [`src/bin.ts`](../src/bin.ts) dynamically imports only the selected runner.
 
@@ -143,4 +143,4 @@ Install external plugin bundles through `dsh plugin --profile <name> add <packag
 <a id="source-execution"></a>
 ## Source execution
 
-From the repository root, run `pnpm run build` separately after a fresh checkout and whenever artifacts need updating, then use `pnpm dsh <args...>`. The `package.json` script launches `apps/cli/src/bin.ts` with `node --import tsx/esm` without building and forwards every argument. Missing Typert host artifacts fail profile boot through module-resolution errors without a build instruction. Once those host artifacts exist, missing frontend or client-plugin bundles fail at startup with an instruction to run `pnpm run build`. The launcher does not check freshness, so existing stale bundles can run older browser code until rebuilt. The process inherits the launch environment, and `runProfile` resolves the outbound proxy from that snapshot before any entry mounts, so `HTTP_PROXY`/`HTTPS_PROXY` (and a proxy declared in a `.env` layer) apply without any further flag. The source entry explicitly selects linked profile resolution so tsx workspace imports and profile plugins share module identities. The installed form launches the built `apps/cli/lib/bin.js` with runtime profile resolution without rebuilding the repository.
+From the repository root, run `pnpm run build` separately after a fresh checkout and whenever artifacts need updating, then use `pnpm anton <args...>`. The `package.json` script launches `apps/cli/src/bin.ts` with `node --import tsx/esm` without building and forwards every argument. Missing Typert host artifacts fail profile boot through module-resolution errors without a build instruction. Once those host artifacts exist, missing frontend or client-plugin bundles fail at startup with an instruction to run `pnpm run build`. The launcher does not check freshness, so existing stale bundles can run older browser code until rebuilt. The process inherits the launch environment, and `runProfile` resolves the outbound proxy from that snapshot before any entry mounts, so `HTTP_PROXY`/`HTTPS_PROXY` (and a proxy declared in a `.env` layer) apply without any further flag. The source entry explicitly selects linked profile resolution so tsx workspace imports and profile plugins share module identities. The installed form launches the built `apps/cli/lib/bin.js` with runtime profile resolution without rebuilding the repository.

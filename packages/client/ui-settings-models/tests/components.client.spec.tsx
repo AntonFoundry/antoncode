@@ -11,7 +11,7 @@ import type {
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import {
-  ModelsSection, needsSetup, providerCopy, providerTargetLabel, removeProviderProfile,
+  ModelsSection, needsSetup, providerCopy, providerDisplayName, providerTargetLabel, removeProviderProfile,
 } from '../src/client/ModelsSection.tsx'
 import type { ModelsSectionInjected, ModelsSectionProps } from '../src/client/ModelsSection.tsx'
 import { ProviderEditor, pathOps } from '../src/client/ProviderEditor.tsx'
@@ -796,6 +796,7 @@ describe('ModelsSection', () => {
       removable: false,
       apiKeyEnv: 'X',
       credential,
+      enabled: true,
     })
     expect(needsSetup(row(undefined), false)).toBe(true)
     expect(needsSetup(row({ configured: true, writable: true }), false)).toBe(false)
@@ -816,6 +817,31 @@ describe('ModelsSection', () => {
     expect(providerTargetLabel(target)).toBe('DeepSeek (deepseek-official)')
     expect(providerCopy(en.deleteTitle, target)).toBe('Delete DeepSeek (deepseek-official)?')
     expect(providerTargetLabel(OPENAI_TARGET)).toBe('openai')
+  })
+
+  it('uses branded names for catalog providers whose route ids are lowercase', async () => {
+    expect(providerDisplayName('kimi-coding', 'kimi-coding')).toBe('Kimi Coding')
+    expect(providerDisplayName('nvidia', 'nvidia')).toBe('NVIDIA')
+    expect(providerDisplayName('qwen-token-plan', 'qwen-token-plan')).toBe('Qwen Token Plan')
+    expect(providerDisplayName('qwen-token-plan-individual', 'qwen-token-plan-individual'))
+      .toBe('Qwen Token Plan Individual')
+    expect(providerDisplayName('zai', 'zai')).toBe('Z.ai')
+    expect(providerDisplayName('acme', 'My Acme')).toBe('My Acme')
+
+    const scripted = scriptedFace()
+    scripted.face.llm.providers.mockImplementation(() => Promise.resolve(ok({ providers: [
+      { provider: 'nvidia', displayName: 'nvidia', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'nvidia'], active: true },
+      { provider: 'zai', displayName: 'zai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'zai'], active: true },
+    ] })))
+    scripted.face.settings.describe.mockImplementation(() => Promise.resolve(ok({
+      writable: true,
+      namespaces: wireNamespaces().map(namespace => namespace.ns === 'llm-pi-ai'
+        ? { ...namespace, value: { providers: { nvidia: {}, zai: {} } } }
+        : namespace),
+    })))
+    await mountFace(scripted)
+    expect(screen.getByText('NVIDIA')).toBeTruthy()
+    expect(screen.getByText('Z.ai')).toBeTruthy()
   })
 
   it('names only changed fields instead of rebuilding the section', () => {
@@ -2147,6 +2173,87 @@ describe('ModelsSection', () => {
     expect(mutate).not.toHaveBeenCalled()
   })
 
+})
+
+describe('catalog visibility switch', () => {
+  const MODEL_CATALOG_VIEW: SettingsNamespaceView = {
+    ns: 'model-catalog',
+    schema: {},
+    value: { disabledProviders: ['openai'] },
+    applies: 'live',
+    secrets: [],
+    revision: 7,
+  }
+
+  function scriptedWithCatalog(overrides: Parameters<typeof scriptedFace>[0] = {}) {
+    const scripted = scriptedFace(overrides)
+    scripted.face.settings.describe.mockImplementation(() => Promise.resolve(ok({
+      writable: true,
+      hasDocument: true,
+      namespaces: [...wireNamespaces(), MODEL_CATALOG_VIEW],
+    })))
+    return scripted
+  }
+
+  it('renders per-row switches from the model-catalog join and toggles membership with the revision', async () => {
+    const { mutate } = await mountFace(scriptedWithCatalog())
+    const deepseek = screen.getByRole('switch', { name: deepSeekCopy(en.disableProvider) })
+    expect(deepseek.getAttribute('aria-checked')).toBe('true')
+    const openai = screen.getByRole('switch', { name: openaiCopy(en.enableProvider) })
+    expect(openai.getAttribute('aria-checked')).toBe('false')
+
+    // Enabling openai removes it from the disabled list.
+    fireEvent.click(openai)
+    await waitFor(() => {
+      expect(mutate).toHaveBeenCalledWith({
+        ns: 'model-catalog',
+        ops: [{ op: 'set', path: ['disabledProviders'], value: [] }],
+        expectedRevision: 7,
+      })
+    })
+
+    // Disabling DeepSeek extends the described list (the scripted describe
+    // still reports openai disabled, so the snapshot composes rather than
+    // overwrites).
+    fireEvent.click(screen.getByRole('switch', { name: deepSeekCopy(en.disableProvider) }))
+    await waitFor(() => {
+      expect(mutate).toHaveBeenLastCalledWith({
+        ns: 'model-catalog',
+        ops: [{
+          op: 'set',
+          path: ['disabledProviders'],
+          value: ['openai', 'deepseek-official'],
+        }],
+        expectedRevision: 7,
+      })
+    })
+  })
+
+  it('announces a refused write instead of failing the toggle silently', async () => {
+    await mountFace(scriptedWithCatalog({
+      mutate: vi.fn(() => Promise.resolve(fail('read-only document'))),
+    }))
+    fireEvent.click(screen.getByRole('switch', { name: openaiCopy(en.enableProvider) }))
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toBe(openaiCopy(en.toggleFailed))
+    // The switch returns to usable once the failed write settles.
+    await waitFor(() => {
+      expect((screen.getByRole('switch', { name: openaiCopy(en.enableProvider) }) as HTMLButtonElement).disabled)
+        .toBe(false)
+    })
+  })
+
+  it('locks the switch on a read-only settings document', async () => {
+    const scripted = scriptedWithCatalog()
+    scripted.face.settings.describe.mockImplementation(() => Promise.resolve(ok({
+      writable: false,
+      hasDocument: true,
+      namespaces: [...wireNamespaces(), MODEL_CATALOG_VIEW],
+    })))
+    await mountFace(scripted)
+    expect((screen.getByRole('switch', { name: deepSeekCopy(en.disableProvider) }) as HTMLButtonElement).disabled)
+      .toBe(true)
+  })
 })
 
 describe('apiKeyFailure', () => {

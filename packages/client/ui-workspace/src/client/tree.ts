@@ -1,7 +1,7 @@
 /**
  * Derives the workspace browser tree from caller-projected Workspace and
- * Session order. Unassigned Sessions trail under Ungrouped; only the selected
- * blank Session remains visible.
+ * Session order. Unassigned Sessions trail under Ungrouped; among blank
+ * Sessions, the selected one and any staged in a visible wm pane remain visible.
  */
 import {
   type SessionListState, type SessionSearchResultItem, type SessionSummary,
@@ -52,6 +52,8 @@ export interface SessionNode {
   running: boolean
   /** Running direct children in the loaded subagent catalog. */
   runningSubagentCount: number
+  /** Live (running or stopping) background jobs owned by this session. */
+  runningJobCount: number
   /** Finished running while not selected and not yet opened (the green "done" reminder dot). */
   completed: boolean
   /** In the registry-global pin set: leads its section, reorderable only among pinned rows. */
@@ -95,6 +97,8 @@ export interface SearchResultNode {
   running: boolean
   /** Running direct children in the loaded subagent catalog. */
   runningSubagentCount: number
+  /** Live (running or stopping) background jobs owned by this session. */
+  runningJobCount: number
   /** Finished running while not selected and not yet opened (the green "done" reminder dot). */
   completed: boolean
   /** In the registry-global archive set: shown grayed and not openable. */
@@ -221,19 +225,22 @@ export function pinCurrentBlank(
 export type ArchivedFilter = 'default' | 'show' | 'only'
 
 /**
- * Ordinary sessions are visible; among blank sessions, only the current one
- * is visible. Subagent children use their parent header catalog; archived
- * sessions follow the archived filter, while their accounting slots remain
- * either way so unarchiving restores position.
+ * Ordinary sessions are visible; among blank sessions, the current one and
+ * any displayed in a visible wm window (the pinned-pane stage set) are
+ * visible, so a pinned pane minting a New Session keeps its row. Subagent
+ * children use their parent header catalog; archived sessions follow the
+ * archived filter, while their accounting slots remain either way so
+ * unarchiving restores position.
  */
 function sessionVisible(
   session: SessionSummary,
   current: SessionId | undefined,
   archived: ReadonlySet<SessionId>,
   archivedFilter: ArchivedFilter,
+  staged: ReadonlySet<SessionId>,
 ): boolean {
   if (session.origin === 'subagent') return false
-  if (session.blank && session.id !== current) return false
+  if (session.blank && session.id !== current && !staged.has(session.id)) return false
   switch (archivedFilter) {
     case 'default':
       return !archived.has(session.id)
@@ -255,6 +262,20 @@ export interface SessionRowState {
   archivedSessionIds: readonly SessionId[]
   /** Archived-row visibility choice applied to lists and search alike. */
   archivedFilter: ArchivedFilter
+}
+
+/** Window-manager staging and job-roster facts folded into tree rows. */
+export interface SessionActivityState {
+  /** Sessions displayed in a visible pinned wm pane; blank members stay visible. */
+  stagedSessionIds: readonly SessionId[]
+  /** Live (running or stopping) background-job count by Session; absent Sessions own none. */
+  runningJobCounts: ReadonlyMap<SessionId, number>
+}
+
+/** Activity state with no staged panes and no live jobs. */
+export const NO_SESSION_ACTIVITY: SessionActivityState = {
+  stagedSessionIds: [],
+  runningJobCounts: new Map(),
 }
 
 /**
@@ -328,6 +349,7 @@ function groupByWorkspace(
   archived: ReadonlySet<SessionId>,
   archivedFilter: ArchivedFilter,
   ungroupedOrder: readonly string[] | undefined,
+  staged: ReadonlySet<SessionId>,
 ): Group[] {
   const current = mainSessionId(list)
   const groups: Group[] = []
@@ -338,7 +360,7 @@ function groupByWorkspace(
       const summary = list.byId[id]
       if (summary === undefined) continue // account may lead the list pull; the row appears when the summary lands
       accounted.add(id)
-      if (!sessionVisible(summary, current, archived, archivedFilter)) continue
+      if (!sessionVisible(summary, current, archived, archivedFilter, staged)) continue
       members.push(summary)
     }
     // The archived-only view lists archives, not the Workspace inventory, so
@@ -352,7 +374,7 @@ function groupByWorkspace(
   const stray = list.ids
     .map(id => list.byId[id])
     .filter((s): s is SessionSummary =>
-      s !== undefined && !accounted.has(s.id) && sessionVisible(s, current, archived, archivedFilter))
+      s !== undefined && !accounted.has(s.id) && sessionVisible(s, current, archived, archivedFilter, staged))
   if (stray.length > 0) {
     groups.push(buildGroup(
       UNGROUPED_KEY,
@@ -391,6 +413,7 @@ function sessionNode(
   statuses: SessionStatuses,
   pinned: ReadonlySet<SessionId>,
   archived: ReadonlySet<SessionId>,
+  runningJobCounts: ReadonlyMap<SessionId, number>,
 ): SessionNode {
   const status = statuses.get(s.id)
   const pendingInteraction = visiblePendingKind(status?.pendingInteraction?.kind)
@@ -400,6 +423,7 @@ function sessionNode(
     blank: s.blank,
     running: status?.running ?? s.running,
     runningSubagentCount: runningChildCount(list, s.id, statuses),
+    runningJobCount: runningJobCounts.get(s.id) ?? 0,
     completed: status?.completionUnread === true,
     pinned: !archived.has(s.id) && pinned.has(s.id),
     archived: archived.has(s.id),
@@ -423,6 +447,7 @@ function sessionNode(
  * @param rowState - registry-global pin and archive sets plus the archived filter.
  * @param statuses - unified UI status by Session.
  * @param view - local expansion arrays.
+ * @param activity - pinned-pane stage set and live job counts.
  * @returns group sections in render order.
  */
 export function deriveGroups(
@@ -431,7 +456,9 @@ export function deriveGroups(
   rowState: SessionRowState,
   statuses: SessionStatuses,
   view: TreeView,
+  activity: SessionActivityState = NO_SESSION_ACTIVITY,
 ): GroupNode[] {
+  const staged = new Set(activity.stagedSessionIds)
   const archived = new Set(rowState.archivedSessionIds)
   const pinned = new Set(rowState.pinnedSessionIds)
   const expandedGroups = new Set(view.expandedGroups)
@@ -440,7 +467,7 @@ export function deriveGroups(
     ? undefined
     : owningGroupKey(workspaces, current)
   const groups: GroupNode[] = []
-  for (const g of groupByWorkspace(list, workspaces, archived, rowState.archivedFilter, view.ungroupedOrder)) {
+  for (const g of groupByWorkspace(list, workspaces, archived, rowState.archivedFilter, view.ungroupedOrder, staged)) {
     const expanded = expandedGroups.has(g.key)
     groups.push({
       key: g.key,
@@ -453,7 +480,7 @@ export function deriveGroups(
       containsCurrent: g.key === currentGroup,
       sessions: expanded
         ? sectionMembers(g.sessions, pinned, archived)
-          .map(session => sessionNode(session, list, statuses, pinned, archived))
+          .map(session => sessionNode(session, list, statuses, pinned, archived, activity.runningJobCounts))
         : [],
     })
   }
@@ -463,10 +490,11 @@ export function deriveGroups(
 /**
  * Select complete flat-list membership, independently of archive visibility.
  * @param list - sessions list snapshot.
- * @returns known ordinary Session ids, including archives and only the current blank.
+ * @param stagedSessionIds - Sessions displayed in visible pinned wm panes.
+ * @returns known ordinary Session ids, including archives and only the current or staged blanks.
  */
-export function sessionMemberIds(list: SessionListState): SessionId[] {
-  return visibleSessionIds(list, [], 'show')
+export function sessionMemberIds(list: SessionListState, stagedSessionIds: readonly SessionId[] = []): SessionId[] {
+  return visibleSessionIds(list, [], 'show', stagedSessionIds)
 }
 
 /**
@@ -474,18 +502,21 @@ export function sessionMemberIds(list: SessionListState): SessionId[] {
  * @param list - sessions list snapshot.
  * @param archivedSessionIds - registry-global archive set.
  * @param archivedFilter - archived-row visibility choice.
- * @returns known visible Session ids in list order, including ordinary forks and only the current blank.
+ * @param stagedSessionIds - Sessions displayed in visible pinned wm panes.
+ * @returns known visible Session ids in list order, including ordinary forks and only the current or staged blanks.
  */
 export function visibleSessionIds(
   list: SessionListState,
   archivedSessionIds: readonly SessionId[],
   archivedFilter: ArchivedFilter,
+  stagedSessionIds: readonly SessionId[] = [],
 ): SessionId[] {
+  const staged = new Set(stagedSessionIds)
   const archived = new Set(archivedSessionIds)
   const current = mainSessionId(list)
   return list.ids.filter((id) => {
     const s = list.byId[id]
-    return s !== undefined && sessionVisible(s, current, archived, archivedFilter)
+    return s !== undefined && sessionVisible(s, current, archived, archivedFilter, staged)
   })
 }
 
@@ -496,6 +527,7 @@ export function visibleSessionIds(
  * @param sessionIds - complete account members in the selected order, including hidden archives.
  * @param rowState - registry-global pin and archive sets plus the archived filter.
  * @param statuses - unified UI status by Session.
+ * @param activity - pinned-pane stage set and live job counts.
  * @returns flat rows in sectioned order with current status indicators.
  */
 export function deriveFlat(
@@ -503,18 +535,20 @@ export function deriveFlat(
   sessionIds: readonly SessionId[],
   rowState: SessionRowState,
   statuses: SessionStatuses,
+  activity: SessionActivityState = NO_SESSION_ACTIVITY,
 ): SessionNode[] {
+  const staged = new Set(activity.stagedSessionIds)
   const archived = new Set(rowState.archivedSessionIds)
   const pinned = new Set(rowState.pinnedSessionIds)
   const current = mainSessionId(list)
   const members = sessionIds.flatMap((id) => {
     const session = list.byId[id]
-    return session !== undefined && sessionVisible(session, current, archived, rowState.archivedFilter)
+    return session !== undefined && sessionVisible(session, current, archived, rowState.archivedFilter, staged)
       ? [session]
       : []
   })
   return sectionMembers(members, pinned, archived)
-    .map(session => sessionNode(session, list, statuses, pinned, archived))
+    .map(session => sessionNode(session, list, statuses, pinned, archived, activity.runningJobCounts))
 }
 
 /**
@@ -529,6 +563,7 @@ export function deriveFlat(
  * @param statuses - unified UI status by Session.
  * @param content - ranked Host content-search page.
  * @param limit - protocol-owned maximum merged row count.
+ * @param activity - pinned-pane stage set and live job counts.
  * @returns bounded deduplicated flat rows and a refine-query hint bit.
  */
 export function deriveSearchResults(
@@ -540,9 +575,11 @@ export function deriveSearchResults(
   statuses: SessionStatuses,
   content: { items: readonly SessionSearchResultItem[]; hasMore: boolean },
   limit: number,
+  activity: SessionActivityState = NO_SESSION_ACTIVITY,
 ): SearchResultSet {
   const q = query.trim().toLowerCase()
   if (q === '') return { items: [], hasMore: false }
+  const staged = new Set(activity.stagedSessionIds)
   const archived = new Set(archivedSessionIds)
   const current = mainSessionId(list)
 
@@ -564,7 +601,7 @@ export function deriveSearchResults(
     const summary = list.byId[id]
     // Blank placeholders never match a query (their canonical title displays
     // localized, so matching it would tie search to one language).
-    if (summary === undefined || summary.blank || !sessionVisible(summary, current, archived, archivedFilter)) continue
+    if (summary === undefined || summary.blank || !sessionVisible(summary, current, archived, archivedFilter, staged)) continue
     if (
       sessionTitle(summary).toLowerCase().includes(q)
       || labelOf(summary).toLowerCase().includes(q)
@@ -587,7 +624,7 @@ export function deriveSearchResults(
   for (const summary of orderedLocal) include(summary)
   for (const item of content.items) {
     const summary = list.byId[item.sessionId]
-    if (summary !== undefined && !summary.blank && sessionVisible(summary, current, archived, archivedFilter)) include(summary)
+    if (summary !== undefined && !summary.blank && sessionVisible(summary, current, archived, archivedFilter, staged)) include(summary)
   }
 
   return {
@@ -601,6 +638,7 @@ export function deriveSearchResults(
         workspace: labelOf(summary),
         running: status?.running ?? summary.running,
         runningSubagentCount: runningChildCount(list, summary.id, statuses),
+        runningJobCount: activity.runningJobCounts.get(summary.id) ?? 0,
         ...(pendingInteraction === undefined
           ? {}
           : { pendingInteraction }),

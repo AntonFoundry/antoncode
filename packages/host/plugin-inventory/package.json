@@ -46,6 +46,7 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@deepseek-ai/dsh-app-boot": "workspace:*",
     "zod": "4.4.3"
   },
   "peerDependencies": {

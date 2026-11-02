@@ -5,7 +5,7 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-client-ui-agent-preset
 
-English | [中文](README.zh.md)
+English
 
 ## Summary
 
@@ -24,6 +24,8 @@ Choose Agent presets and the new-task default in Web, read what each mode does a
 
 <a id="use-this-package"></a>
 ## Use this package
+
+The settings section is labelled **Agents**. Its first control is the **Default agent** dropdown: it names the current default and, when opened, lists every preset the cards offer as selectable (healthy, and allowed by the Coding Tools setting) with its name and description stacked. Picking one performs the same default write as a card's body; the dropdown disables while the roster is empty or a write is in flight.
 
 Settings shows the built-in and custom card groups with default highlighting and card-body selection; a group without presets is omitted, except the custom group, which keeps its Creator entry on screen. Coarse-pointer devices show complete card descriptions; other devices clamp descriptions to four lines with the full text available on hover. Every card offers “View configuration”, which opens the preset's declared plugin list as read-only YAML in the Loader's own dialect (`!!js` conditions included); a failed preset stays readable because its diagnostic points into that YAML. Escape closes only the viewer and returns focus to its card; leaving Settings clears the viewer, and a late read does not reopen it. The page edits nothing: the Creator entry starts a Creator-mode task that authors or overrides a preset as a bundle, offered while the `cordis` preset is on the roster and a conversation flow exists.
 

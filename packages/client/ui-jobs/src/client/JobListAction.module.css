@@ -39,6 +39,47 @@
   margin: 0 5px;
 }
 
+/* Lays the stop-all control out beside the list toggle. */
+.root {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Header stop-all control: sits left of the list toggle and only mounts while
+   at least one job is live. */
+.stopAll {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.stopAll:focus-visible {
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-fill-l2);
+}
+
+@media (hover: hover) {
+  .stopAll:hover {
+    color: var(--dsw-alias-label-secondary);
+    background: var(--dsw-alias-fill-l2);
+  }
+}
+
+/* Stop-all requests in flight: the button waits for the RPCs to settle. */
+.stopAll:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 /* Portaled and fixed in the viewport with coordinates supplied inline from the
    trigger rect; the z-index layers above the right sidebar (at most 40) and
    below modal overlays (1000). */

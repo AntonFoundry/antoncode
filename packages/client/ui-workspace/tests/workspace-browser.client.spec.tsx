@@ -94,6 +94,14 @@ function fireDrag(row: HTMLElement, kind: 'dragOver' | 'drop', clientY: number):
   fireEvent(row, event)
 }
 
+/** The draggable workspace section (groupSection) owning the titled row. */
+function sectionOf(title: string): HTMLElement {
+  let node = screen.getByText(title).closest('[role="treeitem"]') as HTMLElement | null
+  while (node !== null && !node.className.includes('groupSection')) node = node.parentElement as HTMLElement
+  if (node === null) throw new Error(`no groupSection for ${title}`)
+  return node
+}
+
 function dragData(): Pick<DataTransfer, 'effectAllowed' | 'dropEffect' | 'setData' | 'setDragImage'> {
   return { effectAllowed: 'uninitialized', dropEffect: 'none', setData: vi.fn(), setDragImage: vi.fn() }
 }
@@ -119,6 +127,8 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     requestSessionRename: controls.rename,
     wide: true,
     expandSidebar: vi.fn(),
+    newWorkspaceRequests: 0,
+    reportAddWorkspaceAvailability: vi.fn(),
     useSessions: hook(sessionState([])),
     useSessionStatus: hook(noPendingInteraction),
     useSessionRetainInfo: () => undefined,
@@ -144,6 +154,10 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     ...overrides,
   }
   const view = render(<WorkspaceBrowser {...props} />)
+  // Week-idle workspaces (every no-session fixture) render under the collapsed
+  // Archive section; tests exercising main-list mechanics expand it first.
+  const archiveToggle = view.queryByText(/归档工作区/)
+  if (archiveToggle !== null) fireEvent.click(archiveToggle)
   return { view, props, store, controls }
 }
 
@@ -1318,7 +1332,7 @@ describe('WorkspaceBrowser', () => {
     expect(startSession).toHaveBeenCalledWith(wid('alpha'))
   })
 
-  it('auto-expands the Ungrouped bucket for a loose current session; its header has no menu and its ＋ is inert', () => {
+  it('auto-expands the Ungrouped bucket for a loose current session; its header has no menu and its ＋ creates a loose session', () => {
     const startSession = vi.fn()
     mount({
       useSessions: hook(sessionState([summary('loose', 1)], { main: sid('loose') })),
@@ -1328,8 +1342,9 @@ describe('WorkspaceBrowser', () => {
     // The loose session's group is UNGROUPED_KEY: expanded by the effect.
     expect(screen.getByText('loose')).toBeTruthy()
     expect(screen.queryByRole('button', { name: '工作区“未分组”的操作' })).toBeNull()
+    // The ungrouped ＋ starts a workspace-less (loose) session.
     fireEvent.click(screen.getByRole('button', { name: '在“未分组”中新建会话' }))
-    expect(startSession).not.toHaveBeenCalled()
+    expect(startSession).toHaveBeenCalledWith(undefined)
   })
 
   it('keeps an already-expanded group when the selection moves within it', () => {
@@ -2019,6 +2034,30 @@ describe('WorkspaceBrowser', () => {
     expect(screen.getByText('alpha')).toBeTruthy()
   })
 
+  it('raises the directory flow on a rising shell New Workspace request edge', () => {
+    const b = mount({ useWorkspaces: hook(workspaceState([workspace('alpha', [])])) })
+    expect(screen.queryByTestId('directory-flow')).toBeNull()
+    // The shell capsule's press count is a monotonic ticket: the new value
+    // past the seen baseline is the edge, and the add-only surface consumes
+    // it straight into the flow (no menu), same as the header ＋.
+    rerender(b, { newWorkspaceRequests: 1 })
+    expect(screen.getByTestId('directory-flow')).toBeTruthy()
+  })
+
+  it('reports add availability to the shell and drops requests while none exists', () => {
+    const report = vi.fn()
+    const b = mount({
+      reportAddWorkspaceAvailability: report,
+      useWorkspaces: hook(workspaceState([workspace('alpha', [])])),
+      useDirectoryFlow: bindSnapshotSelector({ getSnapshot: () => false, subscribe: () => () => {} }),
+    })
+    // The shell learns the hole is empty and hides its capsule.
+    expect(report).toHaveBeenLastCalledWith(false)
+    // A press raised while no picking affordance exists is dropped.
+    rerender(b, { newWorkspaceRequests: 1 })
+    expect(screen.queryByTestId('directory-flow')).toBeNull()
+  })
+
   it('uses the full expanded Workspace section when resolving a Workspace drop half', () => {
     const insertWorkspaceBefore = vi.fn(async () => {})
     const sessions = sessionState(Array.from({ length: 5 }, (_, index) => summary(`beta-${index}`, index)))
@@ -2055,17 +2094,15 @@ describe('WorkspaceBrowser', () => {
       ])),
     })
     const source = screen.getByText('beta').closest('[role="treeitem"]') as HTMLElement
-    let firstSection = screen.getByText('alpha').closest('[role="treeitem"]')?.parentElement as HTMLElement
-    while (firstSection.parentElement?.getAttribute('role') !== 'tree') {
-      firstSection = firstSection.parentElement as HTMLElement
-    }
+    const firstSection = sectionOf('alpha')
     firstSection.getBoundingClientRect = () => ({
       top: 100, bottom: 134, left: 0, right: 200, width: 200, height: 34, x: 0, y: 100, toJSON: () => ({}),
     })
     fireEvent.dragStart(source, { dataTransfer: dragData() })
     fireDrag(firstSection, 'dragOver', 105)
-    expect(firstSection.parentElement?.className).toContain('listTopDropActive')
-    const marker = firstSection.parentElement?.previousElementSibling
+    const list = firstSection.closest('[role="tree"]') as HTMLElement
+    expect(list.className).toContain('listTopDropActive')
+    const marker = list.previousElementSibling
     expect(marker?.className).toContain('listTopDropIndicator')
   })
 
@@ -2080,10 +2117,7 @@ describe('WorkspaceBrowser', () => {
       insertWorkspaceBefore,
     })
     const source = screen.getByText('tail').closest('[role="treeitem"]') as HTMLElement
-    let target = screen.getByText('beta').closest('[role="treeitem"]')?.parentElement as HTMLElement
-    while (target.parentElement?.getAttribute('role') !== 'tree') {
-      target = target.parentElement as HTMLElement
-    }
+    const target = sectionOf('beta')
     target.getBoundingClientRect = () => ({
       top: 100, bottom: 134, left: 0, right: 200, width: 200, height: 34, x: 0, y: 100, toJSON: () => ({}),
     })

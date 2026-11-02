@@ -160,26 +160,28 @@ body {
   --dsw-font-markdown-small-strong-italic-font-size: 12px;
   --dsw-font-markdown-small-strong-italic-font-style: italic;
 
-  --dsw-font-markdown-code: calc(12px + var(--dsh-code-font-delta)) / calc(19px + var(--dsh-code-font-delta)) var(--ds-font-family-code);
+  /* Mono tokens derive size and line-height from the code-size section var
+   * (ui-theme font row); family rides --ds-font-family-code. */
+  --dsw-font-markdown-code: var(--dsw-font-size-code)/calc(var(--dsw-font-size-code) + 8px) var(--ds-font-family-code);
   --dsw-font-markdown-code-font-family: var(--ds-font-family-code);
   --dsw-font-markdown-code-font-weight: 400;
-  --dsw-font-markdown-code-line-height: calc(19px + var(--dsh-code-font-delta));
-  --dsw-font-markdown-code-font-size: calc(12px + var(--dsh-code-font-delta));
+  --dsw-font-markdown-code-line-height: calc(var(--dsw-font-size-code) + 8px);
+  --dsw-font-markdown-code-font-size: var(--dsw-font-size-code);
   --dsw-font-markdown-code-font-style: normal;
 
-  --dsw-font-markdown-code-block: var(--dsh-code-font-size, 11px) / calc(19px + var(--dsh-code-font-delta)) var(--ds-font-family-code);
+  --dsw-font-markdown-code-block: var(--dsw-font-size-code)/calc(var(--dsw-font-size-code) + 9px) var(--ds-font-family-code);
   --dsw-font-markdown-code-block-font-family: var(--ds-font-family-code);
   --dsw-font-markdown-code-block-font-weight: 400;
-  --dsw-font-markdown-code-block-line-height: calc(19px + var(--dsh-code-font-delta));
-  --dsw-font-markdown-code-block-font-size: var(--dsh-code-font-size, 11px);
+  --dsw-font-markdown-code-block-line-height: calc(var(--dsw-font-size-code) + 9px);
+  --dsw-font-markdown-code-block-font-size: var(--dsw-font-size-code);
   --dsw-font-markdown-code-block-font-style: normal;
 
   /* 手工补充（非插件导出）：tool row 展开卡片内的小号 code 字体。 */
-  --dsw-font-markdown-code-block-small: var(--dsh-code-font-size, 11px) / calc(16px + var(--dsh-code-font-delta)) var(--ds-font-family-code);
+  --dsw-font-markdown-code-block-small: calc(var(--dsw-font-size-code) - 2px)/calc(var(--dsw-font-size-code) + 6px) var(--ds-font-family-code);
   --dsw-font-markdown-code-block-small-font-family: var(--ds-font-family-code);
   --dsw-font-markdown-code-block-small-font-weight: 400;
-  --dsw-font-markdown-code-block-small-line-height: calc(16px + var(--dsh-code-font-delta));
-  --dsw-font-markdown-code-block-small-font-size: var(--dsh-code-font-size, 11px);
+  --dsw-font-markdown-code-block-small-line-height: calc(var(--dsw-font-size-code) + 6px);
+  --dsw-font-markdown-code-block-small-font-size: calc(var(--dsw-font-size-code) - 2px);
   --dsw-font-markdown-code-block-small-font-style: normal;
 
   --dsw-font-xl-24: 600 24px/32px var(--dsw-font-family);

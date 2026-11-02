@@ -1,95 +1,69 @@
-# Anton on upstream 0.2.2 — port, not merge
+# Upstream reconvergence, then superagent absorption
 
-## Decision
+## Objective
 
-**Rebuild Anton on upstream `0.2.2-alpha.2` by porting our additive packages onto an upstream-descended branch.** Staged merging is abandoned; `merge/upstream-0.2` and tag `anton-pre-merge` are retained as references.
+Bring the Anton fork from upstream `0.1.0-rc.7` to `0.2.2-alpha.2` by **merging shared ancestry**, preserve the 30 additive Anton packages, gain `plugin-manager`/`engines.dsh`, then install `dsh-superagent-prototype` as a bundle. Rename to antoncode-harness **last**.
 
-## Hard constraints
+## Established facts
 
-1. **The UI's look and feel must not change** — verified against `.anton-visual-baseline/`, not assumed.
-2. **Never boot the ported runtime against the live `DSH_HOME`** (see the migration gate).
+- Shared root commit with upstream: `b67e81ac97`. Fork point (merge-base): `99f6f02fec`, the `0.1.0-rc.7` release merge, 2026-08-17.
+- Divergence: ahead 484, behind 12,518. Upstream remote already added as `upstream`; release tags fetched as `upstream-dsh-v*`.
+- Conflict surface: 1,200 files (we modified AND upstream changed). ~250 `.agents/notes`, ~65 docs → policy resolution. ~700 real code, concentrated in `packages/client` 252, `apps/web` 117, `packages/host` 48, `llm` 35, `subagent` 34, `core` 29.
+- Our value: 771 added files / 30 added packages, almost entirely in directories upstream never touches.
+- We deleted 2,193 upstream files (1,386 `.agents/notes`) — deletions re-conflict on merge unless resolved by policy.
+- Upstream gained `packages/boot/plugin-manager` + `plugin-market` + `config-editor` + `hmr`; `engines.dsh` is its compatibility gate (`plugin-manager/src/versions.ts:8`).
+- Superagent needs DSH `^0.2.1-alpha.2` + Cordis `4.0.5-alpha.1`; its 3 "missing" identities exist upstream (`experimental/session-inspector`, `preset/agent-preset` — ours is `agent-presets`, renamed upstream).
 
-## Current state (verified)
+## Strategy
 
-**Build 10/10 gates · `verify-cordis-config` 305 files · tree clean · 26 suite failures vs the 24 upstream baseline, none in a ported package.**
+Staged merge along upstream release tags on a throwaway branch, never on `main`. Each stage must reach a green build before the next. Anton packages are additive, so they survive merges; our modifications to upstream files are the cost centre and get retired into extension points where possible rather than re-merged forever.
 
-21 of 30 additive packages ported **and mounted**. Safety refs: `anton-pre-merge` = `8444d4c7e5`, `merge/upstream-0.2` = `60080b9bda`.
+## Phase 0 — Safety and baseline
 
-## Porting is two steps: port AND compose
+1. Tag current state `anton-pre-merge` and push; confirm `/Applications/Anton.app` keeps running from the installed bundle, independent of this checkout.
+2. Record the baseline: `pnpm run build`, `pnpm run typecheck`, `pnpm run test` results as the comparison point.
+3. Create `merge/upstream-0.2` from `main`. All merge work happens there.
 
-A ported package without a bundle row is **inert**. Verify with `pnpm run build` (10 gates), never `tsc -b <pkg>` — a per-package build compiles only `src`, and vitest does not typecheck, so test and composition failures stay invisible. Subpath rows need a hand-written `tsconfig.base.json` alias, outside the generated block.
+## Phase 1 — Resolution policy (decide before touching conflicts)
 
-## Phase 2 — Base ✅
+1. `.agents/notes` (~250 conflicts, 1,386 our deletions): take upstream wholesale, re-add Anton notes afterward. Removes ~20% of the surface mechanically.
+2. `docs/` (~65): take upstream; re-apply Anton-specific docs as new files.
+3. Lockfile, generated catalogs, `lib/` artifacts: regenerate, never hand-merge.
+4. Record the policy in an Agent Note so resolution is consistent across stages.
 
-## Phase 3 — Port the additive packages (21 done)
+## Phase 2 — Staged merges
 
-1. ✅ gate-policy, resume-note (+ `plan_write`).
-2. ✅ 8 `llm-*` providers (+ a justified additive widening of upstream `llm-pi-ai`'s index).
-3. ✅ model-intel, agent-queue + tool, tool-anton-lifecycle, tool-zai, web-search-browser.
-4. ✅ flowbuilder ×4.
-5. **Client faces: 1 of 10 done.** `ui-efficiency-discipline` ported, mounted, carrying the restored `tools:working-discipline` sections.
-6. `apps/anton-bridge` — do **not** forward-port `3a1fadfd6c`/`4e845d6bde` verbatim; both describe continuable behaviour the port lacks.
-7. Adopt upstream `preset/agent-preset`; fix the live preset's 3 invalid rows.
+Merge in order, building green at each stop:
 
-## Phase 4 — Curated modifications (in progress)
+1. `upstream-dsh-v0.1.7-rc.2` — stay on the 0.1 line; absorbs renames and package moves while the API is closest to ours.
+2. `upstream-dsh-v0.2.0-rc.2` — the major-line break. Expect the bulk of `packages/client` and `apps/web` conflicts here.
+3. `upstream-dsh-v0.2.1-alpha.2` — superagent's declared floor. Validate superagent install at this point.
+4. `upstream-dsh-v0.2.2-alpha.2` — current upstream head.
 
-### 1. WM visual layer — src compiles clean; 221 upstream TEST errors remain
+Per stage: resolve conflicts by policy, `pnpm install`, `pnpm run typecheck`, `pnpm run build`, targeted tests for every conflicted package, commit the stage.
 
-**Decision: port it, not package it.** 20 WM files (8,916 lines) plus `WmFrame.tsx` couple to the tree through only two imports. `WmFrame.tsx` (2,205 lines) gets split **after** the port lands (approved).
+## Phase 3 — Anton package reconciliation
 
-**Milestone: `tsc -p tsconfig.client.json` reports ZERO `src` errors.** The WM frame composes correctly against every upstream client package. Our own 14-file WM test suite is ported too (incl. `wm.client.spec.tsx`, 1,873 lines), and upstream's `app-frame`/`document-title` specs are deleted with the frame they tested.
+1. Re-point the 8 `llm-*` providers at the 0.2.x LLM seam; upstream's `llm` changed under us (35 conflicts).
+2. Re-point the 10 `client/ui-*` packages at the 0.2.x client UI seam (252 conflicts — the largest single risk).
+3. Reconcile `agent-presets` (ours, plural) with upstream `agent-preset` (singular): adopt upstream's package, port our preset rows onto it.
+4. Rebuild `apps/anton-bridge` against the new boot/profile mechanism; verify `anton status|restart|stop|start`.
+5. Retire as many of the 1,697 upstream-file modifications as possible into documented extension points; log what must stay patched and why.
 
-**Route (a) removed the reference cycle.** `ui-layout` declares a local `WorkspaceNavigation` interface for the four members it calls and reads it through `ctx.get('uiWorkspace')`. Signatures mirror `UiWorkspace` in `ui-workspace/src/client/navigation.ts`; change both together.
+## Phase 4 — Superagent absorption
 
-**Frame assembly solved without touching upstream.** `root` is seeded by the slot core, and upstream's `inject` is the face a **parent** registration declares on a child slot — so a root registrant cannot supply one. The port therefore pre-creates the layout instance and wraps the handle so `create()` returns it (upstream's own frame pattern), builds the registrant-private share in a closure (`buildFrameShare`), binds `useWm`/`useScratch` with a local `bindSelector` over React's `useSyncExternalStore`, and registers a `BoundWmFrame` that applies the share. `useSessions`/`useWorkspaces` are real standard props at runtime, merged by packages that depend on this one, so the bound component asserts that runtime fact rather than fabricating values.
+1. With `plugin-manager` present, install `dsh-superagent` as a bundle via the plugin manager / `dsh.bundle.patch`, not by vendoring source.
+2. Supply the profile `stateDir` it refuses to start without (`examples/profile.cordis.patch.yml`).
+3. Configure the GitHub source; leave the Feishu row disabled as upstream ships it.
+4. Translate the two Chinese-labelled presets (router/worker) and decide whether they live as bundle rows or Anton agent presets.
+5. Validate end to end: a GitHub request becomes a ticket becomes a session.
 
-**Everything else done:** orphans deleted; `ClientContext`/`defineStore` re-pointed; `SessionId` from `dsh-session/types`; icons `…16` → `…Medium`; `ThemeSyntaxPalette` + `ThemeDefinition.syntax` restored to `ui-theme`; `SessionListState.current` → `mainSessionIdOf` over `retainedBy.mainView`; `restoreBootDefault` → `setTheme`; `isDirectory` checks dropped (upstream's browse listing is directories-only — the files buffer needs `workspaceFiles.list` to show files again); `CodeBlock` copy labels; `readTextFile` via `remote.workspaceFiles.read` returning `{ content, truncated }`; the `conversation` slot declares `hookContext: { scopeSessionId }`, each pane passing its own binding.
+## Phase 5 — Rename (last)
 
-**The 221 remaining errors are all in TEST files across 27 upstream packages** — they assert the columns vocabulary the WM frame replaces: `main` (53), `usePanelInfo`, `MainPanelId`, `selectPanel`, `rightbar` (3), `shell.leading` (3), `shell.bottom` (1).
+1. Rename root package identity and the `deepseek-harness` directory to `antoncode-harness`; update `apps/anton-bridge` paths, the `anton` launcher, `~/.anton/dsh` references, and the app build.
+2. Rebuild and reinstall the Mac app; verify boot, recovery profile, and the Web GUI at `127.0.0.1:3080`.
+3. Keep the `upstream` remote and the Anton-additive-directories convention documented, so the next reconvergence is a routine merge.
 
-**Next step — keep upstream's slot vocabulary alongside ours.** Declare `main` (keyed), `rightbar`, `shell.bottom`, `shell.leading` in our layout, restore `usePanelInfo`/`MainPanelId`/`selectPanel` on the service, and render those seats as WM panes. That keeps the 5 upstream packages that register into them working, keeps their tests meaningful, and keeps future upstream merges cheap — far better than rewriting 221 assertions to the WM vocabulary.
+## Decision gate
 
-**Checkpoint: `/tmp/wm-inprogress`** (48 files: `src/`, `tests/`, plus `_tsconfig.json`, `_ui-theme-index.ts`, `_tsconfig.base.json`). The branch is green, not left failing.
-
-### Remaining Phase 4 items
-
-2. **Re-express the client↔host RPC as typert controllers** — unblocks the 4 conversation faces. `host/apiproxy` is deleted upstream; our additions were 67 files / 5,198 insertions.
-3. Replace **57 `as unknown` casts** with `snapshotJsonValue` (29 src / 28 tests). The gate is one-directional: fix, do not baseline.
-4. Port main's **paged tool presentation** (`presentAs`, `ToolPresentationMode`, `renderToolsCatalog`, `TOOL_SEARCH_NAME`).
-5. Decide the **continuable-subagent seam**: port it, or rewrite delegation against upstream.
-6. `client/runtime`, `schema-form`, `web-react` are upstream packages we modified; upstream relocated the client half of `client/runtime` into `api/session-controller`. Port only the additive remainder.
-
-### Why the 9 remaining faces are blocked
-
-- **5 media faces** need `file.view`/`terminal.view`/`webcam.view` — ours, added by the WM change. Unblocked by item 1.
-- **4 conversation faces** need the deleted apiproxy's `api.<ns>` surface. Unblocked by item 2.
-
-## Verified capability losses
-
-| area | status | detail |
-|---|---|---|
-| `subagent` + `tool-subagent` | **CRITICAL** | No continuable concept (5 symbols, 0 files). Config has 6 fields. Live preset line 180 invalid. |
-| `core/tools` | **BEHAVIOURAL** | Paged presentation gone (4 symbols, 0 files). `tools:working-discipline` **restored**. |
-| `client/ui-conversation` | cosmetic | 2 hostless `details` slots; free with the WM layer. |
-| `client/connection` | no loss | Transport rewritten; models relocated to presentation. |
-| `session-persistence` | gain + risk | v0→v4 chain ships. Gate below. |
-
-## Session-migration gate
-
-`SESSION_FORMAT_VERSION` is 0 in our live logs (verified) and 4 on the port; migration is one-way. Live home: **1,791 logs, 27 workspace dirs, 1.7 GB**. Backup: `…/sessions.format0.backup-20261102`. **Smoke only against a copied `DSH_HOME`.**
-
-## Phase 1 — Visual baseline (outstanding)
-
-Conversation view, tool cards, settings panes, theme variants, additive faces. `--headless=old`.
-
-## Phase 5 — Visual acceptance (must run before trusting the WM layer)
-
-## Phase 6 — Superagent via `plugin-manager` bundle · ## Phase 7 — Rename (last; no Mac app rebuild)
-
-## Known debt
-
-- `model-intel` ships no tests.
-- Non-English locale strings (19 packages + client dictionaries) are mine and want translation review.
-- Regenerating a preset `agent.cordis.yml` drops rows absent from the generator's tail.
-- `session-persistence` write-behind is unverified, not confirmed lost.
-- `WmFrame.tsx` is 2,205 lines; split it after the port lands (approved).
+If Phase 2 stage 2 (`0.2.0-rc.2`) exceeds a reasonable conflict budget, fall back to **rebuild-on-upstream**: start from upstream `0.2.2-alpha.2` and replay the 30 additive Anton packages onto it, abandoning the 1,697 upstream-file modifications. Cheaper than it sounds precisely because our value is additive — this is the escape hatch, not the opening move.

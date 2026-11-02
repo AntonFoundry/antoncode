@@ -1219,6 +1219,82 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'flowBuilder',
+    summary: 'Flowbuilder store contract.',
+    description: 'Flowbuilder store contract. Every read is synchronous over the opened domain\'s in-memory state; every write validates at the durable boundary, lands atomically on the domain\'s per-table write chain, and emits the matching `flowbuilder/*` event only after durability.',
+    methods: [
+      {
+        signature: 'listFlows(): FlowDefinitionRecord[]',
+        description: 'Snapshot every stored workflow definition (domain order: insertion).',
+        parameters: [],
+        returns: 'the stored definitions.',
+      },
+      {
+        signature: 'getFlow(flowId: string): FlowDefinitionRecord | undefined',
+        description: 'Read one stored workflow definition.',
+        parameters: [{ name: 'flowId', description: 'the definition id.' }],
+        returns: 'the record, or `undefined` when absent.',
+      },
+      {
+        signature: 'async saveFlow(request: FlowSaveRequest): Promise<FlowDefinitionRecord>',
+        description: 'Validate and upsert one workflow definition. Absent `id`, a new definition is minted; present `id`, the stored record is replaced whole (creation time preserved, update time bumped). The graph must be structurally valid and acyclic — see `validateFlowStructure`.',
+        parameters: [{ name: 'request', description: 'the save request (id optional).' }],
+        returns: 'the exact record stored.',
+      },
+      {
+        signature: 'async deleteFlow(flowId: string): Promise<FlowDefinitionRecord>',
+        description: 'Delete one stored workflow definition.',
+        parameters: [{ name: 'flowId', description: 'the definition id.' }],
+        returns: 'the record as it was removed.',
+        throws: ['{@link FlowUnknownError} when the id names no stored definition.'],
+      },
+      {
+        signature: 'listBlocks(query?: string): BlockLibraryEntryRecord[]',
+        description: 'Snapshot the block library, optionally filtered by a case-insensitive substring over name and description.',
+        parameters: [{ name: 'query', description: 'the filter substring (omit for everything).' }],
+        returns: 'the matching entries.',
+      },
+      {
+        signature: 'getBlock(blockId: string): BlockLibraryEntryRecord | undefined',
+        description: 'Read one stored library block.',
+        parameters: [{ name: 'blockId', description: 'the entry id.' }],
+        returns: 'the entry, or `undefined` when absent.',
+      },
+      {
+        signature: 'async saveBlock(request: BlockSaveRequest): Promise<BlockLibraryEntryRecord>',
+        description: 'Validate and upsert one library block. Absent `id`, a block with the same display name (case-sensitive) is replaced whole — authoring by name is the model\'s iterate path — otherwise a new entry is minted.',
+        parameters: [{ name: 'request', description: 'the save request (id optional).' }],
+        returns: 'the exact entry stored.',
+      },
+      {
+        signature: 'async deleteBlock(blockId: string): Promise<BlockLibraryEntryRecord>',
+        description: 'Delete one stored library block.',
+        parameters: [{ name: 'blockId', description: 'the entry id.' }],
+        returns: 'the entry as it was removed.',
+        throws: ['{@link BlockUnknownError} when the id names no stored entry.'],
+      },
+      {
+        signature: 'async runFlow(flowId: string, options: { signal?: AbortSignal } = {}): Promise<FlowRunId>',
+        description: 'Start one run of a saved definition. The record is durable and `flowbuilder/run-start` has fired when this resolves; execution continues asynchronously and settles through `flowbuilder/run-end`.',
+        parameters: [{ name: 'flowId', description: 'the definition id.' }, { name: 'options', description: '`signal` cancels the run.' }],
+        returns: 'the run id.',
+        throws: ['{@link FlowUnknownError} when the id names no stored definition.', '{@link FlowGraphInvalidError} when the stored graph is invalid.'],
+      },
+      {
+        signature: 'getRun(runId: string): FlowRunRecordRecord | undefined',
+        description: 'Read one run record.',
+        parameters: [{ name: 'runId', description: 'the run id.' }],
+        returns: 'the record, or `undefined` when absent.',
+      },
+      {
+        signature: 'listRuns(flowId?: string): FlowRunRecordRecord[]',
+        description: 'Snapshot run records, newest first, optionally scoped to one flow.',
+        parameters: [{ name: 'flowId', description: 'the definition id to scope to (omit for every run).' }],
+        returns: 'the matching run records.',
+      },
+    ],
+  },
+  {
     key: 'forge',
     summary: 'Registry of forge providers.',
     description: 'Registry of forge providers. Watchers of one change request share a single polling loop; each forge has at most one fetch in flight, which batches every due change request of that forge.',
@@ -1826,6 +1902,31 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'langflow',
+    summary: 'Supervise the embedded LangFlow subprocess: start it for the Workflows tab, report readiness by polling `/health`, and tear it down on dispose.',
+    description: 'Supervise the embedded LangFlow subprocess: start it for the Workflows tab, report readiness by polling `/health`, and tear it down on dispose.',
+    methods: [
+      {
+        signature: 'status(): LangflowStatus',
+        description: 'Snapshot the current lifecycle state.',
+        parameters: [],
+        returns: 'the status the Workflows tab renders.',
+      },
+      {
+        signature: 'start(): Promise<LangflowStatus>',
+        description: 'Spawn the child and poll until its HTTP server answers. Idempotent and single-flight: concurrent starts share one attempt, and a start while running returns the current status.',
+        parameters: [],
+        returns: 'the post-start status (`running`, or `error` with the reason).',
+      },
+      {
+        signature: 'async stop(): Promise<void>',
+        description: 'Terminate the child (SIGTERM → grace → SIGKILL through the subprocess seam) and drop back to `stopped`. Idempotent.',
+        parameters: [],
+        returns: 'when the whole process tree has exited.',
+      },
+    ],
+  },
+  {
     key: 'liveshareShares',
     summary: 'Owner-only Remote surface over the share-management operations.',
     description: 'Owner-only Remote surface over the share-management operations.\n\nThe Gateway decides each call through remote access, so a `share-viewer` Peer is refused before a method runs; the owner Peer reaches the one implementation that owns each share-management side effect. `create` takes its Session as the `sessionId` of its single request object, so the Session resource kind\'s default resolver names that Session for the call without a reader declared here.',
@@ -2062,6 +2163,45 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Delete one item after checking its version; absence succeeds without an event.',
         parameters: [{ name: 'request', description: 'Session, message, and observed item version.' }],
         returns: 'the stable absent postcondition or an explicit failure.',
+      },
+    ],
+  },
+  {
+    key: 'modelIntel',
+    summary: 'The weekly model-intel service: datasheet, resolver, and research scheduler.',
+    description: 'The weekly model-intel service: datasheet, resolver, and research scheduler.',
+    methods: [
+      {
+        signature: 'current: ModelIntelDatasheet = { fetchedAt: \'\', entries: [] }',
+        description: 'Current datasheet snapshot; test-visible via injectDatasheet.',
+        parameters: [],
+      },
+      {
+        signature: 'async start(): Promise<void>',
+        description: 'Load the datasheet on mount and start the (cheap) schedule check.',
+        parameters: [],
+      },
+      {
+        signature: 'getDatasheet(): ModelIntelDatasheet',
+        description: 'The current datasheet (cached; re-read when the file changes under us).',
+        parameters: [],
+        returns: 'the current in-memory datasheet snapshot.',
+      },
+      {
+        signature: 'injectDatasheet(datasheet: ModelIntelDatasheet): void',
+        description: 'Replace the in-memory datasheet wholesale. Test and invariant seam: the scheduler owns the file, so tests seed the snapshot through this instead of fighting the persisted document.',
+        parameters: [{ name: 'datasheet', description: 'the snapshot to install as the current datasheet.' }],
+      },
+      {
+        signature: 'async resolveAutoRoute(taskText: string): Promise<AgentOptions | undefined>',
+        description: 'Resolve the `auto` child-model route for one delegation task: the best datasheet entry among providers whose credential resolves, scored against the task text. `undefined` = no eligible researched route (caller falls back to parent inheritance).',
+        parameters: [{ name: 'taskText', description: 'the delegation task text scored against datasheet entries.' }],
+        returns: 'the child provider/model options, or `undefined` when no researched route is eligible.',
+      },
+      {
+        signature: 'async researchNow(trigger: string): Promise<void>',
+        description: 'Run one research pass now (no-op while one is in flight). Exposed for the scheduled check and for manual triggers.',
+        parameters: [{ name: 'trigger', description: 'short label for the pass\'s cause, carried in the log line.' }],
       },
     ],
   },
@@ -3935,6 +4075,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'toolMatcher',
+    summary: 'The intent-to-tools matcher a deployment may mount as the `toolMatcher` service.',
+    description: 'The intent-to-tools matcher a deployment may mount as the `toolMatcher` service. Consumed opportunistically (`ctx.get(\'toolMatcher\')`, no static inject — the same idiom as the approval seam): a deployment without one falls back to defaultToolMatcher, and the registry stays active either way. Implementations must be deterministic for a stable catalog — the returned names ride the prefix-cached prompt the next turn.',
+    methods: [
+      {
+        signature: 'match(intent: string, candidates: readonly ToolSchema[], limit: number): string[] | Promise<string[]>',
+        description: 'Rank the catalog against one intent.',
+        parameters: [{ name: 'intent', description: 'the model\'s free-text need, exactly as passed to `tool_search`.' }, { name: 'candidates', description: 'the calling scope\'s full pre-paging catalog (restrictions applied, transports excluded).' }, { name: 'limit', description: 'the clamped maximum number of names to return.' }],
+        returns: 'the matched tool names, best first; unknown names are dropped by the transport.',
+      },
+    ],
+  },
+  {
     key: 'toolResultPruner',
     summary: 'Deterministic head/middle/tail pruning for current tool-result surface nodes.',
     description: 'Deterministic head/middle/tail pruning for current tool-result surface nodes.',
@@ -4577,6 +4730,67 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'worktreeRegistry',
+    summary: 'Durable worktree registry.',
+    description: 'Durable worktree registry. The `worktrees` table IS the registry — display order derives from record timestamps, so one row write is the whole mutation and no order/global divergence is possible; the global singleton holds only the per-repository mode preferences. Git worktree adds run before any durable write: a failed git step leaves nothing registered, and a failed durable write rolls the git side back.',
+    methods: [
+      {
+        signature: 'async create(repoPath: string, opts: { name?: string; base?: string } = {}): Promise<WorktreeRecord>',
+        description: 'Materialize a git worktree for a repository and register it durably. The branch is `<branchPrefix><slug>`; an already-existing branch is checked out as-is (stale-branch reattachment). The worktree directory is also registered as a workspace (title = branch) so sessions group there; workspace-registration failure degrades to an ungrouped worktree with a warning and never fails the create.',
+        parameters: [{ name: 'repoPath', description: 'Any directory inside the target repository.' }, { name: 'opts', description: 'Optional caller-chosen name (slug source) and base ref (verified; default `origin/main` when locally resolvable, else HEAD).' }],
+        returns: 'the durable record.',
+      },
+      {
+        signature: 'async list(repoPath?: string): Promise<WorktreeRecord[]>',
+        description: 'Ordered worktree records, newest first.',
+        parameters: [{ name: 'repoPath', description: 'When given, only worktrees of the repository owning that directory are returned.' }],
+        returns: 'a fresh ordered array of records.',
+      },
+      {
+        signature: 'get(id: WorktreeId): WorktreeRecord | undefined',
+        description: 'Look up one worktree record by id.',
+        parameters: [{ name: 'id', description: 'Worktree id.' }],
+        returns: 'the record, or `undefined` when unknown.',
+      },
+      {
+        signature: 'async status(path: string): Promise<WorktreeStatus>',
+        description: 'The live git projection of one working directory: branch, head, dirty flag, repo-global stash count, and upstream divergence. Not a registry query — any git working directory (including a plain checkout) reports.',
+        parameters: [{ name: 'path', description: 'Working directory to query.' }],
+        returns: 'the status bundle.',
+      },
+      {
+        signature: 'prefs(): Record<string, WorktreeModePref>',
+        description: 'The full per-repository preference map, keyed by canonical repository path. One read for clients projecting every workspace\'s default mode.',
+        parameters: [],
+        returns: 'a fresh copy of the durable preferences.',
+      },
+      {
+        signature: 'async pref(repoPath: string): Promise<WorktreeModePref | undefined>',
+        description: 'Read the per-repository default workspace mode for new sessions.',
+        parameters: [{ name: 'repoPath', description: 'Any directory inside the repository.' }],
+        returns: 'the stored preference, or `undefined` when the repo has none.',
+      },
+      {
+        signature: 'async setPref(repoPath: string, pref: WorktreeModePref): Promise<void>',
+        description: 'Write the per-repository default workspace mode for new sessions.',
+        parameters: [{ name: 'repoPath', description: 'Any directory inside the repository.' }, { name: 'pref', description: 'The preference: the checkout, a fresh worktree per session, or a named existing worktree.' }],
+        returns: 'resolution after durability.',
+      },
+      {
+        signature: 'async aliasFromTitle(sessionId: string, cwd: string | undefined, title: string): Promise<void>',
+        description: 'Claim or update a worktree\'s display alias from a titled session. The first titled session running inside the worktree claims the alias; later titles from that same session refine it (fallback → provider → user rename), and other sessions never rename it — a reused worktree keeps the name of the session that first titled it. The alias is display-only: the directory path and branch never move.',
+        parameters: [{ name: 'sessionId', description: 'The titled session.' }, { name: 'cwd', description: 'The session\'s working directory; must be a registered worktree path for any effect.' }, { name: 'title', description: 'The normalized session title; slugified for display.' }],
+        returns: 'resolution after durability, or immediately when nothing applies.',
+      },
+      {
+        signature: 'async remove(id: WorktreeId, opts: { force?: boolean } = {}): Promise<void>',
+        description: 'Remove one worktree: `git worktree remove` (refuses a dirty tree unless forced) plus the durable record deletion. The branch is never deleted — merge-back keeps it. A git removal of an already-missing worktree directory is accepted so the record can still be cleared.',
+        parameters: [{ name: 'id', description: 'Worktree record to remove.' }, { name: 'opts', description: '`force: true` removes even a dirty worktree.' }],
+        returns: 'resolution after durability.',
+      },
+    ],
+  },
+  {
     key: 'worktrees',
     summary: 'Creates retained Git worktrees under the mounted filesystem and sandbox providers.',
     description: 'Creates retained Git worktrees under the mounted filesystem and sandbox providers.',
@@ -4686,6 +4900,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Handle one failed model-request attempt before the loop retries or closes its step.',
     description: 'Handle one failed model-request attempt before the loop retries or closes its step. A listener returns `{ kind: \'retry\' }` without calling `next()` when it owns recovery, or calls `next()` to delegate. The default `undefined` leaves the failure terminal.',
     parameters: [{ name: 'payload', description: '.signal - the turn abort signal. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+  },
+  {
+    name: 'agent/request-prepared',
+    mode: 'serial',
+    signature: '\'agent/request-prepared\'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; model: string; contextWindow?: number; messages: readonly Message[]; signal: AbortSignal }): Promise<void>',
+    summary: 'Run preflight after route and header logging, before messages are frozen.',
+    description: 'Run preflight after route and header logging, before messages are frozen. Listeners may update durable state; the loop derives messages again after they settle.',
+    parameters: [{ name: 'payload', description: '.signal - the current turn\'s explicit abort signal. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
   },
   {
     name: 'agent/status',
@@ -4894,6 +5116,46 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'Observe a durable cold feedback mutation without publishing a live Session.',
     description: 'Observe a durable cold feedback mutation without publishing a live Session. Observers run before write ownership is released and must not await another message-feedback operation for this Session. The payload is borrowed read-only; deep-clone it before transferring ownership (for example, to Session.fromRestore).',
     parameters: [{ name: 'inspection', description: 'committed canonical prefix, including the feedback as its last event.' }],
+  },
+  {
+    name: 'flowbuilder/flow-changed',
+    mode: 'emit',
+    signature: '\'flowbuilder/flow-changed\'(action: \'saved\' | \'deleted\', flow: FlowDefinitionRecord): void',
+    summary: 'A workflow definition was saved or deleted.',
+    description: 'A workflow definition was saved or deleted. Paired per write; `flow` is the exact stored record (for `deleted`, the record as it was removed).',
+    parameters: [{ name: 'action', description: 'which write happened.' }, { name: 'flow', description: 'the affected definition record.' }],
+  },
+  {
+    name: 'flowbuilder/library-changed',
+    mode: 'emit',
+    signature: '\'flowbuilder/library-changed\'(action: \'saved\' | \'deleted\', block: BlockLibraryEntryRecord): void',
+    summary: 'A block library entry was saved or deleted.',
+    description: 'A block library entry was saved or deleted. Paired per write; `block` is the exact stored record (for `deleted`, the record as it was removed).',
+    parameters: [{ name: 'action', description: 'which write happened.' }, { name: 'block', description: 'the affected library entry.' }],
+  },
+  {
+    name: 'flowbuilder/run-end',
+    mode: 'emit',
+    signature: '\'flowbuilder/run-end\'(record: FlowRunRecordRecord): void',
+    summary: 'A run reached its terminal record (emitted exactly once per run).',
+    description: 'A run reached its terminal record (emitted exactly once per run).',
+    parameters: [{ name: 'record', description: 'the terminal record as stored.' }],
+  },
+  {
+    name: 'flowbuilder/run-node',
+    mode: 'emit',
+    signature: '\'flowbuilder/run-node\'(runId: FlowRunId, nodeId: string, state: FlowNodeRunState): void',
+    summary: 'One node settled into a new state, after that state is durable.',
+    description: 'One node settled into a new state, after that state is durable.',
+    parameters: [{ name: 'runId', description: 'the owning run.' }, { name: 'nodeId', description: 'the node that transitioned.' }, { name: 'state', description: 'the node\'s new state.' }],
+  },
+  {
+    name: 'flowbuilder/run-start',
+    mode: 'emit',
+    signature: '\'flowbuilder/run-start\'(record: FlowRunRecordRecord): void',
+    summary: 'A run started: the durable `running` record as stored.',
+    description: 'A run started: the durable `running` record as stored.',
+    parameters: [{ name: 'record', description: 'the run record at start.' }],
   },
   {
     name: 'forge/providers-changed',
@@ -5636,6 +5898,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type BindingOrigin = \'created\' | \'referenced\' | \'discovered\' | \'tracked\';',
   },
   {
+    name: 'BlockLibraryEntryRecord',
+    declaration: 'export type BlockLibraryEntryRecord = z.infer<typeof blockLibraryEntrySchema>;',
+  },
+  {
+    name: 'BlockSaveRequest',
+    declaration: 'export type BlockSaveRequest = z.input<typeof blockSaveRequestSchema>;',
+  },
+  {
     name: 'BoxProps',
     declaration: 'export interface BoxProps {\n    readonly flexDirection?: \'row\' | \'column\' | undefined;\n    readonly paddingX?: number | undefined;\n    readonly paddingY?: number | undefined;\n    readonly padding?: number | undefined;\n    readonly gap?: number | undefined;\n    readonly border?: boolean | string | undefined;\n    readonly borderColor?: string | undefined;\n    readonly children?: UiNode | undefined;\n}',
   },
@@ -6112,8 +6382,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface DirectoryListing {\n    path: string;\n    home: string;\n    crumbs: DirectoryEntry[];\n    entries: DirectoryEntry[];\n    truncated: boolean;\n}',
   },
   {
+    name: 'DirectoryListOptions',
+    declaration: 'export interface DirectoryListOptions {\n    includeFiles?: boolean;\n}',
+  },
+  {
     name: 'DirectoryPickerBrowseCapability',
-    declaration: 'export interface DirectoryPickerBrowseCapability {\n    kind: \'browse\';\n    list(path?: string, signal?: AbortSignal): Promise<DirectoryListing>;\n    createDirectory(path: string, name: string): Promise<string>;\n}',
+    declaration: 'export interface DirectoryPickerBrowseCapability {\n    kind: \'browse\';\n    list(path?: string, opts?: DirectoryListOptions, signal?: AbortSignal): Promise<DirectoryListing>;\n    createDirectory(path: string, name: string): Promise<string>;\n}',
   },
   {
     name: 'DirectoryPickerCapabilities',
@@ -6274,6 +6548,30 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FinishReasonMap',
     declaration: 'export interface FinishReasonMap {\n    \'stop\': {\n        kind: \'stop\';\n    };\n    \'tool-calls\': {\n        kind: \'tool-calls\';\n    };\n    \'max-tokens\': {\n        kind: \'max-tokens\';\n    };\n    \'aborted\': {\n        kind: \'aborted\';\n        failure: LlmFailure;\n    };\n    \'error\': {\n        kind: \'error\';\n        failure: LlmFailure;\n    };\n}',
+  },
+  {
+    name: 'FlowDefinitionRecord',
+    declaration: 'export type FlowDefinitionRecord = z.infer<typeof flowDefinitionSchema>;',
+  },
+  {
+    name: 'FlowNodeRunState',
+    declaration: 'export interface FlowNodeRunState {\n    status: FlowNodeRunStatus;\n    output?: unknown | undefined;\n    error?: string | undefined;\n}',
+  },
+  {
+    name: 'FlowNodeRunStatus',
+    declaration: 'export type FlowNodeRunStatus = \'pending\' | \'running\' | \'completed\' | \'error\' | \'skipped\';',
+  },
+  {
+    name: 'FlowRunId',
+    declaration: 'export type FlowRunId = Branded<\'FlowRunId\'>;',
+  },
+  {
+    name: 'FlowRunRecordRecord',
+    declaration: 'export type FlowRunRecordRecord = z.infer<typeof flowRunRecordSchema>;',
+  },
+  {
+    name: 'FlowSaveRequest',
+    declaration: 'export type FlowSaveRequest = z.input<typeof flowSaveRequestSchema>;',
   },
   {
     name: 'ForgeActionFailure',
@@ -6720,6 +7018,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface JobRead {\n    chunks: readonly JobChunk[];\n    lossy: boolean;\n    result?: string;\n    job: JobView;\n}',
   },
   {
+    name: 'JobsApi',
+    declaration: 'export interface JobsApi {\n    kill(request: RpcRequest<{\n        jobId: JobId;\n    }>): Promise<RpcResponse<{\n        killed: \'requested\' | \'already-finished\';\n    }>>;\n}',
+  },
+  {
     name: 'JobSettleCause',
     declaration: 'export type JobSettleCause = \'producer\' | \'kill\' | \'teardown\';',
   },
@@ -6774,6 +7076,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'KvUnitDescriptor',
     declaration: 'export interface KvUnitDescriptor {\n    readonly name: string;\n    readonly version: number;\n    readonly tables: readonly string[];\n    readonly hasGlobal: boolean;\n    readonly layout?: \'single\' | \'per-record\';\n    readonly compatibleVersions?: readonly number[];\n}',
+  },
+  {
+    name: 'LangflowApi',
+    declaration: 'export interface LangflowApi {\n    status(request: RpcRequest<{}>): Promise<RpcResponse<{\n        status: LangflowStatus;\n    }>>;\n    start(request: RpcRequest<{}>): Promise<RpcResponse<{\n        status: LangflowStatus;\n    }>>;\n    stop(request: RpcRequest<{}>): Promise<RpcResponse<{\n        status: LangflowStatus;\n    }>>;\n}',
+  },
+  {
+    name: 'LangflowState',
+    declaration: 'export type LangflowState = \'stopped\' | \'starting\' | \'running\' | \'error\';',
+  },
+  {
+    name: 'LangflowStatus',
+    declaration: 'export interface LangflowStatus {\n    state: LangflowState;\n    url?: string | undefined;\n    pid?: number | undefined;\n    error?: string | undefined;\n}',
   },
   {
     name: 'ListVersionsOptions',
@@ -6849,7 +7163,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmProviderInfo',
-    declaration: 'export interface LlmProviderInfo {\n    id: string;\n    name: string;\n}',
+    declaration: 'export interface LlmProviderInfo {\n    id: string;\n    name: string;\n    authConfigured?: boolean;\n}',
   },
   {
     name: 'LlmReasoningEffortInfo',
@@ -7012,6 +7326,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type McpResourceRequest = {\n    method: \'resources/list\' | \'resources/templates/list\';\n    cursor?: string;\n} | {\n    method: \'resources/read\';\n    uri: string;\n};',
   },
   {
+    name: 'MediaDownloadRequest',
+    declaration: 'export interface MediaDownloadRequest {\n    path: string;\n    range?: string;\n    remux?: boolean;\n}',
+  },
+  {
     name: 'Mergeability',
     declaration: 'export type Mergeability = \'mergeable\' | \'conflicting\' | \'unknown\';',
   },
@@ -7132,6 +7450,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ModelCatalogModel {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n    readonly reasoning?: ModelReasoning;\n    readonly badge?: LlmModelBadge;\n}',
   },
   {
+    name: 'ModelIntelDatasheet',
+    declaration: 'export interface ModelIntelDatasheet {\n    fetchedAt: string;\n    entries: ModelIntelEntry[];\n}',
+  },
+  {
+    name: 'ModelIntelEntry',
+    declaration: 'export interface ModelIntelEntry {\n    provider: string;\n    model: string;\n    reasoning?: number;\n    coding?: number;\n    agentic?: number;\n    speed?: number;\n    contextWindow?: number;\n    notes?: string;\n}',
+  },
+  {
     name: 'ModelMessageSource',
     declaration: 'export interface ModelMessageSource extends AssistantProviderMetadata {\n    kind: \'model\';\n}',
   },
@@ -7234,6 +7560,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'OptionalSessionSeq',
     declaration: 'export type OptionalSessionSeq = SessionSeq | null;',
+  },
+  {
+    name: 'OrchestratorApi',
+    declaration: 'export interface OrchestratorApi {\n    board(request: RpcRequest<{}>): Promise<RpcResponse<{\n        items: WorkspaceView[];\n        archivedSessionIds: SessionId[];\n        sessions: SessionSummary[];\n    }>>;\n    act(request: RpcRequest<{\n        sessionId: SessionId;\n        action: \'kill\';\n    }>): Promise<RpcResponse<{\n        accepted: true;\n    }>>;\n}',
   },
   {
     name: 'OTelEventRecord',
@@ -7850,6 +8180,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RpcId',
     declaration: 'export type RpcId = Branded<\'rpc-id\'>;',
+  },
+  {
+    name: 'RpcRequest',
+    declaration: 'export interface RpcRequest<P> {\n    rpcId: RpcId;\n    payload: P;\n}',
+  },
+  {
+    name: 'RpcResponse',
+    declaration: 'export interface RpcResponse<T> {\n    rpcId: RpcId;\n    result: RpcResult<T>;\n}',
   },
   {
     name: 'RunnerFailureRule',
@@ -8972,6 +9310,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SubagentActivationSpec {\n    readonly provider: string;\n    readonly label: string;\n    readonly childId?: SessionId;\n    readonly request: Omit<SubagentStartRequest, \'label\' | \'signal\'>;\n    readonly signal: AbortSignal;\n    readonly delivery: \'parent\' | \'caller\';\n}',
   },
   {
+    name: 'SubagentAncestorAuthority',
+    declaration: 'export interface SubagentAncestorAuthority {\n    readonly kind: \'ancestor\';\n    readonly agent: Agent;\n}',
+  },
+  {
     name: 'SubagentCapabilities',
     declaration: 'export interface SubagentCapabilities {\n    readonly agentOptions: boolean;\n    readonly agentPreset: boolean;\n    readonly outputSchema: boolean;\n    readonly depthLimit: boolean;\n}',
   },
@@ -8982,6 +9324,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SubagentCatalogRow',
     declaration: 'export type SubagentCatalogRow = {\n    readonly id: SessionId;\n    readonly activity: \'running\' | \'inactive\';\n} & ({\n    readonly mode: \'one-shot\';\n    readonly label?: string;\n} | {\n    readonly mode: \'external\';\n    readonly label?: string;\n} | {\n    readonly mode: \'continuable\';\n    readonly label: string;\n});',
+  },
+  {
+    name: 'SubagentControlAuthority',
+    declaration: 'export type SubagentControlAuthority = {\n    readonly kind: \'user\';\n    readonly parentSessionId: SessionId;\n} | SubagentAncestorAuthority;',
   },
   {
     name: 'SubagentDescendantListEntry',
@@ -9198,6 +9544,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TeamWaitResult',
     declaration: 'export interface TeamWaitResult {\n    readonly timedOut: boolean;\n}',
+  },
+  {
+    name: 'TermApi',
+    declaration: 'export interface TermApi {\n    spawn(request: RpcRequest<{\n        cols?: number;\n        rows?: number;\n        cwd?: string;\n    }>): Promise<RpcResponse<{\n        sessionId: string;\n    }>>;\n    read(request: RpcRequest<{\n        sessionId: string;\n        since: number;\n    }>): Promise<RpcResponse<{\n        data: string;\n        next: number;\n        exited: boolean;\n    }>>;\n    input(request: RpcRequest<{\n        sessionId: string;\n        data: string;\n    }>): Promise<RpcResponse<{\n        wrote: true;\n    }>>;\n    resize(request: RpcRequest<{\n        sessionId: string;\n        cols: number;\n        rows: number;\n    }>): Promise<RpcResponse<{\n        resized: true;\n    }>>;\n    dispose(request: RpcRequest<{\n        sessionId: string;\n    }>): Promise<RpcResponse<{\n        disposed: true;\n    }>>;\n}',
   },
   {
     name: 'TerminalBackend',
@@ -9421,7 +9771,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolGuard',
-    declaration: 'export type ToolGuard = (execution: Readonly<ToolExecution>) => string | undefined;',
+    declaration: 'export type ToolGuard = (execution: Readonly<ToolExecution>) => string | undefined | Promise<string | undefined>;',
   },
   {
     name: 'ToolHistory',
@@ -10050,6 +10400,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceView',
     declaration: 'export interface WorkspaceView {\n    readonly workspaceId: WorkspaceId;\n    readonly path: string;\n    readonly title: string;\n    readonly sessionIds: readonly SessionId[];\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'WorktreeModePref',
+    declaration: 'export type WorktreeModePref = z.infer<typeof worktreeModePref>;',
+  },
+  {
+    name: 'WorktreeRecord',
+    declaration: 'export type WorktreeRecord = z.infer<typeof worktreeRecord>;',
+  },
+  {
+    name: 'WorktreeStatus',
+    declaration: 'export interface WorktreeStatus {\n    readonly path: string;\n    readonly branch: string;\n    readonly head: string;\n    readonly dirty: boolean;\n    readonly stashCount: number;\n    readonly ahead: number;\n    readonly behind: number;\n    readonly bases: readonly string[];\n}',
   },
 ]
 

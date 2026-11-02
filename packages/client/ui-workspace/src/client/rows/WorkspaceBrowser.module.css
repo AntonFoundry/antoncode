@@ -551,6 +551,18 @@
   }
 }
 
+/* The archive section header renders through Rows.module.css `.projectRow` so
+   it reads as one more workspace group (icon + title at the same size/color);
+   this reset only strips the button chrome the row style does not set. */
+.archiveRow {
+  width: 100%;
+  height: 28px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+}
+
 .empty {
   padding: 16px 12px;
   color: var(--dsw-alias-label-tertiary);
@@ -582,6 +594,33 @@
   font-size: 13px;
   line-height: 20px;
   color: var(--dsw-alias-link);
+}
+
+/* Multi-selection action bar: count + bulk archive, pinned above the list. */
+.selectionBar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 32px;
+  padding: 0 8px;
+  margin-bottom: 4px;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.selectionCount {
+  flex: none;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.selectionActions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 /* Rename dialog form (same figma dialog family as the create modals). */

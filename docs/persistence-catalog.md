@@ -735,7 +735,21 @@ Source: [`packages/interaction/permission-presets/src/index.ts:53`](../packages/
 'plan/mode': { active: boolean }
 ```
 
-Source: [`packages/plan/plan-mode/src/index.ts:53`](../packages/plan/plan-mode/src/index.ts)
+Source: [`packages/plan/plan-mode/src/index.ts:55`](../packages/plan/plan-mode/src/index.ts)
+
+<a id="planwrite--log-only"></a>
+
+#### `plan/write` — log-only
+
+```ts persistence-catalog
+/**
+ * Standing implementation plan: log-only, non-surface, whole-value replace.
+ * The last `plan/write` wins; folded into `PlanProjection.standingPlan`.
+ */
+'plan/write': { plan: string; title?: string; path?: string }
+```
+
+Source: [`packages/plan/plan-mode/src/index.ts:60`](../packages/plan/plan-mode/src/index.ts)
 
 ### `request/*`
 

@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Context, FiberState, type Plugin } from '@deepseek-ai/cordis'
-import { PluginPackages, readPluginMeta, type RuntimeResolution } from '@deepseek-ai/dsh-app-boot'
+import {
+  PluginPackages, pluginStatePath, pluginStatePatches, readPluginMeta, type RuntimeResolution,
+} from '@deepseek-ai/dsh-app-boot'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import type { AgentPresetRegistry } from '@deepseek-ai/dsh-agent-preset-registry'
@@ -13,12 +15,17 @@ import PluginInventoryGateway from '../src/index.ts'
 const contexts: Context[] = []
 const roots: string[] = []
 
+const previousHome = process.env.DSH_HOME
+
 afterEach(async () => {
+  if (previousHome === undefined) delete process.env.DSH_HOME
+  else process.env.DSH_HOME = previousHome
   for (const ctx of contexts.splice(0).reverse()) await ctx.fiber.dispose()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
 const activePlugin: Plugin.Function = () => {}
+const configurablePlugin: Plugin.Function = () => {}
 const pendingPlugin: Plugin.Object = {
   inject: ['neverReady'],
   apply() {},
@@ -31,8 +38,13 @@ async function harness(baseUrl?: string): Promise<{
   const ctx = new Context()
   contexts.push(ctx)
   if (baseUrl !== undefined) ctx.baseUrl = baseUrl
+  // The durable state lands in the harness home; each test gets its own.
+  const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-inventory-home-'))
+  roots.push(home)
+  process.env.DSH_HOME = home
   await ctx.plugin(Loader)
   ctx.loader.builtins.active = activePlugin
+  ctx.loader.builtins.configurable = configurablePlugin
   ctx.loader.builtins.pending = pendingPlugin
   await ctx.plugin(PluginInventoryGateway)
   const inventory = ctx.get('pluginInventory') as PluginInventoryGateway
@@ -138,7 +150,7 @@ describe('PluginInventoryGateway', () => {
     }
   })
 
-  it('publishes one direct list method under the pluginInventory namespace', async () => {
+  it('publishes direct list, toggle, and configure methods under the pluginInventory namespace', async () => {
     const { inventory } = await harness()
     expect(inventory.typertRemote).toMatchObject({
       serviceKey: 'pluginInventory',
@@ -146,6 +158,8 @@ describe('PluginInventoryGateway', () => {
     })
     expect(remoteMethods(inventory)).toEqual([
       { method: 'list', invocation: { kind: 'direct' } },
+      { method: 'toggle', invocation: { kind: 'direct' } },
+      { method: 'configure', invocation: { kind: 'direct' } },
     ])
   })
 
@@ -163,13 +177,13 @@ describe('PluginInventoryGateway', () => {
     for (let index = 0; index < 2; index++) {
       expect((await inventory.list()).entries).toContainEqual({
         entryId: entry.id, moduleName: 'cordis:failing', enabled: true,
-        fiberPhase: 'failed', diagnostic: 'native preparation unavailable',
+        fiberPhase: 'failed', diagnostic: 'native preparation unavailable', isProtected: false,
       })
     }
     await entry.update({ config: { fail: false } })
     await entry.fiber!.await()
     expect((await inventory.list()).entries).toContainEqual({
-      entryId: entry.id, moduleName: 'cordis:failing', enabled: true, fiberPhase: 'active',
+      entryId: entry.id, moduleName: 'cordis:failing', enabled: true, fiberPhase: 'active', isProtected: false,
     })
   })
 
@@ -193,18 +207,21 @@ describe('PluginInventoryGateway', () => {
         moduleName: 'cordis:active',
         enabled: true,
         fiberPhase: 'active',
+        isProtected: false,
       },
       {
         entryId: pendingId,
         moduleName: 'cordis:pending',
         enabled: true,
         fiberPhase: 'pending',
+        isProtected: false,
       },
       {
         entryId: disabledId,
         moduleName: 'cordis:not-installed',
         enabled: false,
         fiberPhase: null,
+        isProtected: false,
       },
     ]))
 
@@ -214,6 +231,7 @@ describe('PluginInventoryGateway', () => {
       moduleName: 'cordis:active',
       enabled: false,
       fiberPhase: null,
+      isProtected: false,
     })
 
     ctx.loader.remove(pendingId)
@@ -250,5 +268,53 @@ describe('PluginInventoryGateway', () => {
       },
       { id: 'damaged', isDefault: false, broken: 'the composition file is missing', rows: [] },
     ])
+  })
+
+  it('toggles a plugin entry state via remote toggle and guards protected plugins', async () => {
+    const { ctx, inventory } = await harness()
+    const activeId = await ctx.loader.create({ name: 'cordis:active' })
+    expect((await inventory.list()).entries.find(e => e.entryId === activeId)?.enabled).toBe(true)
+
+    await inventory.toggle(activeId as never, false)
+    expect((await inventory.list()).entries.find(e => e.entryId === activeId)?.enabled).toBe(false)
+    // The toggle persists: the state file stores the disabled flag and boot
+    // converts it into the id-targeted patch row that survives reinstalls.
+    expect(pluginStatePatches(pluginStatePath())).toEqual([{ id: activeId, disabled: true }])
+
+    await inventory.toggle(activeId as never, true)
+    expect((await inventory.list()).entries.find(e => e.entryId === activeId)?.enabled).toBe(true)
+    expect(pluginStatePatches(pluginStatePath())).toEqual([{ id: activeId, disabled: false }])
+
+    // Protected plugin should throw
+    ctx.loader.builtins.include = () => {}
+    const includeId = await ctx.loader.create({ name: 'cordis:include' })
+    await expect(inventory.toggle(includeId as never, false)).rejects.toThrow('Cannot toggle core infrastructure plugin')
+  })
+
+  it('merges scalar config via remote configure, projects scalars only, and guards protected plugins', async () => {
+    const { ctx, inventory } = await harness()
+    const entryId = await ctx.loader.create({
+      name: 'cordis:configurable',
+      config: { endpoint: 'http://127.0.0.1:8090', apiKey: 'ctx_old', requestedZones: ['goal'] },
+    })
+
+    await inventory.configure(entryId as never, { endpoint: 'http://127.0.0.1:9000', apiKey: 'ctx_new' })
+    expect((await inventory.list()).entries.find(entry => entry.entryId === entryId)?.config).toEqual({
+      endpoint: 'http://127.0.0.1:9000',
+      apiKey: 'ctx_new',
+    })
+    // The durable store mirrors the live entry after the scalar merge (the
+    // established configure semantics): boot re-applies exactly what the
+    // runtime shows.
+    expect(pluginStatePatches(pluginStatePath())).toEqual([{
+      id: entryId,
+      config: { endpoint: 'http://127.0.0.1:9000', apiKey: 'ctx_new' },
+    }])
+
+    // Protected plugin should throw
+    ctx.loader.builtins.include = () => {}
+    const includeId = await ctx.loader.create({ name: 'cordis:include' })
+    await expect(inventory.configure(includeId as never, { endpoint: 'http://example.invalid' }))
+      .rejects.toThrow('Cannot reconfigure core infrastructure plugin')
   })
 })

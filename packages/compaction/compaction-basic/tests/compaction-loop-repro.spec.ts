@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { toolPairingBalancedAfter, toolPairingBalancedBefore } from '@deepseek-ai/dsh-compaction'
 import { createUserMessage, createSystemMessage, CONTEXT_WINDOW_EXCEEDED_CODE, LlmError, resolveRetryPolicy , createMessage } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, GenerateOptions, LlmResolvedModelInfo, ResolvedRetryPolicy, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, GenerateOptions, LlmCallConfig, LlmResolvedModelInfo, ResolvedRetryPolicy, StreamChunk, ToolSchema } from '@deepseek-ai/dsh-llm'
 import { ToolCallId, LlmAdapter } from '@deepseek-ai/dsh-llm'
 import { defineContentToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import { type Agent } from '@deepseek-ai/dsh-agent'
@@ -61,6 +61,37 @@ class StepwiseToolAdapter extends LlmAdapter {
     }
     yield { type: 'block-start', index: 0, blockType: 'text' }
     yield { type: 'block-end', index: 0, block: { type: 'text', text: 'all done' } }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  }
+}
+
+/** Resolve model capacity by provider and record the request actually dispatched. */
+class RoutedCapacityAdapter extends LlmAdapter {
+  readonly conversationRequests: GenerateOptions[] = []
+  readonly summaryRequests: GenerateOptions[] = []
+
+  override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+    return Promise.resolve({
+      provider,
+      id: model,
+      name: model,
+      context: { contextWindow: provider === 'large' ? 10_000 : 1_000 },
+    })
+  }
+
+  async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    const trailing = options.messages.at(-1)?.content
+      .map(block => (block.type === 'text' ? block.text : ''))
+      .join('') ?? ''
+    if (trailing.includes('acting as a compaction engine')) {
+      this.summaryRequests.push(options)
+      yield { type: 'block-start', index: 0, blockType: 'text' }
+      yield { type: 'block-end', index: 0, block: { type: 'text', text: 'ROUTED CHECKPOINT' } }
+    } else {
+      this.conversationRequests.push(options)
+      yield { type: 'block-start', index: 0, blockType: 'text' }
+      yield { type: 'block-end', index: 0, block: { type: 'text', text: 'route accepted' } }
+    }
     yield { type: 'finish', reason: { kind: 'stop' } }
   }
 }
@@ -180,6 +211,13 @@ function overflowHistorySeed(): readonly SessionEvent[] {
     session.append('turn/start', {
       turn,
     })
+    if (turn === 1) {
+      session.append('request/header', {
+        header: { config: { provider: 'mock', model: 'mock' } },
+        reason: 'initial',
+      })
+      session.append('request/context', { provider: 'mock', model: 'mock', contextWindow: 128 })
+    }
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: `${sentinel} ${'old context '.repeat(200)}` }],
       source: { kind: 'user' },
@@ -227,6 +265,156 @@ describe('CBR-001: a real-loop checkpoint is a valid boundary on both sides', ()
     }
   })
 
+  it('uses the final smaller model capacity after request routing and before dispatch', async () => {
+    const ctx = new Context()
+    const adapter = new RoutedCapacityAdapter()
+    await mountAgentLoopTestDependencies(ctx)
+    await mountInvariants(ctx)
+    await ctx.plugin(AgentLoop, { agents: [] })
+    await ctx.plugin(TokenMeter)
+    ctx.llm.registerAdapter(['large', 'small'], adapter)
+    await ctx.plugin(BasicCompactionEngine, {
+      thresholdRatio: 0.5,
+      retainTokens: 50,
+      compactionRetries: 1,
+    })
+    try {
+      const session = Session.create(SessionId('request-route-capacity'))
+      session.append('turn/start', { turn: 1 })
+      session.append('request/header', {
+        header: { config: { provider: 'large', model: 'shared-id' } },
+        reason: 'initial',
+      })
+      session.append('request/context', { provider: 'large', model: 'shared-id', contextWindow: 10_000 })
+      for (const [index, text] of ['OLD ROUTED HISTORY '.repeat(35), 'PRESERVED RECENT HISTORY '.repeat(2)].entries()) {
+        session.append('user/message', createUserMessage({
+          content: [{ type: 'text', text }],
+          source: { kind: 'user' },
+        }), { surfaceOp: 'append' })
+        session.append('step/start', { turn: 1, step: index + 1 })
+        session.append('assistant/message', {
+          turn: 1,
+          step: index + 1,
+          message: createMessage({
+            role: 'assistant',
+            content: [{ type: 'text', text: `routed answer ${index} ${'response detail '.repeat(index === 0 ? 35 : 2)}` }],
+            source: { kind: 'model', provider: 'large', model: 'shared-id' },
+          }),
+        }, { surfaceOp: 'append' })
+        session.append('step/end', { turn: 1, step: index + 1 })
+      }
+      session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+      const { agent } = await ctx.agentLoop.createAgent(ctx, {
+        sessionId: session.id,
+        seed: session.snapshotEvents(),
+        agentOptions: { provider: 'large', model: 'shared-id' },
+      })
+      const before = ctx.tokenMeter.measure(agent.session).totalTokens
+      expect(before).toBeLessThan(5_000)
+      let requestHeaderAtPreStep: string | undefined
+      ctx.on('agent/pre-step', async ({ agent: subject }, next) => {
+        if (subject === agent) requestHeaderAtPreStep = agent.session.requestHeader()?.config.provider
+        return next()
+      })
+      ctx.on('agent/request', async ({ agent: subject }, next) => subject === agent
+        ? { ...await next(), provider: 'small', model: 'shared-id' }
+        : next())
+
+      agent.followup(createUserMessage({
+        content: [{ type: 'text', text: 'Switch to the smaller routed model.' }],
+        source: { kind: 'user' },
+      }))
+      await agent.whenIdle()
+
+      expect(requestHeaderAtPreStep).toBe('large')
+      expect(agent.session.requestContext()).toMatchObject({ provider: 'small', model: 'shared-id', contextWindow: 1_000 })
+      expect(adapter.summaryRequests).toHaveLength(2)
+      expect(adapter.conversationRequests).toHaveLength(1)
+      const dispatched = JSON.stringify(adapter.conversationRequests[0]!.messages)
+      expect(dispatched).toContain('ROUTED CHECKPOINT')
+      expect(dispatched).toContain('PRESERVED RECENT HISTORY')
+      expect(dispatched).not.toContain('OLD ROUTED HISTORY')
+      expect(agent.session.snapshotEvents().some(event => event.type === 'compaction/summary')).toBe(true)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('prices the final routed request and incoming batch before its first dispatch', async () => {
+    const ctx = new Context()
+    const adapter = new OverflowRecoveryAdapter('thrown')
+    await mountAgentLoopTestDependencies(ctx)
+    await mountInvariants(ctx)
+    await ctx.plugin(AgentLoop, { agents: [] })
+    await ctx.plugin(TokenMeter)
+    ctx.llm.registerAdapter(['mock'], adapter)
+    await ctx.plugin(BasicCompactionEngine, {
+      thresholdRatio: 0.5,
+      retainTokens: 20,
+      maxTokens: 64,
+      compactionRetries: 0,
+      maxOverflowRetries: 1,
+    })
+    try {
+      const session = Session.create(SessionId('incoming-pressure'))
+      const seedConfig: LlmCallConfig = { provider: 'mock', model: 'mock' }
+      const header = {
+        config: seedConfig,
+        system: 'old prompt',
+        tools: [] as ToolSchema[],
+      }
+      session.append('turn/start', { turn: 1 })
+      session.append('request/header', { header, reason: 'initial' })
+      session.append('request/context', { provider: 'mock', model: 'mock', contextWindow: 128 })
+      const history = createUserMessage({
+        content: [{ type: 'text', text: 'OLD HISTORY SENTINEL '.repeat(25) }],
+        source: { kind: 'user' },
+      })
+      session.append('user/message', history, { surfaceOp: 'append' })
+      session.append('step/start', { turn: 1, step: 1 })
+      session.append('step/end', { turn: 1, step: 1 })
+      session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+      const { agent } = await ctx.agentLoop.createAgent(ctx, {
+        sessionId: session.id,
+        seed: session.snapshotEvents(),
+        agentOptions: { provider: 'mock', model: 'mock' },
+      })
+      const dispatchedBefore = ctx.tokenMeter.measure(agent.session).totalTokens
+      const incoming = createUserMessage({
+        content: [{ type: 'text', text: 'INCOMING BATCH '.repeat(90) }],
+        source: { kind: 'user' },
+      })
+      const incomingTokens = ctx.tokenMeter.estimateMessage(incoming)
+      const threshold = 150
+      expect(dispatchedBefore).toBeLessThan(threshold)
+      expect(dispatchedBefore + incomingTokens).toBeGreaterThanOrEqual(threshold)
+      let observedBatch = false
+      ctx.on('agent/pre-step', async ({ agent: subject, messages }, next) => {
+        if (subject === agent) {
+          observedBatch = messages.some(message => message.id === incoming.id)
+          expect(agent.session.deriveMessages().some(message => message.id === incoming.id)).toBe(false)
+        }
+        return next()
+      })
+      ctx.on('agent/request', async ({ agent: subject }, next) => subject === agent
+        ? { ...await next(), provider: 'mock', model: 'mock' }
+        : next())
+      agent.followup(incoming)
+      await agent.whenIdle()
+
+      expect(observedBatch).toBe(true)
+      expect(adapter.conversationRequests).toHaveLength(1)
+      expect(adapter.summaryRequests).toHaveLength(2)
+      const firstRequest = JSON.stringify(adapter.conversationRequests[0]!.messages)
+      expect(firstRequest).toContain('INCOMING BATCH')
+      expect(firstRequest).toContain('RECOVERY CHECKPOINT')
+      expect(firstRequest).not.toContain('OLD HISTORY SENTINEL')
+      expect(agent.session.snapshotEvents().some(event => event.type === 'compaction/summary')).toBe(true)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('runs automatic pressure between the completed tool step and the next step', async () => {
     const { ctx } = await harness(8)
     try {
@@ -246,14 +434,11 @@ describe('CBR-001: a real-loop checkpoint is a valid boundary on both sides', ()
         && event.data.step === precedingResult.data.step
         && event.seq > precedingResult.seq,
       )
-      const nextStepStart = events.find(event =>
-        event.type === 'step/start'
-        && event.data.step === precedingResult.data.step + 1
-        && event.seq > compactStart!.seq,
-      )
       expect(precedingResult.seq).toBeLessThan(compactStart!.seq)
       expect(precedingStepEnd!.seq).toBeLessThan(compactStart!.seq)
-      expect(compactStart!.seq).toBeLessThan(nextStepStart!.seq)
+      expect(compactStart!.seq).toBeLessThan(events.find(event =>
+        event.type === 'assistant/chunk' && event.seq > compactStart!.seq,
+      )!.seq)
     } finally {
       await ctx.fiber.dispose()
     }
@@ -402,13 +587,13 @@ describe('context-overflow recovery across the real loop and compaction-basic', 
         await agent.whenIdle()
 
         expect(adapter.conversationRequests).toHaveLength(2)
-        expect(adapter.summaryRequests).toHaveLength(1)
-        const instruction = adapter.summaryRequests[0]!.messages.at(-1)?.content
+        expect(adapter.summaryRequests).toHaveLength(2)
+        const instruction = adapter.summaryRequests.at(-1)!.messages.at(-1)?.content
           .map(block => (block.type === 'text' ? block.text : ''))
           .join('') ?? ''
         expect(instruction).toContain('Write concise English engineering prose.')
         expect(instruction).toContain('numeric values, function signatures, and syntax fragments.')
-        expect(JSON.stringify(adapter.conversationRequests[0]!.messages)).toContain('OLD HISTORY SENTINEL')
+        expect(JSON.stringify(adapter.conversationRequests[0]!.messages)).toContain('historical response 2')
         const retry = JSON.stringify(adapter.conversationRequests[1]!.messages)
         expect(retry).toContain('RECOVERY CHECKPOINT')
         expect(retry).not.toContain('OLD HISTORY SENTINEL')
@@ -426,6 +611,9 @@ describe('context-overflow recovery across the real loop and compaction-basic', 
           || event.type === 'compaction/end',
         )
         expect(compaction.map(event => event.type)).toEqual([
+          'compaction/start',
+          'compaction/summary',
+          'compaction/end',
           'compaction/start',
           'compaction/summary',
           'compaction/end',
@@ -474,7 +662,7 @@ describe('context-overflow recovery across the real loop and compaction-basic', 
       await agent.whenIdle()
 
       expect(adapter.conversationRequests).toHaveLength(3)
-      expect(adapter.summaryRequests).toHaveLength(1)
+      expect(adapter.summaryRequests).toHaveLength(2)
       expect(agent.session.snapshotEvents().filter(event => event.type === 'llm/retry').map(event => event.data))
         .toEqual([expect.objectContaining({ turn: 3, step: 1, retry: 1, failure: { message: 'temporary provider outage', code: 'SERVER' } })])
       expect(agent.session.snapshotEvents().filter(event => event.type === 'turn/start').slice(-1).map(event => event.data.turn))

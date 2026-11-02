@@ -1,4 +1,4 @@
-/** `settings.theme` namespace dictionaries (the Appearance and font settings rows' copy). */
+/** `settings.theme` namespace dictionaries (the Appearance and Font rows' copy). */
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
@@ -27,6 +27,16 @@ export const zh = {
   'fontFamily.terminal.description': '用于侧栏终端。多个字体用逗号分隔，留空使用默认字体',
   'fontFamily.placeholder': '默认',
   'fontSize.more': '更多字体设置',
+  'font.title': '字体',
+  'font.system': '系统',
+  'font.interface': '界面',
+  'font.chat': '对话',
+  'font.code': '代码',
+  'font.terminal': '终端',
+  'font.scale': '缩放',
+  'font.size': '字号',
+  'font.previewUi': '设置、侧边栏与窗口边框 Settings & Sidebar',
+  'font.previewChat': '对话消息与输入框',
 } satisfies Record<string, string>
 
 /** The settings.theme namespace key union. */
@@ -59,6 +69,16 @@ export const en = {
   'fontFamily.terminal.description': 'Used for the sidebar terminal. Separate fonts with commas; leave empty for the default',
   'fontFamily.placeholder': 'Default',
   'fontSize.more': 'More font settings',
+  'font.title': 'Fonts',
+  'font.system': 'System',
+  'font.interface': 'Interface',
+  'font.chat': 'Chat',
+  'font.code': 'Code',
+  'font.terminal': 'Terminal',
+  'font.scale': 'Zoom',
+  'font.size': 'Font size',
+  'font.previewUi': 'Settings, sidebar, and window chrome',
+  'font.previewChat': 'Conversation messages and composer',
 } satisfies Record<ThemeKey, string>
 
 /** Japanese copy, checked against the English keys. */
@@ -88,6 +108,16 @@ export const ja = {
   'fontFamily.terminal.description': 'サイドバーのターミナルに使用します。フォントはカンマで区切ります。空欄の場合はデフォルトを使用',
   'fontFamily.placeholder': 'デフォルト',
   'fontSize.more': 'その他のフォント設定',
+  'font.title': 'Fonts',
+  'font.system': 'System',
+  'font.interface': 'Interface',
+  'font.chat': 'Chat',
+  'font.code': 'Code',
+  'font.terminal': 'Terminal',
+  'font.scale': 'Zoom',
+  'font.size': 'Font size',
+  'font.previewUi': 'Settings, sidebar, and window chrome',
+  'font.previewChat': 'Conversation messages and composer',
 } satisfies Record<keyof typeof en, string>
 
 /** Spanish dictionary, checked against the English keys. */
@@ -117,6 +147,16 @@ export const es = {
   'fontFamily.terminal.description': 'Se utiliza para el terminal de la barra lateral. Separe las fuentes con comas; dejar vacío por defecto',
   'fontFamily.placeholder': 'Predeterminado',
   'fontSize.more': 'Más configuraciones de fuente',
+  'font.title': 'Fonts',
+  'font.system': 'System',
+  'font.interface': 'Interface',
+  'font.chat': 'Chat',
+  'font.code': 'Code',
+  'font.terminal': 'Terminal',
+  'font.scale': 'Zoom',
+  'font.size': 'Font size',
+  'font.previewUi': 'Settings, sidebar, and window chrome',
+  'font.previewChat': 'Conversation messages and composer',
 } satisfies Record<keyof typeof en, string>
 
 /** French dictionary, checked against the English keys. */
@@ -146,6 +186,16 @@ export const fr = {
   'fontFamily.terminal.description': 'Utilisé pour le terminal de la barre latérale. Séparez les polices par des virgules ; laisser vide pour la valeur par défaut',
   'fontFamily.placeholder': 'Par défaut',
   'fontSize.more': 'Plus de paramètres de police',
+  'font.title': 'Fonts',
+  'font.system': 'System',
+  'font.interface': 'Interface',
+  'font.chat': 'Chat',
+  'font.code': 'Code',
+  'font.terminal': 'Terminal',
+  'font.scale': 'Zoom',
+  'font.size': 'Font size',
+  'font.previewUi': 'Settings, sidebar, and window chrome',
+  'font.previewChat': 'Conversation messages and composer',
 } satisfies Record<keyof typeof en, string>
 
 /** German dictionary, checked against the English keys. */
@@ -175,6 +225,16 @@ export const de = {
   'fontFamily.terminal.description': 'Wird für das Sidebar-Terminal verwendet. Trennen Sie Schriftarten durch Kommas. Für die Standardeinstellung leer lassen',
   'fontFamily.placeholder': 'Standard',
   'fontSize.more': 'Weitere Schriftarteinstellungen',
+  'font.title': 'Fonts',
+  'font.system': 'System',
+  'font.interface': 'Interface',
+  'font.chat': 'Chat',
+  'font.code': 'Code',
+  'font.terminal': 'Terminal',
+  'font.scale': 'Zoom',
+  'font.size': 'Font size',
+  'font.previewUi': 'Settings, sidebar, and window chrome',
+  'font.previewChat': 'Conversation messages and composer',
 } satisfies Record<keyof typeof en, string>
 
 /** Russian dictionary, checked against the English keys. */
@@ -204,6 +264,16 @@ export const ru = {
   'fontFamily.terminal.description': 'Используется для терминала боковой панели. Разделяйте шрифты запятыми; оставьте пустым по умолчанию',
   'fontFamily.placeholder': 'По умолчанию',
   'fontSize.more': 'Дополнительные настройки шрифта',
+  'font.title': 'Fonts',
+  'font.system': 'System',
+  'font.interface': 'Interface',
+  'font.chat': 'Chat',
+  'font.code': 'Code',
+  'font.terminal': 'Terminal',
+  'font.scale': 'Zoom',
+  'font.size': 'Font size',
+  'font.previewUi': 'Settings, sidebar, and window chrome',
+  'font.previewChat': 'Conversation messages and composer',
 } satisfies Record<keyof typeof en, string>
 
 /** Portuguese dictionary, checked against the English keys. */
@@ -233,4 +303,14 @@ export const pt = {
   'fontFamily.terminal.description': 'Usado para o terminal da barra lateral. Separe as fontes com vírgulas; deixe em branco para o padrão',
   'fontFamily.placeholder': 'Padrão',
   'fontSize.more': 'Mais configurações de fonte',
+  'font.title': 'Fonts',
+  'font.system': 'System',
+  'font.interface': 'Interface',
+  'font.chat': 'Chat',
+  'font.code': 'Code',
+  'font.terminal': 'Terminal',
+  'font.scale': 'Zoom',
+  'font.size': 'Font size',
+  'font.previewUi': 'Settings, sidebar, and window chrome',
+  'font.previewChat': 'Conversation messages and composer',
 } satisfies Record<keyof typeof en, string>

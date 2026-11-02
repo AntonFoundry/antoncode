@@ -1,8 +1,9 @@
 /**
  * Sidebar slot contract: the registrant-side props composition for the
  * layout-owned `sidebar` slot, plus the holes this shell declares. The shell
- * owns column geometry, the brand row, New Session, and global panel rows;
- * everything between the workspace section header and the list bottom is the
+ * owns column geometry (fold state machine), the brand row, New Workspace,
+ * global panel rows, and the `sidebar.memory` seat; everything between the
+ * workspace section header and the list bottom is the
  * `sidebar.workspaces` registrant's (ui-workspace), and the foot is the
  * `sidebar.settings` registrant's (ui-settings), followed by optional footer
  * actions in `sidebar.footer.action`.
@@ -42,7 +43,13 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * package's 'sidebar' entry (declaring is claiming); ui-workspace
      * registers the browser.
      */
-    'sidebar.workspaces': { kind: 'single'; scope: 'root'; owner: SidebarSectionOwnerProps }
+    'sidebar.workspaces': { kind: 'single'; scope: 'root'; owner: SidebarRegionOwnerProps }
+    /**
+     * Persistent, plugin-owned context/memory area.  It deliberately sits
+     * outside the workspace browser so extensions can expose working-memory
+     * controls without taking over navigation.
+     */
+    'sidebar.memory': { kind: 'list'; scope: 'root'; owner: SidebarSectionOwnerProps }
     /**
      * The settings seat at the sidebar foot. Declared by this package's
      * 'sidebar' entry; ui-settings registers its trigger row + modal panel.
@@ -130,6 +137,21 @@ export interface SidebarSectionOwnerProps {
 }
 
 /**
+ * Owner share of the workspace browsing region: the section share plus the
+ * New Workspace conversation. The shell capsule raises presses as a
+ * monotonic request count (plain data down); the region reports whether
+ * adding is possible at all (callback up), so the shell can drop the capsule
+ * in a composition with no picking affordance instead of leaving a dead
+ * control.
+ */
+export interface SidebarRegionOwnerProps extends SidebarSectionOwnerProps {
+  /** Monotonic count of shell New Workspace presses; the region consumes each rising edge. */
+  newWorkspaceRequests: number
+  /** Report the region's add-workspace availability (its directory-flow hole occupancy). */
+  reportAddWorkspaceAvailability: (available: boolean) => void
+}
+
+/**
  * Owner share of the sidebar settings seat: the column display state the
  * occupant's trigger row must render against (wide row vs rail icon).
  */
@@ -146,7 +168,10 @@ export interface SidebarFooterActionOwnerProps {
 
 /**
  * Registrant-private injected share (arrives via the register inject
- * factory). The renderer binds the panel metadata source to usePanels.
+ * factory): starting a Session from the brand shortcut, toggling the column,
+ * and panel navigation. The renderer binds the panel metadata source to
+ * usePanels. The New Workspace capsule is component state and travels through
+ * the region owner share instead.
  */
 export type SidebarRootInjected = {
   /**
@@ -192,6 +217,7 @@ export type SidebarRootComponentProps =
     | 'sidebar.panellist'
     | 'sidebar.panellist.actions'
     | 'sidebar.workspaces'
+    | 'sidebar.memory'
     | 'sidebar.settings'
     | 'sidebar.footer.action'
   >

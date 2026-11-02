@@ -41,10 +41,15 @@ async function projectedContext(): Promise<Context> {
   return ctx
 }
 
-/** Read the model-visible delegation paragraphs, excluding empty sections. */
+/** End of the leading sentence that names the visible delegation tools. */
+const GUIDANCE_LEAD_END = 'the next result starts a new turn.'
+
+/** Read the leading tool-naming sentence of each model-visible delegation paragraph, excluding empty sections. */
 async function delegationGuidance(ctx: Context, agent?: Agent): Promise<string[]> {
   const assembly = await ctx.systemPrompt.assemble(agent === undefined ? undefined : assembleContextFor(agent))
-  return assembly.sections.map(section => section.text).filter(text => text.startsWith('Start independent delegations'))
+  return assembly.sections.map(section => section.text)
+    .filter(text => text.startsWith('Start independent delegations'))
+    .map(text => text.slice(0, text.indexOf(GUIDANCE_LEAD_END) + GUIDANCE_LEAD_END.length))
 }
 
 /**
@@ -305,6 +310,46 @@ describe('dsh-tool-subagent', () => {
     expect(seen?.agentOptions).toEqual({ provider: 'alpha', model: 'child-model' })
   })
 
+  it('resolves the default child model route: per-session row > global default > inherit', async () => {
+    const empty = { defaultModel: '', bySession: {} }
+    expect(await tool.resolveChildModelRoute(empty, 's1', '')).toBeUndefined()
+    expect(await tool.resolveChildModelRoute({ defaultModel: 'openrouter/strong', bySession: {} }, 's1', ''))
+      .toEqual({ provider: 'openrouter', model: 'strong' })
+    expect(await tool.resolveChildModelRoute({ defaultModel: 'openrouter/strong', bySession: { s1: 'fallback/other' } }, 's1', ''))
+      .toEqual({ provider: 'fallback', model: 'other' })
+    // A bare id names the model only; blank rows fall through.
+    expect(await tool.resolveChildModelRoute({ defaultModel: 'bare-model', bySession: { s1: '  ' } }, 's1', ''))
+      .toEqual({ model: 'bare-model' })
+    // `auto` consults the model-intel resolver with the task text; an
+    // unavailable or unmatched route inherits the parent route.
+    const autoRoute = (task: string) => Promise.resolve(task === 'fix the bug' ? { provider: 'zai', model: 'glm-5.3' } : undefined)
+    expect(await tool.resolveChildModelRoute({ defaultModel: 'auto', bySession: {} }, 's1', 'fix the bug', autoRoute))
+      .toEqual({ provider: 'zai', model: 'glm-5.3' })
+    expect(await tool.resolveChildModelRoute({ defaultModel: 'auto', bySession: {} }, 's1', 'fix the bug')).toBeUndefined()
+  })
+
+  it('resolves a slash-bearing model id against the provider registry', async () => {
+    const route = 'opengateway/deepseek/deepseek-v4.1-flash-ultrafast'
+    // Without registry knowledge the last-slash split applies.
+    expect(tool.splitModelRoute(route))
+      .toEqual({ provider: 'opengateway/deepseek', model: 'deepseek-v4.1-flash-ultrafast' })
+    // With the registry, the longest registered prefix wins.
+    expect(tool.splitModelRoute(route, ['opengateway']))
+      .toEqual({ provider: 'opengateway', model: 'deepseek/deepseek-v4.1-flash-ultrafast' })
+    expect(tool.splitModelRoute(route, ['openrouter-free', 'opengateway']))
+      .toEqual({ provider: 'opengateway', model: 'deepseek/deepseek-v4.1-flash-ultrafast' })
+    expect(tool.splitModelRoute('a/b/c', ['a', 'a/b']))
+      .toEqual({ provider: 'a/b', model: 'c' })
+    // Unregistered providers fall back to the last-slash split.
+    expect(tool.splitModelRoute('unknown/thing', ['opengateway']))
+      .toEqual({ provider: 'unknown', model: 'thing' })
+    // A registered provider whose remainder is empty is not a usable split.
+    expect(tool.splitModelRoute('opengateway/', ['opengateway']))
+      .toEqual({ model: 'opengateway/' })
+    expect(await tool.resolveChildModelRoute({ defaultModel: route, bySession: {} }, 's1', '', undefined, ['opengateway']))
+      .toEqual({ provider: 'opengateway', model: 'deepseek/deepseek-v4.1-flash-ultrafast' })
+  })
+
   it('defaults toolName and omits agentOptions when apply() is called directly (schema bypass)', async () => {
     // `ctx.plugin` validates+defaults config first (toolName→'subagent', the
     // agentOptions object→{}), so the runtime `?? 'subagent'` fallback and the
@@ -333,7 +378,7 @@ describe('dsh-tool-subagent', () => {
 
     expect(ctx.tools.schemas().some(s => s.name === 'subagent')).toBe(true)
     await callSubagent(ctx, { description: 'd', prompt: 'p' })
-    expect(seen?.agentOptions).toBeUndefined()
+    expect(seen?.agentOptions).toEqual({ model: 'auto' })
   })
 
   it('fails loud when invoked without a calling agent', async () => {
@@ -662,7 +707,7 @@ describe('dsh-tool-subagent', () => {
     await ctx.plugin(tool, { provider: 'capture4', maxDepth: 'provider-managed' })
     await callSubagent(ctx, { description: 'd', prompt: 'p' })
     expect(seen).toBeDefined()
-    expect(seen).not.toHaveProperty('agentOptions')
+    expect(seen).toHaveProperty('agentOptions', { model: 'auto' })
   })
 
 })
@@ -722,7 +767,9 @@ describe('dsh-tool-subagent local activation', () => {
     expect(properties.run_in_background).toBeUndefined()
     const assembly = await ctx.systemPrompt.assemble(assembleContextFor(parent))
     const guidance = assembly.sections.find(section => section.name === 'tool:subagent')
-    expect(guidance?.text).toBe('Start independent delegations with `subagent` together in one assistant message and continue useful work while they run. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn.')
+    expect(guidance?.text.startsWith('Start independent delegations with `subagent` together in one assistant message and continue useful work while they run. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn.')).toBe(true)
+    expect(guidance?.text).toContain('Delegation is the DEFAULT for decomposable work')
+    expect(guidance?.text).toContain('continue one whose label and domain already cover this task')
 
     const started = await callSubagent(
       ctx,

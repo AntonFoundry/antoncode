@@ -857,11 +857,26 @@ export class SessionInputShell implements SessionInput {
 
   private publish(): void {
     const next = this.compose()
-    this.state.set(next)
+    // Session notifications arrive per streaming frame, and the composed
+    // members are all identity-stable unless genuinely changed — so an
+    // unchanged composition must not set, or every frame would re-render
+    // every useInput subscriber (the whole composer row) for nothing.
+    if (!inputStateShallowEqual(this.state.getSnapshot(), next)) this.state.set(next)
     const draft = this.draftSnapshot
     if (draft !== this.lastPublishedDraft) {
       this.lastPublishedDraft = draft
       this.persistDraft?.(draft)
     }
   }
+}
+
+/** Own-key `===` comparison; InputState members are all identity-typed. */
+function inputStateShallowEqual(left: InputState, right: InputState): boolean {
+  for (const key of Object.keys(left)) {
+    if (Object.hasOwn(right, key) === false) return false
+    const leftValue = left[key as keyof InputState]
+    const rightValue = right[key as keyof InputState]
+    if (leftValue !== rightValue) return false
+  }
+  return Object.keys(left).length === Object.keys(right).length
 }

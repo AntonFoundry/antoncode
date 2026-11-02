@@ -336,6 +336,27 @@ describe('deriveGroups', () => {
     expect(strayGroups.map(group => group.key)).toEqual(['first'])
   })
 
+  it('shows a blank session staged in a pinned pane like the current blank one', () => {
+    const pinnedBlank = { ...summary('pinned-blank', 5), blank: true }
+    const hiddenBlank = { ...summary('hidden-blank', 4), blank: true }
+    const real = summary('shown', 3)
+    const sessions = {
+      ...list(real, pinnedBlank, hiddenBlank),
+      current: real.id,
+      staged: [pinnedBlank.id],
+    }
+    const groups = deriveGroups(
+      sessions,
+      [workspace('first', ['shown', 'pinned-blank', 'hidden-blank'])],
+      noArchive, view(['first']),
+    )
+    expect(groups[0]!.sessions.map(session => session.id)).toEqual([real.id, pinnedBlank.id])
+    expect(deriveFlat(sessions, noArchive).map(row => row.id)).toEqual([pinnedBlank.id, real.id])
+    // A snapshot predating the staged field reads absence as an empty set.
+    const { staged: _omit, ...legacy } = sessions
+    expect(deriveFlat(legacy, noArchive).map(row => row.id)).toEqual([real.id])
+  })
+
   it('projects the completion reminder into session and search rows (absent = false)', () => {
     const done = summary('done', 3)
     const plain = summary('plain', 2)
@@ -730,6 +751,7 @@ describe('deriveSearchResults', () => {
           workspace: 'Alpha',
           running: false,
           runningSubagentCount: 0,
+          runningJobCount: 0,
           pendingInteraction: 'plan-review',
           completed: false,
           archived: false,
@@ -741,6 +763,7 @@ describe('deriveSearchResults', () => {
           workspace: 'Needle Workspace',
           running: false,
           runningSubagentCount: 0,
+          runningJobCount: 0,
           completed: false,
           archived: false,
         },
@@ -750,6 +773,7 @@ describe('deriveSearchResults', () => {
           workspace: 'c',
           running: false,
           runningSubagentCount: 0,
+          runningJobCount: 0,
           completed: false,
           archived: false,
           snippet: 'body needle excerpt',

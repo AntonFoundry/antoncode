@@ -94,6 +94,8 @@ interface BenchOptions {
   /** The hub's steer-all face (empty-draft accelerated Enter). */
   steerQueue?: () => void
   variant?: 'hero' | 'composer'
+  /** Layout span of the hosting pane (overlay scope: page mask vs pane mask). */
+  layoutSpan?: 'single' | 'multi'
   placeholder?: string
   t?: InputBarProps['t']
   accessory?: React.ReactNode
@@ -224,6 +226,7 @@ function bench(over?: BenchOptions) {
     t: over?.t ?? makeTranslate(zh, commonZh),
     renderSlot,
     variant: over?.variant ?? 'composer',
+    ...(over?.layoutSpan !== undefined ? { layoutSpan: over.layoutSpan } : {}),
     ...(over?.inert === true ? { disabled: true } : {}),
     ...(over?.blocked !== undefined ? { blocked: over.blocked } : {}),
     ...(over?.workspacePickerOpen !== undefined ? { workspacePickerOpen: over.workspacePickerOpen } : {}),
@@ -685,6 +688,13 @@ describe('image draft rail', () => {
   it('marks the attachment slot unavailable while the composer is locked', () => {
     const result = bench({ addFiles: vi.fn(() => null), inert: true })
     expect(attachmentOwner(result.slotCalls).canAcceptDrop).toBe(false)
+  })
+
+  it('forwards the pane layout span to the attachment slot (default single)', () => {
+    expect(attachmentOwner(bench({ addFiles: vi.fn(() => null) }).slotCalls).layoutSpan).toBe('single')
+    cleanup()
+    const multi = bench({ addFiles: vi.fn(() => null), layoutSpan: 'multi' })
+    expect(attachmentOwner(multi.slotCalls).layoutSpan).toBe('multi')
   })
 
   it('sends an image-only draft and exposes removal through the attachment slot', async () => {
@@ -2013,6 +2023,18 @@ describe('strips and variants', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('shows the prompt rejection reason rather than claiming the agent is busy', () => {
+    const { view } = bench({ promptError: {
+      op: 'send',
+      error: new RemoteError('session/agent-busy', 'prompt rejected', {
+        reason: 'Error: session append cannot reenter while another append is being published',
+      }),
+    } })
+    expect(view.getByRole('alert').textContent)
+      .toContain('session append cannot reenter while another append is being published')
+    expect(view.getByRole('alert').textContent).not.toContain('(session/agent-busy)')
   })
 
   it('announces an error notice from the machine store as a fading toast', () => {

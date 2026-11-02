@@ -5,11 +5,11 @@ kind: "package-group"
 
 # packages/workspace
 
-English | [中文](README.zh.md)
+English
 
 ## Summary
 
-The workspace family lets a host product keep an ordered list of named projects and group each project's sessions by directory. Users can browse those projects and sessions, hide a session from the grouping without deleting it, and remove a project without deleting its folder or session history. Hidden or removed sessions remain available as ungrouped history. Choose this family for a persistent project surface; it requires session storage and a persistence backend, and it does not expose tools, prompts, or session events to the model.
+The workspace family lets a host product keep an ordered list of named projects and group each project's sessions by directory. Users can browse those projects and sessions, hide a session from the grouping without deleting it, and remove a project without deleting its folder or session history. Hidden or removed sessions remain available as ungrouped history. Choose this family for a persistent project surface; it requires session storage and a persistence backend, and it does not expose tools, prompts, or session events to the model. The `worktree` package adds git worktree isolation over those directories.
 
 ## Table of Contents
 
@@ -25,6 +25,7 @@ The workspace family lets a host product keep an ordered list of named projects 
 | Package | Role | ctx key |
 |---|---|---|
 | [`workspace`](workspace/README.md) | Provides named, ordered projects with the sessions that ran in each directory | `ctx.workspaceRegistry` |
+| [`worktree`](worktree/README.md) | Git worktree lifecycle, repo status, and the per-repo default workspace-mode preference | `ctx.worktreeRegistry` |
 
 -----
 

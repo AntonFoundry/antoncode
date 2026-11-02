@@ -512,7 +512,7 @@ describe('catalog routes with per-model configuration', () => {
     expect(info.context).toEqual({ contextWindow: 4096 })
     expect(info.name).toBe(catalogModel.name)
     expect(info.defaultMaxTokens).toBeUndefined()
-    // An explicit list replaces the catalog rather than adding to it.
+    // An explicit list is strict curation: only the configured id serves.
     expect((await ctx.llm.listModels('deepseek')).map(model => model.id)).toEqual([catalogModel.id])
   })
 
@@ -565,6 +565,48 @@ describe('catalog routes with per-model configuration', () => {
 
     expect(result.finish).toMatchObject({ kind: 'error', failure: { code: 'UNKNOWN_MODEL' } })
     expect(server.requests).toHaveLength(0)
+  })
+
+  it('materializes live catalog ids while preserving explicit model lists', () => {
+    const live = resolveProfiles({
+      zai: { apiKeyEnv: KEY_ENV, liveModelDiscovery: true },
+    }, 'strict', new Map([
+      ['zai', [
+        { id: 'glm-5.3', name: 'GLM-5.3', contextWindow: 200_000, maxTokens: 131_072 },
+      ]],
+    ]))
+    // A live listing extends the installed catalog instead of replacing it:
+    // the discovered id serves first, and the catalog-only models remain.
+    const liveModels = live.get('zai')?.piProvider?.getModels() ?? []
+    const zaiCatalog = getBuiltinModels('zai').map(model => model.id)
+    expect(liveModels.map(model => model.id))
+      .toEqual(['glm-5.3', ...zaiCatalog.filter(id => id !== 'glm-5.3')])
+    const liveNamed = liveModels.find(model => model.id === 'glm-5.3')
+    expect(liveNamed?.name).toBe('GLM-5.3')
+    expect(liveNamed?.contextWindow).toBe(200_000)
+
+    const explicit = resolveProfiles({
+      zai: { models: [{ id: 'chosen', contextWindow: 4096, maxTokens: 512 }] },
+    }, 'strict', new Map([['zai', [{ id: 'ignored-live-model' }]]]))
+    // Strict curation: without liveModelUnion the explicit list replaces both
+    // the catalog and the live listing.
+    expect(explicit.get('zai')?.piProvider?.getModels().map(model => model.id))
+      .toEqual(['chosen'])
+
+    const unioned = resolveProfiles({
+      zai: { models: [{ id: 'chosen', contextWindow: 4096, maxTokens: 512 }], liveModelUnion: true },
+    }, 'strict', new Map([['zai', [{ id: 'glm-5.3', name: 'GLM-5.3', contextWindow: 200_000, maxTokens: 131_072 }]]]))
+    // With the opt-in the configured entry wins by id, the discovered ids
+    // join, and catalog-only models keep serving behind them.
+    const unionModels = unioned.get('zai')?.piProvider?.getModels() ?? []
+    expect(unionModels.map(model => model.id))
+      .toEqual(['chosen', 'glm-5.3', ...zaiCatalog.filter(id => id !== 'chosen' && id !== 'glm-5.3')])
+    const unionNamed = unionModels.find(model => model.id === 'glm-5.3')
+    expect(unionNamed?.name).toBe('GLM-5.3')
+    expect(unionNamed?.contextWindow).toBe(200_000)
+    // The configured pin keeps its own explicit fields.
+    const pinned = unionModels.find(model => model.id === 'chosen')
+    expect(pinned?.contextWindow).toBe(4096)
   })
 
   it('preserves catalog-only model metadata the profile cannot express', () => {
@@ -720,7 +762,10 @@ describe('per-model reasoning efforts', () => {
   it('narrows a catalog model’s levels in place', () => {
     const [catalogModel] = getBuiltinModels('deepseek')
     if (catalogModel === undefined) throw new Error('the installed catalog ships no deepseek model')
-    expect(getSupportedThinkingLevels(catalogModel as Model<Api>)).toEqual(['off', 'low', 'high', 'max'])
+    // The installed catalog's exact effort list is the dependency's data, not
+    // this suite's contract — the behavior under test is the narrowing below.
+    const catalogLevels = getSupportedThinkingLevels(catalogModel as Model<Api>)
+    expect(catalogLevels.length).toBeGreaterThanOrEqual(2)
 
     const model = modelOf({
       deepseek: { models: [{ id: catalogModel.id, reasoningEfforts: { off: null, high: 'high' } }] },
@@ -824,7 +869,7 @@ describe('modelOverrides', () => {
         models: [{ id: declaredOnly.id }],
         modelOverrides: { [declaredOnly.id]: { name: 'renamed' } },
       },
-    })).toThrow(/models already replaces the served catalog/)
+    })).toThrow(/which the models list also declares/)
     expect(() => resolveProfiles({
       deepseek: { modelOverrides: { '': { name: 'nameless' } } },
     })).toThrow(/empty model id/)

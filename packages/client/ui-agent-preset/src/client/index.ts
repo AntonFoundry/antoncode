@@ -1,8 +1,8 @@
 /**
  * Agent-preset surface plugin, browser half — three surfaces over one roster:
  * a chip on the new-session screen for the session about to start, a
- * read-only label in the session header, and a settings section that lists
- * the roster (selection, the new-task default, a read-only view of each
+ * read-only label in the session header, and the "Agents" settings section that
+ * lists the roster (a default-agent dropdown, selection, the new-task default, a read-only view of each
  * declared composition, and the way into Creator mode).
  *
  * A running session keeps the composition it began with (the host switches a

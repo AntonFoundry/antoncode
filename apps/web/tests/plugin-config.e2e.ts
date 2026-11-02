@@ -59,7 +59,7 @@ describe('web e2e: plugin configuration pages', () => {
    */
   async function openPlugins(): Promise<Locator> {
     if (await page.getByRole('dialog', { name: '设置' }).count() > 0) {
-      await page.keyboard.press('Escape')
+      await page.locator('[data-buffer="settings"]').getByRole('button', { name: 'Close', exact: true }).click()
       await expect.poll(() => page.getByRole('dialog', { name: '设置' }).count(), { timeout: 5_000 }).toBe(0)
     }
     await page.getByRole('navigation', { name: '全局面板' }).getByRole('button', { name: '插件', exact: true }).click()

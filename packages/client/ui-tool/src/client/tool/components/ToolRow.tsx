@@ -1,4 +1,5 @@
-import { memo, useCallback, useMemo, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { CARD_MODE_EVENT, cardModeDefault } from '../../card-mode.ts'
 import clsx from 'clsx'
 import {
   CodeBlock, DiffBlock, DisclosureRow, IconInspectOutlineRegular, ReadBlock, SearchBlock,
@@ -97,6 +98,13 @@ export interface ToolRowProps {
    * over the expanded body. Absent = no affordance.
    */
   inspect?: (() => void) | undefined
+  /**
+   * Start the row expanded. Rows default collapsed so a run of tool calls
+   * stays compact; the substantive card rows (terminal, diff) pass true —
+   * the command with its output and the applied change are the row's content,
+   * not a hidden detail.
+   */
+  defaultExpanded?: boolean | undefined
 }
 
 /** Keep a summary link click from toggling the row; the browser still follows the link. */
@@ -109,6 +117,7 @@ function stateStatus(state: ToolRowState, t: TranslateNS<'conversation'>): strin
   switch (state) {
     case 'preparing': return t('row.preparing')
     case 'running': return t('row.running')
+    case 'notice': return 'Read required before editing'
     case 'error': return t('row.failed')
     case 'stopped': return t('row.stopped')
     default: return null
@@ -149,8 +158,24 @@ export const ToolRow = memo(function ToolRow({
   href,
   inspect,
   useDisclosure,
+  defaultExpanded,
 }: ToolRowProps) {
-  const { expanded, toggle: toggleExpand } = useDisclosure()
+  const { expanded, setExpanded, toggle: toggleExpand } = useDisclosure()
+  // Rows mount in the persisted chat-header posture (or expanded when the
+  // toolview asks), and again after each enclosing-Turn reset.
+  useLayoutEffect(() => {
+    if (defaultExpanded === true || cardModeDefault()) setExpanded(true)
+  }, [defaultExpanded, setExpanded])
+  // The chat-header toggle overrides every mounted row at dispatch time; a
+  // later manual row toggle wins until the next global flip.
+  useEffect(() => {
+    const onMode = (event: Event): void => {
+      const detail = (event as CustomEvent<boolean>).detail
+      setExpanded(detail === true)
+    }
+    window.addEventListener(CARD_MODE_EVENT, onMode)
+    return () => { window.removeEventListener(CARD_MODE_EVENT, onMode) }
+  }, [setExpanded])
   const terminalLabels = useMemo(() => terminalBlockLabels(t), [t])
   const diffLabels = useMemo(() => diffBlockLabels(t), [t])
   const readLabels = useMemo(() => readBlockLabels(t), [t])
@@ -181,12 +206,15 @@ export const ToolRow = memo(function ToolRow({
   const running = state === 'running' || state === 'preparing'
   const normalSummary = terminalBody?.description ?? (open ? detailsBody?.expandedSummary ?? summary : summary)
   const exitLabel = terminalExitLabel(terminal, t)
-  // Generic failures retain their first result line; command exits keep their description.
-  const failureLine = state === 'error' && exitLabel === null ? errorSummary ?? normalSummary : null
+  // Generic failures and read-before-edit notices retain their first result
+  // line; command exits keep their description.
+  const failureLine = (state === 'error' || state === 'notice') && exitLabel === null
+    ? errorSummary ?? normalSummary
+    : null
   const summaryText = failureLine ?? normalSummary
   // Diff totals remain visible after the optional summary suffix.
   const diffStat = useMemo(() => diffBody === null ? null : diffTotals(diffBody.card.diffs), [diffBody])
-  const settledWithCue = state === 'error' || state === 'stopped'
+  const settledWithCue = state === 'error' || state === 'notice' || state === 'stopped'
   const suffix = settledWithCue ? null : summarySuffix ?? null
   const totals = settledWithCue ? null : diffStat
   const openFile = useMemo(() => filePath !== undefined && onOpenFile !== undefined && !settledWithCue
@@ -345,7 +373,11 @@ export const ToolRow = memo(function ToolRow({
                               {outputText !== null && (
                                 <div className={css.ioSection}>
                                   <span className={css.ioLabel}>{t('row.output')}</span>
-                                  <span className={css.ioText} data-error={state === 'error' || undefined}>
+                                  <span
+                                    className={css.ioText}
+                                    data-error={state === 'error' || undefined}
+                                    data-notice={state === 'notice' || undefined}
+                                  >
                                     {outputText}
                                   </span>
                                 </div>

@@ -1,9 +1,22 @@
+- text: Chat
+- button "Split below"
+- button "Split right"
+- button "Tidy panes"
+- button "Move pane left"
+- button "Move pane right"
+- button "Move pane up"
+- button "Move pane down"
+- button "Expand pane"
+- button "Close":
+  - img
 - banner:
   - navigation "Session hierarchy": CJK strong emphasis
   - button "More actions"
   - button "Open right sidebar"
   - tablist:
     - tab "Chat" [selected]
+    - tab "Orchestrator"
+    - tab "Workflows"
     - tab "Trajectory"
   - button "More conversation views"
 - text: Render adjacent CJK strong emphasis. {{clock}}

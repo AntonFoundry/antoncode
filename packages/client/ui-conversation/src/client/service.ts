@@ -27,6 +27,7 @@ import type {
 import type { QueueAction } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { ComposerBlocks } from './contract/composer-blocks.ts'
+import type { ComposerRoutes } from './input/composer-routes.ts'
 import type {
   DraftAttachmentId, DraftAttachmentSerializationResult, SessionInputResolver, SubmitAttachment, SubmitOutcome,
 } from './contract/input.ts'
@@ -45,6 +46,17 @@ export interface IConversation {
    * cannot import makes a session's input inert with its own reason.
    */
   readonly blocks: ComposerBlocks
+  /**
+   * Routes that take the resident composer's submission instead of the chat
+   * prompt while their conversation view is active.
+   */
+  readonly composerRoutes: ComposerRoutes
+  /**
+   * Persisted active view id for one session; null keeps the chat fallback.
+   * @param sessionId - session whose view selection is read.
+   * @returns the selected view id, or null.
+   */
+  activeView(sessionId: SessionId): string | null
   /**
    * Send a prompt into the caller scope's session (queued turn).
    * @param text - prompt text, sent verbatim as one text block.
@@ -157,6 +169,8 @@ export class ConversationController extends Service implements IConversation {
   readonly blocks: ComposerBlocks
   /** Live upload state per draft that uploads when added: every file draft and every uploaded image draft. */
   readonly fileUploads: SnapshotStore<Record<string, DraftFileUpload>> = createSnapshotStore<Record<string, DraftFileUpload>>({})
+  /** Per-view composer routing (Agent Mail owns its own send semantics). */
+  readonly composerRoutes: ComposerRoutes
   private readonly draftAttachments = new Map<DraftAttachmentId, ComposerAttachment>()
   private readonly fileUploadOperations = new Map<DraftAttachmentId, {
     readonly controller: AbortController
@@ -181,10 +195,12 @@ export class ConversationController extends Service implements IConversation {
     input: SessionInputResolver
     blocks: ComposerBlocks
     maxConcurrentFileUploads: number
+    composerRoutes: ComposerRoutes
   }) {
     super(ctx, 'conversation')
     this.input = config.input
     this.blocks = config.blocks
+    this.composerRoutes = config.composerRoutes
     this.maxConcurrentFileUploads = config.maxConcurrentFileUploads
     ctx.effect(() => async () => {
       const operations = [...this.fileUploadOperations.values()]
@@ -198,6 +214,15 @@ export class ConversationController extends Service implements IConversation {
       this.draftAttachments.clear()
       this.fileUploads.set({})
     }, 'conversation draft attachments')
+  }
+
+  /**
+   * Persisted active view for one session.
+   * @param sessionId - session whose view selection is read.
+   * @returns the selected `conversation.view` id, or null for chat fallback.
+   */
+  activeView(sessionId: SessionId): string | null {
+    return this.composerRoutes.activeView(sessionId)
   }
 
   /**

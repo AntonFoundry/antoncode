@@ -2,7 +2,7 @@
 /** The theme bootstrap injection row and the resulting pre-plugin browser theme. */
 import { runInNewContext } from 'node:vm'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { bootThemeInjections } from '../src/boot-theme.ts'
+import { bootThemeInjections, type BootFonts } from '../src/boot-theme.ts'
 import type { FontSizes, ThemePreference } from '../src/theme-settings.ts'
 
 const DARK_ATTRIBUTE = 'data-ds-dark-theme'
@@ -11,8 +11,13 @@ function mockSystemDark(matches: boolean): void {
   vi.stubGlobal('matchMedia', vi.fn(() => ({ matches }) as MediaQueryList))
 }
 
-function executeBootstrap(preference?: ThemePreference, fontSizes?: FontSizes): void {
-  for (const row of bootThemeInjections(preference, fontSizes)) {
+function executeBootstrap(
+  preference?: ThemePreference,
+  fontSizes?: FontSizes,
+  fonts?: BootFonts,
+  uiFonts?: readonly string[],
+): void {
+  for (const row of bootThemeInjections(preference, fontSizes, undefined, fonts, uiFonts)) {
     if (row.kind === 'script') runInNewContext(row.text, { document, matchMedia: globalThis.matchMedia })
   }
 }
@@ -21,6 +26,12 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   delete document.documentElement.dataset.dsThemeSource
+  document.documentElement.style.removeProperty('--dsw-font-family')
+  document.documentElement.style.removeProperty('--dsh-zoom-ui')
+  document.documentElement.style.removeProperty('--dsh-zoom-chat')
+  document.documentElement.style.removeProperty('--ds-font-family-code')
+  document.documentElement.style.removeProperty('--dsw-font-size-code')
+  document.documentElement.style.removeProperty('--dsh-font-size-term')
   document.body.removeAttribute(DARK_ATTRIBUTE)
   for (const name of ['--dsh-content-font-size', '--dsh-code-font-size', '--dsh-terminal-font-size']) document.body.style.removeProperty(name)
   for (const kind of ['text', 'code', 'terminal']) document.body.style.removeProperty(`--dsh-font-family-${kind}`)
@@ -97,5 +108,34 @@ describe('theme bootstrap row', () => {
     expect(document.body.style.getPropertyValue('--dsh-font-family-text')).toBe('"Inter"')
     expect(document.body.style.getPropertyValue('--dsh-font-family-code')).toBe('')
     expect(document.body.style.getPropertyValue('--dsh-font-family-terminal')).toBe('"MesloLGS NF/script", monospace')
+  })
+
+  it('embeds the durable font selection as pre-paint CSS vars and the system family list', () => {
+    mockSystemDark(false)
+    executeBootstrap('dark', undefined, {
+      uiFamily: 'Avenir Next', uiSize: 17, chatSize: 20,
+      monoFont: 'menlo', monoSize: 18, termSize: 16,
+    }, ['Avenir Next', 'Georgia'])
+    expect(JSON.parse(document.documentElement.dataset.uiFonts ?? '[]')).toEqual(['Avenir Next', 'Georgia'])
+    const style = document.documentElement.style
+    expect(style.getPropertyValue('--dsw-font-family')).toContain("'Avenir Next'")
+    // Sizes are px; the zoom vars are ratios against the section bases.
+    expect(style.getPropertyValue('--dsh-zoom-ui')).toBe(String(17 / 14))
+    expect(style.getPropertyValue('--dsh-zoom-chat')).toBe(String((20 / 16) / (17 / 14)))
+    expect(style.getPropertyValue('--ds-font-family-code')).toContain('Menlo')
+    expect(style.getPropertyValue('--dsw-font-size-code')).toBe('18px')
+    expect(style.getPropertyValue('--dsh-font-size-term')).toBe('16px')
+  })
+
+  it('defaults to the shipped selection when no font selection was persisted', () => {
+    mockSystemDark(false)
+    executeBootstrap()
+    const style = document.documentElement.style
+    expect(style.getPropertyValue('--dsw-font-family')).toContain('-apple-system')
+    expect(style.getPropertyValue('--dsh-zoom-ui')).toBe('1')
+    expect(style.getPropertyValue('--dsh-zoom-chat')).toBe('1')
+    expect(style.getPropertyValue('--ds-font-family-code')).toContain('Monaco')
+    expect(style.getPropertyValue('--dsw-font-size-code')).toBe('15px')
+    expect(style.getPropertyValue('--dsh-font-size-term')).toBe('13px')
   })
 })

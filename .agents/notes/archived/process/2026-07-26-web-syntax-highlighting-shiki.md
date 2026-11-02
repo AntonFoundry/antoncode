@@ -3,7 +3,7 @@
 Status: implemented
 Archived: 2026-09-04
 
-English | [中文](2026-07-26-web-syntax-highlighting-shiki.zh.md)
+English
 
 > Scope: the web client's one syntax-highlighting system — the dependency ruling, the singleton shape, the token-sheet contract, and the consuming surfaces. Fifth PR of the PTC mode UI stack; the [chat sub-call rows note](../feature/2026-07-26-ptc-chat-subcall-rows.md) shipped the `run_code` program body this exists to make readable. Styling ground rules are owned by [the web styling ruling](2026-07-19-web-styling-system.md).
 
@@ -30,4 +30,4 @@ The client rendered every code surface — markdown fences in assistant prose, t
 
 ## Consequences
 
-One code surface for every consumer — a future surface imports `CodeBlock` and inherits highlighting, theming, and the plain fallback. The bundle grows by the shiki core + three grammars (paid once in `ui-primitives`). Token colors are the first `--shiki-*` sheet; a theme package registering alias overrides extends them like any other token. jsdom specs pin the token-span structure, alias resolution, both fallback arms, and the fence route; the existing built-bundle snapshot and browser e2e cover the assembled path.
+One code surface for every consumer — a future surface imports `CodeBlock` and inherits highlighting, theming, and the plain fallback. The bundle grows by the shiki core + three grammars (paid once in `ui-primitives`). Token colors are the first `--shiki-*` sheet; a theme package registering alias overrides extends them like any other token. (The default light/dark pair now has a per-theme refinement layer: themes may carry their own `syntax` hues — see the [theme syntax palettes note](../architecture/2026-10-04-theme-syntax-palettes.md).) jsdom specs pin the token-span structure, alias resolution, both fallback arms, and the fence route; the existing built-bundle snapshot and browser e2e cover the assembled path.

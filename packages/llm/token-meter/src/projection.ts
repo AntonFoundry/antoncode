@@ -8,13 +8,33 @@
  * Durable cumulative provider usage for a complete session log.
  *
  * The four buckets are disjoint. In particular, reasoning tokens are already
- * included in `outputTokens` and are not accumulated again.
+ * included in `outputTokens` and are not accumulated again. `cacheHitRate` is
+ * derived from the buckets at view time and carries no additional provider
+ * observation.
  */
 export interface TokenUsageProjection {
   uncachedInputTokens: number
   outputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
+  /**
+   * Cache-read share of the provider-reported prompt tokens:
+   * `cacheReadTokens / (uncachedInputTokens + cacheReadTokens + cacheWriteTokens)`.
+   * Absent until a request reports usage (the denominator is 0 before the
+   * first sample), which distinguishes "no data" from a legitimate 0.
+   */
+  cacheHitRate?: number
+}
+
+/**
+ * The cache-read share of one totals bucket, or `undefined` before any
+ * request reported usage.
+ * @param totals - cumulative usage buckets to derive the ratio from.
+ * @returns the 0–1 ratio, or `undefined` when no prompt tokens were reported.
+ */
+export const cacheHitRateOf = (totals: TokenUsageProjection): number | undefined => {
+  const promptTokens = totals.uncachedInputTokens + totals.cacheReadTokens + totals.cacheWriteTokens
+  return promptTokens === 0 ? undefined : totals.cacheReadTokens / promptTokens
 }
 
 /**

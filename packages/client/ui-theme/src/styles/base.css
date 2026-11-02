@@ -8,9 +8,17 @@
     'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   --dsw-font-family: var(--dsh-font-family-text-default);
   --dsw-font-family-brand: 'Montserrat', var(--dsh-font-family-text-default);
-  --dsh-font-family-code-default: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas,
+  --dsh-font-family-code-default: Monaco, 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas,
     'Liberation Mono', Menlo, Courier, 'PingFang SC', 'Microsoft YaHei';
   --ds-font-family-code: var(--dsh-font-family-code-default);
+  /* Section font controls: the ui-theme font row and the boot bootstrap
+   * override all of these on the document root. zoom multiplies when
+   * nested, so the chat pane consumes the chat/ui ratio the runtime
+   * publishes. */
+  --dsw-font-size-code: 15px;
+  --dsh-font-size-term: 13px;
+  --dsh-zoom-ui: 1;
+  --dsh-zoom-chat: 1;
   --ds-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
   --ds-transition-duration: 0.2s;
   --ds-transition-duration-fast: 0.1s;
@@ -23,12 +31,10 @@
   --dsw-radius-panel: 28px;
 }
 
-/* User font lists (--dsh-font-family-text/-code, written on body by the theme
- * boot script and ThemePresenter) lead the built-in stacks. An unset list
- * falls back to the built-in stack itself; the repeated families are inert. */
+/* The interface and code families are owned by FontRuntime, which writes
+ * --dsw-font-family and --ds-font-family-code on the document root; body
+ * must not redeclare them or it would shadow the root selection. */
 body {
-  --dsw-font-family: var(--dsh-font-family-text, var(--dsh-font-family-text-default)), var(--dsh-font-family-text-default);
-  --ds-font-family-code: var(--dsh-font-family-code, var(--dsh-font-family-code-default)), var(--dsh-font-family-code-default);
   --dsw-alias-settings-card-fill: var(--dsw-alias-bg-layer-2);
   --dsw-alias-settings-card-stroke: var(--dsw-alias-border-l4);
 }

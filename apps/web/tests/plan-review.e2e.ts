@@ -54,7 +54,11 @@ describe('web e2e: plan review takeover round trip', () => {
   let reviewedSession: SessionId
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 15, compareReplaySession: true })
+    scaffold = await launchWebScaffold({
+      // The recorded turn calls exit_plan_mode directly, without a todo plan.
+      directToolCalls: true,
+      ...(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 15, compareReplaySession: true }),
+    })
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { sessionEvents.push(event) })
     browser = await chromium.launch()
     // English page: the decision copy is the surface under test, and the
@@ -161,11 +165,11 @@ describe('web e2e: plan review takeover round trip', () => {
     await page.locator('[data-plan-card]').waitFor({ state: 'visible' })
     await page.locator('[data-plan-preview]').waitFor({ state: 'visible' })
     expect(await page.locator('[data-plan-preview]').getByRole('heading', { level: 1 }).textContent()).toContain('--greeting')
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(APPROVED_EXPECTED, snapshot, MODE)
     const expanded = await captureExpandedTurnProcessAria(
       page,
-      '[class*="centerCol"]',
+      '[data-pane="content"]',
       scaffold.workspaceCwd,
     )
     await compareOrRefreshGolden(APPROVED_EXPANDED_EXPECTED, expanded, MODE)
@@ -404,7 +408,7 @@ describe('web e2e: dismissed plan history', () => {
     const replayOverride = join(replayRoot, 'replay.override.json')
     const script = deriveReplayScript(parseSessionLog(await readFile(FIXTURE, 'utf8')))
     await writeFile(replayOverride, JSON.stringify(script.slice(0, 1)))
-    const scaffold = await launchWebScaffold({ replayFixture: FIXTURE, replayOverride, compareReplaySession: false, paceMs: 15 })
+    const scaffold = await launchWebScaffold({ replayFixture: FIXTURE, replayOverride, compareReplaySession: false, paceMs: 15, directToolCalls: true })
     let browser: Browser | undefined
     const events: SessionEvent[] = []
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { events.push(event) })

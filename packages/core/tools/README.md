@@ -5,7 +5,7 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-tools
 
-English | [中文](README.zh.md)
+English
 
 ## Summary
 
@@ -61,7 +61,7 @@ ctx.tools.register(defineTool({
 }))
 ```
 
-The unified schema DSL supports `string`, `number`, `integer`, `boolean`, `null`, `array`, `object`, author-only `json`, and exact-one `oneOf`; `InferValue` preserves exact types through 16 container levels before widening to `JsonValue`. A raw JSON Schema (`JsonSchemaNode`) is the wire-level counterpart shared with subagents, workflows, and MCP.
+The unified schema DSL supports `string`, `number`, `integer`, `boolean`, `null`, `array`, `object`, author-only `json`, and exact-one `oneOf`; `InferValue` preserves exact types through 16 container levels before widening to `JsonValue`. A raw JSON Schema (`JsonSchemaNode`) is the wire-level counterpart shared with subagents, workflows, and MCP. `register()` rejects a definition whose `parameters` lacks the `type: 'object'` JSON Schema root, so a per-property spec (the `defineTool` input form) cannot reach the wire as a schemaless declaration.
 
 <a id="conditional-tools"></a>
 ### Conditional tools

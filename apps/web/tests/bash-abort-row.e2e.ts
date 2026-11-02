@@ -57,18 +57,24 @@ describe.skipIf(MODE === 'record')('web e2e: cancelled Bash row disclosure', () 
     onTestFailed(() => saveFailureShot(page, 'web-e2e-bash-abort-row'))
     const row = page.locator('[data-sample="bash"]').first()
     const call = row.locator('xpath=..')
-    await expect.poll(() => row.getAttribute('aria-expanded')).toBe('false')
-    await expect.poll(() => call.getByText('Error: tool call aborted', { exact: true }).count()).toBe(1)
-    await row.click()
-
+    // Bash rows now start expanded (the command and its output ARE the row's
+    // content), so the aborted call's full error is visible without a click.
     await expect.poll(() => row.getAttribute('aria-expanded')).toBe('true')
+    await expect.poll(() => call.getByText('Error: tool call aborted', { exact: true }).count()).toBe(2)
     await call.getByText('IN', { exact: true }).waitFor()
     await call.getByText('OUT', { exact: true }).waitFor()
     await call.getByText('Wait until cancellation', { exact: false }).waitFor()
     await call.getByText('setInterval(() => {}, 1000)', { exact: false }).waitFor()
+    // Collapse stays one click: the row folds back to its failure summary.
+    await row.click()
+    await expect.poll(() => row.getAttribute('aria-expanded')).toBe('false')
+    await expect.poll(() => call.getByText('Error: tool call aborted', { exact: true }).count()).toBe(1)
+    // Re-expand for the disclosure golden.
+    await row.click()
+    await expect.poll(() => row.getAttribute('aria-expanded')).toBe('true')
     await expect.poll(() => call.getByText('Error: tool call aborted', { exact: true }).count()).toBe(2)
 
-    const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
+    const snapshot = (await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd))
       .split(SEED_ID).join('{{seededId}}')
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
     expect(tripwire.pageErrors).toEqual([])

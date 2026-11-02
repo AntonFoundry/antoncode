@@ -27,8 +27,7 @@
   background: var(--dsw-alias-markdown-code-block);
   border: 0.5px solid var(--dsw-alias-border-l1);
   border-radius: var(--dsw-radius-lg);
-  font-family: var(--ds-font-family-code);
-  font-size: 11px;
-  line-height: 16px;
+  /* Code section small token carries family and the user size. */
+  font: var(--dsw-font-markdown-code-block-small);
   color: var(--dsw-alias-label-primary);
 }

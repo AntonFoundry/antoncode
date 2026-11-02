@@ -27,6 +27,7 @@ import type { ReferenceInsert } from './contract/draft-editor.ts'
 import { createConversationStore, readConversationViewPreference } from './stores.ts'
 import { formatFileMention } from '@deepseek-ai/dsh-file-reference/grammar'
 import { relativizeToCwd, workspaceTitleOf } from '@deepseek-ai/dsh-util-workspace-path'
+import { ComposerRoutes } from './input/composer-routes.ts'
 import { ConversationController, UnsupportedImageMediaTypeError, isImageMediaType } from './service.ts'
 import type { IConversation } from './service.ts'
 import { ComposerBlockRegistry } from './input/blocks.ts'
@@ -42,7 +43,7 @@ import { ConversationPanel } from './skeleton/ConversationPanel.tsx'
 import { ConversationHeader } from './skeleton/ConversationHeader.tsx'
 import { ConversationSession, ConversationSessionHeader } from './skeleton/ConversationSession.tsx'
 import { InputBar } from './skeleton/InputBar.tsx'
-import { todoDockEntry } from './skeleton/TodoPanel.tsx'
+import { todoTreeEntry } from './skeleton/TodoTree.tsx'
 import { installStopShortcut } from './stop-shortcut.ts'
 import { TRAJECTORY_VIEW_ID, resolveActiveView } from './view-selection.ts'
 import { createViewPins } from './view-pins.ts'
@@ -225,6 +226,14 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   const restoreView = (sessionId: SessionId): void => {
     activateView(sessionId, readConversationViewPreference(sessionId))
   }
+  // The active View drives composer routing. The Conversation store persists
+  // each selection synchronously, so the persisted preference resolved against
+  // the registered Views is the selection the header tabs show.
+  const composerRoutes = new ComposerRoutes(sessionId =>
+    resolveActiveView(viewTabs(), readConversationViewPreference(sessionId))?.id ?? null)
+  // Store writers captured from each Session's `conversation.session` entry,
+  // used by the View activation provider below.
+  const viewSelectors = new Map<SessionId, (view: string) => void>()
   const conversationViews = createSnapshotStore<readonly ViewTab[]>(viewTabs())
   const viewPins = createViewPins()
   const viewActions = {
@@ -298,7 +307,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     }, 'ui-conversation: fixed stop reference')
   })
 
-  const inputHub = new InputHub(ctx, t)
+  const inputHub = new InputHub(ctx, t, composerRoutes)
   const composerBlocks = new ComposerBlockRegistry()
 
   ctx.inject(['commandUi'], (scope) => {
@@ -330,6 +339,25 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         props: { inputActions: shell.actions },
       }
     },
+  })
+
+  // The app-plugin activation channel: Session-scope occupants (an app
+  // plugin's header-utilities toggle) receive `viewActions.activate(viewId)`
+  // and raise any registered conversation.view entry. View selection is UI
+  // state, so activation writes the Conversation store and emits no Session event.
+  ctx.uiSession.provide({
+    props: ['viewActions'],
+    resolve: binding => ({
+      props: {
+        viewActions: {
+          activate: (viewId: string): void => {
+            if (!viewTabs().some(tab => tab.id === viewId)) return
+            activateView(binding.sessionId, viewId)
+            viewSelectors.get(binding.sessionId)?.(viewId)
+          },
+        },
+      },
+    }),
   })
 
   const registerConversationRoot = () => slots.register({
@@ -397,6 +425,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     },
     store: conversationStore,
     inject: (sessionId: SessionId, actions: BoundActions<typeof conversationStore>): ConversationSessionInjected => {
+      viewSelectors.set(sessionId, (view) => { actions.setView(view) })
       const openView = (view: string, focus: string): void => {
         if (!viewTabs().some(tab => tab.id === view)) return
         activateView(sessionId, view)
@@ -590,8 +619,12 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   ctx.plugin(ConversationController, {
     input: inputHub,
     blocks: composerBlocks,
+    composerRoutes,
     maxConcurrentFileUploads,
   })
-  ctx.plugin(todoDockEntry)
+  // Task state renders as the sidebar's execution tree: the todo tree rides
+  // ui-sidebar's memory area (root scope), keeping the right panel for call
+  // inspection.
+  ctx.plugin(todoTreeEntry)
   ctx.plugin(queueDockEntry)
 }

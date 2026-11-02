@@ -1,10 +1,10 @@
 /**
- * Settings shell and ownerless-copy plugin, browser half: renders the
- * `sidebar.settings` occupant — panel chrome, section navigation, and the
- * onboarding stage — and registers everything on the Settings pages that
- * belongs to no single feature: the trigger/header chrome content,
- * local-document action, General section, `settings` dictionaries, and the
- * Host release change confirmation.
+ * Settings shell and ownerless-copy plugin, browser half: the trigger root in
+ * the sidebar foot (opens the settings window through ctx.layout), the
+ * window body — section navigation and pages — and the onboarding stage;
+ * plus everything on the Settings pages that belongs to no single feature:
+ * the header chrome content, local-document action, General section,
+ * `settings` dictionaries, and the Host release change confirmation.
  * Feature-owned rows and sections stay with their features.
  * Export discipline: packages/client/AGENTS.md.
  */
@@ -17,26 +17,26 @@ import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client
 // Type-only: pulls the ctx.modules merge.
 import type {} from '@deepseek-ai/dsh-client-modules/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
-import { closeTopModal } from '@deepseek-ai/dsh-client-ui-primitives'
-// Type-only: the settings slot declarations plus the ctx.configForms Context
-// merge. Cross-plugin collaboration goes through the service, never a value
-// import (client bundle purity gate).
+// Type-only: the settings slot declarations, the ctx.configForms Context
+// merge, and ctx.layout (the settings window's open/close actions).
+// Cross-plugin collaboration goes through the service, never a value import
+// (client bundle purity gate).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 // Type-only: pulls ctx.locale into this program.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-product-analytics/client'
 import type {
-  SettingsOnboardingStep, SettingsRootInjected, SettingsSectionRow,
+  SettingsOnboardingStep, SettingsRootInjected, SettingsSectionRow, SettingsWindowInjected,
 } from './shell-contract.ts'
 import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
-import { createSettingsShellStore } from './shell-store.ts'
-import { SettingsRoot } from './SettingsRoot.tsx'
+import { SettingsRoot, SettingsWindow } from './SettingsRoot.tsx'
 import { DesktopUpdateBadge } from './DesktopUpdateIndicator.tsx'
 import type { DesktopUpdateBridge } from '../types.ts'
 import { DesktopUpdateSource } from './desktop-update-source.ts'
-import { CloseLabel, HeaderContent, TriggerContent } from './chrome.tsx'
+import { HeaderContent, TriggerContent } from './chrome.tsx'
 import { GeneralSection } from './GeneralSection.tsx'
 import { CurrentVersionRow } from './CurrentVersionRow.tsx'
 import { DeveloperToolsRow, type DeveloperToolsRowInjected } from './DeveloperToolsRow.tsx'
@@ -47,7 +47,7 @@ import { HostReleasePrompt, type HostReleasePromptInjected } from './HostRelease
 import { en, ja, es, fr, de, ru, pt, zh, type SettingsKey } from './locales.ts'
 
 export type {
-  CloseLabelProps, HeaderContentProps, TriggerContentProps,
+  HeaderContentProps, TriggerContentProps,
 } from './chrome.tsx'
 export type {
   GeneralSectionComponentProps,
@@ -69,10 +69,11 @@ const NS = 'settings'
 
 /**
  * Required services (cordis fiber inject). The target slots are declared by
- * ui-settings' apply, whose activation order relative to this one is NOT
- * constrained; registrations depend on their slots through `slots.inject()`.
+ * ui-settings and ui-layout, whose activation order relative to this one is
+ * NOT constrained; registrations depend on their slots through
+ * `slots.inject()`.
  */
-export const inject = ['slots', 'locale', 'connection', 'remote', 'remote.settings', 'configForms', 'shortcuts', 'modules', 'remoteAccess']
+export const inject = ['slots', 'locale', 'connection', 'remote', 'remote.settings', 'configForms', 'shortcuts', 'modules', 'remoteAccess', 'layout']
 
 /**
  * Register the `settings` dictionaries, the chrome content, and the General
@@ -124,23 +125,72 @@ export function apply(ctx: ClientContext): void {
       hooks: { snapshot: documentController.store },
     })
   ctx.effect(() => () => { documentController?.dispose() }, 'ui-settings-general: document action directory')
-  // The settings shell: this package occupies the sidebar-owned hole and
-  // declares the settings slots. Ledger → nav-row projection as an observable
-  // source (uSES contract: getSnapshot returns the cached rows until the
-  // ledger version moves). Labels may be locale-following thunks, so the cache
-  // key includes the locale revision and subscribers ride both sources.
+  // The settings shell: this package occupies the sidebar-owned trigger hole
+  // and the layout-owned settings window body, declaring each one's slots.
+  // Ledger → nav-row projection as an observable source (uSES contract:
+  // getSnapshot returns the cached rows until the ledger version moves).
+  // Labels may be locale-following thunks, so the cache key includes the
+  // locale revision and subscribers ride both sources.
   let rowsVersion = -1
   let rowsRevision = -1
   let rows: readonly SettingsSectionRow[] = []
   let onboardingVersion = -1
   let onboardingSteps: readonly SettingsOnboardingStep[] = []
-  const shellInjected = (): SettingsRootInjected => ({
+  // The window's active section: one shared source, written by the nav and
+  // by the onboarding coordinator's openSection, read through the bound hook.
+  let activeSnapshot = { activeId: undefined as string | undefined }
+  const sectionWatchers = new Set<() => void>()
+  const setActiveSection = (id: string | undefined): void => {
+    activeSnapshot = { activeId: id }
+    for (const listener of sectionWatchers) listener()
+  }
+  const layout = ctx.layout
+  const rootInjected = (): SettingsRootInjected => ({
+    openWindow: () => { layout.openSettings() },
+    openSection: (id) => {
+      setActiveSection(id)
+      layout.openSettings()
+    },
     openDesktopUpdate: () => { desktopUpdate.open() },
     reconnect: () => { connection.reconnect() },
     hooks: {
       shortcuts: ctx.shortcuts.catalog,
       desktopUpdate: desktopUpdate.store,
       connectionState: connection.state,
+      settingsOpen: {
+        getSnapshot: () => layout.settingsOpen(),
+        subscribe: listener => layout.onSettingsOpenChange(listener),
+      },
+      onboardingSteps: {
+        getSnapshot: () => {
+          const version = ctx.slots.getVersion('settings.onboarding')
+          if (version !== onboardingVersion) {
+            onboardingVersion = version
+            onboardingSteps = ctx.slots.entries('settings.onboarding')
+              .map(e => ({
+                /* v8 ignore next -- list-slot registration requires id */
+                id: e.options.id ?? '',
+                order: e.options.order ?? 0,
+              }))
+              .sort((a, b) => a.order - b.order)
+          }
+          return onboardingSteps
+        },
+        subscribe: listener => ctx.slots.subscribe('settings.onboarding', listener),
+      },
+    },
+  })
+  const windowInjected = (): SettingsWindowInjected => ({
+    closeWindow: () => { layout.closeSettings() },
+    setActiveSection,
+    hooks: {
+      activeSection: {
+        getSnapshot: () => activeSnapshot,
+        subscribe: (listener) => {
+          sectionWatchers.add(listener)
+          return () => { sectionWatchers.delete(listener) }
+        },
+      },
       sections: {
         getSnapshot: () => {
           const version = ctx.slots.getVersion('settings.section')
@@ -168,31 +218,13 @@ export function apply(ctx: ClientContext): void {
           }
         },
       },
-      onboardingSteps: {
-        getSnapshot: () => {
-          const version = ctx.slots.getVersion('settings.onboarding')
-          if (version !== onboardingVersion) {
-            onboardingVersion = version
-            onboardingSteps = ctx.slots.entries('settings.onboarding')
-              .map(e => ({
-                /* v8 ignore next -- list-slot registration requires id */
-                id: e.options.id ?? '',
-                order: e.options.order ?? 0,
-              }))
-              .sort((a, b) => a.order - b.order)
-          }
-          return onboardingSteps
-        },
-        subscribe: listener => ctx.slots.subscribe('settings.onboarding', listener),
-      },
     },
   })
   // The settings shell reads this host's configuration, so it follows access to its description.
   ctx.remoteAccess.whenAccess('settings/describe', () =>
     ctx.slots.inject('sidebar.settings', () => {
-      const shellHandle = createSettingsShellStore()
-      const shellInstance = shellHandle.create()
-      const shellStore: typeof shellHandle = { ...shellHandle, create: () => shellInstance }
+      // The settings window is a non-modal WM pane, so the command toggles it
+      // from anywhere outside a modal.
       const disposeCommand = ctx.shortcuts.register({
         id: 'settings.open' as ShortcutCommandId, label: () => t('shortcut.open'), aliases: ['settings', 'preferences'],
         defaults: {
@@ -202,33 +234,36 @@ export function apply(ctx: ClientContext): void {
           'web:macos': { code: 'Comma', modifiers: ['primary', 'alt'] },
           'web:windows': { code: 'Comma', modifiers: ['primary', 'alt'] },
         },
-        regions: ['page', 'editable', 'terminal'], modals: ['settings'],
+        regions: ['page', 'editable', 'terminal'], modals: [],
         resolve: ({ modal }) => {
-          if (modal !== null && modal !== 'settings') return { status: 'blocked', reason: 'modal' }
-          return { status: 'handled', run: () => {
-            if (modal === 'settings') closeTopModal(document)
-            else shellInstance.actions.open()
-          } }
+          if (modal !== null) return { status: 'blocked', reason: 'modal' }
+          return { status: 'handled', run: () => { layout.toggleSettings() } }
         },
       })
 
       const disposeSlot = ctx.slots.register({
         name: 'sidebar.settings',
         locale: NS,
-        store: shellStore,
         children: {
           'settings.launcher': { kind: 'single', scope: 'root' },
           'settings.trigger': { kind: 'single', scope: 'root' },
-          'settings.header': { kind: 'single', scope: 'root' },
-          'settings.action': { kind: 'list', scope: 'root' },
-          'settings.close': { kind: 'single', scope: 'root' },
-          'settings.section': { kind: 'list', scope: 'root' },
           'settings.onboarding': { kind: 'list', scope: 'root' },
         },
-        inject: shellInjected,
+        inject: rootInjected,
       }, SettingsRoot)
       return () => { disposeCommand(); disposeSlot() }
     }))
+
+  ctx.slots.inject('settings.view', () => ctx.slots.register({
+    name: 'settings.view',
+    locale: NS,
+    children: {
+      'settings.header': { kind: 'single', scope: 'root' },
+      'settings.action': { kind: 'list', scope: 'root' },
+      'settings.section': { kind: 'list', scope: 'root' },
+    },
+    inject: windowInjected,
+  }, SettingsWindow))
 
   ctx.slots.inject('settings.trigger', () =>
     ctx.slots.register({ name: 'settings.trigger', locale: NS }, TriggerContent))
@@ -243,8 +278,6 @@ export function apply(ctx: ClientContext): void {
       inject: documentInjected,
     }, SettingsDocumentAction))
   }
-  ctx.slots.inject('settings.close', () =>
-    ctx.slots.register({ name: 'settings.close', locale: NS }, CloseLabel))
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: 'general',

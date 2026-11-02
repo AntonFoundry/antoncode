@@ -49,8 +49,13 @@ function props(
   return { sessionId: SESSION, useJobs, watchRows, observe, killJob, t } as JobListActionProps
 }
 
+/** The list toggle: the first control carrying `aria-expanded` (the stop-all control precedes it). */
+function trigger(): HTMLElement {
+  return screen.getAllByRole('button').find(button => button.hasAttribute('aria-expanded'))!
+}
+
 function openList(): void {
-  fireEvent.click(screen.getAllByRole('button')[0]!)
+  fireEvent.click(trigger())
 }
 
 describe('JobListAction visibility', () => {
@@ -431,30 +436,30 @@ describe('JobListAction observation', () => {
 
   it('bridges Tab between the trigger and the portaled list and closes on Escape', () => {
     render(<JobListAction {...props([job()])} />)
-    const trigger = screen.getAllByRole('button')[0]!
-    fireEvent.keyDown(trigger, { key: 'Tab' })
+    const toggle = trigger()
+    fireEvent.keyDown(toggle, { key: 'Tab' })
     openList()
     const [first, last] = within(screen.getByRole('list', { name: zh['list.aria'] })).getAllByRole('button')
-    trigger.focus()
-    // Shift+Tab from the trigger leaves toward the controls before it.
-    expect(fireEvent.keyDown(trigger, { key: 'Tab', shiftKey: true })).toBe(true)
-    expect(document.activeElement).toBe(trigger)
-    // Tab from the trigger enters the list.
-    expect(fireEvent.keyDown(trigger, { key: 'Tab' })).toBe(false)
+    toggle.focus()
+    // Shift+Tab from the toggle leaves toward the controls before it.
+    expect(fireEvent.keyDown(toggle, { key: 'Tab', shiftKey: true })).toBe(true)
+    expect(document.activeElement).toBe(toggle)
+    // Tab from the toggle enters the list.
+    expect(fireEvent.keyDown(toggle, { key: 'Tab' })).toBe(false)
     expect(document.activeElement).toBe(first)
     // Inside the list Tab stays the browser's until an end is reached.
     expect(fireEvent.keyDown(first!, { key: 'Tab' })).toBe(true)
-    // Tab off the last control resumes from the trigger's place in the page.
+    // Tab off the last control resumes from the toggle's place in the page.
     expect(fireEvent.keyDown(last!, { key: 'Tab' })).toBe(true)
-    expect(document.activeElement).toBe(trigger)
-    // Shift+Tab off the first control returns to the trigger itself.
+    expect(document.activeElement).toBe(toggle)
+    // Shift+Tab off the first control returns to the toggle itself.
     first!.focus()
     expect(fireEvent.keyDown(first!, { key: 'Tab', shiftKey: true })).toBe(false)
-    expect(document.activeElement).toBe(trigger)
+    expect(document.activeElement).toBe(toggle)
     first!.focus()
     fireEvent.keyDown(first!, { key: 'Escape' })
     expect(screen.queryByRole('list', { name: zh['list.aria'] })).toBeNull()
-    expect(document.activeElement).toBe(trigger)
+    expect(document.activeElement).toBe(toggle)
   })
 
   it('stops observation when the popover closes via Escape', () => {
@@ -576,6 +581,31 @@ describe('JobListAction human kill', () => {
     await act(async () => { resolveKill(false) })
     expect(second.getAttribute('data-kill-state')).toBe('armed')
     expect(first.getAttribute('data-kill-state')).toBe('idle')
+  })
+
+  it('shows a header stop-all only while jobs run, and it kills every running job in one press', async () => {
+    const resolvers: Array<(ok: boolean) => void> = []
+    const killJob = vi.fn(() => new Promise<boolean>((resolve) => { resolvers.push(resolve) }))
+    const { rerender } = render(<JobListAction {...props([
+      job(),
+      job({ id: 'bash-2' as JobView['id'], label: 'pnpm run watch', startedAt: 1_700_000_001_000 }),
+      job({ id: 'bash-3' as JobView['id'], label: 'ending', status: 'stopping' }),
+      job({ id: 'bash-4' as JobView['id'], label: 'done', status: 'completed', finishedAt: 1_700_000_100_000 }),
+    ], undefined, {}, killJob)} />)
+    const stopAll = screen.getByRole('button', { name: zh['stop.all'].replace('{count}', '2') })
+    fireEvent.click(stopAll)
+    expect(killJob).toHaveBeenCalledTimes(2)
+    expect(killJob).toHaveBeenCalledWith(SESSION, 'bash-1')
+    expect(killJob).toHaveBeenCalledWith(SESSION, 'bash-2')
+    // Stopping does not toggle the list, and the button waits for its requests.
+    expect(screen.queryByRole('list', { name: zh['list.aria'] })).toBeNull()
+    expect(stopAll.hasAttribute('disabled')).toBe(true)
+    await act(async () => { resolvers[0]!(true) })
+    expect(stopAll.hasAttribute('disabled')).toBe(true)
+    await act(async () => { resolvers[1]!(false) })
+    expect(stopAll.hasAttribute('disabled')).toBe(false)
+    rerender(<JobListAction {...props([job({ status: 'stopping' })], undefined, {}, killJob)} />)
+    expect(screen.queryByRole('button', { name: zh['stop.all'].replace('{count}', '1') })).toBeNull()
   })
 
   it('clears an armed phase whose row stopped being killable', () => {

@@ -13,7 +13,25 @@ import {
   assertFixtureInventory, compareOrRefreshGolden, launchWebScaffold, seedSession, watchConsole,
   webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { newEnglishPage, saveFailureShot } from './support.ts'
+import { newEnglishPage, openSettings, saveFailureShot } from './support.ts'
+
+/**
+ * Flip the theme preference through the real user gesture (Settings → General
+ * → Appearance cubes). The theme presenter applies the active palette as
+ * inline body variables, so a bare `data-ds-dark-theme` attribute toggle no
+ * longer rewrites the tokens — only the Settings gesture does.
+ */
+async function setDarkPreference(page: import('playwright').Page, dark: boolean): Promise<void> {
+  await openSettings(page, 'en')
+  const dialog = page.getByRole('dialog', { name: 'Settings' })
+  await dialog.waitFor({ timeout: 10_000 })
+  await dialog.getByRole('button', { name: 'General', exact: true }).click()
+  const cube = dialog.getByRole('button', { name: dark ? 'Dark' : 'Light', exact: true })
+  await cube.click()
+  await expect.poll(() => cube.getAttribute('aria-pressed'), { timeout: 5_000 }).toBe('true')
+  await page.locator('[data-buffer="settings"]').getByRole('button', { name: 'Close', exact: true }).click()
+  await expect.poll(() => dialog.count(), { timeout: 5_000 }).toBe(0)
+}
 
 const SEED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/session.v3.jsonl', import.meta.url))
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/sidebar-scrollbar', import.meta.url))
@@ -378,6 +396,10 @@ describe('web e2e: sidebar session list scrollbar (reserved gutter / themed thum
 
   it('renders the themed thumb through the WebKit path in both palettes', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-sidebar-scrollbar-theme'))
+    // Pin the Light preference explicitly first: the boot default resolves
+    // `system`, whose palette need not equal the explicit Light theme's, and
+    // the restore equality below compares like with like.
+    await setDarkPreference(page, false)
     const light = await measureList(page)
     // The gate's signature on this engine, and the reason it exists: chromium
     // implements `::-webkit-scrollbar`, so the standard properties stay at
@@ -396,15 +418,15 @@ describe('web e2e: sidebar session list scrollbar (reserved gutter / themed thum
     expect(light.hoverRules).toEqual(['var(--dsh-scrollbar-thumb-hover)'])
     expect(light.token).toMatch(/^rgba?\(/)
     expect(light.hoverToken).not.toBe(light.token)
-    // The dark palette declares different scrollbar tokens; driving the body
-    // attribute pins the cascade the way lifecycle-chrome does (the Settings
-    // gesture that sets it is owned there).
-    await page.evaluate(() => { document.body.setAttribute('data-ds-dark-theme', '') })
+    // The dark palette declares different scrollbar tokens; the Settings
+    // appearance gesture rewrites attribute + inline palette together (the
+    // presenter owns both), which is what re-resolves the scrollbar vars.
+    await setDarkPreference(page, true)
     const dark = await measureList(page)
     expect(dark.token).not.toBe(light.token)
     expect(dark.hoverToken).not.toBe(dark.token)
     expect(dark.hoverToken).not.toBe(light.hoverToken)
-    await page.evaluate(() => { document.body.removeAttribute('data-ds-dark-theme') })
+    await setDarkPreference(page, false)
     const restored = await measureList(page)
     expect(restored.token).toBe(light.token)
     expect(restored.hoverToken).toBe(light.hoverToken)
@@ -413,10 +435,12 @@ describe('web e2e: sidebar session list scrollbar (reserved gutter / themed thum
 
   it('matches the committed scrollbar geometry golden in both palettes', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-sidebar-scrollbar-golden'))
+    // Explicit Light first — see the palette scenario above.
+    await setDarkPreference(page, false)
     const light = await measurePalette(page)
-    await page.evaluate(() => { document.body.setAttribute('data-ds-dark-theme', '') })
+    await setDarkPreference(page, true)
     const dark = await measurePalette(page)
-    await page.evaluate(() => { document.body.removeAttribute('data-ds-dark-theme') })
+    await setDarkPreference(page, false)
     await compareOrRefreshGolden(GEOMETRY_EXPECTED, renderGeometry(light, dark), MODE)
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)

@@ -1,6 +1,6 @@
 # Workspaces
 
-English | [中文](workspace.zh.md)
+English
 
 A workspace is the persistent record of a directory the user works in: a stable id over a canonical path, a display title, and the ordered account of sessions that belong to it. The subsystem is one package ([dsh-workspace](../../packages/workspace/workspace), `ctx.workspaceRegistry`) — an optional host-side capability, not part of the agent-loop spine, and invisible to models (no tools, no prompt text, no session events). It stores its records through the [storage domain form](storage.md) and validates session membership against [`SessionHeader.cwd`](persistence.md#sessionheader--metadata-beside-the-log), so `storageDomain` and `sessionPersistence` are mandatory startup dependencies: an unavailable persistence peer leaves the plugin pending rather than being mistaken for an empty history. Design record: [domain KV storage Agent Note](../../.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.md); bootstrap and GUI ordering: [Workspace UI product-flow Agent Note](../../.agents/notes/archived/feature/2026-07-25-workspace-ui-product-flow.md).
 
@@ -644,4 +644,101 @@ Stop a session's running work because the caller archived it with `stopActivity`
 ```
 
 Source: [`packages/workspace/workspace/src/index.ts`](../../packages/workspace/workspace/src/index.ts)
+
+<a id="ctxworktreeregistry--worktreeregistry"></a>
+
+### `ctx.worktreeRegistry` — `WorktreeRegistry`
+
+Durable worktree registry. The `worktrees` table IS the registry — display order derives from record timestamps, so one row write is the whole mutation and no order/global divergence is possible; the global singleton holds only the per-repository mode preferences. Git worktree adds run before any durable write: a failed git step leaves nothing registered, and a failed durable write rolls the git side back.
+
+```ts cordis-catalog
+/**
+ * Materialize a git worktree for a repository and register it durably. The
+ * branch is `<branchPrefix><slug>`; an already-existing branch is checked
+ * out as-is (stale-branch reattachment). The worktree directory is also
+ * registered as a workspace (title = branch) so sessions group there;
+ * workspace-registration failure degrades to an ungrouped worktree with a
+ * warning and never fails the create.
+ * @param repoPath - Any directory inside the target repository.
+ * @param opts - Optional caller-chosen name (slug source) and base ref
+ *   (verified; default `origin/main` when locally resolvable, else HEAD).
+ * @returns the durable record.
+ */
+async create(repoPath: string, opts: { name?: string; base?: string } = {}): Promise<WorktreeRecord>
+
+/**
+ * Ordered worktree records, newest first.
+ * @param repoPath - When given, only worktrees of the repository owning
+ *   that directory are returned.
+ * @returns a fresh ordered array of records.
+ */
+async list(repoPath?: string): Promise<WorktreeRecord[]>
+
+/**
+ * Look up one worktree record by id.
+ * @param id - Worktree id.
+ * @returns the record, or `undefined` when unknown.
+ */
+get(id: WorktreeId): WorktreeRecord | undefined
+
+/**
+ * The live git projection of one working directory: branch, head, dirty
+ * flag, repo-global stash count, and upstream divergence. Not a registry
+ * query — any git working directory (including a plain checkout) reports.
+ * @param path - Working directory to query.
+ * @returns the status bundle.
+ */
+async status(path: string): Promise<WorktreeStatus>
+
+/**
+ * The full per-repository preference map, keyed by canonical repository
+ * path. One read for clients projecting every workspace's default mode.
+ * @returns a fresh copy of the durable preferences.
+ */
+prefs(): Record<string, WorktreeModePref>
+
+/**
+ * Read the per-repository default workspace mode for new sessions.
+ * @param repoPath - Any directory inside the repository.
+ * @returns the stored preference, or `undefined` when the repo has none.
+ */
+async pref(repoPath: string): Promise<WorktreeModePref | undefined>
+
+/**
+ * Write the per-repository default workspace mode for new sessions.
+ * @param repoPath - Any directory inside the repository.
+ * @param pref - The preference: the checkout, a fresh worktree per
+ *   session, or a named existing worktree.
+ * @returns resolution after durability.
+ */
+async setPref(repoPath: string, pref: WorktreeModePref): Promise<void>
+
+/**
+ * Claim or update a worktree's display alias from a titled session. The
+ * first titled session running inside the worktree claims the alias; later
+ * titles from that same session refine it (fallback → provider → user
+ * rename), and other sessions never rename it — a reused worktree keeps
+ * the name of the session that first titled it. The alias is display-only:
+ * the directory path and branch never move.
+ * @param sessionId - The titled session.
+ * @param cwd - The session's working directory; must be a registered
+ *   worktree path for any effect.
+ * @param title - The normalized session title; slugified for display.
+ * @returns resolution after durability, or immediately when nothing applies.
+ */
+async aliasFromTitle(sessionId: string, cwd: string | undefined, title: string): Promise<void>
+
+/**
+ * Remove one worktree: `git worktree remove` (refuses a dirty tree unless
+ * forced) plus the durable record deletion. The branch is never deleted —
+ * merge-back keeps it. A git removal of an already-missing worktree
+ * directory is accepted so the record can still be cleared.
+ * @param id - Worktree record to remove.
+ * @param opts - `force: true` removes even a dirty worktree.
+ * @returns resolution after durability.
+ */
+async remove(id: WorktreeId, opts: { force?: boolean } = {}): Promise<void>
+```
+
+Source: [`packages/workspace/worktree/src/index.ts`](../../packages/workspace/worktree/src/index.ts)
 <!-- END GENERATED cordis-surface -->

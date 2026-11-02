@@ -21,6 +21,11 @@ import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
 export interface PlanProjection {
   active: boolean
   pending: boolean
+  standingPlan?: {
+    plan: string
+    title?: string | undefined
+    path?: string | undefined
+  } | null | undefined
 }
 
 /**

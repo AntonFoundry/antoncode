@@ -248,7 +248,7 @@ describe('the real workspace surface', () => {
     // so a dynamic package registering there replaces the whole UI.
     const root = entries.find(entry => entry.key === 'root')
     expect(root?.replaceRisk).toBe('shadows-shipped-ui')
-    expect(root?.occupants.join(' ')).toContain('AppFrame')
+    expect(root?.occupants.join(' ')).toContain('WmFrame')
     expect(entries.find(entry => entry.key === 'conversation.session')?.declaredBy)
       .toContain("factory 'conversation.content' (client-ui-conversation)")
     const tool = entries.find(entry => entry.key === 'tool.call.toolview')!

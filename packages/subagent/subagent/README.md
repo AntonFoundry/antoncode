@@ -5,7 +5,7 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-subagent
 
-English | [中文](README.zh.md)
+English
 
 ## Summary
 
@@ -66,7 +66,7 @@ In-process spawn accepts an independent `agentPreset`; fork and external backend
 
 ### Messaging, interrupting, and discovering
 
-Every exact live Agent can use `sendMessage()` with a direct continuable child; a resident continuable child can also use it with its direct parent. A working target receives the Agent message through Steer at its nearest step; an idle target starts a turn, and only a direct child can be cold-resumed. The parent can also interrupt a running descendant or list its children at any time. A browser continuation prompt independently selects Queue or Steer and may carry image parts: the Host admits and persists each image batch through the attachment store before the child inbox accepts the message, and refuses delivery when the child's declared model does not accept image input. Direct-child discovery reads the parent-owned `subagentCatalog` projection. `listChildren(parentSessionId, signal?)` owns a live-preferred Session observation and returns the catalog asynchronously without reading child logs. It forwards cancellation and releases the observation after materialization. Materialization preserves parent event order in O(D) time for D facts. External entries are leaves and require no child Session observation. Descendant discovery recursively reads local child catalogs in parent event order, observing each reachable Session once. It skips branches whose catalogs cannot be read and returns diagnostics for them; neither path loads or resumes a child Agent.
+Every exact live Agent can use `sendMessage()` with a direct continuable child; a resident continuable child can also use it with its direct parent. A working target receives the Agent message through Steer at its nearest step; an idle target starts a turn, and only a direct child can be cold-resumed. The parent can also interrupt a running descendant or list its children at any time. A browser continuation prompt independently selects Queue or Steer and may carry image parts: the Host admits and persists each image batch through the attachment store before the child inbox accepts the message, and refuses delivery when the child's declared model does not accept image input. Direct-child discovery reads the parent-owned `subagentCatalog` projection. `listChildren(parentSessionId, signal?)` owns a live-preferred Session observation and returns the catalog asynchronously without reading child logs. It forwards cancellation and releases the observation after materialization. Materialization preserves parent event order in O(D) time for D facts. External entries are leaves and require no child Session observation. Descendant discovery recursively reads local child catalogs in parent event order, observing each reachable Session once. It skips branches whose catalogs cannot be read and returns diagnostics for them; neither path loads or resumes a child Agent. Each descendant child row also carries the child's cumulative provider usage when the `tokenUsage` unit is registered and the child has reported usage, and its latest epoch outcome from the `subagentOutcome` projection, which folds the child's own turn structure into `{ stopReason, error?, seq }` so a failed child stays distinguishable from an idle one after its `subagent/end` edge has passed. An exact live ancestor can call `selectModel(targetSessionId, selection, { kind: 'ancestor', agent })` to replace a live child's model route for its next step.
 
 ### Failure and recovery
 
@@ -103,7 +103,9 @@ This section explains how the service is built and where the observable behavior
 | [`src/descriptor.ts`](src/descriptor.ts) | Versioned `subagent/descriptor` session-event vocabulary |
 | [`src/catalog.ts`](src/catalog.ts) | Parent-owned `subagent/catalog` event and chunked host projection |
 | [`src/child-agent.ts`](src/child-agent.ts) | Child composition, delegated policy, depth helpers |
-| [`src/list-children.ts`](src/list-children.ts) | Direct and recursive parent-catalog reads |
+| [`src/list-children.ts`](src/list-children.ts) | Direct and recursive parent-catalog reads; descendant rows add each child's usage and outcome |
+| [`src/projection.ts`](src/projection.ts) | `subagentTiming`, `subagent` identity, and `subagentOutcome` session projections |
+| [`src/stop-reason.ts`](src/stop-reason.ts) | One epoch stop-reason fold shared by the lifecycle edge and the outcome projection |
 | [`src/control.ts`](src/control.ts) | Browser control request validation and stable failure codes |
 | [`src/control-types.ts`](src/control-types.ts) | Client-safe catalog row, control requests, receipts, and failures |
 | [`src/archive-admission.ts`](src/archive-admission.ts) | The `subagent` family of the Workspace registry's archive admission: running descendants and their parent-cause cancel |
@@ -210,6 +212,7 @@ These limits define when the seam is a poor fit or needs special operational car
 - **Process-local residency** — the Activation inbox and ownership graph do not coordinate two harness processes; concurrent access to one persistence store needs a durable mailbox and cross-process lease protocol.
 - **No replay of accepted-but-unlogged messages** — a crash can lose an accepted prompt that never reached the child's session log; the lost message is not replayed automatically.
 - **No durable parent mailbox** — child-to-parent messages require a resident continuable child and live direct parent, and provide acceptance identity rather than exactly-once delivery.
+- **Model reassignment is live-only** — `selectModel()` reaches only an Agent published in this process; out-of-process children and stored-but-inactive continuable children reject with `NOT_LIVE`. The switch is recorded as the child's own `model/selection` event, so it also governs that child's later cold resume.
 - **Lifecycle events are observe-only** — a run-affecting `subagent/end` continuation or decision API waits for a concrete consumer.
 
 <a id="dev-note"></a>

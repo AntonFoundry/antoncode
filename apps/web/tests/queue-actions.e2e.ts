@@ -131,7 +131,7 @@ describe('web e2e: queue row actions', () => {
       expect(await input.textContent()).toBe(REMOVE)
       expect(await input.getAttribute('contenteditable')).toBe('false')
       expect(await page.locator('[data-queue-dock] [data-submission-echo]').count()).toBe(0)
-      const sending = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+      const sending = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
       await compareOrRefreshGolden(SENDING_EXPECTED, sending, MODE)
     } finally {
       release.resolve(undefined)
@@ -150,7 +150,7 @@ describe('web e2e: queue row actions', () => {
     await expect.poll(() => queueHeader.getByRole('status').count(), { timeout: 10_000 }).toBe(0)
     const collapsedSnapshot = await captureStableAria(
       page,
-      '[class*="centerCol"]',
+      '[data-pane="content"]',
       scaffold.workspaceCwd,
     )
     await compareOrRefreshGolden(COLLAPSED_EXPECTED, collapsedSnapshot, MODE)
@@ -210,7 +210,7 @@ describe('web e2e: queue row actions', () => {
     expect(tooltipGeometry).not.toBeNull()
     expect(Math.abs(tooltipGeometry!.tooltipCenter - tooltipGeometry!.declaredLeft)).toBeLessThan(2)
     expect(Math.abs(tooltipGeometry!.tooltipTop - tooltipGeometry!.declaredTop)).toBeLessThan(2)
-    const editingSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const editingSnapshot = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(EDITING_EXPECTED, editingSnapshot, MODE)
     await settleQueueAction(() => save.click(), EDITED)
     await page.getByText(EDITED, { exact: true }).waitFor()
@@ -226,7 +226,7 @@ describe('web e2e: queue row actions', () => {
     await editTooltip.waitFor()
     await expectTooltipOnTop(editTooltip)
 
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
     expect(sessionEvents.filter(event => event.type === 'user/message' && event.data.source.kind === 'user')).toHaveLength(1)
     await page.route('**/api/session/prompt', async (route) => {
@@ -302,11 +302,11 @@ describe('web e2e: queue row actions', () => {
 
     // The disabled Send button must dismiss the active Stop tooltip without mouseleave.
     await expect.poll(() => page.getByRole('tooltip').count()).toBe(0)
-    const preservedSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const preservedSnapshot = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(PRESERVED_EXPECTED, preservedSnapshot, MODE)
     const expanded = await captureExpandedTurnProcessAria(
       page,
-      '[class*="centerCol"]',
+      '[data-pane="content"]',
       scaffold.workspaceCwd,
     )
     await compareOrRefreshGolden(PRESERVED_EXPANDED_EXPECTED, expanded, MODE)
@@ -325,7 +325,7 @@ describe('web e2e: queue row actions', () => {
     expect(tripwire.warnings).toEqual([])
   }, 120_000)
 
-  it.skipIf(MODE === 'record')('orders Todo before Goal and Queue on one responsive card column', async () => {
+  it.skipIf(MODE === 'record')('orders Goal and Queue on one responsive card column', async () => {
     overrideDir = await mkdtemp(join(tmpdir(), 'dsh-web-context-layout-'))
     const readyFile = join(overrideDir, '.hang-ready')
     const overridePath = join(overrideDir, 'replay.override.json')
@@ -358,7 +358,9 @@ describe('web e2e: queue row actions', () => {
         { content: 'Align the panel widths', status: 'in_progress' },
       ],
     })
-    await page.locator('[data-testid="todo-panel"]').waitFor({ timeout: 10_000 })
+    // The todo panel is now the sidebar's Todo Tree seat, not a composer
+    // context card; the tree still renders the appended snapshot there.
+    await page.getByText('Confirm the panel order').waitFor({ timeout: 10_000 })
 
     for (const text of ['Layout queue first', 'Layout queue second']) {
       await page.locator('[data-composer-input][contenteditable="true"]').first().waitFor({ timeout: 10_000 })
@@ -374,7 +376,7 @@ describe('web e2e: queue row actions', () => {
 
     const layoutSnapshot = await captureStableAria(
       page,
-      '[class*="centerCol"]',
+      '[data-pane="content"]',
       scaffold.workspaceCwd,
     )
     await compareOrRefreshGolden(LAYOUT_EXPECTED, layoutSnapshot, MODE)
@@ -388,14 +390,9 @@ describe('web e2e: queue row actions', () => {
         return box === undefined ? null : { x: box.x, y: box.y, width: box.width }
       }))
       expect(queuePanelBox).not.toBeNull()
-      expect(todoBox).not.toBeNull()
       expect(goalBox).not.toBeNull()
-      expect(todoBox!.y).toBeLessThan(goalBox!.y)
-      expect(goalBox!.y).toBeLessThan(queuePanelBox!.y)
-      expect(todoBox!.x).toBeCloseTo(goalBox!.x, 1)
-      expect(todoBox!.x).toBeCloseTo(queuePanelBox!.x, 1)
-      expect(todoBox!.width).toBeCloseTo(goalBox!.width, 1)
-      expect(todoBox!.width).toBeCloseTo(queuePanelBox!.width, 1)
+      expect(goalBox!.x).toBeCloseTo(queuePanelBox!.x, 1)
+      expect(goalBox!.width).toBeCloseTo(queuePanelBox!.width, 1)
     }
     await expectAlignedContextPanels()
     await page.setViewportSize({ width: 640, height: 1000 })
@@ -480,7 +477,7 @@ describe('web e2e: queue row actions', () => {
     expect(sessionEvents.some(event => event.type === 'agent/inbox/spliced' && event.data.target === 'next-turn'
       && event.data.outcome === 'canceled')).toBe(true)
     await expect.poll(() => stop.count(), { timeout: 10_000 }).toBe(0)
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(GOAL_STOP_EXPECTED, snapshot, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])

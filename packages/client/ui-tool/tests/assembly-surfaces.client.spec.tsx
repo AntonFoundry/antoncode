@@ -16,7 +16,7 @@ import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotTestRuntime, usePinnedBrowserLanguages, stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply as applyConversation, inject as injectConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { PartialArguments } from '@deepseek-ai/dsh-util-values'
-import { apply as applyTool, inject as injectTool } from '../src/client/apply.ts'
+import { apply as applyTool, inject as injectTool } from '../src/client/apply.tsx'
 
 // The service reads its initial locale from the browser; these specs assert
 // the shipped Chinese copy, so they state the browser they assume.
@@ -71,14 +71,18 @@ const bashResult = (seq: number, callId: string, over?: Partial<ToolResultNode>)
   }
 }
 
-/** Test-owned AppFrame role: declares and renders the resident conversation area. */
-type AppRootProps = PropsRenderSlots<'main'>
+/** Test-owned AppFrame role: declares and renders the resident conversation area and the sidebar memory seat. */
+type AppRootProps = PropsRenderSlots<'main' | 'sidebar.memory'>
 function AppRoot({ renderSlot }: AppRootProps) {
-  return <>{renderSlot('main', {}, { entryKey: 'conversation' })}</>
+  return <>
+    {renderSlot('main', {}, { entryKey: 'conversation' })}
+    {renderSlot('sidebar.memory', { wide: true, expandSidebar: () => {} })}
+  </>
 }
 
 const LAYOUT_CHILDREN = {
   'main': { kind: 'keyed', scope: 'root' },
+  'sidebar.memory': { kind: 'list', scope: 'root' },
 } as const
 
 async function bench(nodes: ToolResultNode[]) {
@@ -131,21 +135,21 @@ describe('todo_write assembly (product registrations, no outlet twins)', () => {
     expect(row).not.toBeNull()
     expect(row!.textContent).toContain('新增 3')
 
-    // The plan strip sits in the input dock, fed by the projection
-    // (default-collapsed: the header summary shows; rows appear on expand).
-    const panel = view.container.querySelector('[data-testid="todo-panel"]')
-    expect(panel).not.toBeNull()
-    expect(panel!.textContent).toContain('1 已完成\u2002·\u20021 进行中\u2002·\u20021 待处理')
-    fireEvent.click(panel!.querySelector('button')!)
-    expect([...panel!.querySelectorAll('li')].map(li => li.getAttribute('data-status')))
+    // The execution tree sits in the sidebar's memory seat (wide form), fed
+    // by the current-session projection summary (expanded: header summary
+    // plus one row per node).
+    const tree = view.container.querySelector('[data-testid="todo-tree"]')
+    expect(tree).not.toBeNull()
+    expect(tree!.textContent).toContain('1 已完成\u2002·\u20021 进行中\u2002·\u20021 待处理')
+    expect([...tree!.querySelectorAll('li')].map(li => li.getAttribute('data-status')))
       .toEqual(['completed', 'in_progress', 'pending'])
 
-    // Next turn retires the standing plan (host pushes null): the strip
-    // clears while the historical row stays in the flow.
+    // Next turn retires the standing plan (host pushes null): the tree falls
+    // back to its quiet empty state while the historical row stays in the flow.
     await runtime.flush()
     runtime.sessions.behavior(SID).projections.set('todos', null)
     await waitFor(() => {
-      expect(view.container.querySelector('[data-testid="todo-panel"]')).toBeNull()
+      expect(view.container.querySelector('[data-testid="todo-tree-empty"]')).not.toBeNull()
     })
     expect(view.container.querySelector('[data-tool="todo_write"]')).not.toBeNull()
     await runtime.dispose()
@@ -154,6 +158,7 @@ describe('todo_write assembly (product registrations, no outlet twins)', () => {
 
 describe('terminal card assembly', () => {
   it('both the keyed bash row and the fallback row reach the terminal card through the whole-row expand', async () => {
+    window.localStorage.setItem('dsh.tool.cards.expanded', 'expanded')
     const runtime = await bench([
       bashResult(3, 'c-keyed'),
       // pwsh has no package-local keyed row, so GenericToolCard owns its raw terminal card.
@@ -163,10 +168,16 @@ describe('terminal card assembly', () => {
     ])
     const view = runtime.renderRoot()
 
-    // Keyed BashRow: collapsed by default, the whole summary row is the toggle.
+    // Keyed BashRow and the fallback row both reach the terminal card through
+    // the whole-row toggle: default-expanded (command + output visible), one
+    // click collapses, one click re-opens.
     const keyedRow = view.container.querySelector('[data-sample="bash"]')
     const keyed = keyedRow?.parentElement
-    expect(keyed?.querySelector('[data-terminal]')).toBeNull()
+    expect(keyed!.querySelector('[data-terminal]')).not.toBeNull()
+    fireEvent.click(keyedRow!)
+    await waitFor(() => {
+      expect(keyed!.querySelector('[data-terminal]')).toBeNull()
+    })
     fireEvent.click(keyedRow!)
     await waitFor(() => {
       expect(keyed!.querySelector('[data-terminal]')).not.toBeNull()
@@ -175,7 +186,11 @@ describe('terminal card assembly', () => {
     // Fallback row: same unified expand interaction.
     const fallback = view.container.querySelector('[data-tool="pwsh"]')
     expect(fallback).not.toBeNull()
-    expect(fallback!.querySelector('[data-terminal]')).toBeNull()
+    expect(fallback!.querySelector('[data-terminal]')).not.toBeNull()
+    fireEvent.click(fallback!.querySelector('[data-expandable]')!)
+    await waitFor(() => {
+      expect(fallback!.querySelector('[data-terminal]')).toBeNull()
+    })
     fireEvent.click(fallback!.querySelector('[data-expandable]')!)
     await waitFor(() => {
       expect(fallback!.querySelector('[data-terminal]')).not.toBeNull()

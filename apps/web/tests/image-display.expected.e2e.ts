@@ -91,7 +91,6 @@ it('accepts pasted images into the composer rail in order and removes them', asy
       getData: () => '',
     },
   })
-
   // The rail is an accessible group holding the draft thumbnail (queried via
   // DOM: jsdom's a11y-visibility computation hides the composer subtree).
   const rail = await waitFor(() => {
@@ -167,7 +166,7 @@ it('accepts a whole-page drop under the limits-labeled overlay and refuses an ov
     if (rail === null) throw new Error('attachment rail missing after page drop')
     expect([...rail.querySelectorAll('img')].map(img => img.getAttribute('alt'))).toEqual(['dropped.png'])
   }, { timeout: 5_000 })
-  expect(screen.queryByRole('status')).toBeNull()
+  expect(document.querySelector('[role="status"][data-variant]')).toBeNull()
 
   // An intake that would exceed the projected per-message count is refused as
   // a whole batch at add time: the banner names the limit and the rail keeps

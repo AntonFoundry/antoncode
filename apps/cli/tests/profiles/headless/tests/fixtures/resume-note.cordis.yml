@@ -1,0 +1,33 @@
+# Test-only composition: keep resume-note opt-in while exercising its real Loader/app path.
+- id: resume-note-mock-llm
+  name: './resume-note-mock-llm.ts'
+
+# Managed child-process groups for the bash executor (spawn/kill/output plumbing).
+- id: subprocess
+  name: '@deepseek-ai/dsh-subprocess-local'
+
+- id: bash
+  name: '@deepseek-ai/dsh-bash-local'
+
+- id: resume-note
+  name: '@deepseek-ai/dsh-resume-note'
+
+- id: agent-spine
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    agents:
+      - id: main
+        provider: resume-note-mock
+        model: resume-note-mock
+        cwd: !!js process.cwd()
+    persona: 'Test the resume-note plugin.'
+    workspaceContext: false
+
+- id: persistence
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: './.sessions'
+    compression: 'none'
+
+- id: checkpoint-policy
+  name: '@deepseek-ai/dsh-session-checkpoint-policy'

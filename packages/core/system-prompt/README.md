@@ -5,7 +5,7 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-system-prompt
 
-English | [中文](README.zh.md)
+English
 
 ## Summary
 
@@ -43,7 +43,7 @@ The config owns the fixed opener, runtime context, deployment persona prefix and
 
 | Field | Default | Meaning |
 |---|---|---|
-| `includeHarnessIdentity` | `true` | Include the fixed `You are an AI agent powered by DeepSeek Harness.` first-party opener at order −1000. Set false only when a compatibility deployment owns the complete system prompt. |
+| `includeHarnessIdentity` | `true` | Include the fixed first-party opener at order −1000: `You are an AI agent powered by Anton Code.` followed by the commit-discipline paragraph. Set false only when a compatibility deployment owns the complete system prompt. |
 | `includeRuntimeContext` | `true` | Include optional ordered dynamic runtime context in assembly |
 | `personaPrefix` | `''` | Global persona prefix template at order `0`, before first-party guidance |
 | `personaSuffix` | `''` | Global `deployment:persona-suffix` template at order `10200`, after first-party guidance |
@@ -68,6 +68,8 @@ Set `interpolate: false` on a section or dynamic context to preserve its text li
 `refreshContext(assembly, context)` refreshes registered runtime facts after pre-step and route preparation. It preserves accepted sections, tools, variables, and contexts contributed only by the assembly waterfall, applies current optional-context suppression, and restores missing required entries. Put changing facts in context providers; registered context text is read again before admission.
 
 The agent loop calls `assemble(context)` once per proposed step before `agent/pre-step`, with the step's captured model selection (`context.modelSelection`) and admitted tool set (`context.toolSet`). Presentation listeners receive sections, contexts, and variables; tools remain provider-owned. Tool-aware section callbacks use `context.toolSet` to inspect the same step selection as execution.
+
+This plugin owns `harness:identity`, the always-on `harness:commit-discipline` section (order −990), and the persona prefix and suffix sections. `harness:commit-discipline` instructs the model to commit each verified fix or feature immediately and never end a turn with finished work uncommitted; a scoped section of the same name shadows it where a preset replaces the default.
 
 ### Contribute a prompt variable
 
@@ -144,7 +146,17 @@ First-party sections render the harness identity, deployment persona prefix (inc
 ##### Harness identity
 
 ```markdown
-You are an AI agent powered by DeepSeek Harness.
+You are an AI agent powered by Anton Code.
+
+Commit discipline: when a feature or bug fix passes its narrow checks, commit it immediately with a deliberate conventional message — never wait to be asked. Do not end a turn with finished, verified work left uncommitted; survey the working tree and group unrelated pending changes into logical feature commits when found. Keep each commit atomic: one concern per commit.
+```
+
+##### Commit discipline
+
+The `harness:commit-discipline` section renders the same paragraph on its own, also when `includeHarnessIdentity: false`:
+
+```markdown
+Commit discipline: when a feature or bug fix passes its narrow checks, commit it immediately with a deliberate conventional message — never wait to be asked. Do not end a turn with finished, verified work left uncommitted; survey the working tree and group unrelated pending changes into logical feature commits when found. Keep each commit atomic: one concern per commit.
 ```
 
 #### Token effect

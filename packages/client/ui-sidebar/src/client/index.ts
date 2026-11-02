@@ -19,7 +19,8 @@ import { en, ja, es, fr, de, ru, pt, zh, type SidebarKey } from './locales.ts'
 export type {
   SidebarBrandMarkOwnerProps, SidebarBrandNameOwnerProps, SidebarFooterActionOwnerProps,
   SidebarPanelActionEntry, SidebarPanelActionsOwnerProps, SidebarPanelIconOwnerProps, SidebarPanelMetadata,
-  SidebarRootComponentProps, SidebarRootInjected, SidebarSectionOwnerProps, SidebarSettingsOwnerProps,
+  SidebarRegionOwnerProps, SidebarRootComponentProps, SidebarRootInjected, SidebarSectionOwnerProps,
+  SidebarSettingsOwnerProps,
 } from './contract/slots.ts'
 export type { SidebarKey } from './locales.ts'
 
@@ -69,8 +70,10 @@ export function apply(ctx: ClientContext): void {
   }
 
   const injectProps = (): SidebarRootInjected => ({
-    // The shell's New Session button rides the Workspace UI's shared action
-    // (current Session Workspace, then recent Workspace).
+    // The brand's New Session shortcut rides the Workspace UI's shared action
+    // (current Session Workspace, then recent Workspace). The New Workspace
+    // capsule is component state — its presses travel through the region
+    // owner share, not this inject face.
     startSession: (workspaceId) => { workspaceNavigation.startSession(workspaceId) },
     toggleSidebar: () => { ctx.layout.toggleSidebar() },
     selectPanel: (id) => { ctx.layout.selectPanel(id) },
@@ -81,6 +84,10 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('sidebar', () => ctx.slots.register({
     name: 'sidebar',
     locale: NS,
+    // The shell owns geometry; ui-workspace registers the whole browsing
+    // region (header, search, session list, workspace dialogs), memory
+    // plugins register into `sidebar.memory`, ui-settings registers the foot
+    // trigger + settings panel.
     children: {
       'sidebar.brand.mark': { kind: 'single', scope: 'root' },
       'sidebar.brand.name': { kind: 'single', scope: 'root' },
@@ -88,6 +95,7 @@ export function apply(ctx: ClientContext): void {
       'sidebar.panellist': { kind: 'list', scope: 'root' },
       'sidebar.panellist.actions': { kind: 'list', scope: 'root' },
       'sidebar.workspaces': { kind: 'single', scope: 'root' },
+      'sidebar.memory': { kind: 'list', scope: 'root' },
       'sidebar.settings': { kind: 'single', scope: 'root' },
       'sidebar.footer.action': { kind: 'list', scope: 'root' },
     },

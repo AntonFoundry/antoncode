@@ -16,7 +16,20 @@ export type { ToolCallBlock } from '@deepseek-ai/dsh-client-ui-chat/client'
 export type ToolRowVariant = 'search' | 'read' | 'bash' | 'write' | 'edit' | 'code' | 'others'
 
 /** Row lifecycle state used by summary styling and accessible status text. */
-export type ToolRowState = 'preparing' | 'running' | 'ok' | 'error' | 'stopped'
+export type ToolRowState = 'preparing' | 'running' | 'ok' | 'notice' | 'error' | 'stopped'
+
+/** A held filesystem edit needs a read in this live session before retrying. */
+export const READ_BEFORE_EDIT_NOTICE = 'Oops — I need to read this file before editing it. Retry after a Read.'
+
+/** True when a settled result is the recoverable filesystem observation guard. */
+export function isReadBeforeEditNotice(node: Pick<ToolResultNode, 'isError' | 'error'>): boolean {
+  return node.isError && node.error?.code === 'FS_NOT_OBSERVED'
+}
+
+/** UI-facing result text; the underlying result remains a real tool error. */
+export function displayResultText(node: ToolResultNode): string {
+  return isReadBeforeEditNotice(node) ? READ_BEFORE_EDIT_NOTICE : resultText(node)
+}
 
 /** Locale-neutral structured fact consumed only by the user-facing Tool row. */
 export interface AutoReviewDenial {
@@ -155,7 +168,7 @@ export interface ToolRowModel {
   bodyRaw: string | null
   /** Flattened result text ({@link resultText}); null while running or when the result carries no text. */
   output: string | null
-  /** First line of the result text on an error row; null for every other state. */
+  /** First line of terminal guidance/error text; null for every other state. */
   errorSummary: string | null
   /** Structured Auto-review denial identity; null for every ordinary result. */
   autoReviewDenial: AutoReviewDenial | null
@@ -313,6 +326,7 @@ export function toolRowModel(toolName: string, block: ToolCallBlock, cwd?: strin
     : recordedPath ?? (canUseArgumentPath ? argumentPath : undefined)
   const state: ToolRowState = !done ? block.phase === 'preparing' ? 'preparing' : 'running'
     : block.error?.code === 'interrupted' ? 'stopped'
+      : isReadBeforeEditNotice(block) ? 'notice'
       : block.isError ? 'error' : 'ok'
   // The argument view serves every stage; the raw text is the fallback when it carries nothing useful.
   const base = primary.summary !== '' || argsRaw === null ? primary.summary
@@ -322,8 +336,8 @@ export function toolRowModel(toolName: string, block: ToolCallBlock, cwd?: strin
   // The empty string is "no text" for both derived result fields: a settled
   // call with blank content has nothing to expand, and a blank first line
   // would erase the collapsed error row's summary slot.
-  const output = done ? (resultText(block) || null) : null
-  const errorSummary = state === 'error' && output !== null ? firstLine(output) : null
+  const output = done ? (displayResultText(block) || null) : null
+  const errorSummary = (state === 'error' || state === 'notice') && output !== null ? firstLine(output) : null
   const bodyRaw = argsRaw === '' ? null : argsRaw
   return {
     variant,

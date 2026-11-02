@@ -34,6 +34,12 @@ export const zh = {
   configuration: '配置状态',
   runtime: '运行状态',
   unobserved: '未运行',
+  apiUrlLabel: 'API URL',
+  apiKeyLabel: 'API 密钥',
+  save: '保存',
+  saving: '保存中…',
+  saved: '已保存',
+  configError: '保存失败。',
   pending: '等待依赖',
   loadingPhase: '加载中',
   active: '运行中',
@@ -78,6 +84,12 @@ export const en = {
   configuration: 'Configuration',
   runtime: 'Status',
   unobserved: 'Not running',
+  apiUrlLabel: 'API URL',
+  apiKeyLabel: 'API key',
+  save: 'Save',
+  saving: 'Saving…',
+  saved: 'Saved',
+  configError: 'Saving failed.',
   pending: 'Waiting for dependencies',
   loadingPhase: 'Loading',
   active: 'Running',
@@ -124,6 +136,12 @@ export const ja = {
   'active': '実行中',
   'failed': '起動に失敗',
   'unloading': 'アンロード中',
+  'apiUrlLabel': 'API URL',
+  'apiKeyLabel': 'API キー',
+  'save': '保存',
+  'saving': '保存中…',
+  'saved': '保存しました',
+  'configError': '保存できませんでした。',
 } satisfies Record<keyof typeof en, string>
 
 /** Spanish dictionary, checked against the English keys. */
@@ -165,6 +183,12 @@ export const es = {
   active: 'corriendo',
   failed: 'No se pudo iniciar',
   unloading: 'Descarga',
+  apiUrlLabel: 'URL de la API',
+  apiKeyLabel: 'Clave de API',
+  save: 'Guardar',
+  saving: 'Guardando…',
+  saved: 'Guardado',
+  configError: 'No se pudo guardar.',
 } satisfies Record<keyof typeof en, string>
 
 /** French dictionary, checked against the English keys. */
@@ -206,6 +230,12 @@ export const fr = {
   active: 'Courir',
   failed: 'Échec du démarrage',
   unloading: 'Déchargement',
+  apiUrlLabel: 'URL de l’API',
+  apiKeyLabel: 'Clé d’API',
+  save: 'Enregistrer',
+  saving: 'Enregistrement…',
+  saved: 'Enregistré',
+  configError: 'Échec de l’enregistrement.',
 } satisfies Record<keyof typeof en, string>
 
 /** German dictionary, checked against the English keys. */
@@ -247,6 +277,12 @@ export const de = {
   active: 'Laufen',
   failed: 'Start fehlgeschlagen',
   unloading: 'Entladen',
+  apiUrlLabel: 'API-URL',
+  apiKeyLabel: 'API-Schlüssel',
+  save: 'Speichern',
+  saving: 'Wird gespeichert…',
+  saved: 'Gespeichert',
+  configError: 'Speichern fehlgeschlagen.',
 } satisfies Record<keyof typeof en, string>
 
 /** Russian dictionary, checked against the English keys. */
@@ -288,6 +324,12 @@ export const ru = {
   active: 'Бег',
   failed: 'Не удалось запустить',
   unloading: 'Разгрузка',
+  apiUrlLabel: 'URL API',
+  apiKeyLabel: 'Ключ API',
+  save: 'Сохранить',
+  saving: 'Сохранение…',
+  saved: 'Сохранено',
+  configError: 'Не удалось сохранить.',
 } satisfies Record<keyof typeof en, string>
 
 /** Portuguese dictionary, checked against the English keys. */
@@ -329,4 +371,10 @@ export const pt = {
   active: 'Correndo',
   failed: 'Falha ao iniciar',
   unloading: 'Descarregando',
+  apiUrlLabel: 'URL da API',
+  apiKeyLabel: 'Chave de API',
+  save: 'Salvar',
+  saving: 'Salvando…',
+  saved: 'Salvo',
+  configError: 'Falha ao salvar.',
 } satisfies Record<keyof typeof en, string>

@@ -10,13 +10,16 @@
  * index render (structured injection rows, then raw taps). Non-index assets
  * stay public; every file other than the index carries a weak ETag with
  * `cache-control: no-cache` and answers a matching `If-None-Match` with 304,
- * while the index carries no cache headers. The dist location is workspace
+ * while the index carries `cache-control: no-store`. Every response carries
+ * the per-activation boot id in `x-dsh-boot`, and the rendered index also
+ * carries it as `<meta name="dsh-boot">`, so a client can detect a harness
+ * restart and drop its in-memory bundle. The dist location is workspace
  * knowledge of the composing application, so `distIndex` is typically
  * supplied through a `!!js` expression, never hardcoded by a deployment.
  * @module @deepseek-ai/dsh-host-frontend-static
  */
 
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -49,6 +52,7 @@ const MIME: Record<string, string> = {
   // Launchers require an image Content-Type for the install icons.
   '.png': 'image/png',
   '.svg': 'image/svg+xml',
+  '.png': 'image/png',
   '.json': 'application/json',
   '.map': 'application/json',
   '.webmanifest': 'application/manifest+json',
@@ -86,7 +90,7 @@ function bytesBody(bytes: Uint8Array): ReadableStream<Uint8Array> {
  * @param renderIndex - turns the raw index.html body into the served document
  * for the dist root and configured index path.
  * @returns the dist response; a HEAD response carries the GET status and
- * headers without a body. A file other than the index carries
+ * headers without a body. The index carries `cache-control: no-store`. A file other than the index carries
  * `cache-control: no-cache` and a weak ETag from a SHA-1 of its bytes, and a
  * request whose `If-None-Match` equals that ETag receives an empty 304.
  */
@@ -107,7 +111,8 @@ async function serveStatic(
       const refusal = authorizeIndex()
       if (refusal !== undefined) return refusal
       body = renderIndex(await readFile(distIndex, 'utf8'))
-      headers = { 'content-type': HTML_MIME }
+      // The shell references every bundle; it must never come from a stale cache.
+      headers = { 'content-type': HTML_MIME, 'cache-control': 'no-store' }
     } else {
       body = await readFile(target)
       // Weak: gzip changes the transferred bytes.
@@ -133,6 +138,14 @@ async function serveStatic(
 export function apply(ctx: Context, config: Config): void {
   const distIndex = config.distIndex
   const distRoot = dirname(distIndex)
+  // One id per plugin activation: a harness restart remounts the plugin, so
+  // every served response carries the boot it came from.
+  const bootId = randomUUID()
+  const bootMeta = `<meta name="dsh-boot" content="${bootId}">`
+  const stampBoot = (response: Response): Response => {
+    response.headers.set('x-dsh-boot', bootId)
+    return response
+  }
   // Connection's browser authentication writes the token exchange's 303 or
   // the 401 through a writeHead/end response; capture it as a Fetch response.
   // The answer stays a 401 unless Connection writes another one.
@@ -150,7 +163,7 @@ export function apply(ctx: Context, config: Config): void {
     return admitted ? undefined : new Response(body, { status, headers })
   }
   ctx.effect(() => ctx.webServer.registerFallback({
-    resource: (request, peer) => serveStatic(
+    resource: async (request, peer) => stampBoot(await serveStatic(
       request,
       distRoot,
       distIndex,
@@ -159,9 +172,9 @@ export function apply(ctx: Context, config: Config): void {
       () => peer === undefined ? authorizeIndex(request) : undefined,
       // The browser authentication admits the owner's shared browser Peer. The
       // base goes in after all index transforms, so it precedes every resource
-      // reference they insert.
+      // reference they insert; the boot marker is the shell's first tag.
       html => ctx.webServer.renderIndex(html, peer ?? ctx.connection.browserPeer)
-        .replace(/<head(?:\s[^>]*)?>/i, open => `${open}<base href="./">`),
-    ),
+        .replace(/<head(?:\s[^>]*)?>/i, open => `${open}${bootMeta}<base href="./">`),
+    )),
   }), 'frontend-static: fallback seat')
 }

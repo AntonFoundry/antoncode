@@ -1,0 +1,146 @@
+/* Font panel: one titled column of four sections (Interface, Chat, Code,
+ * Terminal). Sections follow the 'Setting-Cell' rhythm: 8px gap rows with a
+ * hairline separator between sections; the settings column removes the last
+ * child's separator. */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 16px 0;
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.panel .section:last-child {
+  border-bottom: none;
+  padding-bottom: 4px;
+}
+
+.sectionText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sectionLabel {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Live preview line in the section's family and size. */
+.preview {
+  color: var(--dsw-alias-label-secondary);
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+/* Family selector pill (matches the Language row: h36 r18, pad 0/14, gap 12). */
+.selector {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  height: 36px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 18px;
+  background: var(--dsw-alias-bg-module-platform);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.chevron {
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* Value stepper (r18 pill matching the selector height). */
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  border-radius: 18px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+.stepButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 16px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.stepButton:hover:not(:disabled) {
+  color: var(--dsw-alias-brand-primary);
+}
+
+.stepButton:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.sizeValue {
+  min-width: 44px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Family-menu filter input (footer seat of the portal menu). */
+.filter {
+  flex: none;
+  width: 100%;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: transparent;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.filter:focus {
+  outline: none;
+  border-color: var(--dsw-alias-brand-primary);
+}

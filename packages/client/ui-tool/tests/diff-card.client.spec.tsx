@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useDisclosure } from '@deepseek-ai/dsh-client-ui-chat/src/client/chat/use-disclosure.ts'
 import { cleanup, fireEvent, render } from '@testing-library/react'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
@@ -47,6 +47,10 @@ const settled = (over?: Partial<ToolResultNode>): ToolResultNode => {
     meta: { diffs: DIFFS }, subCalls: [], ...over,
   }
 }
+
+beforeEach(() => {
+  window.localStorage.setItem('dsh.tool.cards.expanded', 'expanded')
+})
 
 describe('diffCardModel', () => {
   it('retains the authored file label when navigation metadata identifies an absolute target', () => {
@@ -179,21 +183,21 @@ describe('chat row diff body', () => {
   it('the expanded body is the applied diff, capped tighter than the panel', () => {
     expect(CHAT_DIFF_MAX_LINES).toBeLessThan(16)
     const view = render(<GenericToolCard {...ownerProps(settled())} />)
-    // Collapsed: the summary row (path) only, no diff body.
-    expect(view.queryByText('hello fixture')).toBeNull()
-    // The path link is not the expand control; the leading toggle is.
-    fireEvent.click(view.container.querySelector('[data-expandable]')!)
+    // Default-expanded: the applied diff IS the row's content.
     expect(view.container.querySelector('[data-diff]')).not.toBeNull()
     expect(view.getByText('hello fixture')).toBeTruthy()
+    // The whole row toggles back to the collapsed summary.
+    fireEvent.click(view.container.querySelector('[data-expandable]')!)
+    expect(view.queryByText('hello fixture')).toBeNull()
   })
 
-  it('a running diff call expands to its intended change', () => {
+  it('a running diff call shows its intended change without a click', () => {
     const view = render(<GenericToolCard {...ownerProps(running())} />)
-    fireEvent.click(view.container.querySelector('[data-expandable]')!)
     expect(view.container.querySelector('[data-diff]')).not.toBeNull()
   })
 
   it('a non-diff call keeps the args-JSON text body', () => {
+    window.localStorage.setItem('dsh.tool.cards.expanded', 'collapsed')
     // A non-file tool name so the row is not single-file (no path link), and its
     // args body is the fallback the diff card must not have replaced.
     const view = render(<GenericToolCard {...{
@@ -229,15 +233,15 @@ describe('FileMutationRow diff card', () => {
     fireEvent.click(view.container.querySelector('[data-expandable]')!)
   }
 
-  it('collapses to the summary row; expanding reveals the applied diff card', () => {
+  it('renders the applied diff card by default; the row toggles it away', () => {
     const view = render(<FileMutationRow {...rowProps(settled())} />)
-    // The diff card is collapsed by default — not in the DOM until expanded.
-    expect(view.container.querySelector('[data-diff]')).toBeNull()
-    expect(view.queryByText('hello fixture')).toBeNull()
-    toggleRow(view)
+    // Default-expanded: the change is visible without a click per edit.
     expect(view.container.querySelector('[data-diff]')).not.toBeNull()
     expect(view.getByText('hello fixture')).toBeTruthy()
     expect(view.getByRole('button', { name: '复制' })).toBeTruthy()
+    toggleRow(view)
+    expect(view.container.querySelector('[data-diff]')).toBeNull()
+    expect(view.queryByText('hello fixture')).toBeNull()
   })
 
   it('the summary is a path link that opens the tool path through the host', () => {
@@ -256,9 +260,9 @@ describe('FileMutationRow diff card', () => {
       call: { name: 'write', argsRaw: writeArgs },
       meta: { diffs: [] },
     }), 'write')} />)
-    // The collapsed row already carries the card's +/- totals beside the path.
+    // The row carries the card's +/- totals beside the path, and the
+    // default-expanded card shows the created content.
     expect(view.container.querySelector('[data-disclosure-row]')?.textContent).toContain('+1 -0')
-    toggleRow(view)
     expect(view.getAllByText('+1')).toHaveLength(1)
     expect(view.getAllByText('-0')).toHaveLength(1)
     expect(view.getByText('hello fixture')).toBeTruthy()
@@ -282,6 +286,7 @@ describe('FileMutationRow diff card', () => {
   })
 
   it('surfaces the result text when an errored mutation has no diff card', () => {
+    window.localStorage.setItem('dsh.tool.cards.expanded', 'collapsed')
     // Failed mutations have no diff; ToolRow keeps the model-facing error text.
     const view = render(<FileMutationRow {...rowProps(settled({
       isError: true,
@@ -292,6 +297,7 @@ describe('FileMutationRow diff card', () => {
   })
 
   it('falls back to the error name/code when an errored result has no text block', () => {
+    window.localStorage.setItem('dsh.tool.cards.expanded', 'collapsed')
     const view = render(<FileMutationRow {...rowProps(settled({
       isError: true, content: [],
       error: { name: 'ToolError', code: 'sandbox_denied' },

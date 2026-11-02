@@ -28,7 +28,8 @@ function contentKilobytes(block: FileMutationRowProps['block']): number | null {
 
 /**
  * Shows the path and decoded input size through preparation, execution, and
- * settlement, with the applied diff available once the call settles.
+ * settlement, with the applied diff available once the call settles. The row
+ * mounts in the chat-header card posture, collapsed by default.
  */
 export function FileMutationRow({ toolName, block, cwd, home, openFile, inspect, useDisclosure, t }: FileMutationRowProps) {
   const model = toolRowModel(toolName, block, cwd, home)
@@ -52,6 +53,7 @@ export function FileMutationRow({ toolName, block, cwd, home, openFile, inspect,
       filePath={model.filePath}
       onOpenFile={openFile}
       inspect={inspect}
+      defaultExpanded={false}
     />
   )
 }

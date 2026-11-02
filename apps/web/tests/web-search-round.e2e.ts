@@ -160,6 +160,9 @@ describe('web e2e: opt-in Search API web search', () => {
         apiKeyEnv: SEARCH_CREDENTIAL_REF,
         select: true,
       },
+      // The recorded turn calls `web_search` directly; the shipped paged
+      // catalog would deny it before the provider round-trip under test.
+      directToolCalls: true,
       ...(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 15 }),
     })
     await scaffold.ctx.credentials.set(SEARCH_CREDENTIAL_REF, SEARCH_CREDENTIAL)
@@ -252,7 +255,7 @@ describe('web e2e: opt-in Search API web search', () => {
     const searchTool = page.locator('[data-tool="web_search"]')
     await expandOwningTurnProcess(page, searchTool)
     await searchTool.waitFor({ timeout: 10_000 })
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
   })
 

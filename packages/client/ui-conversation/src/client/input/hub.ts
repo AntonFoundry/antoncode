@@ -23,6 +23,7 @@ import type {
 import type { ComposerKeyboard } from '../contract/draft-editor.ts'
 import type { ComposerBlocks } from '../contract/composer-blocks.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
+import type { ComposerRoutes } from './composer-routes.ts'
 import type { PopupDismissFace } from './facade.ts'
 import { SessionInputShell } from './facade.ts'
 import { reportMessageSubmission } from './submission-analytics.ts'
@@ -61,10 +62,12 @@ export class InputHub implements SessionInputResolver {
   /**
    * @param ctx - client root context (services resolved lazily per call — boot order stays free).
    * @param t - conversation-namespace translate thunk (reads the active locale at call time).
+   * @param routes - per-view composer routes consulted before the chat prompt sink.
    */
   constructor(
     private readonly rootCtx: Context,
     private readonly t: TranslateNS<'conversation'>,
+    private readonly routes: ComposerRoutes,
   ) {}
 
   /**
@@ -238,10 +241,11 @@ export class InputHub implements SessionInputResolver {
   }
 
   /**
-   * Default sink: prompt while the composer holds the sent draft. The session
-   * is always a real host entity (materialized when its workspace was picked),
-   * so there is exactly one path; a refused or failed prompt is an ordinary
-   * prompt failure (banner via promptError, draft kept in the composer).
+   * Default sink: deliver through the active view's composer route when one
+   * is registered, otherwise prompt while the composer holds the sent draft.
+   * The session is always a real host entity (materialized when its workspace
+   * was picked); a refused or failed prompt is an ordinary prompt failure
+   * (banner via promptError, draft kept in the composer).
    */
   private sink(
     session: SessionFace,
@@ -252,6 +256,16 @@ export class InputHub implements SessionInputResolver {
     accept: () => void,
   ): Promise<SubmitOutcome> {
     if (text === '' && attachmentIds.length === 0) return Promise.resolve({ kind: 'success' })
+    const route = this.routes.activeRoute(session.sessionId)
+    if (route !== undefined) {
+      // A view-owned route produces no Session echo to retire the draft
+      // attachments, so a delivered submission releases them here; a rejection
+      // keeps the draft and attachments and surfaces the failure as a notice.
+      return route.submit({ sessionId: session.sessionId, text, imageIds: attachmentIds, mode }).then(() => {
+        for (const id of attachmentIds) this.conversation().releaseDraftAttachment(id)
+        return { kind: 'success' as const }
+      })
+    }
     return this.conversation().sendSession(session, text, attachmentIds, mode, signal, accept)
   }
 

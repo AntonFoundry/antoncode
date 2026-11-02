@@ -1184,40 +1184,40 @@ describe('createTransport', () => {
   })
 })
 
-describe('tool execution — non-object args fallback', () => {
+describe('tool execution — non-object args are rejected before the client', () => {
   let ctx: Context
 
   beforeEach(async () => {
     ctx = await mountRegistry()
   })
 
-  it('coerces null args to empty object for callTool', async () => {
+  it('rejects null args at the registry without reaching callTool', async () => {
     const client = createMockClient(
       [{ name: 'coerce', inputSchema: { type: 'object' } }],
       { content: [{ type: 'text', text: 'ok' }] },
     )
 
     await syncTools(client as never, ctx, defaultOpts, new Map())
-    await executeToolFixture(ctx, { signal: testToolSignal, callId: ToolCallId('c1'), name: 'mcp__srv__coerce', arguments: null })
+    // The registry validates dispatch arguments against the declared
+    // parameters before any policy stage, so a degenerate model emission
+    // fails with schema violations the model can correct — the MCP server
+    // never sees it.
+    const result = await executeToolFixture(ctx, { signal: testToolSignal, callId: ToolCallId('c1'), name: 'mcp__srv__coerce', arguments: null })
 
-    expect(client.callTool).toHaveBeenCalledWith(
-      { name: 'coerce', arguments: {} },
-      expect.anything(),
-    )
+    expect(result.isError).toBe(true)
+    expect(client.callTool).not.toHaveBeenCalled()
   })
 
-  it('coerces primitive string args to empty object for callTool', async () => {
+  it('rejects primitive string args at the registry without reaching callTool', async () => {
     const client = createMockClient(
       [{ name: 'coerce2', inputSchema: { type: 'object' } }],
       { content: [{ type: 'text', text: 'ok' }] },
     )
 
     await syncTools(client as never, ctx, defaultOpts, new Map())
-    await executeToolFixture(ctx, { signal: testToolSignal, callId: ToolCallId('c1'), name: 'mcp__srv__coerce2', arguments: 'bad' })
+    const result = await executeToolFixture(ctx, { signal: testToolSignal, callId: ToolCallId('c1'), name: 'mcp__srv__coerce2', arguments: 'bad' })
 
-    expect(client.callTool).toHaveBeenCalledWith(
-      { name: 'coerce2', arguments: {} },
-      expect.anything(),
-    )
+    expect(result.isError).toBe(true)
+    expect(client.callTool).not.toHaveBeenCalled()
   })
 })

@@ -66,6 +66,31 @@ export type SubagentIdentityProjection =
     seq: SessionSeq
   }
 
+/**
+ * Durable terminal outcome of one descriptor-backed subagent session: how the
+ * child's most recent closed epoch ended, folded from its own `turn/end`
+ * events.
+ *
+ * This is deliberately separate from {@link SubagentIdentityProjection}, which
+ * answers "what kind of child is this". A live catalog row reports residency;
+ * outcome is what lets a master agent inspect a FAILED child and decide whether
+ * to resume it, switch its model, or give up. Without it the reason exists only
+ * on the transient `subagent/end` event, so a child that failed while the
+ * master was not listening could only be reported as "not running".
+ */
+export interface SubagentOutcomeProjection {
+  /** How the child's most recent closed epoch ended, in stop-reason vocabulary. */
+  stopReason: string
+  /**
+   * The failure detail the closing `turn/end` carried, when it carried one.
+   * Present only for an `error` ending, so a master can read WHY without
+   * replaying the transcript.
+   */
+  error?: string
+  /** Seq of the `turn/end` event this outcome was folded from. */
+  seq: number
+}
+
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionMap {
     /** Direct children in parent catalog event order, excluding fork-inherited facts. */
@@ -82,5 +107,10 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
      * non-optional.
      */
     subagent: SubagentIdentityProjection | null
+    /**
+     * Terminal outcome of a descriptor-backed subagent session. `null` ⟺ no
+     * epoch has closed yet. See {@link SubagentOutcomeProjection}.
+     */
+    subagentOutcome: SubagentOutcomeProjection | null
   }
 }

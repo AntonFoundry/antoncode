@@ -49,11 +49,15 @@ export class FixtureSession implements SessionFace {
    * @param sessionId - host identity (branded view of the fixture id).
    * @param store - Session Controller snapshot store.
    * @param overrides - fixture-declared behavior face, grafted over the stubs.
+   * @param publishProjection - republishes one projection write into the list
+   *   row's `projectionValues` summary, mirroring the production store's
+   *   whole-value map publication; omitted in direct construction.
    */
   constructor(
     readonly sessionId: SessionId,
     private readonly store: SnapshotStore<SessionFixtureSnapshot>,
     overrides: Record<string, unknown>,
+    publishProjection?: (key: string, value: unknown) => void,
   ) {
     const values = new Map<string, unknown>()
     const listeners = new Map<string, Set<() => void>>()
@@ -78,6 +82,7 @@ export class FixtureSession implements SessionFace {
       set: (key: string, value: unknown) => {
         values.set(key, value)
         for (const fn of [...(listeners.get(key) ?? [])]) fn()
+        publishProjection?.(key, value)
       },
     }
     Object.assign(this, overrides)
@@ -311,7 +316,7 @@ export class TestSessions implements ISessions {
 
   /** Calls observed on the service-level face, newest last. */
   readonly calls: {
-    method: 'create' | 'refreshProjections' | 'refresh' | 'search' | 'fork'
+    method: 'create' | 'refreshProjections' | 'refresh' | 'search' | 'fork' | 'forkExcluding'
     args: unknown[]
   }[] = []
 
@@ -364,7 +369,21 @@ export class TestSessions implements ISessions {
       ...sessionSnapshot(id),
       ...fixture.snapshot,
     })
-    const session = new FixtureSession(id, snapshot, fixture.session ?? {})
+    const session = new FixtureSession(id, snapshot, fixture.session ?? {}, (key, value) => {
+      // Production republishes every projection write into the list's
+      // per-Session projection map; global list consumers read that map.
+      this.list.update((draft) => {
+        const current = draft.projectionsBySession[id]
+        draft.projectionsBySession = {
+          ...draft.projectionsBySession,
+          [id]: {
+            values: { ...current?.values, [key]: value } as SessionListState['projectionsBySession'][SessionId]['values'],
+            state: current?.state ?? 'ready',
+            error: current?.error ?? null,
+          },
+        }
+      })
+    })
     if (fixture.events !== undefined || fixture.hasMore === true) {
       session.eventSource.replace(fixture.events ?? [], fixture.hasMore ?? false)
     }
@@ -679,6 +698,18 @@ export class TestSessions implements ISessions {
    */
   fork(opts: Parameters<ISessions['fork']>[0]): Promise<SessionId> {
     this.calls.push({ method: 'fork', args: [opts] })
+    return Promise.resolve(opts.sessionId)
+  }
+
+  /**
+   * Recorded forkExcluding stub: no child materializes (benches asserting the
+   * full delete flow drive the production service; this face only proves the
+   * call).
+   * @param opts - source session id and the excluded durable message seqs.
+   * @returns the source id (no child record is created).
+   */
+  forkExcluding(opts: { sessionId: SessionId; excludeSeqs: number[] }): Promise<SessionId> {
+    this.calls.push({ method: 'forkExcluding', args: [opts] })
     return Promise.resolve(opts.sessionId)
   }
 

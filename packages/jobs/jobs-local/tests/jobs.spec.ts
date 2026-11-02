@@ -1667,3 +1667,31 @@ describe('owned job Session lifecycle records', () => {
     }
   })
 })
+
+describe('LocalJobRegistry.settledRetentionPerOwner', () => {
+  it('evicts the oldest terminal records past the cap and keeps the just-settled record', async () => {
+    const ctx = await harness({ settledRetentionPerOwner: 2 })
+    const producers = [producer(), producer(), producer()]
+    const ids = producers.map(p => ctx.jobs.start(p.spec))
+    for (const p of producers) p.settle({ status: 'completed' })
+    await tick()
+
+    const surviving = ctx.jobs.list().map(job => job.id)
+    expect(surviving).toHaveLength(2)
+    expect(surviving).not.toContain(ids[0]!)
+    expect(surviving).toContain(ids[1]!)
+    expect(surviving).toContain(ids[2]!)
+  })
+
+  it('keeps every terminal record at or under the cap without evicting', async () => {
+    const ctx = await harness({ settledRetentionPerOwner: 3 })
+    const producers = [producer(), producer()]
+    const ids = producers.map(p => ctx.jobs.start(p.spec))
+    for (const p of producers) p.settle({ status: 'completed' })
+    await tick()
+
+    const surviving = ctx.jobs.list().map(job => job.id)
+    expect(surviving).toHaveLength(2)
+    expect(surviving).toEqual(ids)
+  })
+})

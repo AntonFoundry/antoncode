@@ -43,6 +43,8 @@
   top: auto;
   left: auto;
   z-index: 1100;
+  /* Portaled outside .frame, so it carries the interface zoom itself. */
+  zoom: var(--dsh-zoom-ui, 1);
 }
 
 /* Open above the anchor (empty-state workspace chip: figma 122:9481). */
@@ -292,4 +294,10 @@
   bottom: 0;
   left: -10px;
   width: 10px;
+}
+
+/* Static header seat above the viewport (filter input). */
+.header {
+  flex: none;
+  padding: 8px 10px 4px;
 }

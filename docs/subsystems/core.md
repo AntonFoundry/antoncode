@@ -1,6 +1,6 @@
 # Core
 
-English | [中文](core.zh.md)
+English
 
 The **core** subsystem is [`packages/core`](../../packages/core/README.md) — the packages every composition boots: the event-sourced session log, system-prompt assembly, the tool registry, the agent types, and the concrete loop that drives them. This page explains what the `agent`/`agent-loop` pair declares — how an agent is created and owned, and the `Agent` handle's delivery, cancellation, and interception contracts — plus the two type patterns every subsystem follows. The group's dedicated pages and the rest of the folder are indexed in the [subsystems README](README.md).
 
@@ -209,6 +209,12 @@ interface AgentOptions {
   reasoningEffort?: ReasoningEffortId | undefined
   /** Maximum output tokens for each conversation-model request. */
   maxTokens?: number
+  /**
+   * Reasoning effort this agent's model requests run at. The selected
+   * provider validates the id per model; an unserviceable effort fails at
+   * request time. Absent means the route's own default.
+   */
+  reasoningEffort?: string
 }
 ```
 
@@ -402,7 +408,7 @@ type PreStepDecision =
 type RequestErrorAction = { kind: 'retry' } | undefined
 ```
 
-`agent/pre-step` is the only waterfall listener chain before request derivation. `agent/turn-stopping` runs when a turn has no tool or steering continuation, before one final steering drain.
+`agent/pre-step` is the serial admission chain before a step opens. After `agent/request` resolves the final route and the loop logs the canonical header and adapter capacity, serial `agent/request-prepared` runs before request messages are derived and frozen. Listeners may compact the durable surface; the loop re-derives messages after they settle. `agent/turn-stopping` runs when a turn has no tool or steering continuation, before one final steering drain.
 
 `agent/created` carries a `SessionStartSource` (why the session lifecycle began; a bridge keys its SessionStart matcher on it):
 
@@ -1055,6 +1061,32 @@ Types: [Scoped](scope.md) · [UserMessage](session.md)
 
 Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
 
+<a id="agentrequest--waterfall"></a>
+
+#### `agent/request` — waterfall
+
+Replace the frozen call configuration. `await next()` yields the config the machine would use (agent options on the first request, the logged header afterwards); return a replacement to switch. Model-visible content must use logged channels; this waterfall cannot mutate messages.
+
+```ts cordis-catalog
+/**
+ * Replace the frozen call configuration. `await next()` yields the config
+ * the machine would use (agent options on the first request, the logged
+ * header afterwards); return a replacement to switch. Model-visible
+ * content must use logged channels; this waterfall cannot mutate messages.
+ * @param payload.agent - the agent making the model call.
+ * @param payload.turn - the open turn number.
+ * @param payload.step - the step whose request this is.
+ * @param payload.signal - the current turn's explicit abort signal.
+ * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
+ * @mode waterfall
+*/
+'agent/request'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; signal: AbortSignal }, next: () => Promise<LlmCallConfig>): Promise<LlmCallConfig>
+```
+
+Types: [LlmCallConfig](llm-streaming.md) · [Scoped](scope.md)
+
+Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
+
 <a id="agentrequest-error--waterfall"></a>
 
 #### `agent/request-error` — waterfall
@@ -1081,6 +1113,34 @@ Handle one failed model-request attempt before the loop retries or closes its st
 ```
 
 Types: [LlmFailure](llm-streaming.md) · [ResolvedRetryPolicy](llm-streaming.md) · [Scoped](scope.md)
+
+Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
+
+<a id="agentrequest-prepared--serial"></a>
+
+#### `agent/request-prepared` — serial
+
+Run preflight after route and header logging, before messages are frozen. Listeners may update durable state; the loop derives messages again after they settle.
+
+```ts cordis-catalog
+/**
+ * Run preflight after route and header logging, before messages are frozen.
+ * Listeners may update durable state; the loop derives messages again after they settle.
+ * @param payload.agent - the agent making the model call.
+ * @param payload.turn - the open turn number.
+ * @param payload.step - the step whose request is being prepared.
+ * @param payload.provider - resolved provider route.
+ * @param payload.model - resolved provider model id.
+ * @param payload.contextWindow - adapter-reported capacity, when available.
+ * @param payload.messages - derived messages for the pending request.
+ * @param payload.signal - the current turn's explicit abort signal.
+ * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
+ * @mode serial
+ */
+'agent/request-prepared'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; model: string; contextWindow?: number; messages: readonly Message[]; signal: AbortSignal }): Promise<void>
+```
+
+Types: [Message](llm-streaming.md) · [Scoped](scope.md)
 
 Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
 

@@ -300,3 +300,45 @@ it('renders descriptions and allows selection without resize observation', () =>
   fireEvent.click(screen.getByRole('button', { name: `${en.setDefault}: Mine` }))
   expect(actions.makeDefault).toHaveBeenCalledWith('mine')
 })
+/** The default-agent dropdown trigger: the section's only menu button. */
+function defaultAgentTrigger(): HTMLButtonElement {
+  expect(screen.getByText(en.defaultAgentLabel)).toBeTruthy()
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')
+  if (trigger === null) throw new Error('no default-agent dropdown')
+  return trigger
+}
+it('names the default agent and sets a new default from the dropdown', () => {
+  const actions = view({ rows: [
+    { id: 'standard', isDefault: true },
+    { id: 'mine', name: 'Mine', isDefault: false, description: 'My own composition' },
+    { id: 'broken', isDefault: false, broken: 'Missing plugin' },
+  ] })
+  const trigger = defaultAgentTrigger()
+  expect(trigger.textContent).toContain(en.presetStandardName)
+  fireEvent.click(trigger)
+  // A broken preset cannot compose a session, so the dropdown omits it.
+  expect(screen.getAllByRole('menuitem')).toHaveLength(2)
+  expect(screen.queryByRole('menuitem', { name: /^broken/ })).toBeNull()
+  const mine = screen.getByRole('menuitem', { name: /^Mine/ })
+  // The description sits under the name in the same item.
+  expect(within(mine).getByText('My own composition')).toBeTruthy()
+  fireEvent.click(mine)
+  expect(actions.makeDefault).toHaveBeenCalledWith('mine')
+  expect(trigger.getAttribute('aria-expanded')).toBe('false')
+})
+it('hides Coding Tools presets from the default-agent dropdown while they are off', () => {
+  view({ rows: [
+    { id: 'standard', isDefault: true }, { id: 'ptc', isDefault: false }, { id: 'minimal', isDefault: false },
+  ] }, undefined, undefined, false)
+  fireEvent.click(defaultAgentTrigger())
+  expect(screen.getAllByRole('menuitem')).toHaveLength(1)
+})
+it('disables the default-agent dropdown while a default is saved and without a default to name', () => {
+  view({ saving: true })
+  expect(defaultAgentTrigger().disabled).toBe(true)
+  cleanup()
+  view({ rows: [{ id: 'broken', isDefault: false, broken: 'Missing plugin' }] })
+  const trigger = defaultAgentTrigger()
+  expect(trigger.disabled).toBe(true)
+  expect(trigger.textContent).toContain(en.loading)
+})

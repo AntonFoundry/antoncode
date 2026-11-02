@@ -55,43 +55,82 @@ export function SettingsValueField(props: Omit<SettingsFieldProps, 'hint'> & {
   numeric?: boolean
   /** Placeholder shown while the draft is empty. */
   placeholder?: string
+  /**
+   * Render a resizable textarea instead of a single-line input, for long
+   * prose overrides. What drafts the field accepts is still its spec's call.
+   */
+  multiline?: boolean
+  /** Visible text rows when `multiline` is set. */
+  rows?: number
 }) {
   const [helpOpen, setHelpOpen] = useState(false)
   const helpId = `${props.id}-help`
   const messageId = `${props.id}-message`
   const hasMessage = props.invalid || Boolean(props.hint)
   const description = [hasMessage ? messageId : '', helpOpen ? helpId : ''].filter(Boolean).join(' ')
-  return (
-    <div className={css.field}>
-      <div className={css.head}>
-        <div className={css.labelGroup}>
-          <label className={css.label} htmlFor={props.id}>{props.label}</label>
-          {props.help !== undefined
-            ? (
-              <button type="button" className={css.helpButton}
-                aria-label={props.help.label} aria-expanded={helpOpen} aria-controls={helpId}
-                onClick={() => { setHelpOpen(!helpOpen) }}>
-                <IconInfoOutlineRegular size={12} />
-              </button>
-            )
-            : null}
-        </div>
-        {props.overridden
+  const head = (
+    <div className={css.head}>
+      <div className={css.labelGroup}>
+        <label className={css.label} htmlFor={props.id}>{props.label}</label>
+        {props.help !== undefined
           ? (
-            <span className={css.badges}>
-              <Tag tone="neutral">{props.overriddenLabel}</Tag>
-              <button
-                type="button"
-                className={css.reset}
-                disabled={props.disabled}
-                onClick={props.onReset}
-              >
-                {props.resetLabel}
-              </button>
-            </span>
+            <button type="button" className={css.helpButton}
+              aria-label={props.help.label} aria-expanded={helpOpen} aria-controls={helpId}
+              onClick={() => { setHelpOpen(!helpOpen) }}>
+              <IconInfoOutlineRegular size={12} />
+            </button>
           )
           : null}
       </div>
+      {props.overridden
+        ? (
+          <span className={css.badges}>
+            <Tag tone="neutral">{props.overriddenLabel}</Tag>
+            <button
+              type="button"
+              className={css.reset}
+              disabled={props.disabled}
+              onClick={props.onReset}
+            >
+              {props.resetLabel}
+            </button>
+          </span>
+        )
+        : null}
+    </div>
+  )
+  const foot = (
+    <>
+      {hasMessage
+        ? <p id={messageId} className={props.invalid ? css.invalid : css.hint}>{props.invalid ? props.invalidLabel : props.hint}</p>
+        : null}
+      {props.help !== undefined && helpOpen
+        ? <div id={helpId} className={css.help} role="region" aria-label={props.help.label}>{props.help.content}</div>
+        : null}
+    </>
+  )
+  if (props.multiline === true) {
+    return (
+      <div className={css.field}>
+        {head}
+        <textarea
+          id={props.id}
+          className={css.input}
+          rows={props.rows ?? 5}
+          {...props.invalid ? { 'aria-invalid': true } : {}}
+          aria-describedby={description || undefined}
+          value={props.text}
+          placeholder={props.placeholder ?? ''}
+          disabled={props.disabled}
+          onChange={(event) => { props.onEdit(event.target.value) }}
+        />
+        {foot}
+      </div>
+    )
+  }
+  return (
+    <div className={css.field}>
+      {head}
       <input
         id={props.id}
         className={css.input}
@@ -104,12 +143,7 @@ export function SettingsValueField(props: Omit<SettingsFieldProps, 'hint'> & {
         disabled={props.disabled}
         onChange={(event) => { props.onEdit(event.target.value) }}
       />
-      {hasMessage
-        ? <p id={messageId} className={props.invalid ? css.invalid : css.hint}>{props.invalid ? props.invalidLabel : props.hint}</p>
-        : null}
-      {props.help !== undefined && helpOpen
-        ? <div id={helpId} className={css.help} role="region" aria-label={props.help.label}>{props.help.content}</div>
-        : null}
+      {foot}
     </div>
   )
 }
@@ -146,6 +180,57 @@ export function SettingsSecretField(props: Pick<SettingsFieldProps, 'id' | 'labe
         onChange={(event) => { props.onEdit(event.target.value) }}
       />
       <p className={css.hint}>{props.hint}</p>
+    </div>
+  )
+}
+
+/**
+ * A staged select field: the control renders the options its caller passes;
+ * acceptance is the field spec's job.
+ * @param props - the field's copy, its staged value, and the edit actions.
+ * @returns the labelled control.
+ */
+export function SettingsSelectField(props: Omit<SettingsFieldProps, 'text'> & {
+  /** The staged value (the selected option's id). */
+  value: string
+  /** The options to render, in display order. */
+  options: readonly { id: string; label: string }[]
+}) {
+  return (
+    <div className={css.field}>
+      <div className={css.head}>
+        <label className={css.label} htmlFor={props.id}>{props.label}</label>
+        {props.overridden
+          ? (
+            <span className={css.badges}>
+              <Tag tone="neutral">{props.overriddenLabel}</Tag>
+              <button
+                type="button"
+                className={css.reset}
+                disabled={props.disabled}
+                onClick={props.onReset}
+              >
+                {props.resetLabel}
+              </button>
+            </span>
+          )
+          : null}
+      </div>
+      <select
+        id={props.id}
+        className={css.input}
+        {...props.invalid ? { 'aria-invalid': true } : {}}
+        value={props.value}
+        disabled={props.disabled}
+        onChange={(event) => { props.onEdit(event.target.value) }}
+      >
+        {props.options.map(option => (
+          <option key={option.id} value={option.id}>{option.label}</option>
+        ))}
+      </select>
+      <p className={props.invalid ? css.invalid : css.hint}>
+        {props.invalid ? props.invalidLabel : props.hint}
+      </p>
     </div>
   )
 }

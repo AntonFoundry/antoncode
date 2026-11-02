@@ -1,9 +1,9 @@
 # Agent Note: Lightweight routine documentation translation
 
 Status: implemented
-Archived: 2026-09-04
+Archived: 2026-10-12
 
-English | [中文](2026-08-08-lightweight-routine-documentation-translation.zh.md)
+English
 
 ## Problem
 

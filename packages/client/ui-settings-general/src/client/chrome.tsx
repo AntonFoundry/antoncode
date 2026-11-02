@@ -36,15 +36,3 @@ export function TriggerContent({ wide, t }: TriggerContentProps) {
 export function HeaderContent({ t }: HeaderContentProps) {
   return <>{t('title')}</>
 }
-
-/** Close-button label text props: the standard locale seat only. */
-export type CloseLabelProps = PropsRuntime<'settings.close'> & PropsLocale<'settings'>
-
-/**
- * Render the close button's visually-hidden label text.
- * @param props - composed slot props.
- * @returns the label text node.
- */
-export function CloseLabel({ t }: CloseLabelProps) {
-  return <>{t('close')}</>
-}

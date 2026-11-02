@@ -1,6 +1,6 @@
 # API Gateway
 
-English | [中文](api-gateway.zh.md)
+English
 
 This is the current-state reference for the Typert API Gateway. It describes how business services declare unary and stream Remote methods, how the build generates Host and Client contracts, and how calls reuse the Connection RPC and `/api` route. Session events, incremental data, and other streaming protocols are outside this document's scope; they may use the same Connection but do not use Remote method descriptors.
 
@@ -146,6 +146,7 @@ SRC solves only dispatch for a Host process running from source. The Client does
 Web development runs one command, which builds current Host, Client, and Web artifacts, starts the source Host, and keeps Client bundles rebuilt:
 
 ```sh
+pnpm anton web
 pnpm run dev:web
 ```
 

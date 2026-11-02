@@ -448,6 +448,44 @@ describe('replay anchors and surface folds', () => {
     expect(before.surfaceDeltaTokens).toBeGreaterThan(0)
   })
 
+  it('clears an open step anchor at the persisted resume boundary', () => {
+    const resumed = Session.create(SessionId('interrupted-step-resume'), [
+      {
+        type: 'turn/start', seq: 0, time: 1, data: { turn: 1 },
+      },
+      {
+        type: 'step/start', seq: 1, time: 2, data: { turn: 1, step: 1 },
+      },
+      {
+        type: 'user/message', seq: 2, time: 3,
+        data: createUserMessage({ content: [{ type: 'text', text: 'durable history' }], source: { kind: 'user' } }),
+        surfaceOp: 'append',
+      },
+    ])
+    // The constructor closes its seed with `session/end-seed`, as persistence
+    // does when it restores and repairs an interrupted open step.
+    resumed.append('turn/start', { turn: 2 })
+    resumed.append('step/start', { turn: 2, step: 1 })
+    resumed.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'next request' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+
+    const measurement = meter().measure(resumed)
+    expect(measurement.nodes).toHaveLength(2)
+    expect(measurement.surfaceTokens).toBeGreaterThan(0)
+    expect(measurement.logRevision).toBe(resumed.events.length)
+    expectSurfaceTotal(measurement)
+
+    const live = Session.create(SessionId('live-end-seed'))
+    live.append('turn/start', { turn: 1 })
+    live.append('step/start', { turn: 1, step: 1 })
+    live.append('session/end-seed', {})
+    live.append('turn/start', { turn: 2 })
+    live.append('step/start', { turn: 2, step: 1 })
+    expect(() => meter().measure(live)).toThrow(/arrived before turn 1\/step 1 ended/)
+  })
+
   it('prices an empty assistant surface anchor as zero', () => {
     const session = Session.create(SessionId('empty-assistant'))
     appendSuccessfulCall(session, header('deepseek-v4-flash'), {

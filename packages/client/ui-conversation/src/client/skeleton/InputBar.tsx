@@ -51,6 +51,7 @@ export const InputBar = memo(function InputBar({
   useAccess,
   useProjection, sessionId, variant, disabled: inert = false, blocked,
   workspacePickerOpen = false, onRequestWorkspace,
+  layoutSpan = 'single',
   placeholder, accessory,
 }: InputBarProps) {
   const input = useInput(s => s)
@@ -118,8 +119,9 @@ export const InputBar = memo(function InputBar({
   // an unresolved promptError deliberately re-announces it once — the failure
   // is still pending, and a transient banner is its only surface. Attachment
   // rejections show product copy keyed by the wire reason — whichever domain
-  // refused them. Writer contention has localized recovery guidance; other
-  // failures retain the diagnostic message and code.
+  // refused them. Writer contention has localized recovery guidance;
+  // prompt-admission rejections show the Host's reason rather than the generic
+  // busy label; other failures retain the diagnostic message and code.
   useEffect(() => {
     if (promptError === null) return
     const { error } = promptError
@@ -129,7 +131,9 @@ export const InputBar = memo(function InputBar({
     }
     showToast(error.code === 'session/attachment-invalid' || error.code === 'subagent/attachment-invalid'
       ? attachmentErrorText(t, error.details.reason, imageLimits)
-      : `${error.message} (${error.code})`)
+      : error.code === 'session/agent-busy' && error.message === 'prompt rejected'
+        ? error.details.reason
+        : `${error.message} (${error.code})`)
   }, [promptError, showToast, t, imageLimits])
   useEffect(() => {
     if (notice?.level === 'error') showToast(notice.text)
@@ -451,6 +455,7 @@ export const InputBar = memo(function InputBar({
         {renderSlot('conversation.input.attachments', {
           attachments,
           canAcceptDrop,
+          layoutSpan,
           onAddFiles: intakeFiles,
           onRemoveAttachment: (id) => { removeAttachment?.(id) },
           uploads,

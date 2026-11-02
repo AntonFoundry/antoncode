@@ -1,0 +1,49 @@
+/* Composer context bar: an inline cluster in the composer's tool row —
+   repository chip, mode select, and base picker beside the access select. */
+
+.bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.repoChip,
+.basePicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-text-secondary, var(--dsw-text-secondary, #9a9a9a));
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+  max-width: 200px;
+}
+
+.repoChip:hover,
+.basePicker:hover {
+  color: var(--dsw-text-primary, var(--dsw-text-primary, #e6e6e6));
+  background: var(--dsw-fill-subtle, rgba(255, 255, 255, 0.06));
+}
+
+.icon {
+  display: inline-flex;
+  flex: none;
+  opacity: 0.8;
+}
+
+.branch {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chevron {
+  display: inline-flex;
+  flex: none;
+  opacity: 0.7;
+}

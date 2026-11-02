@@ -50,18 +50,18 @@ async function writeContractConfig(suffix: string): Promise<string> {
 }
 
 describe('Oxlint executable contract', () => {
-  it('discovers the owning TypeScript project for every file class', async () => {
+  it('runs type-aware linting for every file class under its owning project', async () => {
     const suffix = randomUUID()
     const configPath = await writeContractConfig(suffix)
     const probes = [
-      ['host package source', 'packages/fs/fs-observation-policy/src', 'packages/fs/fs-observation-policy/tsconfig.json'],
-      ['host package test', 'packages/fs/fs-observation-policy/tests', 'tsconfig.host.json'],
-      ['client package source', 'packages/client/ui-primitives/src', 'packages/client/ui-primitives/tsconfig.json'],
+      ['host package source', 'packages/fs/fs-observation-policy/src', '.ts'],
+      ['host package test', 'packages/fs/fs-observation-policy/tests', '.ts'],
+      ['client package source', 'packages/client/ui-primitives/src', '.ts'],
       // A test under packages/client states its face in the filename, so the
       // probe carries the Client suffix to reach the Client aggregate.
-      ['client package test', 'packages/client/ui-trajectory/tests', 'tsconfig.client.json', '.client.ts'],
-      ['CLI profile test', 'apps/cli/tests/profiles/headless/tests', 'tsconfig.host.json'],
-      ['website', 'website', 'tsconfig.host.json'],
+      ['client package test', 'packages/client/ui-trajectory/tests', '.client.ts'],
+      ['CLI profile test', 'apps/cli/tests/profiles/headless/tests', '.ts'],
+      ['website', 'website', '.ts'],
     ] as const
     const source = `export function probePromise(): Promise<void> {
   return Promise.resolve()
@@ -71,14 +71,18 @@ probePromise()
 `
 
     try {
-      const paths: Array<readonly [label: string, path: string, tsconfig: string]> = []
-      for (const [label, parent, tsconfig, extension = '.ts'] of probes) {
+      const paths: Array<readonly [label: string, path: string]> = []
+      for (const [label, parent, extension] of probes) {
         const path = join(repositoryRoot, parent, `oxlint-contract-${suffix}${extension}`)
         await writeFile(path, source)
-        paths.push([label, relative(repositoryRoot, path), tsconfig])
+        paths.push([label, relative(repositoryRoot, path)])
       }
       const clientScript = 'scripts/client-bundle-purity.spec.ts'
 
+      // Project ownership is resolved inside tsgolint since the oxlint 1.76
+      // bump (the host-side "Got tsconfig" debug mapping is gone), so the
+      // observable contract is the outcome: the type-aware rule fires for
+      // every probe and no probe is left unmatched.
       const result = runOxlint([
         '--config',
         relative(repositoryRoot, configPath),
@@ -86,21 +90,15 @@ probePromise()
         'unix',
         ...paths.map(([, path]) => path),
         clientScript,
-      ], { OXC_LOG: 'debug' })
+      ])
       const output = normalizedOutput(result)
 
       expect(result.error).toBeUndefined()
       expect(result.status, output).toBe(1)
-      for (const [label, path, tsconfig] of paths) {
+      for (const [label, path] of paths) {
         expect(output, label).toContain(`${path.replaceAll('\\', '/')}:5:1: Promises must be awaited`)
-        expect(output, `${label} project`).toContain(
-          `Got tsconfig for file ${join(repositoryRoot, path).replaceAll('\\', '/')}: ${join(repositoryRoot, tsconfig).replaceAll('\\', '/')}`,
-        )
       }
       expect(output.match(/typescript\(no-floating-promises\)/g)).toHaveLength(probes.length)
-      expect(output, 'client aggregate script project').toContain(
-        `Got tsconfig for file ${join(repositoryRoot, clientScript).replaceAll('\\', '/')}: ${join(repositoryRoot, 'tsconfig.client.json').replaceAll('\\', '/')}`,
-      )
       expect(output).not.toContain('Unmatched file:')
     } finally {
       await Promise.all([

@@ -5,7 +5,7 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-llm-pi-ai
 
-English | [中文](README.zh.md)
+English
 
 ## Summary
 
@@ -80,13 +80,15 @@ Each profile may set a `retryPolicy`; omission uses normal mode with five retrie
 | `baseURL` | catalog endpoint | Endpoint of every model on the route |
 | `models` | installed catalog | Replaces the route's catalog wholesale; each entry defaults from the installed model |
 | `modelOverrides` | none | Reshapes individual installed-catalog models without replacing the rest |
+| `liveModelDiscovery` | `false` | Reads the endpoint's own model listing instead of models.dev on a live-refreshed route |
+| `liveModelUnion` | `false` | Joins the live listing into an explicit `models` list instead of strict curation |
 | `compat` | catalog detection | Wire-compatibility switches for unrecognized endpoints |
 | `defaultContextWindow` | `1,000,000` | Capacity fallback for undescribed models |
 | `defaultMaxTokens` | `128,000` | Output-cap fallback for undescribed models |
 | `requestImagePixelBudget` | `4,194,304` | Total-pixel budget for each deterministic request image |
 | `requestImageMaxBytes` | `1 MiB` | Encoded-byte target for each request image before base64 expansion |
 | `maxRequestImageBytes` | `20 MiB` | Aggregate base64 image-payload bound; a request whose retained images exceed it fails with `IMAGE_OFFLOAD_REQUIRED` |
-| `retryPolicy` | normal, 5 retries | Provider-owned retry policy executed by `dsh-llm-retry` |
+| `retryPolicy` | normal, unbounded retries | Provider-owned retry policy executed by `dsh-llm-retry` |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-llm-pi-ai) is the exhaustive source for every accepted field and its JSDoc.
 
@@ -96,7 +98,11 @@ A provider pi-ai ships a login for can be signed into through the harness author
 
 ### Resolve the model catalog
 
-A profile's `models` list replaces the route's installed catalog rather than extending it; each entry defaults its unset fields from the installed model of the same id, so narrowing a route to two models, correcting one capacity, or adding a model newer than the installed catalog are one-line edits. `modelOverrides` reshapes individual installed-catalog models without that cost — correct one model, keep the other thirty-seven — and is refused when set beside a `models` list, on a hand-declared route, or naming a model the catalog does not describe, because a silently unchanged model would be a typo someone hunts for later.
+A profile's `models` list replaces the route's installed catalog rather than extending it; each entry defaults its unset fields from the installed model of the same id, so narrowing a route to two models, correcting one capacity, or adding a model newer than the installed catalog are one-line edits. `modelOverrides` reshapes individual installed-catalog models without that cost — correct one model, keep the other thirty-seven — and is refused when it names a model the `models` list also declares, on a hand-declared route, or naming a model the catalog does not describe, because a silently unchanged model would be a typo someone hunts for later.
+
+On a live-refreshed route (`zai`, `moonshotai`, `deepseek`, `nvidia`), the startup catalog read from models.dev, NVIDIA's LLM API reference, or the endpoint listing (`liveModelDiscovery: true`) supplies the served models when no `models` list is set. `liveModelUnion: true` relaxes a `models` list's replacement: discovered ids join configured entries by id, and the installed catalog keeps serving anything neither source named. Without the flag a `models` list is strict curation, and no live fetch runs for the route. The fetch repeats every `modelsDevRefreshMs` (eight hours by default; the mount-time value applies until restart).
+
+Provider and model labels use readable capitalization and spaces; provider and model ids remain unchanged for routing and settings. `reservedProviders` names routes a native adapter in the same composition owns: the directory omits them and a profile naming one is refused.
 
 ### Run with reasoning and wire compatibility
 
@@ -248,9 +254,10 @@ These limits define where the adapter stops and future work begins. They are cur
 - **Complete Config replacement can remove inherited dictionary entries** — a field reset instead restores its inherited value.
 - **`headers` can carry a credential the redactor never sees** — profile resolution rejects names and values Fetch cannot represent, but the dict remains plain strings; store credentials as `apiKeyEnv` references.
 - **Discovery does not change configured models** — adopt discovery results explicitly into the route configuration.
+- **Live catalogs are in-memory snapshots** — the configured Z.AI, Moonshot, DeepSeek, and NVIDIA routes refresh after mount, on the refresh cadence, and after settings changes; NVIDIA reads its published LLM API model table and unions the endpoint's own listing. A failed refresh keeps the installed catalog and configured entries, and no discovered id is written back to `settings.yaml`.
 - **Anthropic discovery reads at most 1,000 models** — the request uses the API's maximum page size but does not traverse `has_more`; entries beyond the first page must be added by hand.
 - **Uncataloged models need an unambiguous protocol** — catalog routes preserve each model's protocol, including both Azure APIs under `azure`. A model absent from a mixed-protocol catalog needs an explicit route-level `api`, which overrides every model on the route and must be one of the supported custom protocols. For Azure deployment names, keep the catalog model ID and set `AZURE_OPENAI_DEPLOYMENT_NAME_MAP`.
-- **A modality declaration is not verified** — a model declaring `image` its gateway does not serve is refused by the provider after prompt admission. The durable image remains in history and the same misdeclared model can fail again; switching to a text-only model remains possible because the shared LLM runtime projects image references into stable text for that request.
+- **A modality declaration is not verified** — a request carrying images to a model whose catalog entry lacks `image` input, or with no attachment service mounted, is sent once with image blocks replaced by an omission placeholder; a provider rejection naming image input triggers the same single text-only retry. Otherwise a model declaring `image` its gateway does not serve is refused by the provider after prompt admission. The durable image remains in history and the same misdeclared model can fail again; switching to a text-only model remains possible because the shared LLM runtime projects image references into stable text for that request.
 - **An unauthenticated route depends on its protocol** — a route naming no credential resolves as configured-but-keyless, but pi-ai's OpenAI-compatible implementation still requires an API key or an `Authorization` header, so a keyless local server needs a placeholder credential referenced by `apiKeyEnv` or an `Authorization` entry in `headers`.
 - **`GenerateOptions.stop` is unsupported** — pi-ai's common stream options cannot guarantee stop-sequence behavior across providers.
 - **Conversation update support comes only from the installed pi-ai catalog** — native system and tool updates require the catalog model’s mid-conversation compat flags, which profiles cannot set. Hand-declared routes and unflagged models receive later system text as user-role reminders and the complete current tool list at the start of each request.

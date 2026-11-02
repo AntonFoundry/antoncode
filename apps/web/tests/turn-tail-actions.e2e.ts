@@ -106,6 +106,8 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
         ? {}
         : {
           replayFixture: FIXTURE,
+          // The replayed model contract calls `bash` directly, without a todo plan.
+          directToolCalls: true,
           ...(overridePath === undefined ? {} : { replayOverride: overridePath }),
           compareReplaySession: overridePath === undefined,
           paceMs,
@@ -172,10 +174,10 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     // Only the user bubble owns a footer (clock + copy; user bubbles carry no
     // branch action): the narration is not the answer yet.
     const copyButtons = page.getByRole('button', { name: 'Copy' })
-    await expect.poll(() => copyButtons.count(), { timeout: 10_000 }).toBe(1)
+    await expect.poll(() => copyButtons.count(), { timeout: 10_000 }).toBe(2)
     expect(await page.getByRole('button', { name: 'Branch into a new conversation' }).count()).toBe(0)
     await expectFocusTooltip(page, copyButtons.first())
-    const running = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
+    const running = await captureStableAria(page, '[data-pane="content"]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(RUNNING_EXPECTED, running, MODE)
 
     // Closing the turn from the park is the state change under test: an
@@ -190,7 +192,7 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     // The settled golden records no bubble: this focus follows the Stop click,
     // which leaves the pointer owning the last input.
     await copyButtons.last().focus()
-    const settledAria = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
+    const settledAria = await captureStableAria(page, '[data-pane="content"]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(SETTLED_EXPECTED, settledAria, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
@@ -226,7 +228,7 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
 
     await trigger.click()
 
-    const expanded = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
+    const expanded = await captureStableAria(page, '[data-pane="content"]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(USAGE_EXPANDED_EXPECTED, expanded, MODE)
 
     const warningStart = tripwire.warnings.length
@@ -255,7 +257,7 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
       element.closest<HTMLElement>('[data-chat-flow-kind="assistant-step"]')?.getBoundingClientRect().top)
     expect(leadTop).toBe((processBottom ?? 0) + 12)
     await process.focus()
-    const completed = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
+    const completed = await captureStableAria(page, '[data-pane="content"]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(COMPLETED_EXPECTED, completed, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
@@ -332,7 +334,7 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     await expect.poll(() => process.count(), { timeout: 10_000 }).toBe(1)
     expect(await process.getAttribute('aria-expanded')).toBe('true')
     expect(await tool.evaluate(element => element.ownerDocument.activeElement === element)).toBe(true)
-    const focused = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
+    const focused = await captureStableAria(page, '[data-pane="content"]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(FOCUSED_EXPECTED, focused, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])

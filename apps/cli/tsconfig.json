@@ -79,6 +79,18 @@
     },
     {
       "path": "../../packages/util/atomic-write"
+    },
+    {
+      "path": "../../packages/credentials/credentials"
+    },
+    {
+      "path": "../../packages/credentials/credentials-local"
+    },
+    {
+      "path": "../../packages/llm/llm-opencode"
+    },
+    {
+      "path": "../../packages/llm/llm-claude"
     }
   ]
 }

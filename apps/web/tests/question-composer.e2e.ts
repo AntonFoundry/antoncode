@@ -329,7 +329,7 @@ describe('web e2e: resident question composer round trip', () => {
 
   beforeAll(async () => {
     if (MODE !== 'record') hostClock = pinHostClock()
-    scaffold = await launchWebScaffold(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 15, compareReplaySession: true })
+    scaffold = await launchWebScaffold(MODE === 'record' ? { directToolCalls: true } : { replayFixture: FIXTURE, paceMs: 15, compareReplaySession: true, directToolCalls: true })
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { sessionEvents.push(event) })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
@@ -575,7 +575,7 @@ describe('web e2e: resident question composer round trip', () => {
     expect(await reply.isVisible()).toBe(true)
     expect(await reply.getByText('Blue, Include accessibility notes', { exact: true }).isVisible()).toBe(true)
     // Compact mode retains the answered batch outside the folded process.
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(ANSWERED_EXPECTED, snapshot, MODE)
     // Keep the ask_user_question card's readable answer in the expanded golden
     // even though Compact mode hides the process by default.
@@ -591,7 +591,7 @@ describe('web e2e: resident question composer round trip', () => {
       .getByText('Include accessibility notes', { exact: true }).count()).toBe(1)
     expect(await page.getByText(/"answers"/).count()).toBe(0)
     expect(await page.getByRole('button', { name: 'View answers', exact: true }).count()).toBe(0)
-    const expanded = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const expanded = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(ANSWERED_EXPANDED_EXPECTED, expanded, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
@@ -1103,7 +1103,7 @@ describe.skipIf(MODE === 'record')('web e2e: cancelled question transcript', () 
 
     const snapshot = (await captureStableAria(
       cancelledPage,
-      '[class*="centerCol"]',
+      '[data-pane="content"]',
       scaffold.workspaceCwd,
     )).split(CANCELLED_SEED_ID).join('{{seededId}}')
     await compareOrRefreshGolden(CANCELLED_EXPECTED, snapshot, MODE)
@@ -1144,7 +1144,7 @@ describe.skipIf(MODE === 'record')('web e2e: queued question reply', () => {
     await page.getByRole('button', { name: 'View answers', exact: true }).click()
     await page.getByText('Answered after the timeout', { exact: true }).waitFor()
 
-    const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
+    const snapshot = (await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd))
       .split(QUEUED_SEED_ID).join('{{seededId}}')
     await compareOrRefreshGolden(QUEUED_EXPECTED, snapshot, MODE)
     expect(tripwire.pageErrors).toEqual([])
@@ -1212,7 +1212,7 @@ describe.skipIf(MODE === 'record')('web e2e: late-answered question transcript',
 
     const snapshot = (await captureStableAria(
       latePage,
-      '[class*="centerCol"]',
+      '[data-pane="content"]',
       scaffold.workspaceCwd,
     )).split(LATE_ANSWERED_SEED_ID).join('{{seededId}}')
     await compareOrRefreshGolden(LATE_ANSWERED_EXPECTED, snapshot, MODE)

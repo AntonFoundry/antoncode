@@ -4164,3 +4164,97 @@ describe('SubagentRuntime.interrupt', () => {
     await drained
   })
 })
+
+describe('SubagentRuntime.selectModel', () => {
+  const replacement = { provider: 'alternate', model: 'replacement' }
+
+  /** Start one gated continuable child and return it once it is live. */
+  async function startLive(ctx: Context, parent: Agent): Promise<{ childId: SessionId; child: Agent }> {
+    const started = await ctx.subagents.startActivation({ ...startSpec(parent), delivery: 'parent' })
+    const child = await vi.waitFor(() => {
+      const live = ctx.agents.get(started.childId)
+      expect(live).toBeDefined()
+      return live!
+    })
+    return { childId: started.childId, child }
+  }
+
+  it('records the replacement route as the live child\'s next selection', async () => {
+    const release = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([{ chunks: textResponse('first turn'), gate: release.promise }])
+    const { ctx, parent } = await setupWith(adapter)
+    parkParent(ctx, parent)
+    const { childId, child } = await startLive(ctx, parent)
+
+    ctx.subagents.selectModel(childId, replacement, { kind: 'ancestor', agent: parent })
+    ctx.subagents.selectModel(childId, { provider: 'alternate', model: 'later-choice' }, { kind: 'ancestor', agent: parent })
+
+    expect(child.model.current()).toEqual({ provider: 'alternate', model: 'later-choice' })
+    expect(child.session.events.filter(event => event.type === 'model/selection').map(event => event.data))
+      .toEqual([replacement, { provider: 'alternate', model: 'later-choice' }])
+    release.resolve(undefined)
+    await waitNoActivation(ctx, childId)
+  })
+
+  it('rejects a child that is not live', async () => {
+    const { ctx, parent } = await setup([textResponse('done')])
+    expect(() => {
+      ctx.subagents.selectModel(SessionId('missing-subagent'), replacement, { kind: 'ancestor', agent: parent })
+    }).toThrow(expect.objectContaining({ code: 'NOT_LIVE' }))
+  })
+
+  it('rejects a stale caller even when the target is not live', async () => {
+    const { ctx, parent } = await setup([textResponse('done')])
+    const stale = { kind: 'ancestor', agent: { ...parent, id: SessionId('stale-caller') } } as never
+    expect(() => {
+      ctx.subagents.selectModel(SessionId('missing-subagent'), replacement, stale)
+    }).toThrow(expect.objectContaining({ code: 'UNAUTHORIZED' }))
+  })
+
+  it('rejects a self-targeting or stale caller', async () => {
+    const release = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([{ chunks: textResponse('working'), gate: release.promise }])
+    const { ctx, parent } = await setupWith(adapter)
+    const { childId, child } = await startLive(ctx, parent)
+
+    expect(() => {
+      ctx.subagents.selectModel(childId, replacement, { kind: 'ancestor', agent: child })
+    }).toThrow(expect.objectContaining({ code: 'UNAUTHORIZED' }))
+    const stale = { kind: 'ancestor', agent: { ...parent } } as never
+    expect(() => {
+      ctx.subagents.selectModel(childId, replacement, stale)
+    }).toThrow(expect.objectContaining({ code: 'UNAUTHORIZED' }))
+
+    release.resolve(undefined)
+    await waitNoActivation(ctx, childId)
+  })
+
+  it('rejects an unrelated live caller and accepts a live grandparent', async () => {
+    const releaseOuter = Promise.withResolvers<undefined>()
+    const releaseInner = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([
+      { chunks: textResponse('outer'), gate: releaseOuter.promise },
+      { chunks: textResponse('inner'), gate: releaseInner.promise },
+    ])
+    const { ctx, parent } = await setupWith(adapter)
+    parkParent(ctx, parent)
+    const outer = await startLive(ctx, parent)
+    const inner = await startLive(ctx, outer.child)
+
+    const stranger = await ctx.agentLoop.create(SessionId('stranger'), { provider: 'mock', model: 'mock' })
+    expect(() => {
+      ctx.subagents.selectModel(inner.childId, replacement, { kind: 'ancestor', agent: stranger })
+    }).toThrow(expect.objectContaining({ code: 'UNAUTHORIZED' }))
+    // A top-level session has no parent chain, so no caller can own it.
+    expect(() => {
+      ctx.subagents.selectModel(parent.id, replacement, { kind: 'ancestor', agent: stranger })
+    }).toThrow(expect.objectContaining({ code: 'UNAUTHORIZED' }))
+
+    ctx.subagents.selectModel(inner.childId, replacement, { kind: 'ancestor', agent: parent })
+    expect(inner.child.model.current()).toEqual(replacement)
+    releaseInner.resolve(undefined)
+    await waitNoActivation(ctx, inner.childId)
+    releaseOuter.resolve(undefined)
+    await waitNoActivation(ctx, outer.childId)
+  })
+})

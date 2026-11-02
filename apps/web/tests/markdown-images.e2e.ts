@@ -314,7 +314,7 @@ describe('web e2e: Markdown image rendering', () => {
     await page.keyboard.press('Escape')
     await hoverImage.waitFor({ state: 'detached' })
 
-    const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
+    const snapshot = (await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd))
       .split(SEED_ID).join('{{seededId}}')
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
     expect(tripwire.pageErrors).toEqual([])

@@ -42,6 +42,9 @@ const DEFAULT_SETTLED_RETAIN_BYTES = 16 * 1024
 /** Default poll interval for pull sources, in milliseconds. */
 const DEFAULT_PUMP_POLL_MS = 150
 
+/** Default maximum number of terminal job records retained in one exact-owner bucket. */
+const DEFAULT_SETTLED_RETENTION_PER_OWNER = 128
+
 /** Configuration for the process-local job registry. */
 export interface Config {
   /**
@@ -59,6 +62,11 @@ export interface Config {
   settledRetainBytes?: number
   /** Poll interval for a job's pull sources, in milliseconds; omission defaults to 150. */
   pumpPollMs?: number
+  /**
+   * Maximum terminal job records retained per exact owner or in the shared unowned bucket;
+   * eviction is oldest-finished-first and announces the removals; omission defaults to 128.
+   */
+  settledRetentionPerOwner?: number
 }
 
 /**
@@ -149,6 +157,11 @@ export class LocalJobRegistry extends JobRegistry {
       .min(1)
       .max(Number.MAX_SAFE_INTEGER)
       .default(DEFAULT_PUMP_POLL_MS),
+    settledRetentionPerOwner: z.number()
+      .step(1)
+      .min(1)
+      .max(Number.MAX_SAFE_INTEGER)
+      .default(DEFAULT_SETTLED_RETENTION_PER_OWNER),
   })
 
   /** Schemastery-defaulted active-job limit. */
@@ -159,6 +172,8 @@ export class LocalJobRegistry extends JobRegistry {
   private readonly settledRetainBytes: number
   /** Schemastery-defaulted pull-source poll interval. */
   private readonly pumpPollMs: number
+  /** Schemastery-defaulted terminal-record retention. */
+  private readonly settledRetentionPerOwner: number
   private store = new Map<JobId, TrackedJob>()
   /**
    * Controllers and scoped subscriptions layered by the scope that registered
@@ -188,6 +203,7 @@ export class LocalJobRegistry extends JobRegistry {
     this.retainBytes = resolved.retainBytes
     this.settledRetainBytes = resolved.settledRetainBytes
     this.pumpPollMs = resolved.pumpPollMs
+    this.settledRetentionPerOwner = resolved.settledRetentionPerOwner
     this.selfCtx = ctx
     this.hub = new JobEventHub(this.layers, (message) => { ctx.logger.warn(message) })
     ctx.effect(() => () => this.disposeAll(), 'jobs teardown')
@@ -634,6 +650,23 @@ export class LocalJobRegistry extends JobRegistry {
     // The ring's stream ends with settlement; the signal follows the committed
     // settlement so an observer that wakes on it reads the terminal state.
     this.emitOutput(job)
+    this.evictSettled(job.owner)
+  }
+
+  /**
+   * Drop the oldest terminal records past the per-owner retention cap and
+   * announce the removals. Terminal records carry bounded-size output but
+   * would otherwise accumulate for the registry's whole life. The just-settled
+   * record is the newest terminal record, so oldest-first eviction never
+   * removes it.
+   */
+  private evictSettled(owner: Agent | undefined): void {
+    const settled = [...this.store.values()].filter(job => job.owner === owner && isTerminal(job.status))
+    const excess = settled.length - this.settledRetentionPerOwner
+    if (excess <= 0) return
+    // oxlint-disable-next-line typescript/no-non-null-assertion -- settle() stamps finishedAt before eviction can run
+    settled.sort((a, b) => a.finishedAt! - b.finishedAt!)
+    this.drop(settled.slice(0, excess))
   }
 
   /**

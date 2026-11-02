@@ -55,7 +55,12 @@ type FrameProps = PropsRenderSlots<'sidebar.workspaces' | 'shell.overlay'>
 function SidebarFrame({ renderSlot }: FrameProps) {
   return (
     <>
-      {renderSlot('sidebar.workspaces', { wide: true, expandSidebar: () => {} })}
+      {renderSlot('sidebar.workspaces', {
+        wide: true,
+        expandSidebar: () => {},
+        newWorkspaceRequests: 0,
+        reportAddWorkspaceAvailability: () => {},
+      })}
       {renderSlot('shell.overlay', {})}
     </>
   )
@@ -162,7 +167,7 @@ describe('session rename through the assembled browser', () => {
     }))
     await runtime.sessions.add({
       id: SID,
-      summary: { title: '旧标题', displayTitle: '旧标题', cwd: '/w/alpha' },
+      summary: { title: '旧标题', displayTitle: '旧标题', cwd: '/w/alpha', updatedAt: Date.now() - 1_000 },
       session: { rename },
     })
     await runtime.sessions.retainFor(runtime.ctx, SID, { source: 'mainView' }).ready
@@ -204,7 +209,7 @@ describe('session rename through the assembled browser', () => {
     }))
     await runtime.sessions.add({
       id: SID,
-      summary: { title: '旧标题', displayTitle: '旧标题', cwd: '/w/alpha' },
+      summary: { title: '旧标题', displayTitle: '旧标题', cwd: '/w/alpha', updatedAt: Date.now() - 1_000 },
       session: { rename },
     })
     await runtime.sessions.retainFor(runtime.ctx, SID, { source: 'mainView' }).ready

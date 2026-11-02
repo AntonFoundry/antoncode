@@ -33,6 +33,9 @@ export type AgentPresetSettingsKey =
   | 'createPluginChecking'
   | 'createPluginUnavailable'
   | 'createPluginMissing'
+  | 'loading'
+  | 'defaultAgentLabel'
+  | 'defaultAgentHint'
 
 /** English copy. */
 export const en: Record<AgentPresetSettingsKey, string> = {
@@ -42,7 +45,7 @@ export const en: Record<AgentPresetSettingsKey, string> = {
 
   seatHint: 'Choose the agent preset for your new task',
   headerHint: 'The agent preset chosen when this task started',
-  nav: 'Agent presets',
+  nav: 'Agents',
 
   setDefault: 'Set as new task default',
   view: 'View configuration',
@@ -77,6 +80,9 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   createPluginUnavailable: 'Temporarily unavailable. Reopen this menu to retry',
   createPluginMissing: 'Creator mode is not included in this configuration',
 
+  loading: 'Loading presets…',
+  defaultAgentLabel: 'Default agent',
+  defaultAgentHint: 'The preset sessions started without an explicit choice compose from.',
 }
 
 /** Simplified Chinese copy. */
@@ -87,7 +93,7 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
 
   seatHint: '选择新任务使用的 Agent 预设',
   headerHint: '本任务的 Agent 预设，在任务开始时确定',
-  nav: 'Agent 预设',
+  nav: 'Agent',
 
   setDefault: '设为新任务默认',
   view: '查看配置',
@@ -118,6 +124,9 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   createPluginUnavailable: '暂时不可用，请重新打开菜单重试',
   createPluginMissing: '当前配置未提供创造模式',
 
+  loading: '正在加载预设…',
+  defaultAgentLabel: '默认 Agent',
+  defaultAgentHint: '未明确选择时，新会话所使用的预设。',
 }
 
 // The resolution itself is the shared fold in `dsh-agent-preset-registry/display`,
@@ -134,7 +143,7 @@ export const ja = {
   'sectionIntro': 'エージェントのツールと動作を選択します。日々のタスクには標準モードを、DSH に機能を追加するにはクリエイターモードを使用してください。',
   'seatHint': '新しいタスクで使用するエージェントプリセットを選択',
   'headerHint': 'このタスクの開始時に選択されたエージェントプリセット',
-  'nav': 'エージェントプリセット',
+  'nav': 'エージェント',
   'setDefault': '新しいタスクの既定に設定',
   'view': '設定を表示',
   'presetStandardName': '標準モード',
@@ -157,6 +166,9 @@ export const ja = {
   'createPluginChecking': 'クリエイターモードが利用可能か確認中',
   'createPluginUnavailable': '一時的に利用できません。このメニューを開き直して再試行してください',
   'createPluginMissing': 'この構成にはクリエイターモードが含まれていません',
+  'loading': 'プリセットを読み込み中…',
+  'defaultAgentLabel': '既定のエージェント',
+  'defaultAgentHint': '明示的に選択せずに開始したセッションが使用するプリセット。',
 } satisfies Record<keyof typeof en, string>
 
 /** Spanish dictionary, checked against the English keys. */
@@ -167,7 +179,7 @@ export const es = {
 
   seatHint: 'Elija el agente preestablecido para su nueva tarea',
   headerHint: 'El agente preestablecido elegido cuando comenzó esta tarea',
-  nav: 'Ajustes preestablecidos del agente',
+  nav: 'Agentes',
 
   setDefault: 'Establecer como nueva tarea predeterminada',
   view: 'Ver configuración',
@@ -202,6 +214,9 @@ export const es = {
   createPluginUnavailable: 'Temporalmente no disponible. Vuelve a abrir este menú para volver a intentarlo.',
   createPluginMissing: 'El modo creador no está incluido en esta configuración.',
 
+  'loading': 'Cargando ajustes preestablecidos…',
+  'defaultAgentLabel': 'Agente predeterminado',
+  'defaultAgentHint': 'El ajuste preestablecido que usan las sesiones iniciadas sin una elección explícita.',
 } satisfies Record<keyof typeof en, string>
 
 /** French dictionary, checked against the English keys. */
@@ -212,7 +227,7 @@ export const fr = {
 
   seatHint: "Choisissez le préréglage d'agent pour votre nouvelle tâche",
   headerHint: "Le préréglage d'agent choisi au démarrage de cette tâche",
-  nav: "Préréglages d'agent",
+  nav: 'Agents',
 
   setDefault: 'Définir comme nouvelle tâche par défaut',
   view: 'Afficher la configuration',
@@ -247,6 +262,9 @@ export const fr = {
   createPluginUnavailable: 'Temporairement indisponible. Rouvrez ce menu pour réessayer',
   createPluginMissing: "Le mode Créateur n'est pas inclus dans cette configuration",
 
+  'loading': 'Chargement des préréglages…',
+  'defaultAgentLabel': 'Agent par défaut',
+  'defaultAgentHint': 'Le préréglage utilisé par les sessions démarrées sans choix explicite.',
 } satisfies Record<keyof typeof en, string>
 
 /** German dictionary, checked against the English keys. */
@@ -257,7 +275,7 @@ export const de = {
 
   seatHint: 'Wählen Sie die Agentenvoreinstellung für Ihre neue Aufgabe',
   headerHint: 'Die Agentenvoreinstellung, die beim Start dieser Aufgabe ausgewählt wurde',
-  nav: 'Agentenvoreinstellungen',
+  nav: 'Agenten',
 
   setDefault: 'Als Standard für neue Aufgabe festlegen',
   view: 'Konfiguration anzeigen',
@@ -292,6 +310,9 @@ export const de = {
   createPluginUnavailable: 'Vorübergehend nicht verfügbar. Öffnen Sie dieses Menü erneut, um es erneut zu versuchen',
   createPluginMissing: 'Der Creator-Modus ist in dieser Konfiguration nicht enthalten',
 
+  'loading': 'Voreinstellungen werden geladen…',
+  'defaultAgentLabel': 'Standardagent',
+  'defaultAgentHint': 'Die Voreinstellung, die Sitzungen ohne ausdrückliche Auswahl verwenden.',
 } satisfies Record<keyof typeof en, string>
 
 /** Russian dictionary, checked against the English keys. */
@@ -302,7 +323,7 @@ export const ru = {
 
   seatHint: 'Выберите предустановку агента для вашей новой задачи',
   headerHint: 'Предварительная настройка агента, выбранная при запуске этой задачи',
-  nav: 'Настройки агента',
+  nav: 'Агенты',
 
   setDefault: 'Установить в качестве новой задачи по умолчанию',
   view: 'Посмотреть конфигурацию',
@@ -337,6 +358,9 @@ export const ru = {
   createPluginUnavailable: 'Временно недоступен. Откройте это меню еще раз, чтобы повторить попытку.',
   createPluginMissing: 'Режим Creator не включен в эту конфигурацию.',
 
+  'loading': 'Загрузка настроек…',
+  'defaultAgentLabel': 'Агент по умолчанию',
+  'defaultAgentHint': 'Настройка, которую используют сессии, начатые без явного выбора.',
 } satisfies Record<keyof typeof en, string>
 
 /** Portuguese dictionary, checked against the English keys. */
@@ -347,7 +371,7 @@ export const pt = {
 
   seatHint: 'Escolha a predefinição de agente para sua nova tarefa',
   headerHint: 'A predefinição do agente escolhida quando esta tarefa foi iniciada',
-  nav: 'Predefinições de agente',
+  nav: 'Agentes',
 
   setDefault: 'Definir como nova tarefa padrão',
   view: 'Ver configuração',
@@ -382,4 +406,7 @@ export const pt = {
   createPluginUnavailable: 'Temporariamente indisponível. Reabra este menu para tentar novamente',
   createPluginMissing: 'O modo criador não está incluído nesta configuração',
 
+  'loading': 'Carregando predefinições…',
+  'defaultAgentLabel': 'Agente padrão',
+  'defaultAgentHint': 'A predefinição usada por sessões iniciadas sem uma escolha explícita.',
 } satisfies Record<keyof typeof en, string>

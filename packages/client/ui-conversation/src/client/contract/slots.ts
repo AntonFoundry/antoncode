@@ -73,6 +73,13 @@ export interface ComposerAttachmentsOwnerProps {
   /** Whether a document-level file drop may add attachments now. */
   canAcceptDrop: boolean
   /**
+   * Layout span of the pane hosting the composer, forwarded from the bar's
+   * owner props: `single` invites drops over the whole viewport, `multi`
+   * scopes the drop target and overlay to this composer's pane so a drop
+   * reaches only the Session that pane renders. Absent behaves as `single`.
+   */
+  layoutSpan?: 'single' | 'multi' | undefined
+  /**
    * Add one dropped batch through the composer's validation path.
    * @param files - dropped, pasted, or picked browser files in source order.
    * @param directories - members of `files` the drop source identified as directories.
@@ -354,6 +361,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     useInput: SnapshotSelectorHook<InputState>
     /** Stable public input actions for this Session. */
     inputActions: InputActions
+    /** Conversation View activation for Session-scope occupants such as app-plugin header toggles. */
+    viewActions: ConversationViewActions
   }
 
   interface SessionMaybeStandardProps {
@@ -363,7 +372,18 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     useInput: MaybeSnapshotSelectorHook<InputState>
     /** Input actions are absent without a current Session. */
     inputActions: InputActions | undefined
+    /** View activation is absent without a current Session. */
+    viewActions: ConversationViewActions | undefined
   }
+}
+
+/** Session-scoped Conversation View activation. */
+export interface ConversationViewActions {
+  /**
+   * Select one registered `conversation.view` entry for this Session; an unregistered id is ignored.
+   * @param viewId - `conversation.view` entry id.
+   */
+  activate(viewId: string): void
 }
 
 /** Owner share of the Hero agent-preset control. */
@@ -499,6 +519,13 @@ export interface ConversationSessionHeaderInjected {
 export interface ComposerBarOwnerProps {
   /** Hero uses centered placement; composer uses the active bottom placement. */
   variant: 'hero' | 'composer'
+  /**
+   * Layout span of the pane hosting this bar: `single` = the only
+   * conversation pane on screen, `multi` = one pane among several. Chooses
+   * the file-drop overlay scope: a full-viewport mask when `single`, a
+   * pane-local highlight when `multi`. Absent behaves as `single`.
+   */
+  layoutSpan?: 'single' | 'multi'
   /** A feature-owned reason that makes message input inert while leaving model selection live. */
   blocked?: { readonly reason: string }
   /** Lock all message actions while preserving the resident composer surface. */

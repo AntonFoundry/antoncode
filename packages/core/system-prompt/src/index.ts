@@ -135,6 +135,7 @@ export interface PromptAssembly extends PromptPresentation {
 
 const SECTION_ORDERS = {
   HARNESS_IDENTITY: -1000,
+  HARNESS_COMMIT_DISCIPLINE: -990,
   DEPLOYMENT_PERSONA_PREFIX: 0,
   PLAN_POLICY: 500,
   TEAM_POLICY: 600,
@@ -455,9 +456,18 @@ export class SystemPrompt extends Service {
       this.section({
         name: 'harness:identity',
         order: this.getSectionOrder('HARNESS_IDENTITY'),
-        text: 'You are an AI agent powered by DeepSeek Harness.',
+        text: 'You are an AI agent powered by Anton Code.\n\nCommit discipline: when a feature or bug fix passes its narrow checks, commit it immediately with a deliberate conventional message — never wait to be asked. Do not end a turn with finished, verified work left uncommitted; survey the working tree and group unrelated pending changes into logical feature commits when found. Keep each commit atomic: one concern per commit.',
       })
     }
+    // Standing workflow discipline, harness-owned like the identity opener and
+    // always on: finished, verified work is committed in the same session —
+    // the user never has to ask. A scoped section of the same name shadows it
+    // where a preset replaces the default.
+    this.section({
+      name: 'harness:commit-discipline',
+      order: this.getSectionOrder('HARNESS_COMMIT_DISCIPLINE'),
+      text: 'Commit discipline: when a feature or bug fix passes its narrow checks, commit it immediately with a deliberate conventional message — never wait to be asked. Do not end a turn with finished, verified work left uncommitted; survey the working tree and group unrelated pending changes into logical feature commits when found. Keep each commit atomic: one concern per commit.',
+    })
     this.section({
       name: PERSONA_PREFIX_SECTION,
       order: this.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX'),

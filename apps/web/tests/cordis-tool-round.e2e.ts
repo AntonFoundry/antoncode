@@ -58,7 +58,7 @@ describe.skipIf(MODE === 'record')('web e2e: historical Cordis cards', () => {
     const scrollport = page.locator('[data-conversation-scroll]')
     await scrollport.evaluate((element) => { element.scrollTop = 0 })
     await page.getByRole('button', { name: 'Back to bottom', exact: true }).waitFor()
-    const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
+    const snapshot = (await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd))
       .split(SEED_ID).join('{{seededId}}')
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
     expect(tripwire.pageErrors).toEqual([])

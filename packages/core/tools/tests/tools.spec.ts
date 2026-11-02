@@ -2739,6 +2739,51 @@ describe('validateArgs (the runtime-validation Agent Note, part 1)', () => {
 })
 
 describe('defineTool validation (the runtime-validation Agent Note, part 1)', () => {
+  it('names the sibling tool whose schema the wrong-tool payload matches', async () => {
+    const ctx = await setup()
+    ctx.tools.register(defineContentToolFixture({
+      name: 'commander',
+      description: 'runs a command',
+      parameters: {
+        command: { type: 'string', required: true },
+        description: { type: 'string', required: true },
+      },
+      async execute(args) {
+        return [{ type: 'text', text: args.command }]
+      },
+    }))
+    ctx.tools.register(defineContentToolFixture({
+      name: 'searcher',
+      description: 'searches contents',
+      parameters: {
+        pattern: { type: 'string', required: true },
+        path: { type: 'string' },
+      },
+      async execute(args) {
+        return [{ type: 'text', text: args.pattern }]
+      },
+    }))
+    // grep-shaped payload under the command tool: the error keeps the
+    // violations and appends the corrective match.
+    const result = await executeToolFixture(ctx, {
+      signal: testToolSignal, callId: ToolCallId('c1'), name: 'commander',
+      arguments: { path: '/x', pattern: 'y' },
+    })
+    expect(result.isError).toBe(true)
+    expect(result.content[0]).toMatchObject({
+      text: 'Error: invalid arguments: missing required property "command"; missing required property "description"; '
+        + 'the supplied properties (path, pattern) match tool "searcher" — retry with that tool and the same arguments',
+    })
+    // A payload no sibling covers keeps the plain violations.
+    const unmatched = await executeToolFixture(ctx, {
+      signal: testToolSignal, callId: ToolCallId('c2'), name: 'commander',
+      arguments: { command: 'ls' },
+    })
+    expect(unmatched.content[0]).toMatchObject({
+      text: 'Error: invalid arguments: missing required property "description"',
+    })
+  })
+
   it('returns an isError result with the violations when the model sends bad args', async () => {
     const ctx = await setup()
     ctx.tools.register(defineContentToolFixture({
@@ -2833,9 +2878,13 @@ describe('defineTool validation (the runtime-validation Agent Note, part 1)', ()
     expect(result.content[0]).toMatchObject({ text: 'Error: just a message' })
   })
 
-  it('raw-registered tools are NOT validated by defineTool (MCP keeps its own)', async () => {
+  it('validates raw-registered tools at dispatch (MCP-style tools get the same net)', async () => {
     const ctx = await setup()
-    // A raw ToolDefinition: no defineTool wrapping, so no validateArgs guard.
+    // A raw ToolDefinition: no defineTool wrapping, so no execute-wrapper
+    // guard. The registry itself validates the call against the declared
+    // schema before execute — a degenerate `{}` can no longer reach the tool
+    // body and fail opaquely downstream.
+    let executed = false
     ctx.tools.register({
       name: 'raw',
       description: 'raw tool',
@@ -2845,13 +2894,60 @@ describe('defineTool validation (the runtime-validation Agent Note, part 1)', ()
         render: (_args, value) => [{ type: 'text', text: value as string }],
       },
       async execute(args: unknown) {
+        executed = true
         return typeof args
       },
     })
-    // Missing the "required" path — but raw tools validate their own input, so
-    // this reaches execute rather than being rejected by the harness.
     const result = await executeToolFixture(ctx, { signal: testToolSignal, callId: ToolCallId('c1'), name: 'raw', arguments: {} })
-    expect(result.isError).toBe(false)
+    expect(result.isError).toBe(true)
+    expect(result.error?.message).toBe('invalid arguments: missing required property "path"')
+    expect(executed).toBe(false)
+  })
+
+  it('rejects a registration whose parameters lack the JSON-Schema object root', async () => {
+    const ctx = await setup()
+    const raw = (parameters: unknown) => ({
+      name: 'spec-style',
+      description: 'per-property spec declaration',
+      parameters,
+      output: {
+        schema: { type: 'string' },
+        render: (_args: unknown, value: unknown) => [{ type: 'text' as const, text: String(value) }],
+      },
+      async execute() { return 'ok' },
+    }) as ToolDefinition
+    // The per-property spec style (schemastery-flavored) is the defineTool
+    // INPUT; registered definitions carry the compiled schema. A spec leaked
+    // onto the wire reads as a schemaless tool — no required list — which is
+    // how degenerate empty-argument calls start.
+    expect(() => ctx.tools.register(raw({ command: { type: 'string', required: true } })))
+      .toThrow('tool "spec-style" parameters must be a JSON Schema object')
+    expect(() => ctx.tools.register(raw(undefined)))
+      .toThrow('tool "spec-style" parameters must be a JSON Schema object')
+    expect(() => ctx.tools.register(raw(['command'])))
+      .toThrow('tool "spec-style" parameters must be a JSON Schema object')
+    expect(() => ctx.tools.register(raw({ type: 'string' })))
+      .toThrow('tool "spec-style" parameters must be a JSON Schema object')
+  })
+
+  it('a pre-execute listener never observes a schema-invalid call', async () => {
+    const ctx = await setup()
+    let observed = 0
+    ctx.effect(() => ctx.on('tools/pre-execute', async (_exec, next) => {
+      observed += 1
+      return await next()
+    }), 'spec.pre-execute-spy')
+    ctx.tools.register(defineContentToolFixture({
+      name: 'reader',
+      description: 'reads a path',
+      parameters: { path: { type: 'string', required: true } },
+      async execute(args) {
+        return [{ type: 'text', text: args.path }]
+      },
+    }))
+    const result = await executeToolFixture(ctx, { signal: testToolSignal, callId: ToolCallId('c1'), name: 'reader', arguments: {} })
+    expect(result.isError).toBe(true)
+    expect(observed).toBe(0)
   })
 
   it('attaches a positive-finite timeoutMs to the definition', () => {

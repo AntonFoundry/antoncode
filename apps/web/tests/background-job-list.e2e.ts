@@ -10,7 +10,6 @@ import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { JobId } from '@deepseek-ai/dsh-jobs'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
   launchWebScaffold, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
@@ -54,7 +53,9 @@ describe.skipIf(MODE === 'record')('web e2e: background job list', () => {
   let agent: Agent
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({})
+    // This scenario drives `bash` directly (the registry under test), without
+    // the plan the shipped todo-plan gate requires.
+    scaffold = await launchWebScaffold({ directToolCalls: true })
     await seedSession(scaffold, await readFile(FIXTURE, 'utf8'), SEED_ID)
     browser = await chromium.launch()
     page = await newEnglishPage(browser)

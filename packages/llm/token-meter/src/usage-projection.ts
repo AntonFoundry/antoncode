@@ -9,6 +9,7 @@ import { SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import type { ContextPressureProjection, TokenUsageProjection } from './projection.ts'
+import { cacheHitRateOf } from './projection.ts'
 import { foldSurfaceProjection } from './surface-projection.ts'
 
 const zeroBuckets = (): TokenUsageProjection => ({
@@ -48,6 +49,18 @@ const projectionSchema = z.object({
   cacheReadTokens: z.number().int().nonnegative(),
   cacheWriteTokens: z.number().int().nonnegative(),
 }).strict()
+
+const usageViewSchema: z.ZodType<TokenUsageProjection> = projectionSchema.extend({
+  cacheHitRate: z.number().min(0).max(1).optional(),
+}).strict().transform(({ cacheHitRate, ...totals }) => (
+  cacheHitRate === undefined ? totals : { ...totals, cacheHitRate }
+))
+
+/** Wire view: cumulative buckets plus the derived cache-hit rate once usage exists. */
+const usageView = (totals: TokenUsageProjection): TokenUsageProjection => {
+  const hitRate = cacheHitRateOf(totals)
+  return hitRate === undefined ? totals : { ...totals, cacheHitRate: hitRate }
+}
 
 /**
  * The token-usage unit's state schema — the one definition of the state
@@ -140,7 +153,7 @@ export const tokenUsageProjectionDefinition = {
       last: { turn, step, buckets },
     }
   },
-  wire: { viewSchema: projectionSchema, view: state => state.totals },
+  wire: { viewSchema: usageViewSchema, view: state => usageView(state.totals) },
 } satisfies ProjectionDefinition<'tokenUsage', TokenUsageState>
 
 /**

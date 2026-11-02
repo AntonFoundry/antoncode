@@ -16,3 +16,8 @@ docs/persistence-changes/historical-formats/*.schema.json linguist-generated=tru
 
 # Unified patch blank context lines require their leading space.
 patches/*.patch whitespace=-blank-at-eol
+
+# Vendored MediaPipe emscripten loaders (byte-exact copies reproduced by
+# packages/client/ui-webcam/scripts/vendor-assets.sh): machine-generated
+# output, excluded from diff-based gates like the whitespace check.
+apps/web/public/mediapipe/wasm/*.js -diff

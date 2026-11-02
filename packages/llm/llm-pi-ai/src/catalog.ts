@@ -648,6 +648,27 @@ export interface PiAiModelProfile {
  */
 export type PiAiModelOverride = Omit<PiAiModelProfile, 'id'>
 
+/** One model disclosed by a provider's live listing. */
+export interface PiAiLiveModel {
+  /** Provider model id. */
+  id: string
+  /** Provider display label, when disclosed. */
+  name?: string
+  /** Provider context capacity, when disclosed. */
+  contextWindow?: number
+  /** Provider output capacity, when disclosed. */
+  maxTokens?: number
+  /**
+   * Reasoning efforts a catalog source declares for the model, applied only
+   * when the installed catalog does not describe the id. An endpoint's own
+   * `GET /models` listing never sets it: no listing endpoint reports a
+   * model's reasoning protocol.
+   */
+  reasoningEfforts?: false | PiAiReasoningEfforts
+  /** Input modalities a catalog source declares; absent keeps the route default. */
+  input?: readonly PiAiModality[]
+}
+
 /** The route-level facts model materialization reads. */
 export interface RouteCatalogRequest {
   /** Provider route key, stamped onto every materialized model. */
@@ -660,6 +681,8 @@ export interface RouteCatalogRequest {
   models?: readonly PiAiModelProfile[]
   /** Installed-catalog customizations by model id; only meaningful while `models` is absent. */
   modelOverrides?: Readonly<Record<string, PiAiModelOverride>>
+  /** Live endpoint models that augment the installed catalog when supplied. */
+  liveModels?: readonly PiAiLiveModel[]
   /** Route-level wire-compatibility switches, landing on each model whose protocol declares them; entries override per field. */
   compat?: PiAiCompatProfile
   /** Context capacity for a model neither the entry nor the catalog sizes. */
@@ -847,10 +870,10 @@ export interface RouteCatalog {
 }
 
 /**
- * Materialize one route's catalog by merging the installed catalog defaults
- * under the configured entries. A route with no configured `models` serves the
- * installed catalog unchanged, which is what keeps an existing
- * `providers: { deepseek: { apiKeyEnv: … } }` profile working untouched.
+ * Materialize one route's catalog from the configured entries, live entries,
+ * and installed defaults. An explicit `models` list is strict curation unless
+ * a live listing is also supplied for union mode; a route without an explicit
+ * list keeps the installed catalog. Configured and live entries win by id.
  * @param request - the route-level catalog facts.
  * @param validation - strict writes reject every error; deferred reads retain model diagnostics.
  * @returns the materialized models and the explicitly configured request caps.
@@ -876,9 +899,9 @@ export function resolveRouteModels(
       invalid(provider, `sets modelOverrides for "${id}", but the installed catalog does not describe this route;`
         + ' a declared route spells every model out in its models list')
     }
-    if (configured.length > 0) {
-      invalid(provider, `sets modelOverrides for "${id}" beside a models list; models already replaces the served`
-        + ' catalog, so declare the fields on its entries')
+    if (configured.some(entry => entry.id === id)) {
+      invalid(provider, `sets modelOverrides for "${id}", which the models list also declares; declare the`
+        + ' fields on its entry instead')
     }
     if (!defaults.has(id)) {
       const message = `modelOverrides names "${id}", which the installed catalog does not describe`
@@ -895,9 +918,45 @@ export function resolveRouteModels(
   // An override becomes the catalog entry's configuration, so everything a
   // models entry may declare — capacities, efforts, compat — resolves through
   // the same path with the same diagnostics and request-default semantics.
-  const entries: readonly PiAiModelProfile[] = configured.length > 0
+  // Live entries ride the same profile shape; with an explicit models list
+  // present they join behind it (a route's opt-in decides whether they are
+  // passed here at all), otherwise they stand in for the absent list.
+  const liveEntries: readonly PiAiModelProfile[] = (request.liveModels ?? []).map(model => ({
+    id: model.id,
+    ...model.name === undefined ? {} : { name: model.name },
+    ...model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow },
+    ...model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens },
+    ...model.reasoningEfforts === undefined ? {} : { reasoningEfforts: model.reasoningEfforts },
+    ...model.input === undefined ? {} : { input: [...model.input] },
+  }))
+  const configuredEntries: readonly PiAiModelProfile[] = configured.length > 0
     ? configured
-    : [...defaults.values()].map(model => ({ id: model.id, ...overrides[model.id] }))
+    : liveEntries.length > 0
+      ? liveEntries
+      : [...defaults.values()].map(model => ({ id: model.id, ...overrides[model.id] }))
+  // Duplicate configured ids reach `resolveEntry`, which reports them under
+  // the active validation mode.
+  const declared = new Set(configuredEntries.map(entry => entry.id))
+  // Live-discovered models the explicit list did not name, then (when the
+  // route is not strict) installed-catalog models neither source named,
+  // keeping their own fields. One running declared set deduplicates across
+  // every source; a discovered id the installed catalog also ships keeps the
+  // discovered entry. A catalog entry an override names still lands here, so
+  // `modelOverrides` never lands nowhere.
+  const entries: PiAiModelProfile[] = [...configuredEntries]
+  for (const model of liveEntries) {
+    if (declared.has(model.id)) continue
+    declared.add(model.id)
+    entries.push(model)
+  }
+  const includeInstalledCatalog = configured.length === 0 || request.liveModels !== undefined
+  if (includeInstalledCatalog) {
+    for (const model of defaults.values()) {
+      if (declared.has(model.id)) continue
+      declared.add(model.id)
+      entries.push({ id: model.id, ...overrides[model.id] })
+    }
+  }
   if (entries.length === 0) {
     invalid(provider, 'resolves no models; the installed catalog does not describe this route, so its models'
       + ' must be listed in configuration')

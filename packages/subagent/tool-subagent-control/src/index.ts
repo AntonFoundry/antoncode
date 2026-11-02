@@ -1,7 +1,7 @@
 /**
- * Shared messaging, interruption, and child discovery tools.
- * They perform no lifecycle routing of their own —
- * residency, cold resume, and interrupt authorization belong to the subagent
+ * Shared messaging, interruption, model reassignment, and child discovery
+ * tools. They perform no lifecycle routing of their own —
+ * residency, cold resume, and control authorization belong to the subagent
  * service — and they live apart from the provider-bound
  * `@deepseek-ai/dsh-tool-subagent` instances so multiple delegation tools share
  * one control API.
@@ -12,17 +12,25 @@ import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { ReasoningEffortId } from '@deepseek-ai/dsh-llm/brand'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-subagent'
 import { markAdjacentAgentSendMessageTool } from '@deepseek-ai/dsh-subagent/internal'
 import { registerListAgents } from './list-agents.ts'
 
 export const name = 'tool-subagent-control'
-export const inject = ['tools', 'subagents', 'agents']
+export const inject = ['tools', 'subagents', 'agents', 'llm']
+
+/**
+ * Reasoning-effort ids a switch may name. The tool accepts the widest portable
+ * set; the replacement provider validates the id for its model through
+ * `resolveCallConfig` before the switch is recorded.
+ */
+const REASONING_EFFORT_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 
 /**
  * Register the shared subagent control and discovery tools.
- * @param ctx - context carrying tools, subagents, and live Agents.
+ * @param ctx - context carrying tools, subagents, live Agents, and model routing.
  */
 export function apply(ctx: Context): void {
   registerListAgents(ctx)
@@ -108,6 +116,73 @@ export function apply(ctx: Context): void {
       // recorded lineage; the tool adds no authority of its own.
       ctx.subagents.interrupt(brandString<SessionId>(args.agent_id), { kind: 'ancestor', agent: caller })
       return Promise.resolve({ accepted: true })
+    },
+  }))
+  ctx.tools.register(defineTool({
+    name: 'set_agent_model',
+    description:
+      'Switch a running subagent to another model. Use it when a subagent is stuck because its current '
+      + 'model is exhausted, rate-limited, or otherwise unavailable. The change reaches its next model step '
+      + 'and is kept if the subagent is later resumed. Only a subagent that is currently loaded can be switched. '
+      + 'This changes no queued work; use send_message to give it another task. Prefer a model from the same '
+      + 'or a cheaper provider that the subagent can reach.',
+    parameters: {
+      agent_id: {
+        type: 'string',
+        required: true,
+        description: 'The id of an agent created under you: your direct child or a deeper descendant.',
+      },
+      provider: {
+        type: 'string',
+        required: true,
+        description: 'Provider route of the replacement model, as shown in the available models list.',
+      },
+      model: {
+        type: 'string',
+        required: true,
+        description: 'Provider-owned model id of the replacement model.',
+      },
+      reasoning_effort: {
+        type: 'string',
+        enum: [...REASONING_EFFORT_LEVELS],
+        description: 'Optional reasoning effort for the replacement model. Omit to use that model\'s default.',
+      },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          applied: { type: 'boolean', required: true },
+        },
+      },
+      render: (args, _value) => [{
+        type: 'text',
+        text: `subagent ${args.agent_id} now uses ${args.provider}/${args.model} for its next model request`,
+      }],
+    },
+    async execute(args, exec) {
+      const caller = exec.agent
+      if (!caller) {
+        // Ancestor authority requires an exact live calling agent.
+        throw new Error('set_agent_model requires a calling agent (exec.agent was undefined)')
+      }
+      // Resolve first so an unknown provider, model, or effort fails here
+      // instead of becoming the subagent's next failed request.
+      // An omitted effort stays omitted so the replacement model resolves its
+      // own default instead of pinning the resolved one as a choice.
+      const selection = {
+        provider: args.provider,
+        model: args.model,
+        ...args.reasoning_effort === undefined
+          ? {}
+          : { reasoningEffort: ReasoningEffortId(args.reasoning_effort) },
+      }
+      await ctx.llm.resolveCallConfig(selection, exec.signal)
+      // The service authorizes the exact live caller against the target's
+      // recorded lineage; the tool adds no authority of its own.
+      ctx.subagents.selectModel(brandString<SessionId>(args.agent_id), selection, { kind: 'ancestor', agent: caller })
+      return { applied: true }
     },
   }))
 }

@@ -34,6 +34,8 @@ export interface ProviderDirectoryEntry {
   readonly baseURLEnv?: readonly string[]
   readonly nativeAuth?: LlmNativeAuth
   readonly error?: string
+  /** Live route's provider-owned (non-API-key) authentication readiness, when it reports one. */
+  readonly authConfigured?: boolean
 }
 
 /**
@@ -46,14 +48,15 @@ export function joinProviderDirectory(
   registered: readonly LlmProviderInfo[],
   directory: readonly LlmConfigurableProvider[],
 ): ProviderDirectoryEntry[] {
-  const active = new Set(registered.map(provider => provider.id))
+  const live = new Map(registered.map(provider => [provider.id, provider]))
   const declared = new Set(directory.map(entry => entry.provider))
   const rows: ProviderDirectoryEntry[] = directory.map(entry => ({
     provider: entry.provider,
     displayName: entry.displayName,
     settingsNs: entry.settingsNs,
     settingsPath: [...entry.settingsPath],
-    active: active.has(entry.provider),
+    active: live.has(entry.provider),
+    ...live.get(entry.provider)?.authConfigured === undefined ? {} : { authConfigured: live.get(entry.provider)?.authConfigured },
     ...entry.declared === undefined ? {} : { declared: entry.declared },
     ...entry.defaultBaseURL === undefined ? {} : { defaultBaseURL: entry.defaultBaseURL },
     ...entry.baseURLEnv === undefined ? {} : { baseURLEnv: entry.baseURLEnv },
@@ -68,12 +71,16 @@ export function joinProviderDirectory(
       settingsNs: '',
       settingsPath: [],
       active: true,
+      ...provider.authConfigured === undefined ? {} : { authConfigured: provider.authConfigured },
     })
   }
   return rows.toSorted((left, right) =>
     (left.provider === 'deepseek-account' ? 0 : left.provider === 'deepseek-official' ? 1 : 2)
       - (right.provider === 'deepseek-account' ? 0 : right.provider === 'deepseek-official' ? 1 : 2))
 }
+
+/** The host gateway's catalog-visibility namespace (`ModelCatalogSettings`). */
+export const MODEL_CATALOG_NAMESPACE = 'model-catalog'
 
 /** One provider row the page renders. */
 export interface ProviderRow {
@@ -98,6 +105,12 @@ export interface ProviderRow {
   derivedCredential?: CredentialInfo
   /** Redacted checks for named or native references; absent when their read failed. */
   credentialChecks?: Readonly<Record<string, CredentialInfo>>
+  /** OAuth session reference for subscription routes, when the route owns one. */
+  oauthRef: string | undefined
+  /** Credential state for {@link oauthRef}, once described. */
+  oauthSession: CredentialInfo | undefined
+  /** Whether the provider's models appear in the session model catalog. */
+  enabled: boolean
 }
 
 /** Page snapshot. */
@@ -181,6 +194,23 @@ function apiKeyEnvOf(
   return typeof ref === 'string' && ref.length > 0 ? ref : undefined
 }
 
+/**
+ * The provider ids the catalog-visibility section hides. The schema resolves
+ * the stored document to `{ disabledProviders: string[] }`, so a well-formed
+ * list is the only shape; an unmounted namespace means every provider shows.
+ * @param namespace - the `model-catalog` namespace view, when described.
+ * @param schema - settings schema operations.
+ * @returns the disabled provider route ids.
+ */
+export function disabledProvidersOf(
+  namespace: SettingsNamespaceView | undefined,
+  schema: SettingsSchemaOperations,
+): readonly string[] {
+  if (namespace === undefined) return []
+  const list = schema.getPath(namespace.value, ['disabledProviders'])
+  return Array.isArray(list) ? list.filter((id): id is string => typeof id === 'string') : []
+}
+
 /** The models settings page controller (one per settings surface). */
 export class ModelsSettingsStore {
   /** The snapshot the section renders from (uSES-safe store). */
@@ -248,6 +278,14 @@ export class ModelsSettingsStore {
     const writable = mirrored.view.writable
     const views: readonly SettingsNamespaceView[] = mirrored.view.namespaces
     const namespaces = new Map(views.map(view => [view.ns, view]))
+    const disabled = new Set(disabledProvidersOf(namespaces.get(MODEL_CATALOG_NAMESPACE), this.schema))
+    // Subscription routes authenticate through a stored OAuth session
+    // rather than an API key; describing it lets the row show session state
+    // (status dot, login/logout) beside the key state it already shows.
+    const OAUTH_REF_BY_SETTINGS_NS: Readonly<Record<string, string>> = {
+      'llm-opencode': 'OPENCODE_ZEN_OAUTH',
+      'llm-claude': 'CLAUDE_CODE_OAUTH',
+    }
     const rows: ProviderRow[] = providers.map((entry) => {
       const namespace = namespaces.get(entry.settingsNs)
       const configured = namespace !== undefined
@@ -256,12 +294,16 @@ export class ModelsSettingsStore {
         && entry.settingsPath.length > 0
         && this.schema.hasPath(namespace.user, entry.settingsPath)
         && !this.schema.hasPath(namespace.base, entry.settingsPath)
+      const oauthRef = OAUTH_REF_BY_SETTINGS_NS[entry.settingsNs]
       return {
         entry,
         configured,
         removable,
         apiKeyEnv: entry.provider === 'deepseek-account' ? undefined : apiKeyEnvOf(namespace, entry.settingsPath, this.schema),
         credential: undefined,
+        oauthRef,
+        oauthSession: undefined,
+        enabled: !disabled.has(entry.provider),
       }
     })
     if (rows.some(row => row.entry.provider === 'deepseek-account')) {
@@ -271,8 +313,10 @@ export class ModelsSettingsStore {
           && catalog.value.groups.some(group => group.id === 'deepseek-account' && group.models.length > 0)
       }
     }
-    const refs = [...new Set(rows.filter(row => row.entry.provider !== 'deepseek-account').flatMap(row =>
-      row.apiKeyEnv === undefined ? [deriveKeyRef(row.entry.provider), ...row.entry.nativeAuth?.env ?? []] : [row.apiKeyEnv]))]
+    const refs = [...new Set(rows.filter(row => row.entry.provider !== 'deepseek-account').flatMap(row => [
+      ...row.apiKeyEnv === undefined ? [deriveKeyRef(row.entry.provider), ...row.entry.nativeAuth?.env ?? []] : [row.apiKeyEnv],
+      ...row.oauthRef === undefined ? [] : [row.oauthRef],
+    ]))]
     const credentials: Record<string, CredentialInfo> = {}
     let credentialError: string | null = null
     // credentials.describe accepts at most 64 references per request.
@@ -292,12 +336,14 @@ export class ModelsSettingsStore {
       s.writable = writable
       s.rows = rows.filter(row => row.entry.provider !== 'deepseek-account' || row.accountAvailable === true).map((row) => {
         if (row.entry.provider === 'deepseek-account') return row
+        const oauthSession = row.oauthRef === undefined ? undefined : credentials[row.oauthRef]
         const named = row.apiKeyEnv === undefined ? undefined : credentials[row.apiKeyEnv]
         const derived = row.apiKeyEnv !== undefined ? undefined : credentials[deriveKeyRef(row.entry.provider)]
         return {
           ...row,
           ...named === undefined ? {} : { credential: named },
           ...derived === undefined ? {} : { derivedCredential: derived },
+          ...oauthSession === undefined ? {} : { oauthSession },
           ...credentialError === null ? { credentialChecks: Object.fromEntries(
             (row.apiKeyEnv === undefined ? row.entry.nativeAuth?.env ?? [] : [row.apiKeyEnv])
               .flatMap((ref) => {
@@ -341,6 +387,7 @@ export class ModelsSettingsStore {
 export function providerUsable(row: ProviderRow): boolean {
   if (!row.entry.active) return false
   if (row.entry.provider === 'deepseek-account') return row.accountAvailable === true
+  if (row.entry.authConfigured === false) return false
   if (row.apiKeyEnv === undefined) return true
   return row.credential?.configured === true
 }

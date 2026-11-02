@@ -3,7 +3,7 @@
 Status: implemented
 Archived: 2026-09-30
 
-English | [中文](2026-07-10-after-call-compaction-pressure-and-overflow-recovery.zh.md)
+English
 
 ## Problem
 
@@ -13,13 +13,13 @@ Successful calls are not the only pressure signal. A provider can reject a reque
 
 ## Decision
 
-### Successful pressure runs at the next pre-step boundary
+### Successful pressure runs at request preparation
 
 `agent/pre-step` receives the exclusive claimed message batch plus `{ turn, step, signal }` and returns the final reject/enter decision. It carries no compaction-only prompt or prefix fields.
 
-Compact-basic wraps `agent/pre-step` before each proposed request. At a continuation boundary the preceding assistant output, every dispatched or synthetic tool result, post-tool context, and steering are already durable, so pressure policy sees the complete successful-call state without splitting an assistant tool call from its result. At the initial boundary a headerless session has no completed routed request and produces no pressure work. Compact-basic contains operational failures, warns, and delegates without rejecting the proposed step.
+After `agent/request` resolves, the loop prepares the selected adapter call, logs its canonical header and adapter capacity, then awaits serial `agent/request-prepared` before deriving and freezing request messages. The event carries the exact resolved provider/model, context capacity when available, turn/step, and signal; it does not replace admission or expose mutable request configuration. The loop derives messages after listeners complete, so a checkpoint written by pressure compaction replaces the history used for that dispatch. This runs on the first request as well as later steps, and measures the incoming user/runtime-context batch, actual model route, assembled system prompt, and tools together.
 
-`dsh-compaction-basic` reads the exact latest routed model from the durable request header only to establish that a completed route exists, then asks the singleton `ctx.tokenMeter` to measure the canonical logged envelope and current surface. It does not fall back to `AgentOptions.model` for automatic pressure. A headerless session has no completed routed request to assess and produces no work; any durable non-empty model name uses the same estimator. Operational measurement or summarization failures warn and continue from the latest durable surface: full history before any replacement, or the pruned surface if pruning already landed.
+`dsh-compaction-basic` uses the event's route and context capacity and measures the durable session surface plus the not-yet-logged request messages. It does not rely on the previous request header to select the pressure target. Operational measurement or summarization failures warn and continue from the latest durable surface: full history before any replacement, or the pruned surface if pruning already landed.
 
 ### Request recovery is limited to the final model boundary
 
@@ -59,4 +59,4 @@ The next pre-step pressure check describes the preceding completed routed reques
 
 The cost is pressure work in the shared pre-step waterfall and adapter-maintained overflow classification. Provider wording and heuristic character density remain maintenance risks. Surface compaction still cannot repair an envelope that alone exceeds the window, split an indivisible non-tool node, or repair a tool unit whose non-prunable remainder remains oversized. The optional pruner can repair an otherwise indivisible tool pair when removable text-bearing tool-result content is the bulk.
 
-The [claimed pre-step lifecycle](2026-07-31-claimed-pre-step-inbox-lifecycle.md) supersedes this note's former post-step trigger. The service split, standalone token meter, balanced range contract, log-recorded lock, summary replacement, and sole `summarize()` subclass hook remain unchanged.
+The [claimed pre-step lifecycle](2026-07-31-claimed-pre-step-inbox-lifecycle.md) owns inbox claiming and admission. The later [request-stage pressure decision](2026-10-15-request-stage-pressure-preflight.md) supersedes this note's completed-route-only trigger and measurement boundary; the service split, standalone token meter, balanced range contract, log-recorded lock, summary replacement, and sole `summarize()` subclass hook remain unchanged.

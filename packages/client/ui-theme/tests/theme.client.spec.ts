@@ -176,6 +176,66 @@ describe('ThemeRuntime', () => {
     expect(theme.getTheme().preference).toBe('dark')
   })
 
+  it('never demotes an active registered palette through scope adoption', () => {
+    const { theme, events, host } = make()
+    const dispose = theme.register({ id: 'nord', colorScheme: 'dark', tokens: {} })
+    theme.setTheme('nord')
+    expect(theme.getTheme().preference).toBe('nord')
+    // The loaded Host section (default `system`) arrives after the palette is
+    // active: adoption must not demote the load-theme choice — this publish
+    // is exactly what wiped the localStorage choice before the guard.
+    host.publish({ status: 'ready', value: { preference: 'system' }, revision: 1, writable: true })
+    host.publish({ value: { preference: 'dark' }, revision: 2 })
+    expect(theme.getTheme().preference).toBe('nord')
+    expect(events[events.length - 1]).toBe(theme.getTheme())
+    // An explicit release (built-in setTheme) re-arms adoption, and the next
+    // section settles the durable preference again.
+    theme.setTheme('dark')
+    expect(host.set).toHaveBeenCalledWith('preference', 'dark')
+    host.publish({ value: { preference: 'light' }, revision: 3 })
+    expect(theme.getTheme().preference).toBe('light')
+    dispose()
+  })
+
+  it('the Aqua boot default yields to an explicit durable built-in after the scope loads', () => {
+    const { theme, events, host } = make()
+    theme.register({ id: 'nord', colorScheme: 'dark', tokens: {} })
+    theme.restoreBootDefault('nord')
+    expect(theme.getTheme().preference).toBe('nord')
+    // The section the scope loads after the shell restored the palette: the
+    // persisted dark choice wins the boot race (splash dark, app dark).
+    host.publish({ status: 'ready', value: { preference: 'dark' }, revision: 1, writable: true })
+    expect(theme.getTheme().preference).toBe('dark')
+    expect(host.set).not.toHaveBeenCalled()
+    expect(events[events.length - 1]).toBe(theme.getTheme())
+  })
+
+  it('a durable system section agrees with the boot default; an explicit palette does not yield', () => {
+    const { theme, host } = make()
+    theme.register({ id: 'nord', colorScheme: 'dark', tokens: {} })
+    theme.restoreBootDefault('nord')
+    // The loaded section names the follow-the-OS default: agreement — the
+    // Aqua palette stays active instead of being reset to the bare builtin.
+    host.publish({ status: 'ready', value: { preference: 'system' }, revision: 1, writable: true })
+    expect(theme.getTheme().preference).toBe('nord')
+    // The boot default is not a user choice, so a later durable dark (a real
+    // preference change from another surface) still propagates.
+    host.publish({ value: { preference: 'dark' }, revision: 2 })
+    expect(theme.getTheme().preference).toBe('dark')
+    // An explicitly loaded palette never yields, by contrast.
+    theme.setTheme('nord')
+    host.publish({ value: { preference: 'light' }, revision: 3 })
+    expect(theme.getTheme().preference).toBe('nord')
+  })
+
+  it('restoreBootDefault validates ids like setTheme and never writes through the scope', () => {
+    const { theme, host } = make()
+    expect(() => theme.restoreBootDefault('nope')).toThrow('not registered')
+    theme.restoreBootDefault('dark')
+    expect(theme.getTheme().preference).toBe('dark')
+    expect(host.set).not.toHaveBeenCalled()
+  })
+
   it('throws on unknown setTheme ids, duplicate registration, and the system id', () => {
     const { theme } = make()
     expect(() => { theme.setTheme('sepia') }).toThrow('not registered')

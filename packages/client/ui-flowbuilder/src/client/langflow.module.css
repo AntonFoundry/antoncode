@@ -1,0 +1,96 @@
+/* LangFlow embed chrome. Semantic aliases only — no literal colors. */
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  background: var(--dsw-bg, var(--dsw-surface, inherit));
+  color: inherit;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--dsw-space-2, 8px);
+  padding: var(--dsw-space-2, 8px);
+  border-bottom: 1px solid var(--dsw-border, transparent);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--dsw-border, transparent);
+  font-size: var(--dsw-font-size-xs, 11px);
+  color: var(--dsw-text-muted, inherit);
+}
+
+.pillRunning {
+  color: var(--dsw-success, inherit);
+  border-color: var(--dsw-success, var(--dsw-border, transparent));
+}
+
+.pillError {
+  color: var(--dsw-danger, inherit);
+  border-color: var(--dsw-danger, var(--dsw-border, transparent));
+}
+
+.spacer {
+  margin-inline-start: auto;
+}
+
+.button {
+  padding: 2px 10px;
+  border: 1px solid var(--dsw-border, transparent);
+  border-radius: var(--dsw-radius-sm, 6px);
+  background: var(--dsw-surface, transparent);
+  color: inherit;
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.openLink {
+  font-size: var(--dsw-font-size-xs, 11px);
+  color: var(--dsw-link, inherit);
+}
+
+.frame {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: 0;
+  background: var(--dsw-surface, inherit);
+}
+
+.placeholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--dsw-space-3, 12px);
+  padding: var(--dsw-space-4, 16px);
+  text-align: center;
+}
+
+.hint {
+  max-width: 480px;
+  color: var(--dsw-text-muted, inherit);
+  font-size: var(--dsw-font-size-sm, 12px);
+}
+
+.errorStrip {
+  padding: var(--dsw-space-2, 8px);
+  background: var(--dsw-danger-bg, transparent);
+  color: var(--dsw-danger, inherit);
+  border-bottom: 1px solid var(--dsw-border, transparent);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

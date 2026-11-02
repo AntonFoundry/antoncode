@@ -10,6 +10,7 @@ import { observeComposition } from './keyboard-composition.ts'
 import { focusWithoutRing } from './focus.ts'
 import { ShortcutKeys } from './ShortcutKeys.tsx'
 import { MenuSurface } from './MenuSurface.tsx'
+import { fixedInsetScale } from './zoom-scale.ts'
 import css from './Menu.module.css'
 
 /** Selectable row (optionally with a nested submenu). */
@@ -154,6 +155,8 @@ const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
  * wrapper there races the host's layout effects). Called on open, each animation
  * frame, and scroll/resize; return null to skip placement for that frame.
  * @param props.minWidthFromAnchor - in portal mode, keep the menu at least as wide as its anchor, bounded by viewport margins.
+ * @param props.header - static node rendered above the scrolling items area
+ * (e.g. a filter input for long lists).
  * @param props.footer - rows pinned below the scrolling items area, separated
  * by a hairline; they stay visible while the items above scroll.
  * @param props.children - component rows rendered after `items` in the same
@@ -170,12 +173,14 @@ const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
  * document.body outside the owner's DOM subtree.
  * @returns anchor wrapper with the conditional list.
  */
-export function Menu({ open, anchor, items = [], children, selectedId, selectedIds, onSelect, onClose, align = 'start', side = 'bottom', portal = false, closeOnPointerLeave = false, dense = false, compact = false, autoFocus = false, selection = 'check', getAnchorRect, minWidthFromAnchor = false, footer, className, listClassName }: {
+export function Menu({ open, anchor, items = [], children, selectedId, selectedIds, onSelect, onClose, align = 'start', side = 'bottom', portal = false, closeOnPointerLeave = false, dense = false, compact = false, autoFocus = false, selection = 'check', getAnchorRect, minWidthFromAnchor = false, header, footer, className, listClassName }: {
   open: boolean
   autoFocus?: boolean
   anchor: ReactNode
   items?: readonly MenuEntry[]
   children?: ReactNode
+  /** Static header node rendered above the viewport (e.g. a filter input for long lists). */
+  header?: ReactNode
   footer?: readonly MenuEntry[]
   selectedId?: string | undefined
   selectedIds?: readonly string[] | undefined
@@ -269,6 +274,14 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
       }
       const lw = listEl?.offsetWidth ?? 0
       const lh = listEl?.offsetHeight ?? 0
+      // The portaled list carries the interface zoom itself (Menu.module.css
+      // .portal), and the engine multiplies a zoomed fixed element's insets
+      // by that factor. Position math below runs in TRUE viewport space
+      // (measured rects are true); the final insets divide by the factor so
+      // the painted list lands on the anchor.
+      const insetScale = fixedInsetScale(listEl)
+      const drawnWidth = lw * insetScale
+      const drawnHeight = lh * insetScale
 
       let x: number
       let y: number
@@ -277,16 +290,18 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
         y = r.top
       } else if (align === 'start') {
         x = r.left
-        y = side === 'bottom' ? r.bottom + GAP : r.top - lh - GAP
+        y = side === 'bottom' ? r.bottom + GAP : r.top - drawnHeight - GAP
       } else {
-        x = r.right - lw
-        y = side === 'bottom' ? r.bottom + GAP : r.top - lh - GAP
+        x = r.right - drawnWidth
+        y = side === 'bottom' ? r.bottom + GAP : r.top - drawnHeight - GAP
       }
 
-      if (lw > 0) x = Math.min(Math.max(x, MARGIN), vw - lw - MARGIN)
-      if (lh > 0) y = Math.min(Math.max(y, overlayTopMargin(MARGIN, r, GAP)), vh - lh - MARGIN)
+      if (lw > 0) x = Math.min(Math.max(x, MARGIN), vw - drawnWidth - MARGIN)
+      if (lh > 0) y = Math.min(Math.max(y, overlayTopMargin(MARGIN, r, GAP)), vh - drawnHeight - MARGIN)
 
-      setFixedPos(current => current?.left === x && current.top === y ? current : { left: x, top: y })
+      const left = x / insetScale
+      const top = y / insetScale
+      setFixedPos(current => current?.left === left && current.top === top ? current : { left, top })
     }
     // First run measures the hidden pre-render (same commit as `open`), so
     // end/top alignment and clamping use real dimensions before anything
@@ -545,6 +560,9 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
       onMouseOver={collapseSubmenuFrom}
       onFocus={collapseSubmenuFrom}
     >
+      {header !== undefined && (
+        <div className={css.header} role="presentation">{header}</div>
+      )}
       <div className={css.viewport} role="presentation">
         {items.map(renderEntry)}
         {children}

@@ -157,6 +157,7 @@ describe('real Loader composition', () => {
       renderedFor.push(peer)
       rows.push({ kind: 'script-preload', src: 'plugins/boot.js' })
     })
+    let bootFromMeta: string | undefined
     for (const path of ['/', '/index.html', '/?view=test']) {
       const got = await request(port, path, authenticated())
       expect(got.status).toBe(200)
@@ -170,7 +171,15 @@ describe('real Loader composition', () => {
       const base = got.body.indexOf('<base href="./">')
       expect(base).toBeLessThan(got.body.indexOf('<link rel="preload" as="script" href="plugins/boot.js">'))
       expect(base).toBeLessThan(got.body.indexOf('<script>window.__T__=1</script>'))
+      // The boot id rides the shell as a meta tag: one per harness start, so a
+      // client can detect a restart and drop its in-memory bundle.
+      const meta = /<meta name="dsh-boot" content="([^"]+)"/.exec(got.body)
+      expect(meta).not.toBeNull()
+      bootFromMeta = meta![1]
     }
+    // The header on every response (here: an asset) matches the shell's meta.
+    const asset = await fetch(`http://127.0.0.1:${String(port)}/app.js`)
+    expect(asset.headers.get('x-dsh-boot')).toBe(bootFromMeta)
     // An authenticated browser renders for the owner's shared browser Peer.
     expect(renderedFor).toEqual([loaded.connection.browserPeer, loaded.connection.browserPeer, loaded.connection.browserPeer])
     offRows()
@@ -294,12 +303,12 @@ describe('real Loader composition', () => {
     expect(rebuilt.headers.get('etag')).not.toBe(etag)
     expect(await rebuilt.text()).toBe('export const rebuilt = true')
 
-    // Only the rendered index carries no cache headers; another HTML file revalidates.
+    // Only the rendered index is never cached; another HTML file revalidates.
     const html = await fetch(`${base}/preview.html`)
     expect([html.status, html.headers.get('cache-control')]).toEqual([200, 'no-cache'])
     expect(html.headers.get('etag')).toMatch(/^W\//)
     expect(await html.text()).toBe('<body>preview</body>')
     const index = await loaded.webServer.readResource(new Request(`${base}/`), reader)
-    expect([index.status, index.headers.get('cache-control'), index.headers.get('etag')]).toEqual([200, null, null])
+    expect([index.status, index.headers.get('cache-control'), index.headers.get('etag')]).toEqual([200, 'no-store', null])
   })
 })

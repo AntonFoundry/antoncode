@@ -1966,6 +1966,19 @@ export interface Config extends ProtocolConfig, ModelListingConfig {
 /** Plugin configuration: the provider routes this instance owns. */
 export interface Config {
   /**
+   * Provider route names owned by a native adapter in the same Harness
+   * composition. The pi-ai directory and adapter leave these routes alone so
+   * two adapters cannot both publish the same selectable provider.
+   */
+  reservedProviders?: string[]
+  /**
+   * Re-fetch cadence for the models.dev live catalog in milliseconds
+   * (default eight hours, `DEFAULT_MODELS_DEV_REFRESH_MS`). The mounted
+   * timer captures the mount-time value, like `catalogRefreshMs` in
+   * llm-models-dev; a settings-layer change takes effect on the next restart.
+   */
+  modelsDevRefreshMs?: number
+  /**
    * pi-ai provider routes, keyed by provider. An empty (or omitted) dict is
    * the dormant settings-driven posture: the adapter mounts with no routes
    * and registers them the moment a settings section supplies profiles.
@@ -1977,6 +1990,19 @@ export interface Config {
 export interface PiAiProviderProfile {
   /** Credential reference (environment-variable name) resolved per request through `ctx.credentials`. */
   apiKeyEnv?: string
+  /**
+   * Ask the provider's own OpenAI-compatible listing at startup instead of
+   * the default models.dev catalog read; both fall back to the installed
+   * pi-ai catalog when their source fails.
+   */
+  liveModelDiscovery?: boolean
+  /**
+   * Union the startup live listing into an explicitly configured `models`
+   * list: configured entries win by id, discovered ids join, and the
+   * installed catalog keeps serving anything neither named. Without it, a
+   * `models` list is strict curation and no live fetch runs for it.
+   */
+  liveModelUnion?: boolean
   /** Name shown by configuration surfaces; defaults to the route key. */
   displayName?: string
   /**
@@ -1987,11 +2013,7 @@ export interface PiAiProviderProfile {
   api?: string
   /** Endpoint for this route's models; defaults to the installed catalog's endpoint. */
   baseURL?: string
-  /**
-   * This route's model catalog. Omission serves the installed catalog for the
-   * route unchanged; an explicit list replaces it, each entry defaulting its
-   * unset fields from the installed model of the same id.
-   */
+  /** This route's model catalog; an explicit list is strict curation. */
   models?: PiAiModelProfile[]
   /**
    * Installed-catalog customizations by model id: each entry reshapes that
@@ -2836,6 +2858,14 @@ export type Config = LocalConfig
 export interface Config {
   /** Consecutive-repeat counts that trigger a reminder (default `[3, 5, 8]`). */
   thresholds?: number[]
+
+  /**
+   * Consecutive failed calls to one tool that trigger the guessing advisory
+   * (default `3`). The run counts failures regardless of argument variation:
+   * distinct arguments mean the model is guessing, identical arguments mean it
+   * is ignoring an error — both are intent it cannot resolve from what it sees.
+   */
+  failureThreshold?: number
   /** Tool-name patterns to track; empty means every tool is tracked. */
   include?: string[]
   /** Tool-name patterns transparent to the chain (neither count nor reset). */
@@ -2848,6 +2878,21 @@ export interface Config {
    * always compares the FULL canonical string).
    */
   argumentsPreviewChars?: number
+  /**
+   * Complete alternation cycles that trigger the ping-pong advisory (default
+   * 2). One cycle is two calls whose canonical keys strictly alternate
+   * (A, B, A, B, …) — the edit ping-pong a consecutive-repeat counter can
+   * never see, because every call differs from its predecessor. Default 2
+   * means the advisory fires on the fourth alternating call.
+   */
+  cycleThreshold?: number
+  /**
+   * When the ping-pong advisory is ignored and the alternation continues,
+   * BLOCK the next cycle call (default `true`) with feedback ordering the
+   * model to stop retrying and change approach — the automatic escape when
+   * advisory-only nudges are not enough.
+   */
+  escalateToBlock?: boolean
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-repeat-tool-reminder -->
@@ -4386,7 +4431,7 @@ export interface Config {
    * agents that run work concurrently — subagents, background commands, workflow fan-out — and the
    * description then instructs the model to mark every actively worked task. False restores the
    * single-active discipline: the description asks for exactly one, and a call marking more is
-   * rejected.
+   * rejected. The count spans the whole tree.
    */
   allowParallelInProgress: boolean
 }
@@ -4806,6 +4851,24 @@ export interface Config {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-workspace-changes -->
+
+<a id="deepseek-aidsh-worktree"></a>
+
+## `@deepseek-ai/dsh-worktree`
+
+Requires: `storageDomain` · `workspaceRegistry`
+
+```ts config-catalog
+/** Config schema inputs: deployment-varying naming choices, changeable from cordis.yml. */
+export interface WorktreeRegistryConfig {
+  /** Branch namespace for created worktree branches; `<prefix><slug>`. */
+  branchPrefix: string
+  /** Sibling-directory suffix for the worktree parent: `<repo><suffix>/<slug>`. */
+  parentSuffix: string
+}
+```
+
+Source: [`packages/workspace/worktree/src/index.ts:49`](../packages/workspace/worktree/src/index.ts)
 
 ## Loadable plugins with no config
 

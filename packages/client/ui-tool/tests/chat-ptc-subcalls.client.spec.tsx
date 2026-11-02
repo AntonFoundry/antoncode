@@ -17,7 +17,7 @@ import { ConversationInteractionRegistry } from '@deepseek-ai/dsh-client-ui-conv
 import { en as conversationEn, NS as CONVERSATION_NS, zh as conversationZh } from '@deepseek-ai/dsh-client-ui-conversation/src/client/locales.ts'
 import { apply as applyChat, inject as injectChat } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { PartialArguments } from '@deepseek-ai/dsh-util-values'
-import { apply as applyTool, inject as injectTool } from '../src/client/apply.ts'
+import { apply as applyTool, inject as injectTool } from '../src/client/apply.tsx'
 import { toolChatSnapshot } from './tool-fixtures.client.ts'
 
 const SID = 's1' as SessionId
@@ -130,7 +130,7 @@ async function bench(snapshot: ChatSnapshot) {
     snapshot: { running: snapshot.legacy.runningCalls.length > 0 },
   })
   await runtime.sessions.retainFor(runtime.ctx, SID, { source: 'mainView' }).ready
-  const layout = { openDetails: vi.fn(), closeDetails: vi.fn() }
+  const layout = { openDetails: vi.fn(), closeDetails: vi.fn(), openFile: vi.fn(() => false) }
   const openWorkspacePath = vi.fn(async () => ({ ok: true, value: { opened: true } }))
   ctx.provide('layout', layout as never)
   const sidebarRight = { openResource: vi.fn<(address: string) => void>() }

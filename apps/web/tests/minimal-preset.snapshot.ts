@@ -100,9 +100,16 @@ describe('minimal agent preset', () => {
     expect(scaffold.ctx.agentPresets.serviceFor(agentHandle.agent, 'compaction')).toBeDefined()
     expect(scaffold.ctx.commands.find(agentHandle.agent, 'compact')).toBeDefined()
 
+    const signal = new AbortController().signal
+    // The shipped base bundle gates direct tool calls behind a plan in the
+    // session log; the minimal preset carries no todo tool, so the fixture
+    // writes the plan event the gate reads.
+    agentHandle.agent.session.append('todo/write', {
+      todos: [{ content: 'Run the persistent-state round trip', status: 'in_progress' }],
+    })
+
     const stateDir = join(scaffold.workspaceCwd, 'persistent-state')
     await mkdir(stateDir)
-    const signal = new AbortController().signal
     await executeToolFixture(scaffold.ctx, {
       signal,
       callId: ToolCallId('minimal-bash-state-setup'),
@@ -187,7 +194,7 @@ describe('minimal agent preset', () => {
     await call.getByText('MINIMAL_BASH_CARD_OK\n[Command finished with exit code 0]', { exact: true }).waitFor()
     await call.getByText(/"command": "printf 'MINIMAL_BASH_CARD_OK/).waitFor()
 
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
@@ -307,7 +314,7 @@ describe('minimal manual compaction', () => {
     await card.click()
     await expect.poll(() => card.getAttribute('aria-expanded')).toBe('true')
     await compareOrRefreshGolden(join(snapshotDir, 'ui.expected.md'),
-      await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd), MODE)
+      await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd), MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   })
@@ -409,7 +416,7 @@ describe('minimal image reading', () => {
     await preview.waitFor()
     await expect.poll(() => preview.evaluate(img => img instanceof HTMLImageElement && img.naturalWidth)).toBe(1)
     await compareOrRefreshGolden(join(snapshotDir, 'ui.expected.md'),
-      await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd), MODE)
+      await captureStableAria(page, '[data-pane="content"]', scaffold.workspaceCwd), MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   })

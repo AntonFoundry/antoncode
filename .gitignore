@@ -47,3 +47,54 @@ worktrees/
 .agents/worktrees/
 .typert-*/
 native/system/test/bin/
+
+dist/
+
+# whisper.cpp cmake build tree (reproducible from Vox/voxkit/ext/whisper.cpp)
+apps/anton-bridge/macos/vendor/build/
+!apps/anton-bridge/macos/vendor/lib/
+
+# Local agent-session residue and accidental in-source build output — never shipped.
+/.commandcode/
+/.tmp/
+/command-code-session-*.html
+/dsh-session/
+/gemini_not_replying.md
+/apps/web/dist */
+apps/anton-bridge/macos/vendor/build */
+packages/subprocess/subprocess/src/*.js
+packages/subprocess/subprocess/src/*.js.map
+packages/subprocess/subprocess/src/*.d.ts
+packages/subprocess/subprocess/src/*.d.ts.map
+vendor/timer/src/*.js
+vendor/timer/src/*.js.map
+vendor/timer/src/*.d.ts
+vendor/timer/src/*.d.ts.map
+
+# Analysis-tool output and exported agent-session residue — never shipped.
+/graphify-out/
+/command-code-session-*.md
+
+# Accidental in-source TS emit over client sources/tests — never shipped.
+packages/client/*/tests/*.client.spec.js
+packages/client/*/tests/*.client.spec.js.map
+packages/client/*/tests/*.client.spec.d.ts
+packages/client/*/tests/*.client.spec.d.ts.map
+packages/client/*/tests/*.client.js
+packages/client/*/tests/*.client.js.map
+packages/client/*/tests/*.client.d.ts
+packages/client/*/tests/*.client.d.ts.map
+packages/client/runtime/tests/*.client.js
+packages/client/runtime/tests/*.client.js.map
+packages/client/runtime/tests/*.client.d.ts
+packages/client/runtime/tests/*.client.d.ts.map
+packages/test-support/client-runtime/src/*.js
+packages/test-support/client-runtime/src/*.js.map
+packages/test-support/client-runtime/src/*.d.ts
+packages/test-support/client-runtime/src/*.d.ts.map
+
+# Local session exports and scratch transcripts never belong in the repo.
+/session-*.md
+/command-code-session-*.md
+/command-code-session-*.html
+/kimi*_session*.md

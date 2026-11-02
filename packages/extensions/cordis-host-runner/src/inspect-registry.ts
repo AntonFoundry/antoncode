@@ -29,6 +29,14 @@ export interface HostCordisInspectProviderRegistration {
   query(method: string, input: JsonValue | undefined, context: HostCordisInspectQueryContext): Promise<JsonValue>
 }
 
+/** One live provider id holding a handler per registration that still claims it. */
+interface StoredHostProvider {
+  /** Registration stack, newest last; the newest handler serves queries. */
+  handlers: HostCordisInspectProviderRegistration[]
+  /** Live claim count; the entry is removed when this reaches zero. */
+  claims: number
+}
+
 interface PendingClientQuery {
   request: CordisInspectQueryRequest
   method: CordisInspectMethodManifest
@@ -45,7 +53,7 @@ declare module '@deepseek-ai/cordis' {
 
 /** Registry and cross-page router behind the two model-facing inspect tools. */
 export class CordisInspectRegistryService extends Service {
-  private readonly providers = new Map<string, HostCordisInspectProviderRegistration>()
+  private readonly providers = new Map<string, StoredHostProvider>()
   private readonly pending = new Map<CordisInspectRequestId, PendingClientQuery>()
   private clientManifest: readonly CordisInspectProviderManifest[] | undefined
   private nextRequest = 1
@@ -65,18 +73,37 @@ export class CordisInspectRegistryService extends Service {
   }
 
   /**
-   * Register one Host provider.
+   * Register one Host provider. Preset rows re-register the same static
+   * providers once per mounted session, and overlapping generations re-register
+   * while the previous handler is still live, so a validated manifest equal to
+   * the newest live one stacks: the newest handler serves queries and its
+   * disposer restores the prior one. A different manifest under a live id is a
+   * loud conflict.
    * @param registration - manifest and local query handler.
-   * @returns idempotent disposer.
+   * @returns idempotent disposer releasing this registration's claim.
    */
   register(registration: HostCordisInspectProviderRegistration): () => void {
     const manifest = validateManifest(registration.manifest)
-    if (this.providers.has(manifest.id)) throw new Error(`Host Cordis inspect provider "${manifest.id}" is already registered`)
-    const stored = { ...registration, manifest }
-    this.providers.set(manifest.id, stored)
-    return () => {
-      if (this.providers.get(manifest.id) === stored) this.providers.delete(manifest.id)
+    const existing = this.providers.get(manifest.id)
+    const stored: HostCordisInspectProviderRegistration = { ...registration, manifest }
+    if (existing === undefined) {
+      this.providers.set(manifest.id, { handlers: [stored], claims: 1 })
+    } else {
+      if (!manifestEquals(this.newestHandler(existing).manifest, manifest)) {
+        throw new Error(
+          `Host Cordis inspect provider "${manifest.id}" is already registered with a conflicting manifest`
+          + ' — a live session or package holds a different version of this provider',
+        )
+      }
+      existing.claims += 1
+      existing.handlers.push(stored)
     }
+    return releaseClaim(this.providers, manifest.id, stored)
+  }
+
+  /** The newest live handler of one stored entry. */
+  private newestHandler(stored: StoredHostProvider): HostCordisInspectProviderRegistration {
+    return stored.handlers[stored.handlers.length - 1] as HostCordisInspectProviderRegistration
   }
 
   /**
@@ -100,9 +127,30 @@ export class CordisInspectRegistryService extends Service {
    */
   list(): CordisInspectProviderView[] {
     return [
-      ...[...this.providers.values()].map(provider => view('host', provider.manifest)),
+      ...[...this.providers.values()].map(provider => view('host', this.newestHandler(provider).manifest)),
       ...(this.clientManifest ?? []).map(provider => view('client', provider)),
     ]
+  }
+
+  /** Resolve one requested Host provider id, tolerating case misses before failing with the directory. */
+  private resolveHostProvider(providerId: string): HostCordisInspectProviderRegistration {
+    const exact = this.providers.get(providerId)
+    if (exact !== undefined) return this.newestHandler(exact)
+    for (const [id, stored] of this.providers) {
+      if (id.toLowerCase() === providerId.toLowerCase()) return this.newestHandler(stored)
+    }
+    throw unresolvedProviderError('Host', providerId, [...this.providers.keys()], 'Client', [...(this.clientManifest ?? []).map(manifest => manifest.id)])
+  }
+
+  /** Resolve one requested Client provider manifest, tolerating case misses before failing with the directory. */
+  private resolveClientProvider(providerId: string): CordisInspectProviderManifest {
+    const manifest = this.clientManifest ?? []
+    const exact = manifest.find(candidate => candidate.id === providerId)
+    if (exact !== undefined) return exact
+    const ids = manifest.map(candidate => candidate.id)
+    const caseHit = ids.find(id => id.toLowerCase() === providerId.toLowerCase())
+    if (caseHit !== undefined) return manifest.find(candidate => candidate.id === caseHit) as CordisInspectProviderManifest
+    throw unresolvedProviderError('Client', providerId, ids, 'Host', [...this.providers.keys()])
   }
 
   /**
@@ -125,12 +173,12 @@ export class CordisInspectRegistryService extends Service {
     signal: AbortSignal,
   ): Promise<JsonValue> {
     if (platform === 'host') {
-      const registration = this.providers.get(providerId)
-      if (registration === undefined) throw new Error(`Host Cordis inspect provider "${providerId}" is not registered`)
-      const method = findMethod(registration.manifest, methodName)
+      const registration = this.resolveHostProvider(providerId)
+      const resolvedMethod = resolveMethodName(registration.manifest, methodName)
+      const method = findMethod(registration.manifest, resolvedMethod)
       validateInput('Host', providerId, method, input)
       signal.throwIfAborted()
-      const data = await registration.query(methodName, input, { agent, signal })
+      const data = await registration.query(resolvedMethod, input, { agent, signal })
       signal.throwIfAborted()
       return validateOutput('Host', providerId, method, data)
     }
@@ -176,21 +224,21 @@ export class CordisInspectRegistryService extends Service {
     agent: Agent,
     signal: AbortSignal,
   ): Promise<JsonValue> {
-    const provider = this.clientManifest?.find(candidate => candidate.id === providerId)
-    if (provider === undefined) throw new Error(`Client Cordis inspect provider "${providerId}" is not registered`)
-    const method = findMethod(provider, methodName)
+    const provider = this.resolveClientProvider(providerId)
+    const resolvedMethod = resolveMethodName(provider, methodName)
+    const method = findMethod(provider, resolvedMethod)
     validateInput('Client', providerId, method, input)
     signal.throwIfAborted()
     const gateway = this.ctx.get('typertGateway')
     if (gateway !== undefined && !gateway.hasLiveClient()) {
-      throw new Error(`Client inspect query ${providerId}.${methodName} has no connected Harness page. Open or reconnect the Harness page, then retry.`)
+      throw new Error(`Client inspect query ${providerId}.${resolvedMethod} has no connected Harness page. Open or reconnect the Harness page, then retry.`)
     }
     const requestId = `inspect-${this.nextRequest++}` as CordisInspectRequestId
     const request: CordisInspectQueryRequest = {
       requestId,
       agentId: agent.id,
-      provider: providerId,
-      method: methodName,
+      provider: provider.id,
+      method: resolvedMethod,
       ...input === undefined ? {} : { input },
     }
     const result = new Promise<CordisInspectQueryResolution>((resolve) => {
@@ -212,7 +260,7 @@ export class CordisInspectRegistryService extends Service {
       this.pending.get(requestId)?.settle({
         ok: false,
         reason: 'cancelled',
-        message: `Client inspect query ${providerId}.${methodName} was cancelled`,
+        message: `Client inspect query ${providerId}.${resolvedMethod} was cancelled`,
       })
     }
     const timer = setTimeout(() => {
@@ -224,7 +272,7 @@ export class CordisInspectRegistryService extends Service {
       pending.settle({
         ok: false,
         reason: 'provider-error',
-        message: `Client inspect query ${providerId}.${methodName} timed out after ${this.clientQueryTimeoutMs}ms. ${detail}`,
+        message: `Client inspect query ${providerId}.${resolvedMethod} timed out after ${this.clientQueryTimeoutMs}ms. ${detail}`,
       })
     }, this.clientQueryTimeoutMs)
     signal.addEventListener('abort', onAbort, { once: true })
@@ -232,7 +280,7 @@ export class CordisInspectRegistryService extends Service {
       if (signal.aborted) onAbort()
       else this.ctx.emit('cordis/inspect-query', request)
       const resolution = await result
-      if (!resolution.ok) throw new Error(`${providerId}.${methodName}: ${resolution.message}`)
+      if (!resolution.ok) throw new Error(`${providerId}.${resolvedMethod}: ${resolution.message}`)
       return resolution.data
     } finally {
       clearTimeout(timer)
@@ -244,6 +292,67 @@ export class CordisInspectRegistryService extends Service {
 
 function view(platform: CordisInspectPlatform, manifest: CordisInspectProviderManifest): CordisInspectProviderView {
   return { platform, ...manifest, methods: [...manifest.methods] }
+}
+
+/**
+ * Build the idempotent disposer for one registration claim.
+ * @param providers - the live provider map.
+ * @param id - provider id the claim was taken under.
+ * @param stored - the claim's own handler entry in the stack.
+ * @returns a disposer that removes the handler and decrements the claim,
+ * restoring the prior handler while claims remain and removing the entry at
+ * zero; it is a no-op once the entry was replaced.
+ */
+function releaseClaim(
+  providers: Map<string, StoredHostProvider>,
+  id: string,
+  stored: HostCordisInspectProviderRegistration,
+): () => void {
+  let released = false
+  return () => {
+    if (released) return
+    const entry = providers.get(id)
+    if (entry === undefined || !entry.handlers.includes(stored)) return
+    released = true
+    entry.handlers = entry.handlers.filter(handler => handler !== stored)
+    entry.claims -= 1
+    if (entry.claims === 0) providers.delete(id)
+  }
+}
+
+/** Whether two validated manifests declare the identical directory. */
+function manifestEquals(a: CordisInspectProviderManifest, b: CordisInspectProviderManifest): boolean {
+  return a.id === b.id && a.description === b.description
+    && a.methods.length === b.methods.length
+    && a.methods.every((method, index) => {
+      const other = b.methods[index] as CordisInspectMethodManifest
+      return method.name === other.name && method.description === other.description
+        && jsonEquals(method.inputSchema, other.inputSchema)
+        && jsonEquals(method.outputSchema, other.outputSchema)
+    })
+}
+
+/** Deep equality over lossless JSON values, key order insensitive. */
+function jsonEquals(a: JsonValue, b: JsonValue): boolean {
+  if (a === b) return true
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b)
+      && a.length === b.length
+      && a.every((item, index) => jsonEquals(item, b[index] as JsonValue))
+  }
+  if (typeof a === 'object' && a !== null && typeof b === 'object' && b !== null) {
+    const aRecord = a as Record<string, JsonValue>
+    const bRecord = b as Record<string, JsonValue>
+    const aKeys = Object.keys(aRecord).sort()
+    const bKeys = Object.keys(bRecord).sort()
+    return aKeys.length === bKeys.length && aKeys.every((key, index) => {
+      const otherKey = bKeys[index] as string
+      const aValue = aRecord[key]
+      const bValue = bRecord[otherKey]
+      return key === otherKey && aValue !== undefined && bValue !== undefined && jsonEquals(aValue, bValue)
+    })
+  }
+  return false
 }
 
 function validateManifest(manifest: CordisInspectProviderManifest): CordisInspectProviderManifest {
@@ -264,8 +373,58 @@ function validateManifest(manifest: CordisInspectProviderManifest): CordisInspec
 
 function findMethod(manifest: CordisInspectProviderManifest, name: string): CordisInspectMethodManifest {
   const method = manifest.methods.find(candidate => candidate.name === name)
-  if (method === undefined) throw new Error(`Cordis inspect provider "${manifest.id}" has no method "${name}"`)
-  return method
+  if (method !== undefined) return method
+  const declared = manifest.methods.map(candidate => candidate.name)
+  throw new Error(
+    `Cordis inspect provider "${manifest.id}" has no method "${name}"; declared methods: `
+    + `${declared.join(', ')}. Call cordis_inspect_list for each method's schemas.`,
+  )
+}
+
+/**
+ * Strip a `Provider.method` qualified name to its bare method name. Models
+ * frequently emit the qualified form; the provider is already selected
+ * separately, so the prefix carries no selection information.
+ * @param manifest - provider manifest whose method names are candidates.
+ * @param name - requested method name, bare or `Provider.method`.
+ * @returns the bare method name to look up.
+ */
+function resolveMethodName(manifest: CordisInspectProviderManifest, name: string): string {
+  const dot = name.lastIndexOf('.')
+  if (dot < 0) return name
+  const bare = name.slice(dot + 1)
+  return manifest.methods.some(candidate => candidate.name === bare) ? bare : name
+}
+
+/**
+ * Build the model-facing failure for a provider id that matches no registration,
+ * carrying the directory the miss was reaching for plus any cross-platform hit.
+ * @param platform - platform the query named.
+ * @param providerId - requested provider id.
+ * @param known - provider ids registered on `platform`.
+ * @param otherPlatform - the opposite platform.
+ * @param otherKnown - provider ids registered on `otherPlatform`.
+ * @returns an error whose message names every resolvable referent.
+ */
+function unresolvedProviderError(
+  platform: 'Host' | 'Client',
+  providerId: string,
+  known: readonly string[],
+  otherPlatform: 'Host' | 'Client',
+  otherKnown: readonly string[],
+): Error {
+  const parts = [
+    `${platform} Cordis inspect provider "${providerId}" is not registered`,
+    known.length > 0
+      ? `registered ${platform} providers: ${known.join(', ')}`
+      : `no ${platform} providers are registered`,
+  ]
+  const lower = providerId.toLowerCase()
+  const crossHit = otherKnown.find(id => id.toLowerCase() === lower)
+  if (crossHit !== undefined) parts.push(`provider "${crossHit}" exists on the ${otherPlatform} platform; resend the query with platform set accordingly`)
+  else if (otherKnown.length > 0) parts.push(`${otherPlatform} providers: ${otherKnown.join(', ')}`)
+  parts.push('call cordis_inspect_list for the full directory')
+  return new Error(`${parts.join('; ')}`)
 }
 
 function validateInput(

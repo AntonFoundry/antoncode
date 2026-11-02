@@ -22,44 +22,44 @@ const SEED_FIXTURE = fileURLToPath(new URL('../../../snapshots/web/seeded-histor
 const PROMPT = 'Reply with the single word LIGHTHOUSE and stop.'
 const MODE = webSnapshotMode()
 
-/** Last AppFrame grid track in CSS pixels. */
-async function detailsTrack(page: Page): Promise<number> {
-  return await appFrame(page).evaluate((element) => {
-    const tracks = getComputedStyle(element).gridTemplateColumns.split(' ')
-    return Number.parseFloat(tracks.at(-1) ?? 'NaN')
-  })
-}
-
-/** First AppFrame grid track in CSS pixels. */
-async function sidebarTrack(page: Page): Promise<number> {
-  return await appFrame(page).evaluate((element) => {
-    const tracks = getComputedStyle(element).gridTemplateColumns.split(' ')
-    return Number.parseFloat(tracks[0] ?? 'NaN')
-  })
-}
-
-/** AppFrame is the only product element with an inline grid track template. */
+/** The shell root: present once the assembled frame has mounted. */
 function appFrame(page: Page) {
-  return page.locator('[style*="grid-template-columns"]').first()
+  return page.locator('[data-app-frame]')
 }
 
-/** Render the two column-resize handles without platform-dependent coordinates. */
+/** Rendered width (CSS px) of the pinned pane kind; 0 when it is not open. */
+function paneWidth(page: Page, kind: 'sidebar' | 'context'): Promise<number> {
+  const pane = page.locator(`[data-pane="${kind}"]`)
+  // count() resolves immediately: a closed pane must not pay evaluate's
+  // element-wait timeout on every poll.
+  return pane.count().then(found => found === 0 ? 0 : pane.first().evaluate(element => element.getBoundingClientRect().width))
+}
+
+/** The pinned context column takes no space when the details panel is closed. */
+function detailsTrack(page: Page): Promise<number> {
+  return paneWidth(page, 'context')
+}
+
+/** The pinned workspace sidebar column's rendered width. */
+function sidebarTrack(page: Page): Promise<number> {
+  return paneWidth(page, 'sidebar')
+}
+
+/** Root-split sash contract: one row sash per pinned boundary, resize cursor. */
 async function handleSnapshot(page: Page): Promise<string> {
-  const handles = await page.locator('[class*="handle"]').evaluateAll(elements =>
+  const sashes = await page.locator('[class*="sash"]').evaluateAll(elements =>
     elements.map(element => ({
-      side: element.getAttribute('data-side'),
       cursor: getComputedStyle(element).cursor,
-      pillGenerated: getComputedStyle(element, '::after').content !== 'none',
+      draggingFlag: element.hasAttribute('data-dragging'),
     })))
   return [
-    '# AppFrame drag handles',
+    '# Root split sashes',
     '',
-    ...handles.flatMap(handle => [
-      `## ${handle.side}`,
+    ...sashes.flatMap((sash, index) => [
+      `## sash ${String(index)}`,
       '',
-      '- hit strip present: true',
-      `- cursor: ${handle.cursor}`,
-      `- pill generated: ${String(handle.pillGenerated)}`,
+      `- cursor: ${sash.cursor}`,
+      `- data-dragging flag present: ${String(sash.draggingFlag)}`,
       '',
     ]),
   ].join('\n').trimEnd()
@@ -254,15 +254,22 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
     await compareOrRefreshGolden(HANDLES_EXPECTED, await handleSnapshot(page), MODE)
 
     const sidebarBefore = await sidebarTrack(page)
-    const sidebarHandle = page.locator('[data-side="sidebar"]')
-    const sidebarBox = await sidebarHandle.boundingBox()
-    expect(sidebarBox).not.toBeNull()
-    const dragStartX = sidebarBox!.x + sidebarBox!.width / 2
-    await page.mouse.move(dragStartX, sidebarBox!.y + 200)
+    expect(sidebarBefore).toBeGreaterThan(0)
+    // The first row sash is the pinned-sidebar boundary: dragging it right
+    // pins a wider sidebar preference (re-clamped to a fifth of the frame by
+    // the product, so assert growth and persistence rather than the raw +70).
+    const sidebarSash = page.locator('[class*="sash"]').first()
+    const sashBox = await sidebarSash.boundingBox()
+    expect(sashBox).not.toBeNull()
+    const dragStartX = sashBox!.x + sashBox!.width / 2
+    await page.mouse.move(dragStartX, sashBox!.y + 200)
     await page.mouse.down()
-    await page.mouse.move(dragStartX + 70, sidebarBox!.y + 200, { steps: 6 })
+    await page.mouse.move(dragStartX + 70, sashBox!.y + 200, { steps: 6 })
     await page.mouse.up()
-    await expect.poll(() => sidebarTrack(page), { timeout: 5_000 }).toBe(sidebarBefore + 70)
+    const sidebarDragged = await sidebarTrack(page)
+    expect(sidebarDragged).toBeGreaterThan(sidebarBefore)
+    const shareCap = Math.round((page.viewportSize()?.width ?? 1280) * 0.2)
+    expect(Math.abs(sidebarDragged - Math.min(sidebarBefore + 70, shareCap))).toBeLessThanOrEqual(2)
 
     const warningStart = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })
@@ -271,8 +278,15 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
     await page.getByText('LIGHTHOUSE', { exact: true }).waitFor({ timeout: 15_000 })
     await expect.poll(() => detailsTrack(page), { timeout: 5_000 }).toBe(0)
     expect(await page.getByText('Details', { exact: true }).isVisible()).toBe(false)
+    // Panel geometry does not survive reloads by design (layout-store spec:
+    // 'does not persist panel geometry'); the sidebar reopens at the
+    // untouched share default, NOT the dragged preference.
+    await expect.poll(() => sidebarTrack(page), { timeout: 5_000 }).toBe(sidebarBefore)
 
-    await page.getByRole('button', { name: /^(?:New session|新.*会话)$/ }).last().click()
+    // New session now rides the workspace row's + affordance ("New session in
+    // {name}"); the row actions surface on hover only.
+    await page.locator('[role="treeitem"]').filter({ hasText: 'workspace' }).first().hover()
+    await page.getByRole('button', { name: /^New session in / }).last().click()
     await page.getByText('Into the Unknown', { exact: false }).waitFor({ timeout: 15_000 })
     await expect.poll(() => detailsTrack(page), { timeout: 5_000 }).toBe(0)
     expect(await page.getByText('Details', { exact: true }).isVisible()).toBe(false)

@@ -386,6 +386,12 @@ export interface LaunchOptions {
   /** Synthetic model capacity for UI scenarios whose seeded history must remain uncompacted. */
   replayContextWindow?: number
   /**
+   * The scenario's recorded/generated scripts call gated tools directly
+   * (`bash` with no preceding todo_write). Disables the shipped todo-plan gate
+   * for this scaffold; the gate itself has its own coverage elsewhere.
+   */
+  directToolCalls?: boolean
+  /**
    * Keep the shipped DeepSeek adapter mounted while masking the process
    * environment's DEEPSEEK_API_KEY for this scaffold lifetime. This is the
    * keyless first-run configuration lane; the default disables the adapter.
@@ -689,6 +695,13 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       { id: 'agent-preset-registry', config: { default: options.agentPresets.default } },
       { insert: (options.agentPresets.definitions ?? []).map(config => ({ id: `preset-${config.id}`, name: '@deepseek-ai/dsh-agent-preset', config })) },
     ],
+    // The shipped base bundle enables the todo-plan gate (plan-first
+    // deployment policy for live agents). `directToolCalls` scripts call gated
+    // tools without a preceding todo_write — the gate would deny exactly the
+    // turns under test; the gate's own spec covers it.
+    ...options.directToolCalls === true
+      ? [{ id: 'gate-policy', config: { todoPlanGate: { enabled: false, tools: [] } } }]
+      : [],
     ...options.deepSeekSearch === undefined
       ? []
       : [{
@@ -705,6 +718,13 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         : [],
     ],
     { id: 'llm-deepseek', disabled: mode !== 'record' && !maskDeepSeekCredential },
+    // The first-run lane needs a deployment with NO usable provider, but the
+    // base patch ships the keyless `opencode-free` route live (the gateway's
+    // literal `public` key), which ends onboarding as provider-ready. Disable
+    // the zero-config adapter family there too.
+    ...(options.deepSeekMissingCredential === true
+      ? [{ id: 'llm-models-dev', disabled: true }, { id: 'llm-opencode', disabled: true }]
+      : []),
   ]
 
   // Live fields use a shared deployment layer; process-specific ports and roots stay in CLI overlays.
@@ -1586,6 +1606,12 @@ function normalizeAria(snapshot: string, workspaceCwd: string, age: boolean): st
       duration => duration.startsWith('~') ? duration : '{{duration}}',
     )
     .replace(/\b\d[\d,]*(?:\.\d+)? ms\b/g, '{{duration}}')
+    // Sidebar session rows trail a compact relative-time bucket (`now`,
+    // `1min`, `3h`); the bucket moves with wall-clock test pacing, so it
+    // collapses like every other duration. `now` needs no rule — it is
+    // already a stable literal, and a bare `\d+min`/`\d+h` appears nowhere
+    // else in captured surfaces.
+    .replace(/\b\d+min\b|\b\d+h\b/g, '{{duration}}')
     .replace(
       /约\d+(?:年(?:\d+个月)?|个月(?:\d+天)?)|\d+(?:天(?:\d+小时(?:\d+分\d+秒)?)?|小时\d+分\d+秒|分\d+秒|(?:\.\d+)?秒)/g,
       duration => duration.startsWith('约') ? duration : '{{duration}}',

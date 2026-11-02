@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /**
  * Settings shell registration inside the assembled web client: the shell
- * occupies the `sidebar.settings` hole ui-sidebar declares, its ledger
+ * occupies the `sidebar.settings` hole ui-sidebar declares and the
+ * `settings.view` window body ui-layout declares, its ledger
  * projections read the product's real sections, its connection control is the
  * roster's Connection, and it survives a Loader rebuild of the declarer.
  */
@@ -9,8 +10,8 @@ import { describe, expect, onTestFinished, vi } from 'vitest'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { createClientTest, type TestClient, webApp } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
 import { inject } from '../src/client/index.ts'
-import type { SettingsRootInjected } from '../src/client/shell-contract.ts'
-import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
+import type { SettingsRootInjected, SettingsWindowInjected } from '../src/client/shell-contract.ts'
+import { SettingsRoot, SettingsWindow } from '../src/client/SettingsRoot.tsx'
 import type { DesktopUpdatePresentation } from '../src/types.ts'
 
 const SELF = '@deepseek-ai/dsh-client-ui-settings-general'
@@ -25,17 +26,25 @@ function injectedOf(c: TestClient): SettingsRootInjected {
   return (entry.inject as () => SettingsRootInjected)()
 }
 
-/** The shell's child declarations (chrome, actions, sections, and onboarding overlays). */
+function windowOf(c: TestClient): SettingsWindowInjected {
+  const entry = c.ctx.slots.entries('settings.view')[0]!
+  return (entry.inject as () => SettingsWindowInjected)()
+}
+
+/** The trigger root's child declarations (launcher, trigger, and onboarding overlays). */
 const CHILD_SPECS = {
   'settings.launcher': { kind: 'single', scope: 'root' },
   'settings.trigger': { kind: 'single', scope: 'root' },
-  'settings.header': { kind: 'single', scope: 'root' },
-  'settings.action': { kind: 'list', scope: 'root' },
-  'settings.close': { kind: 'single', scope: 'root' },
-  'settings.section': { kind: 'list', scope: 'root' },
   'settings.onboarding': { kind: 'list', scope: 'root' },
 } as const
 const CHILD_NAMES = Object.keys(CHILD_SPECS) as Array<keyof typeof CHILD_SPECS>
+/** The window body's child declarations (title, actions, sections). */
+const WINDOW_CHILD_SPECS = {
+  'settings.header': { kind: 'single', scope: 'root' },
+  'settings.action': { kind: 'list', scope: 'root' },
+  'settings.section': { kind: 'list', scope: 'root' },
+} as const
+const WINDOW_CHILD_NAMES = Object.keys(WINDOW_CHILD_SPECS) as Array<keyof typeof WINDOW_CHILD_SPECS>
 
 /**
  * Section ids the web-app roster registers, in nav order: this package, then
@@ -78,14 +87,44 @@ describe('ui-settings-general shell', () => {
   }, COLD_BOOT_TIMEOUT_MS)
 
   it('declares its services', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'remote.settings', 'configForms', 'shortcuts', 'modules', 'remoteAccess'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'remote.settings', 'configForms', 'shortcuts', 'modules', 'remoteAccess', 'layout'])
   })
 
-  it('occupies sidebar.settings, declared by ui-sidebar, and declares every child slot', async ({ start }) => {
+  it('occupies sidebar.settings and settings.view, declared by ui-sidebar and ui-layout, and declares every child slot', async ({ start }) => {
     const c = await start()
     expect(c.ctx.slots.entries('sidebar.settings').map(entry => entry.component)).toEqual([SettingsRoot])
+    expect(c.ctx.slots.entries('settings.view').map(entry => entry.component)).toEqual([SettingsWindow])
     for (const name of CHILD_NAMES) expect(c.ctx.slots.spec(name)).toEqual(CHILD_SPECS[name])
+    for (const name of WINDOW_CHILD_NAMES) expect(c.ctx.slots.spec(name)).toEqual(WINDOW_CHILD_SPECS[name])
   }, COLD_BOOT_TIMEOUT_MS)
+
+  it('opens the window through the layout face from the trigger and section paths', async ({ start }) => {
+    const c = await start()
+    const openSettings = vi.spyOn(c.ctx.layout, 'openSettings').mockImplementation(() => {})
+    const closeSettings = vi.spyOn(c.ctx.layout, 'closeSettings').mockImplementation(() => {})
+    const root = injectedOf(c)
+    root.openWindow()
+    expect(openSettings).toHaveBeenCalledOnce()
+    root.openSection('models')
+    expect(openSettings).toHaveBeenCalledTimes(2)
+    // openSection selects the section the window opens on.
+    expect(windowOf(c).hooks.activeSection.getSnapshot()).toEqual({ activeId: 'models' })
+    // The window's close routes to the same face.
+    windowOf(c).closeWindow()
+    expect(closeSettings).toHaveBeenCalledOnce()
+  })
+
+  it('publishes active-section changes to subscribers of the shared source', async ({ start }) => {
+    const c = await start()
+    const { activeSection } = windowOf(c).hooks
+    expect(activeSection.getSnapshot()).toEqual({ activeId: undefined })
+    const listener = vi.fn()
+    const off = activeSection.subscribe(listener)
+    windowOf(c).setActiveSection('models')
+    expect(activeSection.getSnapshot()).toEqual({ activeId: 'models' })
+    expect(listener).toHaveBeenCalledOnce()
+    off()
+  })
 
   withoutSettingsAccess('leaves sidebar.settings unoccupied while the current Peer may not read the settings description', async ({ start }) => {
     const c = await start()
@@ -94,7 +133,7 @@ describe('ui-settings-general shell', () => {
 
   it('projects the section ledger: product sections in order, defaults for bare rows, stable snapshots', async ({ start }) => {
     const c = await start()
-    const { sections } = injectedOf(c).hooks
+    const { sections } = windowOf(c).hooks
     const product = sections.getSnapshot()
     expect(product.map(row => row.id)).toEqual(PRODUCT_SECTIONS)
     c.ctx.slots.register({ name: 'settings.section', id: 'z', order: 1_000, label: 'Z' } as never, () => null)
@@ -117,7 +156,7 @@ describe('ui-settings-general shell', () => {
 
   it('shows Account first only while signed in and removes it on sign-out', async ({ start }) => {
     const c = await start()
-    const { sections } = injectedOf(c).hooks
+    const { sections } = windowOf(c).hooks
     await c.mock.streams.opened('account/watch', 1)
     expect(sections.getSnapshot().map(row => row.id)).toEqual(PRODUCT_SECTIONS)
     c.mock.streams.push('account/watch', { status: 'credential-stored', attempt: null })
@@ -178,6 +217,8 @@ describe('ui-settings-general shell', () => {
     await c.unload(SELF)
     await c.flush()
     expect(c.ctx.slots.entries('sidebar.settings')).toHaveLength(0)
+    expect(c.ctx.slots.entries('settings.view')).toHaveLength(0)
     for (const name of CHILD_NAMES) expect(c.ctx.slots.spec(name)).toBeUndefined()
+    for (const name of WINDOW_CHILD_NAMES) expect(c.ctx.slots.spec(name)).toBeUndefined()
   })
 })

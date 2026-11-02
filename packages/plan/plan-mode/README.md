@@ -5,7 +5,7 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-plan-mode
 
-English | [中文](README.zh.md)
+English
 
 ## Summary
 
@@ -90,13 +90,13 @@ The command child activates only when a commands service is composed. It maps ba
 
 ### The exit tool
 
-`exit_plan_mode` is disclosed progressively: it is admitted from the first step whose selected plan state is active and stays admitted for the rest of the Session, so entering plan mode the first time adds it together with the guidance, and later transitions change only the guidance; Native and PTC execution use the same admitted set. A call while plan mode is not committed fails. An approved review records a silent pending exit that the next accepted in-turn pre-step appends, keeping plan guidance for the rest of the current tool batch. Without a user-questions channel, or after a service reload while the review is pending, the call fails closed and `/plan off` remains the manual escape.
+`exit_plan_mode` is disclosed progressively: it is admitted from the first step whose selected plan state is active and stays admitted for the rest of the Session, so entering plan mode the first time adds it together with the guidance, and later transitions change only the guidance; Native and PTC execution use the same admitted set. A call while plan mode is not committed fails. An approved review records a silent pending exit that the next accepted in-turn pre-step appends, keeping plan guidance for the rest of the current tool batch; it also records the approved plan as the standing plan exactly as `plan_write` does, appending `plan/write` and writing the markdown to the optional `path` argument (default `implementation_plan.md`). Both tools present `locations: [{ path }]` so the UI can open the plan file beside the conversation. Without a user-questions channel, or after a service reload while the review is pending, the call fails closed and `/plan off` remains the manual escape.
 
 ### The standing implementation plan tool
 
 `plan_write` is admitted in every Session, with or without plan mode, because recording a plan is not a plan-mode activity: an agent may produce one at any time, including from a planning subagent's output. A call appends one `plan/write` event carrying the complete markdown, and writes the same markdown to its `path` (default `implementation_plan.md`, resolved against the Session's cwd). The log is authoritative and the file is a convenience projection of it, so a failed file write is logged and the recorded plan still stands. A plan that does not start with a `#` heading is rejected before anything is logged.
 
-The projection folds `plan/write` whole-value, so the last write is the plan in force, and the `plan:standing-plan` section injects it into every later request immediately after `plan:policy`. The section's order is derived from the registered `PLAN_POLICY` order rather than a second literal, keeping the core order table the one home of section ordering.
+The projection folds `plan/write` whole-value, so the last write is the plan in force, and the `plan:standing-plan` section injects it into every later request after `plan:policy` and the todo package's `todo:standing-plan` section. The section's order is derived from the registered `PLAN_POLICY` order rather than a second literal, keeping the core order table the one home of section ordering.
 
 ### Session projection unit
 

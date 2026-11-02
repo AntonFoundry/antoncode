@@ -896,6 +896,35 @@ describe('Tooltip', () => {
     )
     expect(screen.getByRole('tooltip').textContent).toBe('Open sidebar')
   })
+
+  it('divides placement insets by the zoom acting on the bubble', () => {
+    // The anchor subtree zooms by 1.25: placement runs on the drawn bubble
+    // size in true viewport space, and the engine multiplies the written
+    // insets by the zoom, so they divide by it.
+    bubbleSize = { inlineSize: 200, blockSize: 20 }
+    const rectSpy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(rect(900, 1100))
+    vi.spyOn(window, 'getComputedStyle').mockImplementation(el => Object.assign(
+      Object.create(CSSStyleDeclaration.prototype),
+      { zoom: el.hasAttribute('data-zoomed') ? '1.25' : '' },
+    ))
+    try {
+      render(
+        <div data-zoomed="">
+          <Tooltip label="More actions" side="bottom">
+            <button type="button">anchor</button>
+          </Tooltip>
+        </div>,
+      )
+      fireEvent.pointerEnter(screen.getByText('anchor'))
+      const bubble = screen.getByRole('tooltip')
+      // Drawn width 250 clamps to 1024 - 12 - 250 = 762; its center 887 / 1.25.
+      expect(bubble.style.left).toBe('709.6px')
+      // Anchor bottom 20 plus the 8px gap, / 1.25.
+      expect(bubble.style.top).toBe('22.4px')
+    } finally {
+      rectSpy.mockRestore()
+    }
+  })
 })
 
 

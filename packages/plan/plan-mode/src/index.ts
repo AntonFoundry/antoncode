@@ -108,6 +108,15 @@ const PLAN_WRITE_DESCRIPTION
 const DEFAULT_PLAN_PATH = 'implementation_plan.md'
 
 /**
+ * Resolve a model-supplied plan path, defaulting a missing or blank one.
+ * @param value - optional workspace-relative path argument.
+ * @returns the trimmed path, or {@link DEFAULT_PLAN_PATH}.
+ */
+function planPathOf(value: string | undefined): string {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : DEFAULT_PLAN_PATH
+}
+
+/**
  * Render the standing implementation plan prompt section.
  *
  * @param plan - the markdown implementation plan in force.
@@ -176,6 +185,14 @@ const planUnitStateSchema: ZodType<PlanUnitState> = zod.object({
 const planProjectionSchema: ZodType<PlanProjection> = zod.object({
   active: zod.boolean(),
   pending: zod.boolean(),
+  standingPlan: zod.union([
+    zod.object({
+      plan: zod.string(),
+      title: zod.string().optional(),
+      path: zod.string().optional(),
+    }),
+    zod.null(),
+  ]).optional(),
 })
 
 /** Projection of logged plan selections and committed mode. */
@@ -218,7 +235,7 @@ export const planProjectionDefinition = {
     viewSchema: planProjectionSchema,
     view: (state) => {
       const wanted = state.running?.wanted ?? state.wanted
-      return { active: state.active, pending: wanted !== null && wanted !== state.active }
+      return { active: state.active, pending: wanted !== null && wanted !== state.active, standingPlan: state.standingPlan }
     },
   },
 } satisfies ProjectionDefinition<'plan', PlanUnitState>
@@ -226,7 +243,7 @@ export const planProjectionDefinition = {
 /**
  * `ctx.planMode`: owns logged plan state, applies and narrates selected state at step start,
  * the `plan:policy` section, the `/plan` command, and the conditional exit tool.
- * Client carriers expose the projection's cropped `{ active, pending }` view.
+ * Client carriers expose the projection's cropped `{ active, pending, standingPlan }` view.
  * Agent prompt assembly fails while the projection reader is not ready;
  * callers must await plugin activation before running an agent.
  */
@@ -259,11 +276,12 @@ export class PlanModeController extends Service {
         return this.selectedActive(context.agent.session) ? this.section : ''
       },
     })
-    // Ordered immediately after plan policy, derived from its registered order
-    // so the core table stays the one home of section ordering.
+    // Ordered after plan policy and the todo standing plan (policy + 1),
+    // derived from the registered order so the core table stays the one home
+    // of section ordering.
     ctx.systemPrompt.section({
       name: 'plan:standing-plan',
-      order: ctx.systemPrompt.getSectionOrder('PLAN_POLICY') + 1,
+      order: ctx.systemPrompt.getSectionOrder('PLAN_POLICY') + 2,
       interpolate: false,
       text: (context) => {
         if (context.agent === undefined) return ''
@@ -351,6 +369,7 @@ export class PlanModeController extends Service {
       description: EXIT_DESCRIPTION,
       parameters: {
         plan: { type: 'string', required: true, description: 'The complete plan, as markdown, starting with a # heading that names it.' },
+        path: { type: 'string', description: `Optional workspace-relative path where the plan markdown is saved. Defaults to "${DEFAULT_PLAN_PATH}".` },
       },
       output: {
         schema: {
@@ -428,17 +447,35 @@ export class PlanModeController extends Service {
         // silent selection is appended at the next accepted in-turn pre-step,
         // before its request assembly.
         this.pendingIntents.set(agent.session, { active: false, narrate: false })
+        // The approved plan becomes the standing plan. The log is
+        // authoritative; the file is a convenience projection of it, so a
+        // write failure is reported without discarding the recorded plan.
+        const planPath = planPathOf(args.path)
+        const absolute = resolvePath(agent.session.header.cwd ?? process.cwd(), planPath)
+        try {
+          await mkdir(dirname(absolute), { recursive: true })
+          await writeFile(absolute, args.plan, 'utf-8')
+        } catch (error) {
+          ctx.logger.warn('dsh-plan-mode: failed to write the approved plan to %s: %o', absolute, error)
+        }
+        agent.session.append('plan/write', {
+          plan: args.plan,
+          title: firstHeading(args.plan) ?? 'Approved plan',
+          path: planPath,
+        })
         return { approved: true }
       },
       presentCall: args => ({
         card: 'generic',
         title: firstHeading(args.plan) ?? 'Plan',
         kind: 'other',
+        locations: [{ path: planPathOf(args.path) }],
         content: [{ type: 'text', text: args.plan }],
       }),
-      presentResult: (_args, result) => ({
+      presentResult: (args, result) => ({
         card: 'generic',
         title: 'Plan review',
+        locations: [{ path: planPathOf(args.path) }],
         content: result.content,
       }),
     }), { when: ({ agent }) => this.selectedActive(agent.session) || this.planState(agent.session).entered })
@@ -473,7 +510,7 @@ export class PlanModeController extends Service {
         if (!/^#\s+\S/.test(args.plan.trim())) {
           throw new Error(`${PLAN_WRITE} requires a non-empty markdown plan starting with a # heading`)
         }
-        const planPath = typeof args.path === 'string' && args.path.trim() !== '' ? args.path.trim() : DEFAULT_PLAN_PATH
+        const planPath = planPathOf(args.path)
         const title = args.title ?? firstHeading(args.plan) ?? 'Implementation plan'
         const absolute = resolvePath(agent.session.header.cwd ?? process.cwd(), planPath)
         // The log is authoritative; the file is a convenience projection of it,
@@ -491,13 +528,13 @@ export class PlanModeController extends Service {
         card: 'generic',
         title: args.title ?? firstHeading(args.plan) ?? 'Implementation plan',
         kind: 'other',
-        locations: [{ path: typeof args.path === 'string' && args.path.trim() !== '' ? args.path.trim() : DEFAULT_PLAN_PATH }],
+        locations: [{ path: planPathOf(args.path) }],
         content: [{ type: 'text', text: args.plan }],
       }),
       presentResult: (args, result) => ({
         card: 'generic',
         title: 'Implementation plan',
-        locations: [{ path: typeof args.path === 'string' && args.path.trim() !== '' ? args.path.trim() : DEFAULT_PLAN_PATH }],
+        locations: [{ path: planPathOf(args.path) }],
         content: result.content,
       }),
     }))

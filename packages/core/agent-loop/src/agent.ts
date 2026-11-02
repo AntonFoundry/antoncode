@@ -476,7 +476,7 @@ export class ReactLoopAgent implements Agent {
         this.session.append('user/message', context, { surfaceOp: 'append' })
       }
       firstAttempt = false
-      const request = this.buildRequest(config, preparedCall, assembly.tools, { turn, step }, startsRequestSeries, signal)
+      const request = await this.buildRequest(config, preparedCall, assembly.tools, { turn, step }, startsRequestSeries, signal)
       const live = new AssistantStreamAttempt(
         this.session.id,
         ++this.assistantAttemptCounter,
@@ -652,15 +652,18 @@ export class ReactLoopAgent implements Agent {
     return { config, ...preparedCall === undefined ? {} : { preparedCall } }
   }
 
-  /** Log the resolved envelope and derive a frozen request from the admitted surface. */
-  private buildRequest(
+  /**
+   * Log the resolved envelope, run `agent/request-prepared` preflight, and
+   * derive a frozen request from the admitted surface.
+   */
+  private async buildRequest(
     config: LlmCallConfig,
     preparedCall: PreparedLlmCall | undefined,
     tools: GenerateOptions['tools'] & object,
     position: { turn: number; step: number },
     startsRequestSeries: boolean,
     signal: AbortSignal,
-  ): GenerateOptions {
+  ): Promise<GenerateOptions> {
     const { session } = this
     const surfaceGeneration = session.surface.contentGeneration
     const header = canonicalHeader({
@@ -721,6 +724,16 @@ export class ReactLoopAgent implements Agent {
       || previousContext.systemPromptUpdate !== requestContext.systemPromptUpdate) {
       session.append('request/context', requestContext)
     }
+    signal.throwIfAborted()
+    const messages = session.deriveMessages()
+    await this.dispatch.serial('agent/request-prepared', {
+      ...position,
+      provider: config.provider,
+      model: config.model,
+      ...(contextWindow === undefined ? {} : { contextWindow }),
+      messages,
+      signal,
+    })
     signal.throwIfAborted()
 
     // canonicalHeader is shallow; append logs a detached snapshot, not these local values.

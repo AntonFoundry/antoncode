@@ -31,8 +31,33 @@ describe('highlightToHtml', () => {
   })
 
   it('returns undefined for unknown or absent languages', () => {
-    expect(highlightToHtml('x', 'cobol')).toBeUndefined()
+    expect(highlightToHtml('x', 'invented-lang')).toBeUndefined()
     expect(highlightToHtml('x', undefined)).toBeUndefined()
+  })
+
+  it('highlights Janet synchronously through the local grammar', () => {
+    const code = '# greet\n(defn greet [name]\n  (print (string "hi, " name)))\n'
+    const html = highlightToHtml(code, 'janet')
+    expect(html).toContain('pre class="shiki css-variables"')
+    expect(html).toContain('var(--shiki-token-comment)')
+    expect(html).toContain('var(--shiki-token-string-expression)')
+    expect(html).toContain('var(--shiki-token-keyword)')
+    expect(html).toContain('var(--shiki-token-function)')
+    expect(highlightToHtml('(defn f [] nil)', 'Janet')).toContain('shiki')
+  })
+
+  it('highlights Bender synchronously, with its {:hint} contract as a keyword', () => {
+    const code = '# hint contract\n(defn add\n  {:hint {:params [:double :double]}}\n  [x y]\n  (+ x y))\n(printf "add = %.1f" (add 20.0 22.0))\n'
+    const html = highlightToHtml(code, 'bender')
+    expect(html).toContain('pre class="shiki css-variables"')
+    expect(html).toContain('var(--shiki-token-comment)')
+    expect(html).toContain('var(--shiki-token-string-expression)')
+    expect(html).toContain('var(--shiki-token-function)')
+    // The fork's own grammar colors `:hint` as a declaration keyword and other
+    // keyword literals as values, so the two must not share a token color.
+    expect(html).toContain('var(--shiki-token-keyword)">:hint')
+    expect(html).toContain('var(--shiki-token-constant)">:params')
+    expect(highlightToHtml('(defn f [] nil)', 'BEN')).toContain('shiki')
   })
 
   // Every language whose grammar loads lazily (the boot set — ts/js/shell/sh/json
@@ -47,6 +72,14 @@ describe('highlightToHtml', () => {
     'erlang', 'elixir', 'haskell', 'fsharp', 'vb', 'perl', 'verilog',
     'system-verilog', 'graphql', 'proto', 'hcl', 'nix', 'vue', 'svelte', 'make',
     'cmake', 'groovy',
+    // The wider common-language set: one alias per added grammar family.
+    'pl', 'hs', 'ex', 'erl', 'clj', 'rkt', 'scm', 'ml', 'fs', 'jl', 'm', 'ps1',
+    'gradle', 'dockerfile', 'mk', 'conf', 'gql', 'vim', 'zig', 'nim', 'sol',
+    'astro', 'tex', 'properties', 'json5', 'coffee', 'reg', 'tf', 'pas', 'lisp',
+    'elisp', 'fnl', 'hy', 'elm', 'crystal', 'fortran', 'cobol', 'ada', 'haxe',
+    'd', 'purs', 'gleam', 'gd', 'glsl', 'hlsl', 'wgsl', 'wat', 'v', 'vlang', 'vhdl',
+    'asm', 'prolog', 'raku', 'tcl', 'awk', 'just', 'cue', 'jsonnet', 'prisma',
+    'pug', 'styl', 'sass', 'hbs', 'twig', 'liquid', 'cshtml',
   ]
 
   it('lazily loads every extension grammar: plain first, highlighted after load', async () => {
@@ -62,7 +95,7 @@ describe('highlightToHtml', () => {
     } finally {
       stop()
     }
-    // 57 dynamic grammars (some with large embedded sub-grammars) exceed the default.
+    // Over a hundred dynamic grammars (some with large embedded sub-grammars) exceed the default.
   }, 120_000)
 
   it('highlights both ids every suffix reaches through the shipped surfaces', async () => {
@@ -156,7 +189,7 @@ describe('CodeBlock', () => {
   })
 
   it('renders the plain arm for an unknown language with the text verbatim', () => {
-    const view = render(<CodeBlock code={'IDENTIFICATION DIVISION.'} lang="cobol" />)
+    const view = render(<CodeBlock code={'IDENTIFICATION DIVISION.'} lang="invented-lang" />)
     expect(view.container.querySelector('pre.shiki')).toBeNull()
     expect(view.getByText('IDENTIFICATION DIVISION.')).toBeTruthy()
   })

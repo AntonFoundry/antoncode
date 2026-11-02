@@ -2,8 +2,13 @@
  * Models settings section: the provider rows joined from the configurable
  * directory, settings namespaces, and credential states, with one editor
  * card at a time. Rows retain the account-first order supplied by the store
- * and expose only confirmed API-key state through accessible
- * solid configured or missing dots. A whole-section provider without a
+ * and show each provider's logo and branded name. Their accessible solid
+ * configured or missing dots report confirmed API-key, subscription-login, or
+ * stored OAuth-session state. Each row carries a switch that hides or shows
+ * the provider's models in the session model catalog (`model-catalog`
+ * `disabledProviders`); OAuth routes (OpenCode, Claude) add login, re-login,
+ * and log-out actions, and a shipped row with stored credentials offers their
+ * confirmed removal. A whole-section provider without a
  * configured key renders as its open setup card instead of a row, but only in
  * the first-run posture — no provider on the page can serve requests yet — and
  * only until the user closes that card. The add flow is one card behind one
@@ -23,13 +28,17 @@
 
 import { useId, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Button, IconPlusOutlineRegular, Modal, SegmentedControl } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconPlusOutlineRegular, Modal, ProviderLogo, SegmentedControl } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { LlmNativeAuth, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls this package's SlotMap merge (the two Models child slots).
 import type {} from './slot-contract.ts'
 import { CustomProviderCard } from './CustomProviderCard.tsx'
-import { deriveKeyRef, protocolChoices, providerUsable, reasoningLevelChoices } from './store.ts'
+import { OpencodeLoginDialog } from './OpencodeLoginDialog.tsx'
+import { ClaudeLoginDialog } from './ClaudeLoginDialog.tsx'
+import {
+  deriveKeyRef, disabledProvidersOf, MODEL_CATALOG_NAMESPACE, protocolChoices, providerUsable, reasoningLevelChoices,
+} from './store.ts'
 import type { ModelsSettingsStore, ProviderRow } from './store.ts'
 import type { ModelsOperations } from './operations.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
@@ -84,6 +93,19 @@ export interface ProviderIdentity {
   displayName: string
 }
 
+const PROVIDER_DISPLAY_NAMES: Readonly<Record<string, string>> = {
+  'kimi-coding': 'Kimi Coding',
+  nvidia: 'NVIDIA',
+  'qwen-token-plan': 'Qwen Token Plan',
+  'qwen-token-plan-individual': 'Qwen Token Plan Individual',
+  zai: 'Z.ai',
+}
+
+/** Apply established branding when a provider uses its route id as its display name. */
+export function providerDisplayName(provider: string, displayName: string): string {
+  return provider === displayName ? PROVIDER_DISPLAY_NAMES[provider] ?? displayName : displayName
+}
+
 /** One existing row or dormant directory entry addressed by an editor action. */
 interface EditorTarget extends ProviderIdentity {
   settingsNs: string
@@ -110,6 +132,36 @@ interface AddableRow {
 interface CatalogDraft {
   target: EditorTarget
   namespace: SettingsNamespaceView
+}
+
+/** Settings namespaces whose routes authenticate through a stored OAuth session. */
+const OAUTH_SETTINGS_NS: Readonly<Record<string, 'opencode' | 'claude'>> = {
+  'llm-opencode': 'opencode',
+  'llm-claude': 'claude',
+}
+
+/**
+ * Remove a shipped route's stored credentials (API key and/or OAuth
+ * session) without touching its settings profile, which the deployment
+ * owns. Shipped routes have nothing settings-side to delete — that is what
+ * distinguishes this from {@link removeProviderProfile} — so the row stays
+ * listed and only its secrets go away.
+ * @param operations - the page's Host operations.
+ * @param controller - the page store reloaded after the removal lands.
+ * @param refs - credential references to unset, in order.
+ * @returns the failure message, or undefined once the removal landed.
+ */
+export async function removeRouteCredentials(
+  operations: ModelsOperations,
+  controller: ModelsSettingsStore,
+  refs: readonly string[],
+): Promise<string | undefined> {
+  for (const ref of refs) {
+    const failure = await operations.removeCredential(ref)
+    if (failure !== undefined) return failure
+  }
+  await controller.load()
+  return undefined
 }
 
 /** Values that vary around the shared provider-editor rendering. */
@@ -170,6 +222,41 @@ export async function removeProviderProfile(
 }
 
 /**
+ * Set one provider's catalog visibility: membership in the gateway's
+ * `model-catalog` `disabledProviders` list. The write carries the described
+ * revision so a concurrent edit elsewhere refuses instead of clobbering; the
+ * snapshot is read at call time, so two quick toggles compose rather than
+ * overwrite each other's list.
+ * @param operations - the page's Host operations.
+ * @param schema - settings schema operations.
+ * @param controller - the page store to refresh.
+ * @param provider - the provider route id to enable or disable.
+ * @param enabled - whether the provider's models should appear in the catalog.
+ * @returns the failure message, or undefined once the write and reload landed.
+ */
+export async function setProviderEnabled(
+  operations: ModelsOperations,
+  schema: SettingsSchemaOperations,
+  controller: ModelsSettingsStore,
+  provider: string,
+  enabled: boolean,
+): Promise<string | undefined> {
+  const catalog = controller.store.getSnapshot().namespaces.get(MODEL_CATALOG_NAMESPACE)
+  const current = [...disabledProvidersOf(catalog, schema)]
+  const next = enabled
+    ? current.filter(id => id !== provider)
+    : current.includes(provider) ? current : [...current, provider]
+  const written = await operations.writeSettings(
+    MODEL_CATALOG_NAMESPACE,
+    [{ op: 'set', path: ['disabledProviders'], value: next }],
+    catalog?.revision,
+  )
+  if (written.kind !== 'written') return written.message
+  await controller.load()
+  return undefined
+}
+
+/**
  * Whether a whole-section provider still needs its first key: an unconfigured
  * credential opens the setup card instead of showing a row. This is the
  * first-run posture alone — a user who can already reach some provider gets an
@@ -206,7 +293,7 @@ function targetOf(row: ProviderRow): EditorTarget {
     : undefined
   return {
     provider: row.entry.provider,
-    displayName: row.entry.displayName,
+    displayName: providerDisplayName(row.entry.provider, row.entry.displayName),
     settingsNs: row.entry.settingsNs,
     settingsPath: row.entry.settingsPath,
     ...credentialRef === undefined ? {} : { credentialRef },
@@ -264,9 +351,15 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
   /** Base of the add card's tab and panel ids. */
   const addId = useId()
   const [deleteTarget, setDeleteTarget] = useState<EditorTarget | undefined>(undefined)
+  const [loginTarget, setLoginTarget] = useState<EditorTarget | undefined>(undefined)
+  const [resetTarget, setResetTarget] = useState<(ProviderIdentity & { refs: readonly string[] }) | undefined>(undefined)
+  const [resetting, setResetting] = useState(false)
+  const [resetFailure, setResetFailure] = useState<string | undefined>(undefined)
   const [deleting, setDeleting] = useState(false)
   const [deleteFailure, setDeleteFailure] = useState<string | undefined>(undefined)
   const [savedTarget, setSavedTarget] = useState<ProviderIdentity | undefined>(undefined)
+  const [toggling, setToggling] = useState<ReadonlySet<string>>(() => new Set())
+  const [toggleFailure, setToggleFailure] = useState<string | undefined>(undefined)
   const [dismissedSetup, setDismissedSetup] = useState<ReadonlySet<string>>(() => new Set())
 
   const announceSaved = (target: ProviderIdentity): void => {
@@ -274,6 +367,25 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
     // notice reads its name from: an apply can rename the route, and the
     // target captured when the card opened still carries the old name.
     void controller.load().then(() => { setSavedTarget(target) })
+  }
+
+  /** Flip one provider's catalog visibility through the gateway namespace. */
+  const toggleProvider = (target: EditorTarget): void => {
+    const provider = target.provider
+    setToggleFailure(undefined)
+    setToggling(previous => new Set([...previous, provider]))
+    void setProviderEnabled(operations, schema, controller, provider, !controller.store.getSnapshot().rows
+      .find(row => row.entry.provider === provider)?.enabled)
+      .then((failure) => {
+        if (failure !== undefined) setToggleFailure(providerCopy(t('toggleFailed'), target))
+      })
+      .finally(() => {
+        setToggling((previous) => {
+          const next = new Set(previous)
+          next.delete(provider)
+          return next
+        })
+      })
   }
 
   /**
@@ -306,6 +418,52 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
     setDismissedSetup(previous => new Set([...previous, target.provider]))
     if (changed) announceSaved(target)
   }
+
+  const closeLogin = (changed: boolean): void => {
+    setLoginTarget(undefined)
+    if (changed) void controller.load()
+  }
+
+  const closeReset = (): void => {
+    if (resetting) return
+    setResetTarget(undefined)
+    setResetFailure(undefined)
+  }
+
+  const confirmReset = (): void => {
+    if (resetTarget === undefined || resetting) return
+    setResetting(true)
+    setResetFailure(undefined)
+    void removeRouteCredentials(operations, controller, resetTarget.refs)
+      .then((failure) => {
+        if (failure !== undefined) {
+          setResetFailure(failure)
+          return
+        }
+        setResetTarget(undefined)
+      })
+      .finally(() => { setResetting(false) })
+  }
+
+  /** Stored credentials a shipped row can drop: API key and/or OAuth session. */
+  const resettableRefs = (row: ProviderRow): readonly string[] => [
+    ...(row.credential?.configured === true && row.apiKeyEnv !== undefined ? [row.apiKeyEnv] : []),
+    ...(row.oauthSession?.configured === true && row.oauthRef !== undefined ? [row.oauthRef] : []),
+  ]
+  const logoutSession = (target: ProviderIdentity, ref: string): void => {
+    setToggleFailure(undefined)
+    void operations.removeCredential(ref).then((failure) => {
+      if (failure !== undefined) {
+        setToggleFailure(providerCopy(t('logoutFailed'), target))
+        return
+      }
+      void controller.load()
+    })
+  }
+
+  /** Row label reopening the login dialog of an already configured OAuth route. */
+  const reloginCopy = (target: EditorTarget): string =>
+    target.settingsNs === 'llm-claude' ? t('claudeLoginRelogin') : t('opencodeLoginRelogin')
 
   const closeDelete = (): void => {
     if (deleting) return
@@ -360,7 +518,10 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
     : state.rows.find(row => row.entry.provider === savedTarget.provider)
   const savedIdentity = savedRow === undefined
     ? savedTarget
-    : { provider: savedRow.entry.provider, displayName: savedRow.entry.displayName }
+    : {
+      provider: savedRow.entry.provider,
+      displayName: providerDisplayName(savedRow.entry.provider, savedRow.entry.displayName),
+    }
 
   // One fact decides both first-run postures on this page and the onboarding
   // step: whether the user already has a provider to talk to.
@@ -460,11 +621,31 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
           const credentialMissing = !credentialConfigured
             && row.apiKeyEnv !== undefined
             && row.credential?.configured === false
+          const subscriptionConfigured = row.entry.authConfigured === true
+          const subscriptionMissing = row.entry.authConfigured === false
+          const isAntigravity = row.entry.settingsNs === 'llm-antigravity'
+          // A stored OAuth session lights the row exactly like a stored key:
+          // without it a logged-in workspace still reads red on its key dot.
+          const oauthConfigured = row.oauthSession?.configured === true
+          const statusConfigured = credentialConfigured || subscriptionConfigured || oauthConfigured
+          const statusMissing = credentialMissing || subscriptionMissing
+          const statusLabel = subscriptionConfigured
+            ? (isAntigravity ? t('antigravitySubscriptionConfigured') : t('subscriptionConfigured'))
+            : subscriptionMissing
+              ? (isAntigravity ? t('antigravitySubscriptionMissing') : t('subscriptionMissing'))
+              : credentialConfigured
+                ? t('credentialConfigured')
+                : oauthConfigured
+                  ? t('oauthSessionActive')
+                  : t('credentialMissing')
           return (
             <li key={row.entry.provider} className={styles['rowCard']}>
               <div className={styles['rowHead']}>
                 <span className={styles['rowIdentity']}>
-                  <span className={styles['rowName']}>{row.entry.displayName}</span>
+                  <ProviderLogo provider={target.provider} name={target.displayName} size={24} />
+                  <span
+                    className={`${styles['rowName']} ${row.enabled ? '' : styles['rowNameDisabled']}`}
+                  >{target.displayName}</span>
                   {/* Only the adapter can tell a hand-declared route from a
                       shipped one it also has a stored profile for, so the tag
                       follows its answer and stays off when it gives none. */}
@@ -480,27 +661,90 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                       </span>
                     )
                     : null}
-                  {credentialConfigured
+                  {statusConfigured
                     ? (
                       <span
                         className={`${styles['credentialDot']} ${styles['credentialDotConfigured']}`}
                         role="img"
-                        aria-label={t('credentialConfigured')}
-                        title={t('credentialConfigured')}
+                        aria-label={statusLabel}
+                        title={statusLabel}
                       />
                     )
-                    : credentialMissing
+                    : statusMissing
                       ? (
                         <span
                           className={`${styles['credentialDot']} ${styles['credentialDotMissing']}`}
                           role="img"
-                          aria-label={t('credentialMissing')}
-                          title={t('credentialMissing')}
+                          aria-label={statusLabel}
+                          title={statusLabel}
                         />
                       )
                       : null}
                 </span>
                 <span className={styles['rowActions']}>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={row.enabled}
+                    aria-label={providerCopy(row.enabled ? t('disableProvider') : t('enableProvider'), target)}
+                    title={providerCopy(row.enabled ? t('disableProvider') : t('enableProvider'), target)}
+                    disabled={!state.writable || toggling.has(row.entry.provider)}
+                    className={styles['providerSwitch']}
+                    onClick={() => { toggleProvider(target) }}
+                  >
+                    <span className={styles['providerSwitchKnob']} />
+                  </button>
+                  {OAUTH_SETTINGS_NS[target.settingsNs] === undefined
+                    ? null
+                    : row.oauthSession?.configured === true
+                      ? (
+                        <>
+                          {/* A stored session can still be unusable (expired or
+                              revoked refresh token), and the login dialog owns the
+                              paste-back flow, so the row keeps a direct way back
+                              into it instead of forcing a log out first. */}
+                          <button
+                            type="button"
+                            className={styles['secondaryButton']}
+                            aria-label={providerCopy(reloginCopy(target), target)}
+                            disabled={!state.writable}
+                            onClick={() => {
+                              setSavedTarget(undefined)
+                              setLoginTarget(target)
+                            }}
+                          >
+                            {reloginCopy(target)}
+                          </button>
+                          <button
+                            type="button"
+                            className={styles['secondaryButton']}
+                            aria-label={providerCopy(t('logout'), target)}
+                            disabled={!state.writable}
+                            onClick={() => {
+                              if (row.oauthRef !== undefined) logoutSession(target, row.oauthRef)
+                            }}
+                          >
+                            {t('logout')}
+                          </button>
+                        </>
+                      )
+                      : (
+                        <button
+                          type="button"
+                          className={styles['secondaryButton']}
+                          aria-label={providerCopy(
+                            target.settingsNs === 'llm-claude' ? t('claudeLogin') : t('opencodeLogin'),
+                            target,
+                          )}
+                          disabled={!state.writable}
+                          onClick={() => {
+                            setSavedTarget(undefined)
+                            setLoginTarget(target)
+                          }}
+                        >
+                          {target.settingsNs === 'llm-claude' ? t('claudeLogin') : t('opencodeLogin')}
+                        </button>
+                      )}
                   {/* The account catalog comes from the account listing; its model overrides live in cordis.patch.yml. */}
                   {row.entry.provider === 'deepseek-account'
                     ? null
@@ -540,7 +784,27 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                         {t('remove')}
                       </button>
                     )
-                    : null}
+                    : resettableRefs(row).length > 0
+                      ? (
+                        <button
+                          type="button"
+                          className={styles['dangerButton']}
+                          aria-label={providerCopy(t('resetCredentials'), target)}
+                          disabled={!state.writable}
+                          onClick={() => {
+                            setSavedTarget(undefined)
+                            setResetFailure(undefined)
+                            setResetTarget({
+                              provider: target.provider,
+                              displayName: target.displayName,
+                              refs: resettableRefs(row),
+                            })
+                          }}
+                        >
+                          {t('remove')}
+                        </button>
+                      )
+                      : null}
                 </span>
               </div>
               {error}
@@ -565,6 +829,9 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
           )
         })}
       </ul>
+      {toggleFailure === undefined
+        ? null
+        : <p className={styles['error']} role="alert">{toggleFailure}</p>}
       <div className={styles['addBlock']}>
         {addOpen
           ? (
@@ -631,7 +898,9 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                         }}
                       >
                         {addable.map(({ row }) => (
-                          <option key={row.entry.provider} value={row.entry.provider}>{row.entry.displayName}</option>
+                          <option key={row.entry.provider} value={row.entry.provider}>
+                            {providerDisplayName(row.entry.provider, row.entry.displayName)}
+                          </option>
                         ))}
                       </select>
                     </div>
@@ -718,6 +987,53 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
             : null}
       </div>
       {renderSlot('settings.models.footer', {})}
+      {loginTarget === undefined
+        ? null
+        : loginTarget.settingsNs === 'llm-claude'
+          ? (
+            <ClaudeLoginDialog
+              operations={operations}
+              t={t}
+              readOnly={!state.writable}
+              onClose={closeLogin}
+            />
+          )
+          : (
+            <OpencodeLoginDialog
+              operations={operations}
+              t={t}
+              readOnly={!state.writable}
+              onClose={closeLogin}
+            />
+          )}
+      {resetTarget === undefined
+        ? null
+        : (
+          <Modal
+            open
+            onClose={closeReset}
+            title={providerCopy(t('resetCredentialsTitle'), resetTarget)}
+            closeLabel={t('close')}
+            description={providerCopy(t('resetCredentialsDescription'), resetTarget)}
+            footer={(
+              <>
+                <Button variant="outline" autoFocus disabled={resetting} onClick={closeReset}>
+                  {t('cancel')}
+                </Button>
+                <Button
+                  variant="outline"
+                  className={styles['deleteConfirm']}
+                  disabled={resetting}
+                  onClick={confirmReset}
+                >
+                  {resetting ? t('resettingCredentials') : t('resetCredentialsConfirm')}
+                </Button>
+              </>
+            )}
+          >
+            {resetFailure === undefined ? null : <p className={styles['error']}>{resetFailure}</p>}
+          </Modal>
+        )}
       <Modal
         open={deleteTarget !== undefined}
         onClose={closeDelete}

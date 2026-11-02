@@ -5,7 +5,7 @@ kind: "package-bundle"
 
 # @deepseek-ai/dsh-base
 
-English | [中文](README.zh.md)
+English
 
 ## Summary
 
@@ -62,6 +62,8 @@ The built-in `working_directory` tool changes the directory for subsequent opera
 ```
 
 The bundle mounts [MCP resources](../../mcp/mcp-resources/README.md) once. Configure only [MCP client entries](../../mcp/mcp-client/README.md) for the servers you need. Clients mounted by another provider also count as configured in their scope. Callers with no configured server in scope receive no MCP tools or prompt text.
+
+The `opencode-free` row uses the local [OpenCode service adapter](../../llm/llm-opencode/README.md) for zero-cost models without a Zen API key. The `claude-code` row serves subscription Claude models through the [Claude Code adapter](../../llm/llm-claude/README.md) once `anton claude-login` stores the workspace session; unlike the dormant Codex route, it mounts live and its unauthenticated failure carries the login fix. The adapter starts the service when it is absent and the CLI is available; its transient text generator does not carry Harness tool calls.
 
 ### Shell tools per platform
 

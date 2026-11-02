@@ -5,7 +5,7 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-jobs-local
 
-English | [中文](README.zh.md)
+English
 
 ## Summary
 
@@ -45,12 +45,15 @@ Loading the plugin registers `ctx.jobs`; every field is optional.
 | `retainBytes` | `262144` | Live ring retention per job, in UTF-8 bytes |
 | `settledRetainBytes` | `16384` | Ring retention kept after a job settles, in UTF-8 bytes; bytes the model has not read stay until its first terminal read |
 | `pumpPollMs` | `150` | Poll interval for a job's pull sources, in milliseconds |
+| `settledRetentionPerOwner` | `128` | Maximum terminal job records kept per exact owner, or in the shared unowned bucket |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-jobs-local) is the exhaustive source for the accepted fields.
 
 ### What each owner gets
 
 The limit counts the exact owner's `running` and `stopping` records; all unowned jobs share one separate service-level bucket. Terminal history does not occupy capacity, and only a producer's `done` settlement releases a stopping job's place. At capacity, `start()` fails before the producer runs, with an error that names the limit and tells the agent to kill an unneeded job, wait for it to finish, and retry — the registry neither queues nor preempts.
+
+Terminal records are capped per bucket by `settledRetentionPerOwner`. Settlement past the cap drops the oldest-finished records and announces each removal, so a long-lived agent cannot accumulate terminal history and its retained output without bound.
 
 ### Lifecycle
 

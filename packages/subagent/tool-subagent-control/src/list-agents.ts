@@ -13,6 +13,7 @@ import type {
   SubagentCatalogEntry, SubagentDescendantListEntry, SubagentListEntry,
 } from '@deepseek-ai/dsh-subagent'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
+import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 
 type ListAgentsScope = 'children' | 'descendants'
 
@@ -30,6 +31,7 @@ type ListAgentsEntry =
     readonly id: SessionId
     readonly label: string
     readonly status: 'running' | 'inactive'
+    readonly usage?: TokenUsageProjection
     readonly parent?: SessionId
     readonly depth?: number
   }
@@ -46,6 +48,20 @@ function resolveListAgentsRequest(request: ListAgentsRequest): ListAgentsSpec {
   return { scope: request.scope ?? 'children' }
 }
 
+/**
+ * Render one child's cumulative usage as a compact bracket, absent for a
+ * child that has not reported usage. `hit` is the cache-read share of
+ * prompt tokens: a high hit means `send_message` re-reads mostly cached prefix.
+ */
+function renderUsage(usage: TokenUsageProjection | undefined): string {
+  if (usage === undefined) return ''
+  const hit = usage.cacheHitRate === undefined
+    ? ''
+    : ` hit=${Math.round(usage.cacheHitRate * 100)}%`
+  return ` tokens[in=${usage.uncachedInputTokens} out=${usage.outputTokens}`
+    + ` cache-read=${usage.cacheReadTokens} cache-write=${usage.cacheWriteTokens}${hit}]`
+}
+
 /** Report turn activity without exposing whether the child is loaded. */
 function statusOf(agents: { get(id: SessionId): Agent | undefined }, id: SessionId): 'running' | 'inactive' {
   return agents.get(id)?.status === 'running' ? 'running' : 'inactive'
@@ -54,7 +70,7 @@ function statusOf(agents: { get(id: SessionId): Agent | undefined }, id: Session
 /** Project one service row into the model-facing entry, or omit a one-shot child. */
 function project(
   agents: { get(id: SessionId): Agent | undefined },
-  entry: SubagentCatalogEntry | SubagentListEntry,
+  entry: SubagentCatalogEntry | SubagentListEntry | SubagentDescendantListEntry,
   position?: Pick<SubagentDescendantListEntry, 'parentId' | 'depth'>,
 ): ListAgentsEntry | undefined {
   const at = position === undefined ? {} : { parent: position.parentId, depth: position.depth }
@@ -69,6 +85,7 @@ function project(
     id: entry.id,
     label: entry.label,
     status: statusOf(agents, entry.id),
+    ...'usage' in entry && entry.usage !== undefined ? { usage: entry.usage } : {},
     ...at,
   }
 }
@@ -84,7 +101,10 @@ export function registerListAgents(ctx: Context): void {
       'List subagents you started, with their ids, labels, and status. '
       + 'running means it is working; inactive means it is not currently working. '
       + 'You will be notified when a subagent finishes; there is no need to keep checking its status. '
-      + 'Use send_message to continue the conversation.',
+      + 'Use send_message to continue the conversation. '
+      + 'With scope descendants, a child entry may carry `tokens`: its cumulative provider usage, where hit is the '
+      + 'cache-read share of its prompt tokens; a high hit means continuing it with send_message is cheaper than '
+      + 'starting a fresh agent for related work.',
     parameters: {
       scope: {
         type: 'string',
@@ -106,6 +126,17 @@ export function registerListAgents(ctx: Context): void {
                 id: { type: 'string', required: true },
                 label: { type: 'string', required: true },
                 status: { type: 'string', required: true, enum: ['running', 'inactive'] },
+                usage: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    uncachedInputTokens: { type: 'number', required: true },
+                    outputTokens: { type: 'number', required: true },
+                    cacheReadTokens: { type: 'number', required: true },
+                    cacheWriteTokens: { type: 'number', required: true },
+                    cacheHitRate: { type: 'number' },
+                  },
+                },
                 parent: { type: 'string' },
                 depth: { type: 'number' },
               },
@@ -138,7 +169,7 @@ export function registerListAgents(ctx: Context): void {
                 ? ` parent=${String(entry.parent)} depth=${String(entry.depth)}`
                 : ''
               return entry.kind === 'child'
-                ? `${entry.id} [${entry.status}]${at} — ${entry.label}`
+                ? `${entry.id} [${entry.status}]${at} — ${entry.label}${renderUsage(entry.usage)}`
                 : `${entry.id} [diagnostic: ${entry.reason}]${at}`
             }).join('\n'),
         }]

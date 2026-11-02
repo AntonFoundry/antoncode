@@ -6,7 +6,7 @@
  * @module @deepseek-ai/dsh-tool-subagent
  */
 
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context, Volatile } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -78,6 +78,17 @@ export interface Config extends PresetSelectionConfig {
    * the current Host subagent depth setting (default `1`) at each delegation.
    */
   maxDepth?: number | 'provider-managed'
+  /**
+   * Live default child route applied when a delegation names no route: a
+   * `provider/model` route, a bare model id, or `auto` to ask the optional
+   * model-intel service for a task-scored route. Empty or omitted inherits the
+   * parent route. Applies only to providers with the `agentOptions` capability.
+   */
+  childModel: Volatile<string | undefined>
+  /** Live per-parent-Session child routes; a row for the calling Session wins over {@link childModel}. */
+  childModelBySession: Volatile<Record<string, string>>
+  /** Live default child reasoning-effort id applied when a delegation names none. */
+  childReasoningEffort: Volatile<string | undefined>
 }
 
 export const Config: z<Config> = z.object({
@@ -100,7 +111,78 @@ export const Config: z<Config> = z.object({
   agentPreset: z.string().min(1),
   allowedAgentPresets: (z.array(z.string().min(1)).min(1) as z<string[] | undefined>).default(undefined),
   maxDepth: z.union([z.natural().max(Number.MAX_SAFE_INTEGER), z.const('provider-managed' as const)]),
+  childModel: z.string().volatile(),
+  childModelBySession: z.dict(z.string()).default({}).volatile(),
+  // Plain string: the selected provider validates the effort per model during route preflight.
+  childReasoningEffort: z.string().volatile(),
 })
+
+/**
+ * Split a `provider/model` (or bare `model`) route string into agent options.
+ *
+ * A route may carry a slash-bearing model id: `opengateway/deepseek/deepseek-v4.1-flash`
+ * means provider `opengateway`, model `deepseek/deepseek-v4.1-flash`. A
+ * last-slash split would name the unregistered provider `opengateway/deepseek`,
+ * so the longest registered provider prefix that leaves a non-empty model id
+ * wins. Without a registry, or when no registered prefix matches, the last
+ * slash splits.
+ * @param route - the configured route string.
+ * @param knownProviders - registered provider ids, or undefined to split on the last slash.
+ * @returns the agent-options override naming provider and model.
+ */
+export function splitModelRoute(route: string, knownProviders?: Iterable<string>): AgentOptions {
+  if (knownProviders !== undefined) {
+    let best: { provider: string; model: string } | undefined
+    for (const provider of knownProviders) {
+      if (provider.length === 0 || !route.startsWith(`${provider}/`)) continue
+      const model = route.slice(provider.length + 1)
+      if (model.length === 0) continue
+      if (best === undefined || provider.length > best.provider.length) best = { provider, model }
+    }
+    if (best !== undefined) return best
+  }
+  const slash = route.lastIndexOf('/')
+  if (slash <= 0 || slash === route.length - 1) return { model: route }
+  return { provider: route.slice(0, slash), model: route.slice(slash + 1) }
+}
+
+/** Live child-route defaults read once per delegation. */
+export interface ChildModelDefaults {
+  /** Global default route, `auto`, or empty. */
+  readonly defaultModel: string
+  /** Per-parent-Session routes keyed by parent Session id. */
+  readonly bySession: Readonly<Record<string, string>>
+}
+
+/**
+ * Resolve one delegation's default child route: the calling Session's row
+ * wins, then the global default. `auto` asks the model-intel service with the
+ * task text; an unavailable or unmatched `auto` route inherits the parent route.
+ * @param defaults - the live child-route defaults.
+ * @param parentSessionId - the calling Session's id.
+ * @param taskText - the delegation prompt, scored by the `auto` route.
+ * @param autoRoute - the `auto` route resolver, when model-intel is mounted.
+ * @param knownProviders - registered provider ids for {@link splitModelRoute}.
+ * @returns the agent-options override naming the route, or undefined to inherit.
+ */
+export async function resolveChildModelRoute(
+  defaults: ChildModelDefaults,
+  parentSessionId: string,
+  taskText: string,
+  autoRoute?: (task: string) => Promise<AgentOptions | undefined>,
+  knownProviders?: Iterable<string>,
+): Promise<AgentOptions | undefined> {
+  const sessionRoute = defaults.bySession[parentSessionId]?.trim() ?? ''
+  const route = sessionRoute.length > 0 ? sessionRoute : defaults.defaultModel.trim()
+  if (route.length === 0) return undefined
+  if (route.toLowerCase() === 'auto') return autoRoute?.(taskText)
+  return splitModelRoute(route, knownProviders)
+}
+
+/** Tool-description policy that makes parallel delegation the default for decomposable work. */
+const DELEGATION_DEFAULT_WORDING = ' Delegation is the DEFAULT for decomposable work: when a task splits into two or more '
+  + 'independent pieces — separate files, surfaces, or concerns — fan them out to parallel subagent calls in one '
+  + 'message instead of doing them inline; keep only single-step or strictly sequential actions inline.'
 
 /**
  * Model-facing wording from the provider's conversation-history descriptor
@@ -122,7 +204,7 @@ function providerWording(inheritsConversation: boolean): { description: string; 
         + 'completed turns so far (it does not see the current in-flight turn). Use this when the subtask '
         + 'builds on this conversation\'s context — a follow-up analysis, '
         + 'a review, a continuation — without consuming this conversation\'s context for the work itself. '
-        + 'You receive its result, not its intermediate steps.',
+        + 'You receive its result, not its intermediate steps.' + DELEGATION_DEFAULT_WORDING,
       promptDescription:
         'The task for the subagent. It already sees this conversation\'s completed turns, so build on them '
         + 'freely and state only what is new.',
@@ -133,7 +215,7 @@ function providerWording(inheritsConversation: boolean): { description: string; 
       'Delegate a self-contained task to a subagent (a separate agent that works in its own context) '
       + 'to offload focused, independent work — research, a scoped '
       + 'implementation, an analysis — so it does not consume this conversation\'s context. The subagent '
-      + 'returns its result, not its intermediate steps.',
+      + 'returns its result, not its intermediate steps.' + DELEGATION_DEFAULT_WORDING,
     promptDescription:
       'The complete, self-contained task for the subagent. It does not share this '
       + 'conversation\'s context, so include everything it needs.',
@@ -195,6 +277,36 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
 
   if (config.modelDiscovery === true) registerListSubagentModels(ctx, subagentModelSelectionProjectionHandle)
 
+  /**
+   * Merge the live child-route and effort defaults over the configured child
+   * options. A route overrides only the provider and model fields it names.
+   * The optional model-intel and llm services are read per call because they
+   * may mount after this plugin.
+   */
+  const withChildModelDefaults = async (
+    configured: AgentOptions | undefined,
+    parentSessionId: string,
+    taskText: string,
+  ): Promise<AgentOptions | undefined> => {
+    // `model-intel` is untyped on Context; this is the one method the `auto` route uses.
+    const intel = ctx.get('model-intel') as { resolveAutoRoute(task: string): Promise<AgentOptions | undefined> } | undefined
+    const llm = ctx.get('llm')
+    const route = await resolveChildModelRoute(
+      { defaultModel: config.childModel.get() ?? '', bySession: config.childModelBySession.get() },
+      parentSessionId,
+      taskText,
+      intel === undefined ? undefined : task => intel.resolveAutoRoute(task),
+      llm?.listProviders().map(provider => provider.id),
+    )
+    const effort = config.childReasoningEffort.get()?.trim() ?? ''
+    if (route === undefined && effort.length === 0) return configured
+    return {
+      ...configured,
+      ...route,
+      ...effort.length === 0 ? {} : { reasoningEffort: ReasoningEffortId(effort) },
+    }
+  }
+
   // Load order and HMR replacement can change provider availability while
   // this fiber remains active.
   let mounted: { subagentProvider: SubagentProvider; definition: ToolDefinition; disposeTool: () => void } | undefined
@@ -210,7 +322,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       description: wording.description
         + ' This tool starts an independently managed subagent and immediately returns its id. The runtime notifies you when it finishes.'
         + (subagentProvider.prepareContinuable !== undefined
-          ? ' The child reports results with `send_message`; use `send_message` to steer it while running or continue its conversation after it finishes.'
+          ? ' The child reports results with `send_message`; use `send_message` to steer it while running or continue its conversation after it finishes. Prefer that continuation over a new child when an existing child already owns the task context.'
           : ' The completion notice includes its final answer. This backend does not accept follow-up messages.')
         + (modelSelectionEnabled ? selectionDescription : '')
         + (modelSelectionEnabled && subagentProvider.inheritsParentContext
@@ -224,7 +336,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         description: {
           type: 'string',
           required: true,
-          description: 'A short (3-5 word) description of the delegated task, for display.',
+          description: subagentProvider.prepareContinuable !== undefined
+            ? 'A short (3-5 word) durable label naming the domain this child owns (subsystem, surface, or responsibility), not the one-off request. Later tasks match this label to decide whether to continue this child instead of starting a new one.'
+            : 'A short (3-5 word) description of the delegated task, for display.',
         },
         prompt: {
           type: 'string',
@@ -277,11 +391,14 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         const agentPreset = presets.resolve(args as PresetSelectionRequest)
         const modelRequest = args as DelegationModelRequest
         const parentOptions = parentAgentOptionsForDelegation(parent)
-        const requiresRoutePreflight = hasDelegationModelRequest(modelRequest)
-          || hasConfiguredLlmSelection(config.agentOptions)
-        const configuredChildAgentOptions = requiresRoutePreflight && providerRouteDefaults !== undefined
-          ? { ...providerRouteDefaults, ...config.agentOptions }
+        const configuredAgentOptions = subagentProvider.capabilities.agentOptions
+          ? await withChildModelDefaults(config.agentOptions, parent.id, args.prompt)
           : config.agentOptions
+        const requiresRoutePreflight = hasDelegationModelRequest(modelRequest)
+          || hasConfiguredLlmSelection(configuredAgentOptions)
+        const configuredChildAgentOptions = requiresRoutePreflight && providerRouteDefaults !== undefined
+          ? { ...providerRouteDefaults, ...configuredAgentOptions }
+          : configuredAgentOptions
         const requestedChildAgentOptions = requestedAgentOptions(
           parentOptions,
           configuredChildAgentOptions,
@@ -371,6 +488,25 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       if (visible[0] !== toolName) return ''
       const names = visible.map(name => `\`${name}\``).join(' or ')
       return `Start independent delegations with ${names} together in one assistant message and continue useful work while they run. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn.`
+        + ' Delegation is the DEFAULT for decomposable work: when a task splits into two or more independent '
+        + 'pieces — separate files, surfaces, or concerns — fan them out to parallel delegation calls in one '
+        + 'assistant message instead of doing them inline. Keep only genuinely single-step or strictly '
+        + 'sequential actions inline; do not wait to be asked to parallelize.'
+        + ' For relatively large tasks, multi-phase projects, or complex sets of to-dos, delegate codebase '
+        + 'exploration to a subagent to draft the implementation plan — but the plan never waits on '
+        + 'delegation: if the subagent fails or is unavailable, author the plan from current knowledge and '
+        + 'record it with plan_write before writing the todo tree or mutating code.'
+        + (modelSelectionEnabled
+          ? ' Leave `provider`, `model`, and `reasoning_effort` unset unless the task needs a different model: '
+            + 'a delegation that omits them runs on the configured child-model default.'
+          : '')
+        + ' Before starting a new child, when `list_agents` and `send_message` are available, list your '
+        + 'continuable children and continue one whose label and domain already cover this task with '
+        + '`send_message`; its conversation prefix is largely cached, so continuing it costs far less than '
+        + 'restating the context. Start a new child only when no existing child fits, when the work must run '
+        + 'independently, or when the old context would contaminate the task. Name each new child for the '
+        + 'durable domain it owns (subsystem, surface, or responsibility), never for the one-off request, so '
+        + 'later tasks can recognize it.'
     },
   })
   ctx.systemPrompt.context({

@@ -10,6 +10,7 @@
 import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -84,7 +85,7 @@ describe('todos projection provider', () => {
     expect(projections?.asOfSeq).toBe(session.seq - 1)
   })
 
-  it('clears the standing plan on the next turn/start (turn/end keeps it)', async () => {
+  it('keeps the standing plan across turn/end and the next turn/start', async () => {
     const bench = await harness(true)
     const session = bench.session
     seedMessage(session)
@@ -94,9 +95,9 @@ describe('todos projection provider', () => {
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     expect((await bench.tailProjections())?.values.todos).toEqual(list)
     session.append('turn/start', { turn: 2 })
-    const cleared = await bench.tailProjections()
-    expect(cleared?.values.todos).toBeNull()
-    expect(cleared?.asOfSeq).toBe(session.seq - 1)
+    // The tree is a standing plan: only the next todo/write replaces it, so
+    // the user keeps seeing the plan while follow-up work runs.
+    expect((await bench.tailProjections())?.values.todos).toEqual(list)
   })
 
   it('has no todos key when tool-todo is not composed', async () => {
@@ -114,5 +115,52 @@ describe('todos projection provider', () => {
     expect((await bench.tailProjections())?.values.todos).toBeNull()
     await fiber.dispose()
     expect('todos' in ((await bench.tailProjections())?.values ?? {})).toBe(false)
+  })
+})
+
+describe('standing-plan prompt section', () => {
+  it('renders the latest tree with statuses and the continuation contract', async () => {
+    const bench = await harness(true)
+    const list: TodoItem[] = [
+      { content: 'Phase 1: tiles', status: 'completed', children: [] },
+      { content: 'Phase 2: control', status: 'completed', children: [] },
+      { content: 'Phase 3: ptys', status: 'pending', children: [] },
+    ]
+    bench.session.append('todo/write', { todos: list })
+    const agent = { session: bench.session }
+    const assembly = await bench.ctx.systemPrompt.assemble({ agent, scope: agent } as never)
+    const section = assembly.sections.find(candidate => candidate.name === 'todo:standing-plan')
+    expect(section).toBeDefined()
+    expect(section?.interpolate).toBe(false)
+    expect(section?.text).toContain('- [x] Phase 1: tiles')
+    expect(section?.text).toContain('- [x] Phase 2: control')
+    expect(section?.text).toContain('- [ ] Phase 3: ptys')
+    expect(section?.text).toContain('never replace it with a partial tree')
+  })
+
+  it('renders nothing before the first write', async () => {
+    const bench = await harness(true)
+    const agent = { session: bench.session }
+    const assembly = await bench.ctx.systemPrompt.assemble({ agent, scope: agent } as never)
+    expect(assembly.sections.find(candidate => candidate.name === 'todo:standing-plan')?.text).toBe('')
+  })
+
+  it('reflects the latest write after a replacement tree', async () => {
+    const bench = await harness(true)
+    bench.session.append('todo/write', { todos: [{ content: 'old', status: 'pending', children: [] }] })
+    bench.session.append('todo/write', { todos: [{ content: 'new plan', status: 'in_progress', children: [] }] })
+    const agent = { session: bench.session }
+    const assembly = await bench.ctx.systemPrompt.assemble({ agent, scope: agent } as never)
+    const text = assembly.sections.find(candidate => candidate.name === 'todo:standing-plan')?.text ?? ''
+    expect(text).toContain('- [~] new plan')
+    expect(text).not.toContain('old')
+  })
+
+  it('keeps template-looking todo content literal', async () => {
+    const bench = await harness(true)
+    bench.session.append('todo/write', { todos: [{ content: 'Preserve {{source}}', status: 'pending', children: [] }] })
+    const agent = { session: bench.session }
+    const assembly = await bench.ctx.systemPrompt.assemble({ agent, scope: agent } as never)
+    expect(renderPrompt(assembly)).toContain('Preserve {{source}}')
   })
 })

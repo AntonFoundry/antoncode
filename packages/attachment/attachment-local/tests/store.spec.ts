@@ -311,4 +311,12 @@ describe('local attachment store', () => {
       data: Uint8Array.of(...prepared.data, 0),
     })).rejects.toMatchObject({ code: 'ATTACHMENT_CORRUPT' })
   })
+
+  it('classifies an unavailable attachment directory before creating a staging file', async () => {
+    const storageRoot = await root()
+    await writeFile(dirname(storageRoot), 'not a directory')
+
+    await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS, POLICY))
+      .rejects.toMatchObject({ code: 'ATTACHMENT_WRITE_FAILED' })
+  })
 })

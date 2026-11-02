@@ -3,7 +3,7 @@
 Status: implemented
 Archived: 2026-09-04
 
-English | [中文](2026-06-29-todo-write-tool.zh.md)
+English
 
 ## Problem
 
@@ -35,7 +35,7 @@ Each list belongs to the calling agent session, and non-agent calls are rejected
 
 ### Validation: the cheap middle
 
-The schema enforces type/required/enum. Beyond that, `execute` rejects empty or duplicate `content` and, when `allowParallelInProgress` is `false`, more than one active task. Ordering and keeping the list current remain model disciplines expressed in the tool description. A rejected write returns an `isError` result so the model self-corrects. The required deployment policy and the durable invariant's independence from it are owned by the [parallel in-progress Agent Note](2026-07-26-todo-parallel-in-progress.md).
+The schema enforces type/enum and tolerates malformed entries (missing fields, junk keys, string entries) so the handler's repair pass can salvage them; see the [payload-salvage Agent Note](../bug-fix/2026-09-27-todo-write-salvages-corrupted-payloads.md). Beyond that, `execute` rejects empty or duplicate `content` and, when `allowParallelInProgress` is `false`, more than one active task. Ordering and keeping the list current remain model disciplines expressed in the tool description. A rejected write returns an `isError` result so the model self-corrects. The required deployment policy and the durable invariant's independence from it are owned by the [parallel in-progress Agent Note](2026-07-26-todo-parallel-in-progress.md).
 
 ## Why no cordis-catalog entry / no `@mode`
 

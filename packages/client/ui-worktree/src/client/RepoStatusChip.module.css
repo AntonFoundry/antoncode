@@ -1,0 +1,42 @@
+/* Repo-status chip: a quiet leading pill in the session header's static
+   context band. */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--dsw-border-subtle, rgba(255, 255, 255, 0.1));
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-text-secondary, var(--dsw-text-secondary, #9a9a9a));
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+  max-width: 240px;
+}
+
+.chip:hover {
+  color: var(--dsw-text-primary, var(--dsw-text-primary, #e6e6e6));
+  border-color: var(--dsw-border-strong, rgba(255, 255, 255, 0.2));
+}
+
+.icon {
+  display: inline-flex;
+  flex: none;
+  opacity: 0.8;
+}
+
+.branch {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stash {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--dsw-fill-subtle, rgba(255, 255, 255, 0.08));
+  font-size: 11px;
+}

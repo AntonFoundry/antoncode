@@ -217,6 +217,24 @@ export class ScopedLayers<L extends ScopeLayer> {
   }
 
   /**
+   * Read or CREATE the exact-scope overlay. Unlike {@link effect}, which ties
+   * layer creation to a registration's disposer, this serves mutations that
+   * are scope-lifetime state rather than effect-owned contributions (a
+   * paged-mode tool grant minted mid-execution has no disposer to ride).
+   * Reclamation still applies to effect undo: a layer whose tables all empty
+   * out is removed by the next disposal.
+   * @param scope - exact scope key.
+   * @returns the existing or freshly created scoped layer.
+   */
+  ensure(scope: ScopeKey): L {
+    const existing = this.scoped.get(scope)
+    if (existing !== undefined) return existing
+    const layer = this.createLayer(scope)
+    this.scoped.set(scope, layer)
+    return layer
+  }
+
+  /**
    * Attach one synchronous layer mutation to its registration context.
    * @param ctx - context that determines both scope visibility and effect ownership.
    * @param action - atomic mutation returning its synchronous undo.

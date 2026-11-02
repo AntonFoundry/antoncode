@@ -1,15 +1,15 @@
 ---
-description: "Read-only projection of the current Cordis Loader plugin state with each agent preset's composition beside it: the pluginInventory service and its pluginInventory/list Remote for web GUI host clients."
+description: "Projection of the current Cordis Loader plugin state with each agent preset's composition beside it, plus durable toggle and scalar-config edits: the pluginInventory service and its pluginInventory/list, toggle, and configure Remotes for web GUI host clients."
 kind: "package-reference"
 ---
 
 # @deepseek-ai/dsh-host-plugin-inventory
 
-English | [中文](README.zh.md)
+English
 
 ## Summary
 
-Clients can call `pluginInventory/list` to display the host’s current plugins in load order, including each entry’s identifier, module specifier, effective enablement, live phase, and available display text. Deployments with an agent-preset roster also report each preset’s metadata, health, and flattened plugin composition; without a roster, preset data is absent. Each response is a point-in-time, read-only snapshot for display and diagnostics: it cannot mutate plugins and provides no history or change subscription.
+Clients can call `pluginInventory/list` to display the host’s current plugins in load order, including each entry’s identifier, module specifier, effective enablement, live phase, and available display text. Deployments with an agent-preset roster also report each preset’s metadata, health, and flattened plugin composition; without a roster, preset data is absent. Each response is a point-in-time snapshot for display and diagnostics with no history or change subscription. Each entry also reports whether it is protected core infrastructure (`isProtected`) and its JSON-scalar config values (`config`). `pluginInventory/toggle(entryId, enabled)` enables or disables a non-protected Loader entry and `pluginInventory/configure(entryId, patch)` merges scalar values into its config and reloads it; both reject protected entries and write through to the durable plugin state.
 
 ## Table of Contents
 
@@ -102,7 +102,8 @@ None; this package neither assembles nor sends a provider request.
 These limits define what a point-in-time inventory cannot tell a client. They are current package constraints, not a task backlog.
 
 - **Point-in-time state only** — the result contains no durable failure history or subscription; a missing root Fiber is reported as `null`, regardless of why no live root exists.
-- **No layer attribution or mutation** — the service does not identify which bundle, profile, or override introduced an entry, and it cannot enable, disable, add, or remove plugins in either plane.
+- **Durable toggles and config** — `toggle` and `configure` write through to the harness home's `plugin-state.json` (see [`dsh-app-boot`](../../boot/app-boot/README.md)), which profile boot re-applies as the highest automatic patch layer; a disabled plugin stays disabled across restarts, rebuilds, and full reinstalls, and a config edit whose live values carry non-JSON nodes stays runtime-scoped with a warning.
+- **No layer attribution, addition, or removal** — the service does not identify which bundle, profile, or override introduced an entry, cannot add or remove plugins, and edits only Loader entries, never preset composition rows.
 - **Presets appear only with a roster** — a deployment without `dsh-agent-preset-registry` serves Loader entries alone; the `agentPresets` field is absent rather than empty.
 
 <a id="dev-note"></a>

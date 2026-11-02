@@ -5,7 +5,7 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-goal
 
-English | [中文](README.zh.md)
+English
 
 ## Summary
 
@@ -38,7 +38,7 @@ Load the package with a composition entry; the only deployment choice is the def
 ```yaml
 - name: '@deepseek-ai/dsh-goal'
   config:
-    defaultMaxGoalRounds: 256
+    defaultMaxGoalRounds: 500
 ```
 
 | Field | Default | Meaning |

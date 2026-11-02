@@ -1,28 +1,27 @@
 /**
- * Settings shell root: the sidebar-foot trigger row plus the centered modal
- * panel with the section nav rail. In browsers below 768px the panel fills
- * the viewport and the rail turns into a horizontal strip; Windows and macOS
- * desktop windows retain the rail
- * (SettingsRoot.module.css). The shell is a pure composition face —
- * slot-owned text (trigger label, panel title, close label, sections) arrives
- * from registrants through slots; accessible names resolve from localized
- * content (trigger: shell locale; dialog: aria-labelledby the title node;
- * close: visually-hidden slot text). Modal open state and the active section
- * id belong to the declared owner store; the onboarding coordinator mounts
- * exactly one ordered registrant while the sessions-derived empty-Hero fact
- * is active. Visible dialog chrome belongs to the step, so a
+ * Settings shell: the sidebar-foot trigger row (which opens the settings
+ * window through ctx.layout, beside the connection and desktop-update
+ * indicators) and the window body — the section nav rail plus the active
+ * section's page. Both are pure composition faces — every piece of text
+ * (trigger label, window title, sections) arrives from registrants through
+ * slots; accessible names resolve to localized content (trigger: shell
+ * locale; window: the localized settings title). The active section id lives
+ * in the apply-scope shared source so the onboarding coordinator's
+ * openSection lands on the same window; completed and explicitly requested
+ * step ids are component-local viewing state. The onboarding coordinator
+ * mounts exactly one ordered registrant while the sessions-derived empty-Hero
+ * fact is active. Visible dialog chrome belongs to the step, so a
  * mounted-but-deciding step paints nothing here.
  */
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  ConnectionIndicator, Tooltip, useModalLayer,
-  IconAgentPresetOutlineMedium, IconArchiveOutlineMedium, IconCloseOutlineRegular, IconDataOutlineMedium,
+  ConnectionIndicator, Tooltip,
+  IconAgentPresetOutlineMedium, IconArchiveOutlineMedium, IconDataOutlineMedium,
   IconPersonalizationOutlineMedium, IconSettingsOutlineMedium, IconUserOutlineMedium,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConnectionIndicatorState } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { SettingsRootComponentProps, SettingsSectionRow } from './shell-contract.ts'
+import type { SettingsRootComponentProps, SettingsSectionRow, SettingsWindowComponentProps } from './shell-contract.ts'
 import css from './SettingsRoot.module.css'
 import { DesktopUpdateIndicator } from './DesktopUpdateIndicator.tsx'
 
@@ -41,101 +40,106 @@ function navIcon(id: string) {
   return <IconSettingsOutlineMedium className={css.navIcon} size={16} />
 }
 
-type PanelProps = {
+type WindowProps = {
   rows: readonly SettingsSectionRow[]
-  renderSlot: SettingsRootComponentProps['renderSlot']
+  renderSlot: SettingsWindowComponentProps['renderSlot']
   activeId: string | undefined
   onSelect: (id: string) => void
   onClose: () => void
+  /** The window's accessible name — the localized settings title. */
+  name: string
 }
 
 /**
- * Body-portaled modal layer: full-viewport mask + centered panel. Close paths: the
- * header button, a mask click, and document-level Escape (mounted only while
- * open, so the listener lifetime is the panel's).
+ * The window body: nav rail over the `settings.section` entries plus the
+ * active section's page. Closing is the pane's own WM close gesture or the
+ * `close` prop sections receive. The root carries non-modal window semantics
+ * for assistive technology — `role="dialog"` named from the settings copy,
+ * `aria-modal` explicitly false — without the modal behaviors the WM idiom
+ * rejects: no mask, no focus trap, no Escape handling; the window manager
+ * owns the window.
  */
-function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelProps) {
+function SettingsWindowBody({ rows, renderSlot, activeId, onSelect, onClose, name }: WindowProps) {
   // Entries can unmount underneath the requested id, so the render-time
   // projection falls back to the first row when the id is gone.
   const active = rows.find(r => r.id === activeId)?.id ?? rows[0]?.id
-  const titleId = useId()
-
-  const panel = useRef<HTMLDivElement>(null)
-  useModalLayer(panel, true, onClose)
-
-  // Portalled beside #root like the Modal primitive: a covering surface mounted
-  // inside the root would precede the columns' chrome in document order, so a
-  // chrome row that declares window drag after it would override its subtraction.
-  // Beside the root, base.css's `body > :not(#root)` rule subtracts it instead.
-  return createPortal((
-    <div className={css.overlay} role="presentation">
-      <div className={css.mask} aria-hidden="true" onClick={onClose} />
-      <div ref={panel} tabIndex={-1} data-shortcut-modal="settings" className={css.panel} role="dialog" aria-modal="true" aria-labelledby={titleId}>
-        {/* The four seats stay direct children of the panel and take their
-            places from its grid: title and header share the first row, the
-            navigation and the active section the second. */}
-        <div className={css.navTitle} id={titleId} tabIndex={-1}
-          data-modal-autofocus={active === undefined ? '' : undefined}>{renderSlot('settings.header', {})}</div>
-        <nav className={css.nav}>
-          <div className={css.navList}>
-            {rows.map(row => (
-              <button
-                key={row.id}
-                type="button"
-                className={clsx(css.navCell, row.id === active && css.active)}
-                aria-current={row.id === active ? 'true' : undefined}
-                data-modal-autofocus={row.id === active ? '' : undefined}
-                onFocus={(event) => { event.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' }) }}
-                onClick={() => { onSelect(row.id) }}
-              >
-                {navIcon(row.id)}
-                <span className={css.navLabel}>{row.label}</span>
-              </button>
-            ))}
-          </div>
-        </nav>
+  return (
+    <div className={css.root} role="dialog" aria-modal={false} aria-label={name}>
+      <nav className={css.nav}>
+        <div className={css.navTitle}>{renderSlot('settings.header', {})}</div>
+        <div className={css.navList}>
+          {rows.map(row => (
+            <button
+              key={row.id}
+              type="button"
+              className={clsx(css.navCell, row.id === active && css.active)}
+              aria-current={row.id === active ? 'true' : undefined}
+              onFocus={(event) => { event.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' }) }}
+              onClick={() => { onSelect(row.id) }}
+            >
+              {navIcon(row.id)}
+              <span className={css.navLabel}>{row.label}</span>
+            </button>
+          ))}
+        </div>
+      </nav>
+      <div className={css.content}>
         <div className={css.header}>
           <div className={css.actions}>{renderSlot('settings.action', {})}</div>
-          <button type="button" className={css.close} onClick={onClose}>
-            <IconCloseOutlineRegular size={14} />
-            <span className={css.hiddenLabel}>{renderSlot('settings.close', {})}</span>
-          </button>
         </div>
         <div className={css.options}>
           {active !== undefined && renderSlot('settings.section', { close: onClose }, { only: active })}
         </div>
       </div>
     </div>
-  ), document.body)
+  )
 }
 
 /**
- * Render the settings trigger and panel.
- * @param props - composed slot props (contract/slots.ts).
- * @returns the settings shell element tree.
+ * Render the settings window body.
+ * @param props - composed slot props (contract/shell-contract.ts).
+ * @returns the settings window element tree.
+ */
+export function SettingsWindow(props: SettingsWindowComponentProps) {
+  const { useSections, useActiveSection, renderSlot, closeWindow, setActiveSection, t } = props
+  const rows = useSections(s => s)
+  const { activeId } = useActiveSection(s => s)
+  return (
+    <SettingsWindowBody
+      rows={rows}
+      renderSlot={renderSlot}
+      activeId={activeId}
+      onSelect={setActiveSection}
+      onClose={closeWindow}
+      name={t('title')}
+    />
+  )
+}
+
+/**
+ * Render the settings trigger row and onboarding stage.
+ * @param props - composed slot props (contract/shell-contract.ts).
+ * @returns the settings trigger element tree.
  */
 export function SettingsRoot(props: SettingsRootComponentProps) {
   const {
-    wide, reconnect, useConnectionState, useSections, useOnboardingSteps, useSessions, renderSlot, t,
-    useDesktopUpdate, openDesktopUpdate, useStore, actions, useShortcuts,
+    wide, reconnect, useConnectionState, useOnboardingSteps, useSessions, useSettingsOpen, renderSlot, t,
+    useDesktopUpdate, openDesktopUpdate, useShortcuts, openWindow, openSection,
   } = props
-  const { open, activeId } = useStore(state => state)
+  const settingsOpen = useSettingsOpen(s => s)
   const shortcut = useShortcuts(rows => rows.find(row => row.id === 'settings.open'))
-  const { close, openSection } = actions
   const [requestedOnboarding, setRequestedOnboarding] = useState<string | undefined>()
   const [completedOnboarding, setCompletedOnboarding] = useState<ReadonlySet<string>>(() => new Set())
   const [showRecovery, setShowRecovery] = useState(false)
   const [holdConnecting, setHoldConnecting] = useState(false)
   const connectingShownAt = useRef<number | undefined>(undefined)
 
-  // The ledger tick keeps the nav rows fresh: registrants re-register with
-  // freshly localized text on locale change, and the trigger/header/close
-  // seats re-render through their own outlets' subscriptions.
-  const rows = useSections(s => s)
   const desktopUpdate = useDesktopUpdate(state => state)
   const connectionState = useConnectionState(state => state)
   const previousConnectionState = useRef(connectionState)
   const onboardingSteps = useOnboardingSteps(s => s)
+  // The onboarding stage runs only while the workspace shows a blank (or no)
+  // session: a live conversation means onboarding has already happened.
   const onboardingActive = useSessions((state) => {
     const main = Object.values(state.byId)
       .find(session => (session.retainedBy.mainView ?? 0) > 0)
@@ -151,16 +155,6 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
     if (onboardingActive) return
     setCompletedOnboarding(new Set())
   }, [onboardingActive])
-
-  const onboardingStepSeen = useRef(onboardingStep)
-  // An onboarding step owns the viewport and marks `#root` inert. The panel portals
-  // beside `#root`, outside that mark, so a step that appears while the panel is open
-  // takes the panel down rather than leaving it focusable behind the onboarding mask.
-  useEffect(() => {
-    const appeared = onboardingStepSeen.current === undefined && onboardingStep !== undefined
-    onboardingStepSeen.current = onboardingStep
-    if (appeared && open) close()
-  }, [onboardingStep, open, close])
 
   useLayoutEffect(() => {
     const previous = previousConnectionState.current
@@ -220,18 +214,18 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
     <>
       <div className={clsx(css.triggerRow, !wide && css.railRow)}>
         {renderSlot('settings.launcher', {
-          wide, settingsOpen: open, openSettings: actions.open,
+          wide, settingsOpen, openSettings: openWindow,
           ...(shortcut?.keys.length ? { settingsShortcut: { keys: shortcut.keys, aria: shortcut.aria } } : {}),
-          openOnboarding: (id) => { close(); setRequestedOnboarding(id) },
-        }, { fallback: <Tooltip disabled={open} label={t('trigger')} shortcutKeys={shortcut?.keys}>
+          openOnboarding: (id) => { setRequestedOnboarding(id) },
+        }, { fallback: <Tooltip disabled={settingsOpen} label={t('trigger')} shortcutKeys={shortcut?.keys}>
           <button
             type="button"
             className={clsx(css.trigger, !wide && css.rail)}
             aria-label={t('trigger')}
             aria-keyshortcuts={shortcut?.aria}
             aria-haspopup="dialog"
-            aria-expanded={open}
-            onClick={() => { actions.open() }}
+            aria-expanded={settingsOpen}
+            onClick={openWindow}
           >
             {renderSlot('settings.trigger', { wide })}
           </button>
@@ -248,15 +242,6 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
         <DesktopUpdateIndicator wide={wide} hidden={connectionIndicator !== undefined && desktopUpdate.presentation?.phase !== 'installing'}
           t={t} view={desktopUpdate} onOpen={openDesktopUpdate} />
       </div>
-      {open && (
-        <SettingsPanel
-          rows={rows}
-          renderSlot={renderSlot}
-          activeId={activeId}
-          onSelect={actions.select}
-          onClose={close}
-        />
-      )}
       {/* Dialog chrome and `#root` inert ownership live inside each step's
           visible branch. A step still deciding (private facts loading)
           renders null, so nothing paints or blocks while it decides. */}

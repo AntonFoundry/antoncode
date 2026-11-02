@@ -5,7 +5,7 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-client-ui-workspace
 
-English | [中文](README.zh.md)
+English
 
 Desktop product events use the optional [product analytics service](../product-analytics/README.md); ordinary Web interactions are excluded.
 
@@ -30,6 +30,16 @@ This package lets users browse grouped or flat Session lists, choose a Workspace
 Use the sidebar to browse Workspaces and their Sessions, reorder them, and start new ones; use the picker in the Session Intent hero to choose a Workspace for a new session. Picker entries that share a name also show the shortest trailing path that tells each apart, and hovering one shows its full path. An open Workspace shows its first non-blank Sessions in list order up to a per-Workspace watermark, initially five. The watermark rises to cover the last Session within the first 50 that is running, has a running child, awaits the user, has an unread completion, or is open in the main view; a Session opened from search raises it to that Session at any position. The watermark is a row count that never falls on its own, so the rows stay visible after a run or notification ends; a reorder that moves a Session past the watermark hides it. Each **Show more** click raises it by five, without the 50-row limit, and reveals the rest when five or fewer remain; after the final batch, **Show less** resets it. Folding a Workspace resets its watermark and those of its nested Workspaces; a reset watermark still covers the qualifying Sessions. The selected blank **New Session** is an extra row outside the watermark until its first prompt. Watermarks are not persisted; any unmount of the grouped tree resets them.
 
 History rows without a stored title use the localized unnamed label (未命名 / Untitled), rather than a directory name. The current blank row remains New Session; other blank rows remain hidden. Rename drafts use the stored title, or start empty when unnamed; unnamed rows do not offer title copying.
+
+### Archived Workspaces, worktrees, and selection mode
+
+Sidebar adding has two triggers and one flow: the header's flat **Add workspace...** action and the shell's **New Workspace** capsule, whose presses arrive as a monotonic request count on the region owner share while the region reports hole occupancy back so the shell can drop its capsule. Both render only while the surface's directory-flow hole is occupied.
+
+Active Workspaces (a member Session running or owning live background jobs, or session activity inside `WORKSPACE_ACTIVITY_WINDOW_MS`, one week) float to the top alphabetically with a green folder tint; inactive Workspaces keep the Host order below. Week-idle Workspaces leave the main list and render under a collapsed **Archived** section at the bottom, whose header reads as one more Workspace row. The split is a pure view derivation recomputed on every activity change, so a new prompt, a running session, or a New Session pick moves the Workspace back to the main area on its own; archiving writes nothing and unarchiving is automatic.
+
+Sessions owned by a worktree Workspace prefix their row title with the worktree's directory name. A Session row's status also reports live (running or stopping) background jobs it owns, so an idle Session with live jobs still animates. Blank Sessions shown in a visible pinned window-manager pane stay visible beside the selected blank row.
+
+Session rows support a bulk-archive selection mode. A checklist button in the section header enters selection: rows render a round membership indicator instead of the status slot, clicking toggles membership instead of opening, and row menus, trailing details, and drags stand down. A bar above the list shows the localized selected count with Archive and Done actions; Archive commits each selected session through the same archive path as the row menu, exits the mode, and clears the selection. The selection is view state only and survives neither Done nor a remount.
 
 ### Reordering and view options
 

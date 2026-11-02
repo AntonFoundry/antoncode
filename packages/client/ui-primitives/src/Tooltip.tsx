@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom'
 import { ShortcutKeys } from './ShortcutKeys.tsx'
 import { placeTooltip, type TooltipSide } from './tooltip-placement.ts'
 import { useDismissOnOutsidePointer } from './useDismissOnOutsidePointer.ts'
+import { fixedInsetScale } from './zoom-scale.ts'
 import css from './Tooltip.module.css'
 // Tooltips take the wide answer — any key returns to the keyboard. Focus rings read the
 // narrower `data-input-modality` attribute the same module publishes.
@@ -110,15 +111,19 @@ export function Tooltip({ label, shortcutKeys, side = 'right', align = 'center',
     let anchorRect = pos
     const fit = () => {
       if (size === undefined) return
+      // Placement runs in true viewport space on the bubble's drawn size; the
+      // engine multiplies a zoomed fixed element's insets by the zoom acting
+      // on it, so the written insets divide by that factor.
+      const scale = fixedInsetScale(el)
       const placement = placeTooltip({
-        anchor: anchorRect, width: size.inlineSize, height: size.blockSize,
+        anchor: anchorRect, width: size.inlineSize * scale, height: size.blockSize * scale,
         viewportWidth: window.innerWidth, viewportHeight: window.innerHeight, side, align, gap,
       })
       const horizontal = placement.side === 'right' || placement.side === 'left'
       const offsetX = horizontal ? 0 : align === 'end' ? placement.width : placement.width / 2
       const offsetY = horizontal ? placement.height / 2 : placement.side === 'top' ? placement.height : 0
-      el.style.left = `${placement.left + offsetX}px`
-      el.style.top = `${placement.top + offsetY}px`
+      el.style.left = `${(placement.left + offsetX) / scale}px`
+      el.style.top = `${(placement.top + offsetY) / scale}px`
       el.dataset.side = placement.side
       el.style.visibility = 'visible'
     }

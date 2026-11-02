@@ -24,6 +24,8 @@
     "website/.generated/**",
     "vendor/**", // Vendored source keeps upstream style and idioms.
     "packages/experimental/claude-code-mods/examples/*/{hooks,tests,types}/**", // Claude Code's published example mods and their tests keep the upstream style; see the headers.
+    "packages/web/web-search-browser/src/engine/**", // Vendored scrape engine keeps upstream style and idioms; see its package README.
+    "packages/zai/tool-zai/src/prompts.ts", // Vendored Z.AI system prompts keep upstream text verbatim; see the package README.
     "native/**", // The imported landlock-run subtree has its own gates; see native/README.md.
     "**/*.js",
     "**/*.mjs",

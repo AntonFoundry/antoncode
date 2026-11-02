@@ -5,11 +5,11 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-client-ui-layout
 
-English | [中文](README.zh.md)
+English
 
 ## Summary
 
-This package provides the Web GUI's window-manager frame (WmFrame), which tiles the sidebar, the Conversation, the right panel, and file, terminal, scratch, and settings buffers as panes of one window tree, and the `ctx.layout` panel control. It keeps upstream's slot vocabulary (`sidebar`, `main`, `rightbar`, `shell.bottom`, `shell.overlay`, `shell.leading`), so upstream occupants register unchanged and render inside panes. The theme presenter owns color scheme, alias tokens, font sizes, font lists, the active theme id, and document metadata. The window tree persists in `localStorage` (`dsh.layout.wm`).
+This package provides the Web GUI's window-manager frame (WmFrame), which tiles the sidebar, the Conversation, the right panel, and file, terminal, scratch, and settings buffers as panes of one window tree, and the `ctx.layout` panel control. It keeps upstream's slot vocabulary (`sidebar`, `main`, `rightbar`, `shell.bottom`, `shell.overlay`, `shell.leading`), so upstream occupants register unchanged and render inside panes. The theme presenter owns color scheme, alias tokens, the theme's `--shiki-*` syntax hues, font sizes, font lists, the active theme id, and document metadata. The window tree persists in `localStorage` (`dsh.layout.wm`).
 
 ## Table of Contents
 
@@ -96,6 +96,8 @@ These limits define the current layout behavior.
 - **`shell.leading` is declared but not rendered** — the brand row owns the sidebar toggle, so ui-sidebar's leading controls register without mounting.
 - **Quitting the right panel's window leaves its surface expanded** — the surface keeps its own expanded record, so tools reaching it while no window shows it do not reopen a window until it reports a fresh expansion.
 - **The frame's stylesheets keep their own corner radii** — they are recorded as package-owned exceptions to the shared radius scale.
+- **Window layout persists per workspace, panel geometry does not** — the split tree, buffers, and focused leaf reload from the wm snapshot; sidebar-width defaults and closed-details state reset per load.
+- **No scroll anchoring during squeeze reflow** — layout changes may move the reader's viewport.
 
 <a id="dev-note"></a>
 ### Dev Note

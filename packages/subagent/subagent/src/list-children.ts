@@ -1,6 +1,10 @@
 /**
  * Direct-child and recursive descendant discovery from parent-owned catalogs.
  * Each catalog read releases its Session observation before the next branch.
+ * Descendant child rows also carry the child's own cumulative provider usage
+ * (`tokenUsage`, when the token-meter unit is registered and the child has
+ * reported usage) and its latest epoch outcome (`subagentOutcome`), both read
+ * from the same observation as the child's catalog.
  * @module @deepseek-ai/dsh-subagent
  */
 
@@ -8,16 +12,45 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SubagentListEntry } from './control-types.ts'
 import { SubagentError } from './error.ts'
-import type { SubagentCatalogEntry } from './projection-types.ts'
+import type { SubagentCatalogEntry, SubagentOutcomeProjection } from './projection-types.ts'
+import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 
 export type { SubagentListEntry } from './control-types.ts'
 
+/** Durable facts a descendant child row reads from the child's own Session. */
+export interface SubagentChildFacts {
+  /**
+   * Cumulative provider-reported usage folded from the child's own log
+   * (`tokenUsage` projection, including the derived `cacheHitRate`); absent
+   * until the child's first usage report and when the token-meter unit is not
+   * registered in this deployment's projection registry.
+   */
+  readonly usage?: TokenUsageProjection
+  /**
+   * How the child's most recent closed epoch ended, in `subagent/end`
+   * stop-reason vocabulary (`completed`, `error`, `aborted`, `max-tokens`,
+   * `refusal`), with the failure message for an `error` ending. Absent before
+   * the first epoch closes. A master agent reads it to decide whether to
+   * resume a failed child, switch its model, or give up.
+   */
+  readonly outcome?: SubagentOutcomeProjection
+}
+
 /** One catalog descendant with its direct parent and edge distance from the requested root. */
-export type SubagentDescendantListEntry = SubagentListEntry & {
+export type SubagentDescendantListEntry = (
+  | (Extract<SubagentListEntry, { readonly kind: 'child' }> & SubagentChildFacts)
+  | Exclude<SubagentListEntry, { readonly kind: 'child' }>
+) & {
   /** Parent whose catalog contains this child. */
   readonly parentId: SessionId
   /** Edge distance from the requested root; direct children are `1`. */
   readonly depth: number
+}
+
+/** One observed Session's direct-child catalog and its own child facts. */
+interface ObservedCatalog {
+  readonly entries: SubagentCatalogEntry[]
+  readonly facts: SubagentChildFacts
 }
 
 /**
@@ -33,6 +66,23 @@ export async function listChildren(
   parentSessionId: SessionId,
   signal?: AbortSignal,
 ): Promise<SubagentCatalogEntry[]> {
+  return (await observeCatalog(ctx, parentSessionId, signal)).entries
+}
+
+/**
+ * Read one Session's durable catalog and its own usage and outcome facts
+ * through one live-preferred Session observation.
+ * @param ctx - context carrying the Session query service.
+ * @param parentSessionId - Session whose direct children are requested.
+ * @param signal - cancellation forwarded to the Session observation.
+ * @returns direct-child rows in catalog event order and the Session's own facts.
+ * @throws {@link SubagentError} when query or catalog projection is unavailable.
+ */
+async function observeCatalog(
+  ctx: Context,
+  parentSessionId: SessionId,
+  signal?: AbortSignal,
+): Promise<ObservedCatalog> {
   const query = ctx.get('sessionQuery')
   if (query === undefined) {
     throw new SubagentError(
@@ -43,14 +93,34 @@ export async function listChildren(
   using parent = await query.observeSession(parentSessionId, {
     ...signal === undefined ? {} : { signal },
   })
-  const entries = parent.projections?.values.subagentCatalog
+  const values = parent.projections?.values
+  const entries = values?.subagentCatalog
   if (entries === undefined) {
     throw new SubagentError(
       'listing subagents requires the registered subagentCatalog projection',
       'SUBAGENT_CONTROL_PROJECTIONS_UNAVAILABLE',
     )
   }
-  return entries
+  const usage = servedUsage(values?.tokenUsage)
+  const outcome = values?.subagentOutcome
+  return {
+    entries,
+    facts: {
+      ...usage === undefined ? {} : { usage },
+      ...outcome === undefined || outcome === null ? {} : { outcome },
+    },
+  }
+}
+
+/** The served usage row, absent before the Session's first usage report. */
+function servedUsage(value: TokenUsageProjection | null | undefined): TokenUsageProjection | undefined {
+  if (value === undefined || value === null) return undefined
+  return value.uncachedInputTokens === 0
+    && value.outputTokens === 0
+    && value.cacheReadTokens === 0
+    && value.cacheWriteTokens === 0
+    ? undefined
+    : value
 }
 
 /**
@@ -73,11 +143,11 @@ export async function listDescendants(
       'SUBAGENT_CONTROL_SESSION_STORE_UNAVAILABLE',
     )
   }
-  const readChildren = async (id: SessionId): Promise<SubagentCatalogEntry[]> => {
+  const readChildren = async (id: SessionId): Promise<ObservedCatalog> => {
     assertListingNotCancelled(signal)
-    let children: SubagentCatalogEntry[]
+    let children: ObservedCatalog
     try {
-      children = await listChildren(ctx, id, signal)
+      children = await observeCatalog(ctx, id, signal)
     } catch (error) {
       assertListingNotCancelled(signal)
       throw error
@@ -85,7 +155,7 @@ export async function listDescendants(
     assertListingNotCancelled(signal)
     return children
   }
-  const stack = (await readChildren(rootSessionId))
+  const stack = (await readChildren(rootSessionId)).entries
     .map(entry => ({ entry, parentId: rootSessionId, depth: 1 }))
     .reverse()
   const visited = new Set<SessionId>([rootSessionId])
@@ -94,9 +164,9 @@ export async function listDescendants(
     const { entry, parentId, depth } = position
     if (visited.has(entry.id)) continue
     visited.add(entry.id)
-    let children: SubagentCatalogEntry[]
+    let observed: ObservedCatalog
     try {
-      children = entry.mode === 'external' ? [] : await readChildren(entry.id)
+      observed = entry.mode === 'external' ? { entries: [], facts: {} } : await readChildren(entry.id)
     } catch (error) {
       if (error instanceof SubagentError) throw error
       const code = error instanceof Error && 'code' in error ? error.code : undefined
@@ -114,9 +184,11 @@ export async function listDescendants(
       result.push({
         ...identity, kind: 'child', parentId, depth,
         activity: sessions.get(entry.id) === undefined ? 'inactive' : 'running',
-        hasChildren: children.length > 0,
+        hasChildren: observed.entries.length > 0,
+        ...observed.facts,
       })
     }
+    const children = observed.entries
     // Catalog event order defines siblings; the stack visits the first one next.
     for (const child of [...children].reverse()) {
       stack.push({ entry: child, parentId: entry.id, depth: depth + 1 })

@@ -1,15 +1,19 @@
-/** Read-only projection of the current Cordis Loader plugin entries. */
+/**
+ * Projection of the current Cordis Loader plugin entries, with durable
+ * enable/disable and scalar-config edits for non-protected entries.
+ */
 
 import type { Context, FiberState } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 // Type-only: the optional agent-preset roster resolved through `ctx.get`.
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
-import type {} from '@deepseek-ai/dsh-app-boot'
+import { updatePluginEntry } from '@deepseek-ai/dsh-app-boot'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 // Typert-generated ./typert and ./remote artifacts import Zod at runtime.
 import type {} from 'zod'
 import type {
   AgentPresetPluginGroup,
+  ConfigScalar,
   PluginEntryId,
   PluginFiberPhase,
   PluginInventoryEntry,
@@ -47,6 +51,30 @@ const FIBER_PHASE = {
   [FIBER_STATE.UNLOADING]: 'unloading',
 } as const satisfies Record<FiberState, PluginFiberPhase>
 
+const PROTECTED_PLUGINS = new Set([
+  'cordis:include',
+  'cordis:group',
+  '@deepseek-ai/cordis-plugin-server',
+  '@deepseek-ai/dsh-client-connection',
+])
+
+/** Project the JSON-scalar subset of an entry's config for client display/edit. */
+function configScalars(config: unknown): Record<string, ConfigScalar> | undefined {
+  if (typeof config !== 'object' || config === null) return undefined
+  const scalars: Record<string, ConfigScalar> = {}
+  for (const [key, value] of Object.entries(config as Record<string, unknown>)) {
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || value === null) {
+      scalars[key] = value
+    }
+  }
+  return Object.keys(scalars).length === 0 ? undefined : scalars
+}
+
+/** Check whether a plugin is part of the core application runtime infrastructure. */
+export function isProtectedPlugin(moduleName: string): boolean {
+  return PROTECTED_PLUGINS.has(moduleName)
+}
+
 /** Remote-only service exposing the Loader's current non-group entry state. */
 export class PluginInventoryGateway extends TypertRemoteService {
   static inject = ['loader']
@@ -71,6 +99,46 @@ export class PluginInventoryGateway extends TypertRemoteService {
   async list(): Promise<PluginInventorySnapshot> {
     return readPluginInventory(this.ctx)
   }
+
+  @Remote('toggle')
+  async toggle(entryId: PluginEntryId, enabled: boolean): Promise<void> {
+    const entry = this.ctx.loader.resolve(entryId)
+    if (isProtectedPlugin(entry.options.name)) {
+      throw new Error(`Cannot toggle core infrastructure plugin "${entry.options.name}"`)
+    }
+    // Update entry in-memory directly to avoid Loader tree.write() mutations on base bundle files
+    await entry.update({ disabled: !enabled })
+    // Durable half: the disabled set lands in `$DSH_HOME/plugin-state.json`,
+    // which profile boot applies as the highest automatic patch layer — so
+    // the state survives restarts, rebuilds, and full reinstalls (a fresh
+    // bundle row the user disabled before stays disabled).
+    updatePluginEntry(entryId, { disabled: !enabled })
+  }
+
+  /**
+   * Merge scalar config values into a Loader entry's config and reload it.
+   * The merged full config is persisted durably next to the disabled set; a
+   * config carrying non-JSON nodes (e.g. `!!js` results) cannot be stored
+   * without clobbering them at boot, so that edit stays runtime-scoped and
+   * the warning names it.
+   * @param entryId Loader entry to reconfigure.
+   * @param patch Scalar config values to merge over the current config.
+   */
+  @Remote('configure')
+  async configure(entryId: PluginEntryId, patch: Record<string, ConfigScalar>): Promise<void> {
+    const entry = this.ctx.loader.resolve(entryId)
+    if (isProtectedPlugin(entry.options.name)) {
+      throw new Error(`Cannot reconfigure core infrastructure plugin "${entry.options.name}"`)
+    }
+    const current = configScalars(entry.options.config) ?? {}
+    await entry.update({ config: { ...current, ...patch } })
+    const persisted = updatePluginEntry(entryId, { config: entry.options.config })
+    if (!persisted.configPersisted) {
+      this.ctx.get('logger')?.warn(
+        `plugin-state: config edit for "${entryId}" stays runtime-scoped — the live config carries non-JSON values that durable storage would drop`,
+      )
+    }
+  }
 }
 
 export default PluginInventoryGateway
@@ -88,6 +156,7 @@ export async function readPluginInventory(ctx: Context): Promise<PluginInventory
     const meta = base === undefined ? undefined : packages?.metaOf(entry.options.name, base)
     const fiber = entry.fiber
     const fiberPhase = fiber === undefined ? null : FIBER_PHASE[fiber.state]
+    const config = configScalars(entry.options.config)
     let diagnostic: string | undefined
     if (fiber !== undefined && fiberPhase === 'failed') {
       try { await fiber.await() } catch (error) { diagnostic = error instanceof Error ? error.message : String(error) }
@@ -97,8 +166,10 @@ export async function readPluginInventory(ctx: Context): Promise<PluginInventory
       moduleName: entry.options.name,
       enabled: !entry.disabled,
       fiberPhase,
+      isProtected: isProtectedPlugin(entry.options.name),
       ...diagnostic === undefined ? {} : { diagnostic },
       ...meta === undefined ? {} : { meta },
+      ...config === undefined ? {} : { config },
     })
   }
   const presets = ctx.get('agentPresets')

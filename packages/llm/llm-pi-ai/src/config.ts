@@ -33,6 +33,7 @@ import {
   THINKING_LEVELS,
   THINKING_TOKEN_BUDGET_FIELDS,
 } from './catalog.ts'
+import type { PiAiLiveModel } from './catalog.ts'
 import type {
   PiAiCompatProfile,
   PiAiModality,
@@ -68,6 +69,14 @@ export const DEFAULT_CONTEXT_WINDOW = 1_000_000
 export const DEFAULT_MAX_TOKENS = 128_000
 
 /**
+ * Re-fetch cadence for the models.dev live catalog. The document republishes
+ * continuously, and each read-path refresh additionally serves any snapshot
+ * younger than this, so a long-lived process tracks new provider model ids
+ * within eight hours of their publication without a restart.
+ */
+export const DEFAULT_MODELS_DEV_REFRESH_MS = 28_800_000
+
+/**
  * Modalities assumed for a model neither configuration nor the catalog
  * declares. Text is the floor every supported protocol certainly carries, so
  * this is the absence of a declaration rather than a guess at the endpoint:
@@ -92,6 +101,19 @@ export type {
 export interface PiAiProviderProfile {
   /** Credential reference (environment-variable name) resolved per request through `ctx.credentials`. */
   apiKeyEnv?: string
+  /**
+   * Ask the provider's own OpenAI-compatible listing at startup instead of
+   * the default models.dev catalog read; both fall back to the installed
+   * pi-ai catalog when their source fails.
+   */
+  liveModelDiscovery?: boolean
+  /**
+   * Union the startup live listing into an explicitly configured `models`
+   * list: configured entries win by id, discovered ids join, and the
+   * installed catalog keeps serving anything neither named. Without it, a
+   * `models` list is strict curation and no live fetch runs for it.
+   */
+  liveModelUnion?: boolean
   /** Name shown by configuration surfaces; defaults to the route key. */
   displayName?: string
   /**
@@ -102,11 +124,7 @@ export interface PiAiProviderProfile {
   api?: string
   /** Endpoint for this route's models; defaults to the installed catalog's endpoint. */
   baseURL?: string
-  /**
-   * This route's model catalog. Omission serves the installed catalog for the
-   * route unchanged; an explicit list replaces it, each entry defaulting its
-   * unset fields from the installed model of the same id.
-   */
+  /** This route's model catalog; an explicit list is strict curation. */
   models?: PiAiModelProfile[]
   /**
    * Installed-catalog customizations by model id: each entry reshapes that
@@ -221,6 +239,19 @@ export interface ResolvedPiAiProviderProfile
 /** Plugin configuration: the provider routes this instance owns. */
 export interface Config {
   /**
+   * Provider route names owned by a native adapter in the same Harness
+   * composition. The pi-ai directory and adapter leave these routes alone so
+   * two adapters cannot both publish the same selectable provider.
+   */
+  reservedProviders?: string[]
+  /**
+   * Re-fetch cadence for the models.dev live catalog in milliseconds
+   * (default eight hours, `DEFAULT_MODELS_DEV_REFRESH_MS`). The mounted
+   * timer captures the mount-time value, like `catalogRefreshMs` in
+   * llm-models-dev; a settings-layer change takes effect on the next restart.
+   */
+  modelsDevRefreshMs?: number
+  /**
    * pi-ai provider routes, keyed by provider. An empty (or omitted) dict is
    * the dormant settings-driven posture: the adapter mounts with no routes
    * and registers them the moment a settings section supplies profiles.
@@ -229,7 +260,7 @@ export interface Config {
 }
 
 /** Plain options accepted by the provider resolver. */
-export type Options = { [K in keyof Config]?: Config[K] extends Volatile<infer T> ? T : never }
+export type Options = { [K in keyof Config]?: Config[K] extends Volatile<infer T> ? T : Config[K] }
 
 const thinkingBudgets = z.object({
   minimal: z.number(),
@@ -325,6 +356,8 @@ const modelOverride: z<PiAiModelOverride> = z.object(modelFields)
 
 const profile = z.object({
   apiKeyEnv: z.string().role('credential-ref'),
+  liveModelDiscovery: z.boolean(),
+  liveModelUnion: z.boolean(),
   displayName: z.string(),
   api: z.union(supportedProtocols()),
   baseURL: z.string(),
@@ -350,6 +383,8 @@ const profile = z.object({
 
 /** Runtime schema for {@link Config}. */
 export const Config = z.object({
+  reservedProviders: z.array(z.string()).default([]),
+  modelsDevRefreshMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).default(DEFAULT_MODELS_DEV_REFRESH_MS),
   providers: z.dict(profile).default({}).volatile(),
 })
 
@@ -405,11 +440,13 @@ function assertValidHeaders(provider: string, headers: Readonly<Record<string, s
  * routes. An omitted dict resolves to the empty, dormant route set.
  * @param providers - configured provider profiles keyed by route.
  * @param validation - writes require a complete catalog; stored reads retain catalog diagnostics.
+ * @param liveModels - startup live listings by route; a route with an explicit `models` list joins them only under `liveModelUnion`.
  * @returns validated profiles in configuration order.
  */
 export function resolveProfiles(
   providers: Readonly<Record<string, PiAiProviderProfile>> | undefined,
   validation: 'strict' | 'deferred' = 'strict',
+  liveModels: ReadonlyMap<string, readonly PiAiLiveModel[]> = new Map(),
 ): Map<string, ResolvedPiAiProviderProfile> {
   if (Array.isArray(providers)) {
     throw new Error('llm-pi-ai: providers is now a dict keyed by provider route, not an array of profiles')
@@ -469,6 +506,14 @@ export function resolveProfiles(
         ...source.baseURL === undefined ? {} : { baseURL: source.baseURL },
         ...source.models === undefined ? {} : { models: source.models },
         ...source.modelOverrides === undefined ? {} : { modelOverrides: source.modelOverrides },
+        ...(() => {
+          const live = liveModels.get(provider)
+          // A live listing joins an explicit models list only on a route that
+          // opted in; strict curation passes no live ids to the resolver.
+          if (live === undefined
+            || ((source.models?.length ?? 0) > 0 && source.liveModelUnion !== true)) return {}
+          return { liveModels: live }
+        })(),
         ...source.compat === undefined ? {} : { compat: source.compat },
         defaultInput,
         defaultContextWindow: source.defaultContextWindow ?? DEFAULT_CONTEXT_WINDOW,
@@ -487,7 +532,7 @@ export function resolveProfiles(
       if (validation === 'strict' || !(error instanceof PiAiCatalogError)) throw error
       catalogError ??= error.message
     }
-    const { apiKeyEnv, retryPolicy, models: _models, displayName: _displayName, ...rest } = source
+    const { apiKeyEnv, retryPolicy, models: _models, displayName: _displayName, liveModelUnion: _liveModelUnion, ...rest } = source
     resolved.set(provider, {
       ...rest,
       provider,

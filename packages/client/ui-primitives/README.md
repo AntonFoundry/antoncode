@@ -5,11 +5,15 @@ kind: "package-library"
 
 # @deepseek-ai/dsh-client-ui-primitives
 
-English | [中文](README.zh.md)
+English
 
 ## Summary
 
 Use `dsh-client-ui-primitives` to build web-client controls and render agent output with shared React UI. It includes standard controls, icons, anchored overlays, and renderers for Markdown with TeX, terminal output, file reads, diffs, search, web retrieval, and JSON. The renderers handle untrusted model output by dropping raw HTML, restricting links, and parsing ANSI escape sequences. The components import no Cordis runtime; callers supply localized labels, and theme-facing colors use `--dsw-*` design tokens.
+
+`FishLogo` and `BrandWordmark` render the Anton mark tiles (`/anton-mark.png`, `/anton-header.png`). `FishLogoAnimated` reveals the hero mark with a randomly selected TTFX character effect per conversation session, cycles through the other effects on pointer entry, and respects `prefers-reduced-motion`; `ProviderLogo` renders the [web app's local provider artwork](../../../apps/web/provider-assets.md) for known route IDs and an initial for custom routes. `mermaid` fences render as diagrams once settled, and Janet and Bender fences highlight through client-defined grammars (`src/markdown/lisp-dialect-grammar.ts`). `Menu` accepts an optional static `header` node for filter inputs.
+
+Fixed-position surfaces that measure the anchor (`Menu` portal lists, `Tooltip` bubbles, `useAnchoredMaxHeight`) divide measured viewport coordinates by `fixedInsetScale` (`src/zoom-scale.ts`): the interface zooms through CSS `zoom`, the engine multiplies a zoomed subtree's fixed insets by its zoom factor, and uncompensated placement draws menus and bubbles away from their anchors whenever a font-size zoom is active.
 
 ## Table of Contents
 
@@ -222,7 +226,6 @@ These limits define how the atoms behave at the edges; they are current package 
 - **Overlong lines stay uncolored** — a source line of 1,000 or more UTF-16 units renders as one plain run in every highlighted surface, because TextMate scanning cost grows superlinearly with line length and a single generated line can otherwise block the page for seconds. The grammar state skips that line, so a comment or template literal that opens or closes on it mis-colors the following lines. Highlighting still runs synchronously during render, so a file with thousands of ordinary lines costs proportionally more.
 - **Bare URLs end before non-ASCII punctuation** — the [tokenizer patch](../../../patches/micromark-extension-gfm-autolink-literal@2.1.0.patch) and the [transform patch](../../../patches/mdast-util-gfm-autolink-literal@2.0.1.patch) end a GFM autolink literal at non-ASCII punctuation, symbols, or whitespace, so a URL with an unencoded character such as `（` or `・` in its path links only up to it; write such a URL as `<…>` or `[…](…)`. A URL followed directly by CJK letters still links them, because paths such as `/wiki/中文` are valid. Both patches are keyed to exact versions: an upgrade of either package must re-apply or retire its patch, otherwise the boundary rule silently disappears.
 - **The Go struct-field rule is patched locally** — when the Go grammar loads, its repeated one-line struct-field rule is replaced with the rule [worlpaker/go-syntax#25](https://github.com/worlpaker/go-syntax/pull/25) merged, because the vendored rule backtracks exponentially on lines such as a brace-bearing comment after `struct {`. If a dependency upgrade removes that rule, loading the grammar throws and Go code renders as plain text; delete the patch once `@shikijs/langs` ships the upstream rule.
-- **The fish logo is a redrawn approximation** — its font glyph has no exportable vector geometry in the local design data, so a hand-authored recreation stands in until an exact export path exists.
 - **`Pill` and `Input` have no design source** — both atoms are self-defined; the sidebar search field and view-tab strip that resemble them are consumer-owned compositions, not these atoms.
 - **Product icons need the ui-theme sprite** — each icon only references its symbol, so without ui-theme, or inside another document such as an iframe, the icon renders nothing.
 - **No `Active` `StateDot` variant** — the supported states are done, warning, ongoing, error, and idle.

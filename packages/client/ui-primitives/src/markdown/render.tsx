@@ -25,6 +25,8 @@ import { normalizeUri } from 'micromark-util-sanitize-uri'
 import type { CodeToolbarLabels } from '../CodeToolbar.tsx'
 import { CodeBlock } from './CodeBlock.tsx'
 import { parseFileLink } from './file-link.ts'
+import { MermaidDiagram } from './mermaid.tsx'
+import type { MermaidLabels } from './mermaid.tsx'
 import { renderTexToReact } from './katex.tsx'
 import { LinkIconMedium, classifyLinkPath } from '../LinkIcon.tsx'
 import { useMarkdownDelegate } from './MarkdownDelegate.tsx'
@@ -49,6 +51,8 @@ export interface MarkdownCodeLabels {
 export interface MarkdownLabels {
   code: MarkdownCodeLabels
   footnotes: string
+  /** Localized mermaid diagram chrome; absent falls back to English defaults. */
+  mermaid?: MermaidLabels | undefined
 }
 
 function sanitizeUrl(url: string): string {
@@ -423,6 +427,33 @@ function renderCode(node: Md.Code, key: Key, context: MarkdownRenderContext): Re
     // ```math fences render as display TeX once settled (rehype-katex parity);
     // its text extraction saw the code block's trailing newline.
     return <Fragment key={key}>{renderTexToReact(`${node.value}\n`, true)}</Fragment>
+  }
+  if (!context.streaming && lang === 'mermaid') {
+    // ```mermaid fences render as diagrams once settled, the same settled-only
+    // rule as ```math; while streaming the fence stays a plain code block.
+    // Render failures fall back to the fenced source inside the component.
+    return (
+      <MermaidDiagram
+        key={key}
+        code={node.value}
+        copyLabel={context.labels.code.copyLabel}
+        copiedLabel={context.labels.code.copiedLabel}
+        labels={{
+          rendering: context.labels.mermaid?.rendering ?? 'Rendering diagram…',
+          failed: context.labels.mermaid?.failed ?? 'Diagram failed to render',
+          copyImage: context.labels.mermaid?.copyImage ?? 'Copy image',
+          copied: context.labels.mermaid?.copied ?? 'Copied',
+          copiedFailed: context.labels.mermaid?.copiedFailed ?? 'Clipboard refused — downloaded instead',
+          zoomIn: context.labels.mermaid?.zoomIn ?? 'Zoom in',
+          zoomOut: context.labels.mermaid?.zoomOut ?? 'Zoom out',
+          resetZoom: context.labels.mermaid?.resetZoom ?? 'Reset zoom',
+          copySource: context.labels.mermaid?.copySource ?? 'Copy source',
+          copiedSource: context.labels.mermaid?.copiedSource ?? 'Source copied',
+          fullscreen: context.labels.mermaid?.fullscreen ?? 'Fullscreen',
+          exitFullscreen: context.labels.mermaid?.exitFullscreen ?? 'Exit fullscreen',
+        }}
+      />
+    )
   }
   return (
     <CodeBlock
