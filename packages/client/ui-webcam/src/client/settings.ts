@@ -8,7 +8,7 @@
  * @module @deepseek-ai/dsh-client-ui-webcam/client/settings
  */
 
-import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
+import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 
 /** The compositor effect applied to the camera background. */
 export type WebcamEffect =

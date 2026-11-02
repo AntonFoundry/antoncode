@@ -7,8 +7,9 @@
  * @module @deepseek-ai/dsh-client-ui-webcam/client
  */
 
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: the ui-theme Context merge carrying theme tokens.
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import { CameraEngine } from './engine.js'
@@ -23,7 +24,7 @@ export const inject = ['slots', 'theme']
  * the live composited feed for its leaf.
  * @param ctx - client root context.
  */
-export function apply(ctx: ClientContext): void {
+export function apply(ctx: Context): void {
   const settings = createWebcamSettingsStore().create()
   const engine = new CameraEngine()
   // The engine owns the MediaStream and the loaded model; it stops both when
@@ -33,14 +34,10 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('webcam.view', () => ctx.slots.register({
     name: 'webcam.view',
     inject: () => {
-      // The theme face is cast for the same reason ui-terminal casts it: the
-      // Context merges live in packages this plugin type-references, and the
-      // aggregate client build resolves them through built declarations.
-      const theme = (ctx as unknown as { theme: { getTheme(): { active: { tokens: Record<string, string> } } } }).theme
       return {
         acquire: (deviceId: string | undefined) => engine.acquire(deviceId),
         settingsActions: settings.actions,
-        themeTokens: () => theme.getTheme().active.tokens,
+        themeTokens: () => ctx.theme.getTheme().active.tokens,
         hooks: { settings },
       }
     },
