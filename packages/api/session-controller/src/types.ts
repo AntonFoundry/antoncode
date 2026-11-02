@@ -55,6 +55,7 @@ export interface SessionProjectionHints {
   readonly asOfSeq: number
   /** Provider-validated summary values present in the block; omitted keys remain unknown. */
   readonly values: Partial<SessionProjectionSummaryValues>
+    & Readonly<Record<string, SessionProjectionValue>>
 }
 
 /** Complete projection values at an exact Session event cursor. */

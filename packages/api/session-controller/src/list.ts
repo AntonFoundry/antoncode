@@ -336,7 +336,7 @@ function hintsOf(
   if (block === undefined || Object.keys(block.values).length === 0) return undefined
   // Listing hints contain every summary wire value the source currently holds
   // but remain partial: missing cells and cache rows are never materialized here.
-  return { kind, asOfSeq: block.asOfSeq, values: block.values }
+  return { kind, asOfSeq: block.asOfSeq, values: block.values as SessionProjectionHints['values'] }
 }
 
 function normalizeSearchQuery(query: string): string {

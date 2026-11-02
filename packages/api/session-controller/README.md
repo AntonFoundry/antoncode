@@ -143,3 +143,5 @@ No direct effect; model requests remain owned by the Agent and LLM packages.
 None.
 
 </details>
+
+Session summary projection payloads preserve JSON-safe keys contributed by plugins outside the host compilation, alongside the statically known summary keys. The projection provider validates each value before publication.
