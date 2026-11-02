@@ -22,7 +22,7 @@ function view(actions: LangflowActions): ReturnType<typeof render> {
 describe('LangflowView', () => {
   it('snapshots the sidecar on mount and renders the iframe while running', async () => {
     const actions: LangflowActions = {
-      status: vi.fn(async () => ({ state: 'running', url: 'http://127.0.0.1:7860/' })),
+      status: vi.fn(async () => ({ state: 'running' as const, url: 'http://127.0.0.1:7860/' })),
       start: vi.fn(),
       stop: vi.fn(),
     }
@@ -36,7 +36,7 @@ describe('LangflowView', () => {
 
   it('shows the stopped placeholder with the hint while stopped', async () => {
     const actions: LangflowActions = {
-      status: vi.fn(async () => ({ state: 'stopped' })),
+      status: vi.fn(async () => ({ state: 'stopped' as const })),
       start: vi.fn(),
       stop: vi.fn(),
     }
@@ -50,8 +50,8 @@ describe('LangflowView', () => {
   it('start renders the starting pill immediately, then the running embed at readiness', async () => {
     let resolveStart: ((status: { state: 'running'; url: string }) => void) | undefined
     const actions: LangflowActions = {
-      status: vi.fn(async () => ({ state: 'stopped' })),
-      start: vi.fn(() => new Promise((resolve) => {
+      status: vi.fn(async () => ({ state: 'stopped' as const })),
+      start: vi.fn(() => new Promise<{ state: 'running'; url: string }>((resolve) => {
         resolveStart = resolve
       })),
       stop: vi.fn(),
@@ -61,16 +61,16 @@ describe('LangflowView', () => {
     fireEvent.click(getByText(t('langflow.start')))
     expect(actions.start).toHaveBeenCalled()
     expect(container.textContent).toContain(t('langflow.state.starting'))
-    resolveStart?.({ state: 'running', url: 'http://127.0.0.1:7860/' })
+    resolveStart?.({ state: 'running' as const, url: 'http://127.0.0.1:7860/' })
     await waitFor(() => expect(container.querySelector('iframe')).not.toBeNull())
     expect(container.textContent).toContain(t('langflow.state.running'))
   })
 
   it('stop tears down to the stopped placeholder', async () => {
     const actions: LangflowActions = {
-      status: vi.fn(async () => ({ state: 'running', url: 'http://127.0.0.1:7860/' })),
+      status: vi.fn(async () => ({ state: 'running' as const, url: 'http://127.0.0.1:7860/' })),
       start: vi.fn(),
-      stop: vi.fn(async () => ({ state: 'stopped' })),
+      stop: vi.fn(async () => ({ state: 'stopped' as const })),
     }
     const { container, getByText } = view(actions)
     await waitFor(() => expect(container.querySelector('iframe')).not.toBeNull())
@@ -81,7 +81,7 @@ describe('LangflowView', () => {
 
   it('renders a startup failure from the sidecar in the placeholder', async () => {
     const actions: LangflowActions = {
-      status: vi.fn(async () => ({ state: 'error', error: 'langflow exited (code 1) before readiness: boom' })),
+      status: vi.fn(async () => ({ state: 'error' as const, error: 'langflow exited (code 1) before readiness: boom' })),
       start: vi.fn(),
       stop: vi.fn(),
     }

@@ -1,12 +1,14 @@
 /** Browser-half registration: the `markdown` key installs into the declared file.view slot and leaves with the fiber (HMR safety). */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
+import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply as nodeApply } from '../src/index.ts'
 import { apply, inject } from '../src/client/index.ts'
 
 async function bench() {
   const ctx = new Context()
+  ctx.provide('locale', new LocaleRuntime(ctx))
   const slots = new SlotRegistry(ctx)
   slots.register({ name: 'root', children: { 'file.view': { kind: 'keyed', scope: 'root' } } } as never, () => null)
   return { ctx, slots }
@@ -14,7 +16,7 @@ async function bench() {
 
 describe('ui-file-markdown client apply', () => {
   it('declares its service dependencies', () => {
-    expect(inject).toEqual(['slots'])
+    expect(inject).toEqual(['slots', 'locale'])
   })
 
   it('registers the markdown key into file.view and removes it on teardown', async () => {

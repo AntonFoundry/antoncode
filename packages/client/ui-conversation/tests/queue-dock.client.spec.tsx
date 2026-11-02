@@ -124,6 +124,7 @@ function kitFor(snapshot: SessionSnapshot, injected: Partial<QueueDockInjected> 
     useTrajectory: (() => { throw new Error('unused') }) as QueueDockProps['useTrajectory'],
     useInput: (() => { throw new Error('unused') }) as never,
     inputActions: { setDraft: () => {}, submit: () => {} } as never,
+    viewActions: { activate: () => {} },
     session: snapshot,
     input: INPUT_STATE,
     updateQueue: vi.fn(() => Promise.resolve()),

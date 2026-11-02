@@ -9,6 +9,12 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-theme/client'
 import { ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
 
+const defaults: ThemeSettings = {
+  preference: 'system', monoFont: 'system', monoSize: 13, uiFamily: 'system', uiSize: 14,
+  chatSize: 14, termSize: 13, fontSize: 14, codeFontSize: 11, terminalFontSize: 13,
+  textFontFamily: '', codeFontFamily: '', terminalFontFamily: '',
+}
+
 const make = (host = stubConfigForm<ThemeSettings>()): {
   ctx: Context
   theme: ThemeRuntime
@@ -90,7 +96,7 @@ describe('ThemeRuntime', () => {
 
   it('adopts a published Host font size without writing it back', () => {
     const { theme, events, host } = make()
-    host.publish({ status: 'ready', value: { preference: 'system', fontSize: 12, codeFontSize: 15, terminalFontSize: 18, textFontFamily: '', codeFontFamily: '', terminalFontFamily: '' }, revision: 1, writable: true })
+    host.publish({ status: 'ready', value: { preference: 'system', monoFont: 'system', monoSize: 13, uiFamily: 'system', uiSize: 14, chatSize: 14, termSize: 13, fontSize: 12, codeFontSize: 15, terminalFontSize: 18, textFontFamily: '', codeFontFamily: '', terminalFontFamily: '' }, revision: 1, writable: true })
     expect(theme.getTheme().fontSizes).toEqual({ text: 12, code: 15, terminal: 18 })
     expect(events).toHaveLength(1)
     expect(host.set).not.toHaveBeenCalled()
@@ -120,10 +126,10 @@ describe('ThemeRuntime', () => {
 
   it('adopts published Host font lists, normalizing hand-edited values, without writing them back', () => {
     const { theme, events, host } = make()
-    host.publish({ status: 'ready', value: { preference: 'system', fontSize: 14, codeFontSize: 11, terminalFontSize: 13, textFontFamily: 'Inter', codeFontFamily: '"Fira Code"', terminalFontFamily: '' }, revision: 1, writable: true })
+    host.publish({ status: 'ready', value: { preference: 'system', monoFont: 'system', monoSize: 13, uiFamily: 'system', uiSize: 14, chatSize: 14, termSize: 13, fontSize: 14, codeFontSize: 11, terminalFontSize: 13, textFontFamily: 'Inter', codeFontFamily: '"Fira Code"', terminalFontFamily: '' }, revision: 1, writable: true })
     expect(theme.getTheme().fontFamilies).toEqual({ text: '"Inter"', code: '"Fira Code"', terminal: '' })
     expect(events).toHaveLength(1)
-    host.publish({ value: { preference: 'system', fontSize: 14, codeFontSize: 11, terminalFontSize: 13, textFontFamily: '"Inter"', codeFontFamily: 'Fira Code', terminalFontFamily: '' }, revision: 2 })
+    host.publish({ value: { preference: 'system', monoFont: 'system', monoSize: 13, uiFamily: 'system', uiSize: 14, chatSize: 14, termSize: 13, fontSize: 14, codeFontSize: 11, terminalFontSize: 13, textFontFamily: '"Inter"', codeFontFamily: 'Fira Code', terminalFontFamily: '' }, revision: 2 })
     expect(events).toHaveLength(1)
     expect(host.set).not.toHaveBeenCalled()
   })
@@ -146,17 +152,17 @@ describe('ThemeRuntime', () => {
 
   it('adopts a published Host section without writing it back', () => {
     const { theme, events, host } = make()
-    host.publish({ status: 'ready', value: { preference: 'dark', fontSize: 14, codeFontSize: 11, terminalFontSize: 13, textFontFamily: '', codeFontFamily: '', terminalFontFamily: '' }, revision: 1, writable: true })
+    host.publish({ status: 'ready', value: { preference: 'dark', monoFont: 'system', monoSize: 13, uiFamily: 'system', uiSize: 14, chatSize: 14, termSize: 13, fontSize: 14, codeFontSize: 11, terminalFontSize: 13, textFontFamily: '', codeFontFamily: '', terminalFontFamily: '' }, revision: 1, writable: true })
     expect(theme.getTheme().preference).toBe('dark')
     expect(events).toHaveLength(1)
     expect(host.set).not.toHaveBeenCalled()
-    host.publish({ value: { preference: 'dark', fontSize: 14, codeFontSize: 11, terminalFontSize: 13, textFontFamily: '', codeFontFamily: '', terminalFontFamily: '' }, revision: 2 })
+    host.publish({ value: { preference: 'dark', monoFont: 'system', monoSize: 13, uiFamily: 'system', uiSize: 14, chatSize: 14, termSize: 13, fontSize: 14, codeFontSize: 11, terminalFontSize: 13, textFontFamily: '', codeFontFamily: '', terminalFontFamily: '' }, revision: 2 })
     expect(events).toHaveLength(1)
   })
 
   it('holds its own changes while writes are pending, then converges on the durable section', async () => {
     const { theme, host } = make()
-    const section = { preference: 'system' as const, fontSize: 14, codeFontSize: 11, terminalFontSize: 13, textFontFamily: '', codeFontFamily: '', terminalFontFamily: '' }
+    const section = { preference: 'system' as const, monoFont: 'system', monoSize: 13, uiFamily: 'system', uiSize: 14, chatSize: 14, termSize: 13, fontSize: 14, codeFontSize: 11, terminalFontSize: 13, textFontFamily: '', codeFontFamily: '', terminalFontFamily: '' }
     host.publish({ status: 'ready', value: section, revision: 1, writable: true })
     const write = Promise.withResolvers<boolean>()
     host.set.mockReturnValue(write.promise)
@@ -171,12 +177,12 @@ describe('ThemeRuntime', () => {
 
   it('adopts a section already standing at construction', () => {
     const host = stubConfigForm<ThemeSettings>()
-    host.publish({ status: 'ready', value: { preference: 'dark', fontSize: 14, codeFontSize: 11, terminalFontSize: 13, textFontFamily: '', codeFontFamily: '', terminalFontFamily: '' }, revision: 1, writable: true })
+    host.publish({ status: 'ready', value: { preference: 'dark', monoFont: 'system', monoSize: 13, uiFamily: 'system', uiSize: 14, chatSize: 14, termSize: 13, fontSize: 14, codeFontSize: 11, terminalFontSize: 13, textFontFamily: '', codeFontFamily: '', terminalFontFamily: '' }, revision: 1, writable: true })
     const { theme } = make(host)
     expect(theme.getTheme().preference).toBe('dark')
   })
 
-  it('never demotes an active registered palette through scope adoption', () => {
+  it('never demotes an active registered palette through scope adoption', async () => {
     const { theme, events, host } = make()
     const dispose = theme.register({ id: 'nord', colorScheme: 'dark', tokens: {} })
     theme.setTheme('nord')
@@ -184,15 +190,16 @@ describe('ThemeRuntime', () => {
     // The loaded Host section (default `system`) arrives after the palette is
     // active: adoption must not demote the load-theme choice — this publish
     // is exactly what wiped the localStorage choice before the guard.
-    host.publish({ status: 'ready', value: { preference: 'system' }, revision: 1, writable: true })
-    host.publish({ value: { preference: 'dark' }, revision: 2 })
+    host.publish({ status: 'ready', value: { ...defaults, preference: 'system' }, revision: 1, writable: true })
+    host.publish({ value: { ...defaults, preference: 'dark' }, revision: 2 })
     expect(theme.getTheme().preference).toBe('nord')
     expect(events[events.length - 1]).toBe(theme.getTheme())
     // An explicit release (built-in setTheme) re-arms adoption, and the next
     // section settles the durable preference again.
     theme.setTheme('dark')
     expect(host.set).toHaveBeenCalledWith('preference', 'dark')
-    host.publish({ value: { preference: 'light' }, revision: 3 })
+    await Promise.resolve()
+    host.publish({ value: { ...defaults, preference: 'light' }, revision: 3 })
     expect(theme.getTheme().preference).toBe('light')
     dispose()
   })
@@ -204,7 +211,7 @@ describe('ThemeRuntime', () => {
     expect(theme.getTheme().preference).toBe('nord')
     // The section the scope loads after the shell restored the palette: the
     // persisted dark choice wins the boot race (splash dark, app dark).
-    host.publish({ status: 'ready', value: { preference: 'dark' }, revision: 1, writable: true })
+    host.publish({ status: 'ready', value: { ...defaults, preference: 'dark' }, revision: 1, writable: true })
     expect(theme.getTheme().preference).toBe('dark')
     expect(host.set).not.toHaveBeenCalled()
     expect(events[events.length - 1]).toBe(theme.getTheme())
@@ -216,15 +223,15 @@ describe('ThemeRuntime', () => {
     theme.restoreBootDefault('nord')
     // The loaded section names the follow-the-OS default: agreement — the
     // Aqua palette stays active instead of being reset to the bare builtin.
-    host.publish({ status: 'ready', value: { preference: 'system' }, revision: 1, writable: true })
+    host.publish({ status: 'ready', value: { ...defaults, preference: 'system' }, revision: 1, writable: true })
     expect(theme.getTheme().preference).toBe('nord')
     // The boot default is not a user choice, so a later durable dark (a real
     // preference change from another surface) still propagates.
-    host.publish({ value: { preference: 'dark' }, revision: 2 })
+    host.publish({ value: { ...defaults, preference: 'dark' }, revision: 2 })
     expect(theme.getTheme().preference).toBe('dark')
     // An explicitly loaded palette never yields, by contrast.
     theme.setTheme('nord')
-    host.publish({ value: { preference: 'light' }, revision: 3 })
+    host.publish({ value: { ...defaults, preference: 'light' }, revision: 3 })
     expect(theme.getTheme().preference).toBe('nord')
   })
 

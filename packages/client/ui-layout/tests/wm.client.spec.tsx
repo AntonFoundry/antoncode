@@ -509,7 +509,7 @@ function mountFrame(initialTree?: WmNode, workspaces?: { id: string; title: stri
       workspaceId: w.id as never, path: `/projects/${w.id}`, title: w.title,
       sessionIds: (w.sessionIds ?? []) as never[], createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
     })),
-    archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+    archivedSessionIds: [], pinnedSessionIds: [], worktrees: { byRepo: {}, prefs: {}, namesByWorkspaceId: {} }, state: 'idle', phase: 'ready', error: null,
   }
   const element = () => (
     <WmFrame

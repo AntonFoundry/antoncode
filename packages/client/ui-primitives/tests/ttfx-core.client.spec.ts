@@ -92,7 +92,7 @@ describe('ttfx core', () => {
   it('moves characters, advances scenes and paths, fires events, and renders home colors', () => {
     const canvas = new Canvas(2, 2, grid)
     const ctx = new EngineCtx(canvas, new Rng(5))
-    const id = canvas.orderedIds()[0]
+    const id = canvas.orderedIds()[0]!
     ctx.setVisible(id, true)
     ctx.newScene(id, 'a')
     ctx.addFrame(id, 'a', 'x', 1, [1, 2, 3])

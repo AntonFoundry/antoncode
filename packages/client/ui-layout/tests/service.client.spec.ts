@@ -49,27 +49,6 @@ function fakeWm(): WmTreeSource & {
   }
 }
 
-/** A mutable in-memory wm store fake: snapshots read the same object. */
-function fakeWm(): WmTreeSource & {
-  state: { tree: WmNode; buffers: WmBuffer[]; focusedLeafId: string | undefined; sidebarBootDropped?: boolean }
-} {
-  const state = {
-    tree: { kind: 'leaf', id: 'conversation', buffer: 'buffer:session' } as WmNode,
-    buffers: [{ id: 'buffer:session', kind: 'session' }] as WmBuffer[],
-    focusedLeafId: 'conversation' as string | undefined,
-  }
-  return {
-    state,
-    getSnapshot: () => state,
-    actions: {
-      setTree: (tree) => { state.tree = tree },
-      setBuffers: (buffers) => { state.buffers = [...buffers] },
-      setFocus: (leafId) => { state.focusedLeafId = leafId },
-      setSidebarBootDropped: (closed) => { state.sidebarBootDropped = closed },
-    },
-  }
-}
-
 describe('LayoutController', () => {
   it('forwards the three panel actions to the attached set', () => {
     const service = new LayoutController()

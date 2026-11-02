@@ -82,14 +82,14 @@ describe('apply', () => {
 
   it('derives injected runs from current Controller snapshots', async () => {
     const { capture } = await bench()
-    const entry = capture.slots.entries('conversation.view')[0]
+    const entry = capture.slots.entries('conversation.view')[0]!
     const face = (entry.inject as (sessionId: SessionId) => { runs: ReturnType<typeof deriveRuns> })(sid(SNAPSHOT_SESSION))
     expect(face.runs).toEqual([expect.objectContaining({ id: SNAPSHOT_SESSION, state: 'running', children: [] })])
   })
 
   it('kill routes through the current Session Remote', async () => {
     const { capture, kills } = await bench()
-    const entry = capture.slots.entries('conversation.view')[0]
+    const entry = capture.slots.entries('conversation.view')[0]!
     const face = (entry.inject as (sessionId: SessionId) => { onAct: (id: string, action: string) => void })(sid(SNAPSHOT_SESSION))
     face.onAct(SNAPSHOT_SESSION, 'kill')
     await waitFor(() => { expect(kills).toEqual([sid(SNAPSHOT_SESSION)]) })

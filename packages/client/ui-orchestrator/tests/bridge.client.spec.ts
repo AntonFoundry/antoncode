@@ -46,7 +46,7 @@ describe('deriveRuns: plan folding', () => {
   it('flattens the todos projection into depth-first plan rows', () => {
     const runs = deriveRuns(board({
       items: [workspace('w', ['root'])],
-      sessions: [summary('root', { running: true, projectionValues: { todos } as WireSummary['projectionValues'] })],
+      sessions: [summary('root', { running: true, projectionValues: { todos } as NonNullable<WireSummary['projectionValues']> })],
     }))
     expect(runs).toHaveLength(1)
     expect(runs[0]?.plan).toEqual([
@@ -59,7 +59,7 @@ describe('deriveRuns: plan folding', () => {
   it('plans nothing without a todos projection', () => {
     const runs = deriveRuns(board({
       items: [workspace('w', ['bare'])],
-      sessions: [summary('bare'), summary('nulled', { projectionValues: { todos: null } as WireSummary['projectionValues'] })],
+      sessions: [summary('bare'), summary('nulled', { projectionValues: { todos: null } as NonNullable<WireSummary['projectionValues']> })],
     }))
     expect(runs[0]?.plan).toBeUndefined()
     expect(runs[1]?.plan).toBeUndefined()

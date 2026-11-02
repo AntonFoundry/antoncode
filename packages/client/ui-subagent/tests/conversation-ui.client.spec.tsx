@@ -100,6 +100,7 @@ function props(
     useInput: unused,
     useChat: unused,
     useTrajectory: unused,
+    viewActions: { activate: unused },
     inputActions: {
       insertQuote: () => false,
       captureInsertion: unused,
