@@ -53,7 +53,7 @@ function createReleasedCodec(version: 0 | 1) {
     decodeHeader: (value: unknown) => decodeHeader(value, version),
     createDecoder(headerValue: unknown, recovery: SessionFormatRecovery) {
       const physical = decodePhysicalHeader(headerValue, version)
-      const scanner = scanRows(recovery === 'recoverable')
+      const scanner = scanRows(recovery === 'recoverable', version)
       return {
         header: physical.header,
         headerInheritedEventCount: physical.inheritedEventCount,
@@ -69,6 +69,7 @@ function createReleasedCodec(version: 0 | 1) {
 
 function scanRows(
   recoverable: boolean,
+  version: 0 | 1,
 ): {
   decodeRow(
     rowValue: unknown,
@@ -90,7 +91,7 @@ function scanRows(
         const type = record['type']
         if (typeof type === 'string' && PACKED_TAGS.has(type)) {
           packed = true
-          decoded = decodePackedRun(record, type, currentRow)
+          decoded = decodePackedRun(record, type, currentRow, version)
         } else {
           decoded = decodeEvent(record, currentRow)
         }
@@ -204,6 +205,7 @@ function decodePackedRun(
   row: Record<string, SessionFormatJsonValue>,
   type: string,
   rowIndex: number,
+  version: 0 | 1,
 ): ReleasedAssistantChunkRun {
   const label = `released ${type} row ${rowIndex}`
   assertReleasedV0Keys(row, ['type', 'seq0', 'time0', 'data'], [], label)
@@ -233,8 +235,10 @@ function decodePackedRun(
   const turn = sessionFormatCount(data['turn'], `${label} turn`)
   const step = sessionFormatCount(data['step'], `${label} step`)
   const chunkIndex = sessionFormatCount(data['index'], `${label} index`)
+  // Anton's fork packed v0 tool-call deltas streamed without an id; the v0→v1
+  // stage expands those rows into the unpacked deltas upstream writes.
   if (isTool && (typeof data['id'] !== 'string'
-    || data['id'].length === 0
+    || (data['id'].length === 0 && version !== 0)
     || (data['name'] !== undefined && typeof data['name'] !== 'string'))) {
     throw new SessionFormatError(`${label} id and optional name must be strings`)
   }

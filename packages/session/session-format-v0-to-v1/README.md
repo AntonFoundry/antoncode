@@ -101,7 +101,7 @@ No direct effect for canonical v0 history. Bounded normalizers preserve model-vi
 
 - **Closed first-party inventory** — unknown external-plugin events refuse migration in this alpha policy.
 - **One adjacent edge** — this package does not perform publication or select later migrations.
-- **Anton fork records** — before upstream normalization, `anton-fork-events.ts` maps the format-v0 records Anton's 0.1.x fork wrote: its five fork-only event types pass through unchanged but `ignorable`, version-2 subagent descriptors become the identical released v3, and Todo Tree todos flatten into upstream's flat list (nested children indented, `cancelled` kept visible as `completed`). Payload members that name sequence numbers in those opaque records are not renumbered.
+- **Anton fork records** — before upstream normalization, `anton-fork-events.ts` maps the format-v0 records Anton's 0.1.x fork wrote: its five fork-only event types pass through unchanged but `ignorable`, version-2 subagent descriptors become the identical released v3, and Todo Tree todos flatten into upstream's flat list (nested children indented, `cancelled` kept visible as `completed`). Payload members that name sequence numbers in those opaque records are not renumbered. Tool calls a model streamed without an id or name get `anton-empty-call-<turn>-<step>-<index>` and the name `invalid_tool_call` on the streamed block and Assistant message; the matching `tool/call` and `tool/result` take those ids in log order. The fork's packed empty-id tool-call rows, accepted only in format v0, expand into the unpacked deltas upstream writes.
 
 <a id="dev-note"></a>
 ### Dev Note

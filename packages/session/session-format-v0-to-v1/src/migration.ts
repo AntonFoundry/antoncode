@@ -15,12 +15,17 @@ import type {
   SessionFormatMigrationStageInput,
 } from '@deepseek-ai/dsh-session-format'
 import { isReleasedAssistantChunkRun } from './codec.ts'
+import type { ReleasedAssistantChunkRun } from './codec.ts'
 import {
   assertReleasedEventPayload,
   assertReleasedV1Header,
 } from './validation.ts'
 import { assertReleasedV0Keys, releasedV0Record } from './validation-helpers.ts'
-import { ANTON_FORK_V0_EVENT_TYPES, normalizeAntonForkV0Event } from './anton-fork-events.ts'
+import {
+  ANTON_FORK_V0_EVENT_TYPES,
+  AntonEmptyToolCallRepair,
+  normalizeAntonForkV0Event,
+} from './anton-fork-events.ts'
 
 const LEGACY_ASSISTANT_SOURCE_KEY = ['pro', 'venance'].join('')
 
@@ -41,7 +46,11 @@ export const sessionFormatV0ToV1 = defineSessionFormatMigration({
 
 class ReleasedV0ToV1Stage implements SessionFormatMigrationStage {
   readonly headerInheritedEventCount: number
-  private readonly state: LegacyNormalizationState = { messageIds: new Map(), retryIds: new Map() }
+  private readonly state: LegacyNormalizationState = {
+    messageIds: new Map(),
+    retryIds: new Map(),
+    emptyToolCalls: new AntonEmptyToolCallRepair(),
+  }
 
   constructor(private readonly input: SessionFormatMigrationStageInput) {
     assertHeaderVersion(input.sourceHeader, 0)
@@ -61,7 +70,8 @@ class ReleasedV0ToV1Stage implements SessionFormatMigrationStage {
     run: SessionFormatEventRun,
     context: SessionFormatMigrationContext,
   ): void {
-    if (isReleasedAssistantChunkRun(run)) {
+    // The fork packed empty-id tool-call deltas, which upstream writes unpacked.
+    if (isReleasedAssistantChunkRun(run) && !isEmptyToolCallChunkRun(run)) {
       context.emitRun(run)
       return
     }
@@ -73,6 +83,10 @@ class ReleasedV0ToV1Stage implements SessionFormatMigrationStage {
   }
 }
 
+function isEmptyToolCallChunkRun(run: ReleasedAssistantChunkRun): boolean {
+  return run.stream['id'] === '' || run.stream['name'] === ''
+}
+
 function assertHeaderVersion(header: SessionFormatHeader, version: 0 | 1): void {
   if (header.version !== version) throw new SessionFormatError(`expected format v${version} header`)
 }
@@ -80,6 +94,7 @@ function assertHeaderVersion(header: SessionFormatHeader, version: 0 | 1): void 
 interface LegacyNormalizationState {
   readonly messageIds: Map<number, string>
   readonly retryIds: Map<string, string>
+  readonly emptyToolCalls: AntonEmptyToolCallRepair
   compactionId?: string
 }
 
@@ -89,8 +104,8 @@ function normalizeReleasedV0Event(
   state: LegacyNormalizationState,
 ): SessionFormatEvent {
   // Anton-fork records first become their upstream v0 form (see anton-fork-events.ts).
-  const upstream = normalizeAntonForkV0Event(event)
-  if (upstream.ignorable === true && ANTON_FORK_V0_EVENT_TYPES.has(upstream.type)) return upstream
+  const upstream = state.emptyToolCalls.normalize(normalizeAntonForkV0Event(event))
+  if (ANTON_FORK_V0_EVENT_TYPES.has(upstream.type)) return upstream
   const named = normalizeLegacyCompactionType(upstream)
   assertSupportedLegacyType(named, sessionId)
   const start = normalizeLegacyTurnStart(named, sessionId)

@@ -101,7 +101,7 @@ Alpha 迁移边会拒绝冻结清单之外的所有事件类型，包括带有 `
 
 - **封闭的第一方清单**——按照当前 Alpha 策略，未知的外部插件事件会使迁移失败。
 - **单个相邻迁移边**——本包不执行发布，也不选择后续迁移。
-- **Anton 分叉记录** — 在上游规范化之前，`anton-fork-events.ts` 映射 Anton 0.1.x 分叉写入的 v0 记录：其五种分叉专有事件类型原样通过但标记为 `ignorable`，版本 2 的子代理描述符改为等价的已发布 v3，Todo Tree 待办展平为上游的扁平列表（嵌套子项缩进，`cancelled` 以 `completed` 保留可见）。这些不透明记录中指向序号的载荷成员不会重新编号。
+- **Anton 分叉记录** — 在上游规范化之前，`anton-fork-events.ts` 映射 Anton 0.1.x 分叉写入的 v0 记录：其五种分叉专有事件类型原样通过但标记为 `ignorable`，版本 2 的子代理描述符改为等价的已发布 v3，Todo Tree 待办展平为上游的扁平列表（嵌套子项缩进，`cancelled` 以 `completed` 保留可见）。这些不透明记录中指向序号的载荷成员不会重新编号。模型流式输出时缺少 id 或名称的工具调用，在流式块和 Assistant 消息上获得 `anton-empty-call-<turn>-<step>-<index>` 与名称 `invalid_tool_call`；对应的 `tool/call` 和 `tool/result` 按日志顺序取用这些 id。分叉打包的空 id 工具调用行仅在 v0 中接受，并展开为上游写入的未打包增量。
 
 <a id="dev-note"></a>
 ### 开发备注

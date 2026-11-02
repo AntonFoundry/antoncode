@@ -6,6 +6,7 @@ import type {
 } from '@deepseek-ai/dsh-session-format'
 import {
   RELEASED_V0_EVENT_TYPES,
+  releasedV0SessionFormatCodec,
   releasedV1SessionFormatCodec,
   restoreReleasedV1Artifact,
   sessionFormatV0ToV1,
@@ -93,6 +94,31 @@ describe('released Session format v0 to v1', () => {
     stage.transformRun(run, output)
 
     expect(output.values).toEqual([source])
+  })
+
+  it('carries a fork-only record through the stage without released-v0 validation', () => {
+    const source = { type: 'c0ntext/window', seq: 0, time: 1, data: { unvalidated: [1] } } as const
+    expect(createMigrationStage('fork-record').transform(source)).toEqual([{ ...source, ignorable: true }])
+  })
+
+  it('expands a fork packed tool run without an id into the unpacked deltas', () => {
+    const sourceHeader = { version: 0, id: 'empty-tool-run', createdAt: 1, isSeeded: false, delegationDepth: 0 } as const
+    const stage = sessionFormatV0ToV1.createStage({
+      sourceHeader,
+      targetHeader: sessionFormatV0ToV1.migrateHeader(sourceHeader),
+      sourceInheritedEventCount: 0,
+      sourceKind: 'decoded',
+    })
+    const decoder = releasedV0SessionFormatCodec.createDecoder({ type: 'session', version: 0, id: 'empty-tool-run', createdAt: 1, delegationDepth: 0 }, 'strict')
+    const decoded = new SessionFormatEventCollector()
+    decoder.decodeRow({ type: 'tool-call-chunks', seq0: 0, time0: 1, data: { turn: 1, step: 1, index: 0, id: '', name: '', dt: [1], args: ['{', '}'] } }, {
+      emitEvent: (event) => { decoded.emitEvent(event) },
+      emitRun: (run) => { stage.transformRun(run, decoded) },
+    })
+
+    expect(decoded.values.map(event => event.data)).toEqual(['{', '}'].map(argumentsDelta => ({
+      turn: 1, step: 1, chunk: { type: 'tool-call-delta', index: 0, id: '', name: '', argumentsDelta },
+    })))
   })
 
   it('accepts an inherited delivery marker for its source generation', () => {

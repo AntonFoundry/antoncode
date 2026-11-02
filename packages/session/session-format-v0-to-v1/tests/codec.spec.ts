@@ -153,6 +153,13 @@ describe('released v0/v1 physical codecs', () => {
     expect(() => decodeArtifact(releasedV1SessionFormatCodec, fullHeader, [row])).toThrow()
   })
 
+  it('accepts an empty-id packed tool row only in format v0, which Anton\'s fork wrote', () => {
+    const row = { type: 'tool-call-chunks', seq0: 0, time0: 1, data: { turn: 1, step: 0, index: 0, id: '', name: '', dt: [], args: ['a'] } }
+    const v0 = decodeArtifact(releasedV0SessionFormatCodec, { type: 'session', version: 0, id: 'codec', createdAt: 1, delegationDepth: 0 }, [row])
+    expect(v0.events).toHaveLength(1)
+    expect(() => decodeArtifact(releasedV1SessionFormatCodec, fullHeader, [row])).toThrow('id and optional name must be strings')
+  })
+
   it.each([
     ['not array', 'bad'],
     ['too many scalar entries', [0, 0]],
