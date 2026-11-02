@@ -73,7 +73,7 @@ describe('ContextMeter', () => {
     expect(view.queryByRole('dialog')).toBeNull()
   })
 
-  it('draws the eviction threshold marker at the published ratio for the same window', () => {
+  it('draws the eviction threshold marker at the published ratio across model window changes', () => {
     const view = meter({
       contextPressure: { pressureTokens: 32_000, contextWindow: 128_000 },
       contextBreakdown: BREAKDOWN,
@@ -85,15 +85,13 @@ describe('ContextMeter', () => {
     expect(marker.style.left).toBe('80%')
     view.unmount()
 
-    // A threshold published against a different window than the displayed
-    // route is stale: hide the marker instead of pointing at the wrong spot.
     const stale = meter({
       contextPressure: { pressureTokens: 32_000, contextWindow: 128_000 },
       contextBreakdown: BREAKDOWN,
       c0ntext: { evictionWindow: { thresholdRatio: 0.8, windowTokens: 1_000_000 } },
     })
     fireEvent.click(stale.container.querySelector<HTMLElement>('[aria-haspopup="dialog"]')!)
-    expect(stale.getByRole('dialog').getElementsByClassName(additionMarkerClass)).toHaveLength(0)
+    expect(stale.getByRole('dialog').getElementsByClassName(additionMarkerClass)[0]?.getAttribute('style')).toContain('left: 80%')
   })
 
   it('shows estimated context and its eviction marker without provider usage', () => {

@@ -216,3 +216,5 @@ None; Conversation assembly and browser input state do not alter provider-side p
 None.
 
 </details>
+
+The context threshold marker uses the configured eviction ratio against the displayed model capacity, including after model switches.

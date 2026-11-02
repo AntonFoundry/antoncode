@@ -138,13 +138,10 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
     ? [{ key: 'total', color: undefined, width: percent }]
     : ROWS.map(row => ({ key: row.key, color: row.color, width: percent * breakdown[row.key] / breakdownTotal }))
   const segments = parts.filter(part => part.width > 0)
-  // The red marker sits at c0ntext's eviction threshold — the surface fraction
-  // of the routed model's window where paging begins — rather than trailing the
-  // occupancy fill. A configured ratio can precede the first recorded window;
-  // a recorded window for a different route hides the marker.
+  // The configured ratio applies to the current capacity, including after a
+  // model switch whose window differs from the latest recorded request.
   const thresholdPercent = windowPolicy !== undefined
     && context.contextWindow > 0
-    && (windowPolicy.windowTokens === undefined || windowPolicy.windowTokens === context.contextWindow)
     ? Math.min(100, Math.max(0, windowPolicy.thresholdRatio * 100))
     : null
 
