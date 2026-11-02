@@ -17,7 +17,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: the ctx.remote Context merge and the forwarded-event key face.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import { SubagentCard } from './SubagentCard.tsx'
+import { SubagentCard, SubagentSettingsSection } from './SubagentCard.tsx'
 import { subagentCardFace } from './subagent-card-controller.ts'
 import { SubagentLimitsCardController } from './subagent-limits-card-controller.ts'
 import {
@@ -90,4 +90,12 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: () => subagentCardFace(limitsFace, modelsFace),
   }, SubagentCard))), 'ui-settings-subagent: page')
+  ctx.effect(() => ctx.configForms.whileServed([SUBAGENT_NS, SUBAGENT_MODEL_SELECTION_NS], () => ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section',
+    id: 'subagent-controls',
+    order: 25,
+    label: () => t('subagentTitle'),
+    locale: NS,
+    inject: () => subagentCardFace(limitsFace, modelsFace),
+  }, SubagentSettingsSection))), 'ui-settings-subagent: settings section')
 }

@@ -36,11 +36,14 @@ async function bench(served?: string[]) {
   return { ctx, slots: ctx.get('slots') as SlotRegistry, describeSettings, models, remote }
 }
 
-/** The Plugins page's item slot, as its owner declares it. */
+/** The Plugins page and Settings shell slots, as their owners declare them. */
 function declareRoot(slots: SlotRegistry): () => void {
   return slots.register({
     name: 'root',
-    children: { 'plugins.item': { kind: 'list', scope: 'root' } },
+    children: {
+      'plugins.item': { kind: 'list', scope: 'root' },
+      'settings.section': { kind: 'list', scope: 'root' },
+    },
   } as never, () => null)
 }
 
@@ -64,6 +67,9 @@ describe('ui-settings-subagent apply', () => {
     expect(entry.options).toMatchObject({ id: 'subagent', order: 10 })
     expect(resolveSlotLabel(entry.options.label)).toBe('子智能体')
     expect(entry.locale).toBe(NS)
+    const settingsEntry = slots.entries('settings.section')[0]!
+    expect(settingsEntry.options).toMatchObject({ id: 'subagent-controls', order: 25 })
+    expect(resolveSlotLabel(settingsEntry.options.label)).toBe('子智能体')
     const face = (entry.inject as () => Pick<SubagentCardFace, 'hooks'>)()
     expect(Object.keys(face.hooks).sort()).toEqual(['subagentLimitsCard', 'subagentModelSelectionCard'])
   })
@@ -81,6 +87,7 @@ describe('ui-settings-subagent apply', () => {
     await other.ctx.plugin({ inject: [...inject], apply }).await()
     await vi.waitFor(() => { expect(other.describeSettings).toHaveBeenCalled() })
     expect(other.slots.entries('plugins.item')).toHaveLength(0)
+    expect(other.slots.entries('settings.section')).toHaveLength(0)
     expect(describeSettings).toHaveBeenCalled()
   })
 
@@ -113,5 +120,6 @@ describe('ui-settings-subagent apply', () => {
     await fiber.dispose()
 
     expect(slots.entries('plugins.item')).toHaveLength(0)
+    expect(slots.entries('settings.section')).toHaveLength(0)
   })
 })

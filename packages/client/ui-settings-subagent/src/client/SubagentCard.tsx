@@ -3,6 +3,7 @@
 import { useId } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { SettingsForm } from '@deepseek-ai/dsh-client-ui-primitives'
 import { formLabels } from './locales.ts'
 import { SubagentLimitsFields } from './SubagentLimitsFields.tsx'
@@ -13,6 +14,8 @@ import css from './SubagentCard.module.css'
 /** Framework-derived props for the shared Subagent settings card. */
 export type SubagentCardProps = PropsRuntime<'plugins.item'>
   & PropsLocale<'settings.subagent'> & InjectFace<SubagentCardFace>
+type SubagentFormProps = PropsLocale<'settings.subagent'> & InjectFace<SubagentCardFace>
+type SubagentSettingsSectionProps = PropsRuntime<'settings.section'> & SubagentFormProps
 
 /**
  * Render the available Subagent settings with one configuration page and save footer.
@@ -21,10 +24,26 @@ export type SubagentCardProps = PropsRuntime<'plugins.item'>
  */
 export function SubagentCard(props: SubagentCardProps) {
   const { t } = props
+  if (props.view === 'summary') return t('subagentDescription')
+  return <SubagentForm {...props} />
+}
+
+/** Render delegation limits and model permissions directly in Settings. */
+export function SubagentSettingsSection(props: SubagentSettingsSectionProps) {
+  return (
+    <section className={css.page}>
+      <h2>{props.t('subagentTitle')}</h2>
+      <p>{props.t('subagentDescription')}</p>
+      <SubagentForm {...props} />
+    </section>
+  )
+}
+
+function SubagentForm(props: SubagentFormProps) {
+  const { t } = props
   const limits = props.useSubagentLimitsCard(snapshot => snapshot)
   const models = props.useSubagentModelSelectionCard(snapshot => snapshot)
   const headingId = useId()
-  if (props.view === 'summary') return t('subagentDescription')
   const state = subagentCardShell(limits, models)
   return (
     <SettingsForm labels={formLabels(t)}
