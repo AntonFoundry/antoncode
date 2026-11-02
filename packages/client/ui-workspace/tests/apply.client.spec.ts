@@ -51,7 +51,8 @@ const workspaceState = (
   archivedSessionIds: readonly SessionId[] = [],
   pinnedSessionIds: readonly SessionId[] = [],
 ): WorkspaceSnapshot => ({
-  items, archivedSessionIds, pinnedSessionIds, state: 'idle', phase: 'ready', error: null,
+  items, worktrees: { byRepo: {}, prefs: {}, namesByWorkspaceId: {} },
+  archivedSessionIds, pinnedSessionIds, state: 'idle', phase: 'ready', error: null,
 })
 
 const ALLOWED: HostObservable<boolean> = createSnapshotStore(true)
@@ -189,7 +190,7 @@ function declare(slots: SlotRegistry, ...names: HoleName[]): () => void {
 
 /** Own the sidebar declaration independently of the frame-wide overlay in lifecycle tests. */
 function SidebarDeclarationOwner({ renderSlot }: PropsRenderSlots<'sidebar.workspaces'>) {
-  return renderSlot('sidebar.workspaces', { wide: true, expandSidebar: () => {} })
+  return renderSlot('sidebar.workspaces', { wide: true, expandSidebar: () => {}, newWorkspaceRequests: 0, reportAddWorkspaceAvailability: () => {} })
 }
 
 /** The one entry registered under `id` in a list. */

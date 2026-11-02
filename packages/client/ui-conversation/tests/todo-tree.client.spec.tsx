@@ -7,10 +7,10 @@
  */
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { GoalId } from '@deepseek-ai/dsh-goal/client'
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'
-import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { TodoTreeOwnerProps } from '../src/client/contract/slots.ts'
 import type { TodoTreeProps, TodoTreeSessionProps } from '../src/client/skeleton/TodoTree.tsx'
@@ -119,7 +119,7 @@ describe('TodoTreeBody', () => {
 
   it('renders the session goal as the leading card when one is active', () => {
     render(<TodoTreeBody todos={LIST} t={t} goal={{
-      goal: { objective: '交付 v0', phase: 'active', maxGoalRounds: 10 },
+      goal: { id: 'goal-1' as GoalId, revision: 1, objective: '交付 v0', phase: 'active', maxGoalRounds: 10 },
       roundsStarted: 2,
       createdAt: 0,
       updatedAt: 0,
@@ -145,7 +145,7 @@ interface ProjectionStubState {
 
 /** One active goal snapshot as the projection publishes it. */
 const GOAL = {
-  goal: { objective: '交付 v0', phase: 'active', maxGoalRounds: 10 },
+  goal: { id: 'goal-1' as GoalId, revision: 1, objective: '交付 v0', phase: 'active', maxGoalRounds: 10 },
   roundsStarted: 2,
   createdAt: 0,
   updatedAt: 0,

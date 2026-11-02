@@ -51,7 +51,6 @@ const THINKING_EXPECTED = join(SNAPSHOT_DIR, 'thinking-expanded.expected.md')
 // Command-row goldens over the same conversation after direct host commands.
 const COMMAND_ROW_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/command-row.expected.md', import.meta.url))
 const FEEDBACK_ROW_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/feedback-row.expected.md', import.meta.url))
-const FILE_PREVIEW_EXPECTED = join(SNAPSHOT_DIR, 'file-preview.expected.md')
 // The pinned-header geometry golden: a pure-CSS, user-visible behavior that
 // changes no DOM and no accessible name, so the aria goldens cannot capture it
 // (docs/testing.md, "when a snapshot test is required", still requires a

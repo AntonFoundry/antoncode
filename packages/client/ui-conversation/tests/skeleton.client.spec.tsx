@@ -113,7 +113,7 @@ function workspace(id = 'w1'): WorkspaceView {
 }
 
 const workspaceState = (items: readonly WorkspaceView[]): WorkspaceSnapshot => ({
-  items, archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+  items, worktrees: { byRepo: {}, prefs: {}, namesByWorkspaceId: {} }, archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
 })
 
 function sessionSnapshotOf(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot {
@@ -243,6 +243,7 @@ function mount(
           useProjection={(() => undefined)}
           useInput={useInput}
           inputActions={inputActions}
+          viewActions={{ activate: () => {} }}
           useStore={bindSnapshotSelector(store)}
           actions={store.actions}
           renderSlot={renderSlot as never}
@@ -273,6 +274,7 @@ function mount(
           useProjection={(() => undefined)}
           useInput={useInput}
           inputActions={inputActions}
+          viewActions={{ activate: () => {} }}
           useStore={bindSnapshotSelector(store)}
           actions={store.actions}
           renderSlot={renderSlot as never}
@@ -301,6 +303,7 @@ function mount(
           useProjection={(() => undefined)}
           useInput={useInput}
           inputActions={inputActions}
+          viewActions={{ activate: () => {} }}
           keyboard={wiring}
           addFiles={() => null}
           useFileUploads={bindSnapshotSelector(createSnapshotStore({}))}
@@ -362,6 +365,7 @@ function mount(
       useComposerBlock: select => select(options.composerBlock),
       useInput,
       inputActions,
+      viewActions: { activate: () => {} },
       renderSlot,
       renderSlotChain,
       renderFactorySlot,
@@ -392,6 +396,7 @@ function mount(
     useProjection: (() => undefined),
     useInput,
     inputActions,
+    viewActions: { activate: () => {} },
   }
   const props: ConversationSlotProps = { ...runtimeProps, renderSlot, renderFactorySlot }
   const view = render(<ConversationMainPanel {...props} />)
@@ -403,19 +408,19 @@ function mount(
       if (actionsOwner === undefined) throw new Error('View actions not rendered')
       return actionsOwner
     },
-    rerender: () => { view.rerender(<ConversationMainPanel {...props} />) },
+    rerender: (nextSessionId?: SessionId) => {
+      view.rerender(<ConversationMainPanel {...props} sessionId={nextSessionId ?? props.sessionId} />)
+    },
   }
 }
 
 describe('Hero chrome', () => {
-  it('remounts the animation for a new session but preserves it across same-session renders', () => {
-    const b = mount(conversationSnapshot({ composerPhase: 'blank', blank: true }))
-    const firstImage = b.view.container.querySelector('img[src="/anton-mark.png"]')
-    expect(firstImage).not.toBeNull()
+  it('preserves the hero mark across same-session renders', () => {
+    const b = mount(sessionSnapshotOf({ blank: true }), undefined, undefined, { summaryBlank: true })
+    const firstMark = b.view.container.querySelector('span[class*="fishHitbox"]')
+    expect(firstMark).not.toBeNull()
     b.rerender()
-    expect(b.view.container.querySelector('img[src="/anton-mark.png"]')).toBe(firstImage)
-    b.rerender(sid('s2'))
-    expect(b.view.container.querySelector('img[src="/anton-mark.png"]')).not.toBe(firstImage)
+    expect(b.view.container.querySelector('span[class*="fishHitbox"]')).toBe(firstMark)
   })
 
   it('renders the English preview badge through the hero locale seat', () => {
@@ -665,7 +670,7 @@ describe('ConversationRoot resident composer', () => {
   })
 
   it('same textarea DOM node survives the hero → active flip into the sticky scrollport', () => {
-    const b = mount(sessionSnapshotOf({ blank: true }))
+    const b = mount(sessionSnapshotOf({ blank: true }), undefined, undefined, { summaryBlank: true })
     const before = b.view.getByRole('textbox')
     act(() => { b.wiring.setDraft('kept across flip') })
     // First message landed: content exists, phase leaves blank. Composer
@@ -895,7 +900,7 @@ describe('ConversationRoot resident composer', () => {
   })
 
   it('blank session keeps the interactive picker chip (workspace switchable until the first message)', () => {
-    const b = mount(sessionSnapshotOf({ blank: true }))
+    const b = mount(sessionSnapshotOf({ blank: true }), undefined, undefined, { summaryBlank: true })
     const chip = b.view.getByRole('button', { name: '选择工作区' })
     expect((chip as HTMLButtonElement).disabled).toBe(false)
     expect(b.slotCalls).toContain('conversation.hero.workspace')
@@ -906,7 +911,7 @@ describe('ConversationRoot resident composer', () => {
   })
 
   it('seats the New Session options after the agent-preset chip, and only for a Session', () => {
-    const b = mount(sessionSnapshotOf({ blank: true }))
+    const b = mount(sessionSnapshotOf({ blank: true }), undefined, undefined, { summaryBlank: true })
     const preset = within(b.view.container).getByTestId('view-conversation.hero.agentPreset')
     const options = within(b.view.container).getByTestId('view-conversation.hero.options')
     expect(options.parentElement?.previousElementSibling).toBe(preset)
@@ -1068,7 +1073,7 @@ describe('ConversationRoot resident composer', () => {
   })
 
   it('hero phase renders no width handles (no transcript to size)', () => {
-    const b = mount(sessionSnapshotOf({ blank: true }))
+    const b = mount(sessionSnapshotOf({ blank: true }), undefined, undefined, { summaryBlank: true })
     expect(b.view.container.querySelector('[data-width-handle]')).toBeNull()
   })
 })

@@ -441,7 +441,7 @@ describe('Session', () => {
       },
     }
     expect(() => Session.create(SessionId('legacy-empty-call-id'), [event as unknown as SessionEvent])).not.toThrow()
-    expect(Session.create(SessionId('legacy-empty-call-id'), [event as unknown as SessionEvent]).events)
+    expect(Session.create(SessionId('legacy-empty-call-id'), [event as unknown as SessionEvent]).snapshotEvents())
       .toContainEqual(event)
   })
 

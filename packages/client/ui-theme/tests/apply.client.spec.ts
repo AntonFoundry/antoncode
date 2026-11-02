@@ -173,7 +173,9 @@ describe('ui-theme apply', () => {
 
   it('adopts all durable font sizes together after a refused batch settles', async () => {
     const host = stubConfigForm<ThemeSettings>()
-    const section: ThemeSettings = { preference: 'system', fontSize: 14, codeFontSize: 11, terminalFontSize: 13,
+    const section: ThemeSettings = { preference: 'system', monoFont: 'system', monoSize: 13,
+      uiFamily: 'system', uiSize: 14, chatSize: 14, termSize: 13,
+      fontSize: 14, codeFontSize: 11, terminalFontSize: 13,
       textFontFamily: '', codeFontFamily: '', terminalFontFamily: '' }
     host.publish({ status: 'ready', value: section, revision: 1, writable: true })
     const { theme, keyboard } = await keyboardTheme(host)
@@ -193,15 +195,14 @@ describe('ui-theme apply', () => {
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     const theme = b.ctx.get('theme') as ThemeRuntime
-    const { instance, face } = fontSettingsFaceOf(b.slots)
 
     expect(keyboard.press()).toHaveBeenCalledOnce()
     expect(theme.getTheme().fontSizes).toEqual({ text: 15, code: 12, terminal: 14 })
     keyboard.press({ shift: true }, { region: 'editable' })
-    expect(instance.getSnapshot().fontSizes).toEqual({ text: 16, code: 13, terminal: 15 })
+    expect(theme.getTheme().fontSizes).toEqual({ text: 16, code: 13, terminal: 15 })
     keyboard.press({ code: 'Minus' })
-    expect(instance.getSnapshot().fontSizes).toEqual({ text: 15, code: 12, terminal: 14 })
-    face.setFontSize('text', 20)
+    expect(theme.getTheme().fontSizes).toEqual({ text: 15, code: 12, terminal: 14 })
+    theme.setFontSize('text', 20)
     keyboard.press()
     expect(theme.getTheme().fontSizes).toEqual({ text: 21, code: 13, terminal: 15 })
     await vi.waitFor(() => { expect(b.mutate).toHaveBeenCalledTimes(5) })

@@ -383,7 +383,7 @@ describe('web e2e: queue row actions', () => {
 
     const expectAlignedContextPanels = async () => {
       // Sample one layout: the responsive grid can move between separate browser round trips.
-      const [queuePanelBox, todoBox, goalBox] = await page.evaluate(() => [
+      const [queuePanelBox, , goalBox] = await page.evaluate(() => [
         '[data-queue-dock] > div', '[data-testid="todo-panel"]', '[data-goal-bar] > div',
       ].map((selector) => {
         const box = document.querySelector(selector)?.getBoundingClientRect()

@@ -233,7 +233,7 @@ describe('request stability across the loop', () => {
 
     expect(adapter.requests[0]?.reasoningEffort).toBe('high')
     expect(adapter.requests[1]?.reasoningEffort).toBe('high')
-    const headerEvents = agent.session.events.filter(e => e.type === 'request/header')
+    const headerEvents = agent.session.snapshotEvents().filter(e => e.type === 'request/header')
     expect(headerEvents).toHaveLength(1)
     expect(headerEvents[0]?.type === 'request/header' && headerEvents[0].data.header.config.reasoningEffort)
       .toBe(ReasoningEffortId('high'))

@@ -194,7 +194,7 @@ function bench(over?: BenchOptions) {
       projectionsBySession: {},
     })),
     useWorkspaces: bindSnapshotSelector(createSnapshotStore({
-      items: [], archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+      items: [], worktrees: { byRepo: {}, prefs: {}, namesByWorkspaceId: {} }, archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
     })),
     ...allowAllAccess,
     useAccess: endpoint => !(over?.deniedEndpoints ?? []).includes(endpoint),
@@ -205,6 +205,7 @@ function bench(over?: BenchOptions) {
           : key === 'imageLimits' ? over?.imageLimits
             : key === 'contextPressure' ? over?.contextPressure : undefined)),
     useInput: bindSnapshotSelector(shell.state),
+    viewActions: { activate: () => {} },
     inputActions: shell.actions,
     keyboard: shell,
     addFiles: over?.addFiles ?? (() => null),

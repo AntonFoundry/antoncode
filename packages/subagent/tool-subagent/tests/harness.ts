@@ -2,6 +2,7 @@ import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import { mountWorkingDirectoryFixture } from '../../subagent/tests/working-directory-fixture.ts'
 import { afterEach } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { createVolatile } from '@deepseek-ai/cosmokit'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
@@ -34,7 +35,7 @@ const setupProviders = new WeakMap<Context, Awaited<ReturnType<typeof mock.mount
 let setupAgentCounter = 0
 
 /** Test-only opt-in translated to the real Host setting and Session path. */
-type SetupConfig = toolConfig & {
+type SetupConfig = Omit<toolConfig, 'childModel' | 'childModelBySession' | 'childReasoningEffort'> & {
   withModelSelection?: boolean
   /** Host setting sampled by a `withModelSelection` setup; defaults to enabled. */
   hostSelectionEnabled?: boolean
@@ -52,7 +53,13 @@ const TEST_ALLOWED_MODELS = [
 
 export async function setup(toolConfig: SetupConfig, mockConfig: Partial<mock.Config> = {}): Promise<Context> {
   const ctx = ownContext(new Context())
-  const { withModelSelection, hostSelectionEnabled = true, parentAgentOptions, ...config } = toolConfig
+  const { withModelSelection, hostSelectionEnabled = true, parentAgentOptions, ...options } = toolConfig
+  const config = {
+    childModel: createVolatile<string | undefined>(undefined),
+    childModelBySession: createVolatile<Record<string, string>>({}),
+    childReasoningEffort: createVolatile<string | undefined>(undefined),
+    ...options,
+  }
   await mountAgentLoopTestDependencies(ctx)
   if (withModelSelection === true) {
     await ctx.plugin(SubagentModelSelectionConfig, {
@@ -82,7 +89,7 @@ export async function setup(toolConfig: SetupConfig, mockConfig: Partial<mock.Co
   await ctx.plugin(SubagentRuntime)
   const provider = await mock.mountScriptedProvider(ctx, { name: 'mock', ...mockConfig })
   setupProviders.set(ctx, provider)
-  await ctx.plugin(tool, config)
+  await ctx.plugin(tool, options)
   const handle = await ctx.agents.create({ sessionId: SessionId(`tool-setup-${++setupAgentCounter}`), ...parentAgentOptions === undefined ? {} : { agentOptions: parentAgentOptions } })
   setupAgents.set(ctx, handle.agent)
   return ctx

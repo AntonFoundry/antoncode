@@ -64,7 +64,7 @@ const sessionList = {
 const attentionState: AttentionState = new Map()
 const workspaceState = {
   items: [],
-  archivedSessionIds: [],
+  worktrees: { byRepo: {}, prefs: {}, namesByWorkspaceId: {} }, archivedSessionIds: [],
   pinnedSessionIds: [],
   state: 'idle' as const,
   phase: 'ready' as const,
@@ -135,6 +135,7 @@ const kitBase: Omit<QuestionComposerProps, 'matched' | 'useStore' | 'useQuestion
   useTrajectory: selector => selector(trajectoryState),
   useProjection: (() => undefined),
   useInput: selector => selector(inputState),
+  viewActions: { activate: () => {} },
   inputActions: {
     insertQuote: () => false,
     captureInsertion: () => ({ start: 0, end: 0, draftRev: 0 }),

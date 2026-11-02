@@ -239,7 +239,7 @@ function emptySessions() {
 
 function emptyWorkspaces() {
   const store = createSnapshotStore<WorkspaceSnapshot>({
-    items: [], archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+    items: [], worktrees: { byRepo: {}, prefs: {}, namesByWorkspaceId: {} }, archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
   })
   return bindSnapshotSelector(store)
 }
@@ -516,6 +516,7 @@ function makeHarness(
       return key === 'inbox' ? inbox : outlineValue
     },
     useInput: (() => { throw new Error('unused') }),
+    viewActions: { activate: () => {} },
     inputActions: {
       insertQuote: () => false,
       captureInsertion: () => ({ start: 0, end: 0, draftRev: 0 }),

@@ -451,13 +451,13 @@ describe('replay anchors and surface folds', () => {
   it('clears an open step anchor at the persisted resume boundary', () => {
     const resumed = Session.create(SessionId('interrupted-step-resume'), [
       {
-        type: 'turn/start', seq: 0, time: 1, data: { turn: 1 },
+        type: 'turn/start', seq: SessionSeq(0), time: 1, data: { turn: 1 },
       },
       {
-        type: 'step/start', seq: 1, time: 2, data: { turn: 1, step: 1 },
+        type: 'step/start', seq: SessionSeq(1), time: 2, data: { turn: 1, step: 1 },
       },
       {
-        type: 'user/message', seq: 2, time: 3,
+        type: 'user/message', seq: SessionSeq(2), time: 3,
         data: createUserMessage({ content: [{ type: 'text', text: 'durable history' }], source: { kind: 'user' } }),
         surfaceOp: 'append',
       },
@@ -474,7 +474,7 @@ describe('replay anchors and surface folds', () => {
     const measurement = meter().measure(resumed)
     expect(measurement.nodes).toHaveLength(2)
     expect(measurement.surfaceTokens).toBeGreaterThan(0)
-    expect(measurement.logRevision).toBe(resumed.events.length)
+    expect(measurement.logRevision).toBe(resumed.snapshotEvents().length)
     expectSurfaceTotal(measurement)
 
     const live = Session.create(SessionId('live-end-seed'))

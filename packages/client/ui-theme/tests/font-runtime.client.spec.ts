@@ -3,15 +3,15 @@
  * adoption, and the six CSS custom properties it owns on the root. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { ThemeSettings } from '../src/theme-settings.ts'
 import { DEFAULT_SELECTION, FontRuntime, applyFontVars, type FontSelection } from '../src/client/font-runtime.ts'
 
-function scopeOf(section: ThemeSettings | undefined): SettingsScope<ThemeSettings> {
+function scopeOf(section: ThemeSettings | undefined): ConfigForm<ThemeSettings> {
   const listeners = new Set<() => void>()
-  const snapshot: SettingsScopeSnapshot<ThemeSettings> = {
+  const snapshot: ConfigFormSnapshot<ThemeSettings> = {
     status: 'ready', value: section, base: undefined, user: undefined,
-    revision: 0, writable: true, mode: 'host',
+    revision: 0, writable: true,
   }
   return {
     getSnapshot: () => snapshot,
@@ -19,17 +19,21 @@ function scopeOf(section: ThemeSettings | undefined): SettingsScope<ThemeSetting
       listeners.add(listener)
       return () => { listeners.delete(listener) }
     },
+    mutate: vi.fn(async () => true),
     set: vi.fn(async (field: string, value: unknown) => {
       snapshot.value = { ...(snapshot.value as ThemeSettings), [field]: value } as ThemeSettings
       for (const listener of listeners) listener()
+      return true
     }),
-    unset: vi.fn(async () => {}),
+    unset: vi.fn(async () => true),
   }
 }
 
 const BASE_SECTION: ThemeSettings = {
   preference: 'system', uiFamily: 'system', uiSize: 14, chatSize: 16,
   monoFont: 'monaco', monoSize: 15, termSize: 13,
+  fontSize: 14, codeFontSize: 15, terminalFontSize: 13, textFontFamily: 'system',
+  codeFontFamily: 'monaco', terminalFontFamily: '',
 }
 
 const VARS = ['--dsw-font-family', '--dsh-zoom-ui', '--dsh-zoom-chat', '--ds-font-family-code', '--dsw-font-size-code', '--dsh-font-size-term'] as const

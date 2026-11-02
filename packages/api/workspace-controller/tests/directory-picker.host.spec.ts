@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { DirectoryPicker, DirectoryPickerError } from '@deepseek-ai/dsh-host-directory-picker'
-import type { DirectoryPickerCapability } from '@deepseek-ai/dsh-host-directory-picker'
+import type { DirectoryPickerBrowseCapability, DirectoryPickerCapability } from '@deepseek-ai/dsh-host-directory-picker'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { DirectoryPickerController } from '../src/directory-picker.ts'
 
@@ -22,7 +22,7 @@ class StubPicker extends DirectoryPicker {
 
 const NATIVE_STUB: DirectoryPickerCapability = { kind: 'native', pick: async () => null }
 
-const BROWSE_STUB: DirectoryPickerCapability = {
+const BROWSE_STUB: DirectoryPickerBrowseCapability = {
   kind: 'browse',
   list: async (path) => {
     if (path === '/denied') {
@@ -32,8 +32,8 @@ const BROWSE_STUB: DirectoryPickerCapability = {
     return {
       path: target,
       home: '/home/user',
-      crumbs: [{ name: '/', path: '/', hidden: false }],
-      entries: [{ name: 'projects', path: `${target}/projects`, hidden: false }],
+      crumbs: [{ name: '/', path: '/', hidden: false, isDirectory: true }],
+      entries: [{ name: 'projects', path: `${target}/projects`, hidden: false, isDirectory: true }],
       truncated: false,
     }
   },
@@ -128,7 +128,7 @@ describe('directoryPicker browse Remotes', () => {
     const createDirectory = vi.fn(async (path: string, name: string) => `${path}/${name}`)
     const picker = await harness({
       kind: 'browse',
-      list: (path, signal) => BROWSE_STUB.list(path, signal),
+      list: (path, opts, signal) => BROWSE_STUB.list(path, opts, signal),
       createDirectory,
     })
 
@@ -146,7 +146,7 @@ describe('directoryPicker browse Remotes', () => {
   it('reports an aborted listing as cancelled', async () => {
     const picker = await harness({
       kind: 'browse',
-      list: (_path, signal) => new Promise((_resolve, reject) => {
+      list: (_path, _opts, signal) => new Promise((_resolve, reject) => {
         signal?.addEventListener('abort', () => { reject(new Error('scan aborted')) }, { once: true })
       }),
       createDirectory: async () => '/never',

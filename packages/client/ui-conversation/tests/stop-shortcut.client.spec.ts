@@ -8,6 +8,7 @@ import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
 import { UiConversation } from '../src/client/conversation/assembly.ts'
 import { ComposerBlockRegistry } from '../src/client/input/blocks.ts'
 import { InputHub } from '../src/client/input/hub.ts'
+import { ComposerRoutes } from '../src/client/input/composer-routes.ts'
 import { ConversationController } from '../src/client/service.ts'
 import { installStopShortcut } from '../src/client/stop-shortcut.ts'
 import { zh } from '../src/client/locales.ts'
@@ -28,9 +29,10 @@ async function bench() {
   ] })
   const reference = runtime.sessions.retain('s1' as SessionId)
   await reference.ready
-  const hub = new InputHub(runtime.ctx, makeTranslate(zh, {}))
+  const routes = new ComposerRoutes(() => null)
+  const hub = new InputHub(runtime.ctx, makeTranslate(zh, {}), routes)
   const fiber = runtime.ctx.plugin(ConversationController, {
-    input: hub, blocks: new ComposerBlockRegistry(), maxConcurrentFileUploads: 2,
+    input: hub, composerRoutes: routes, blocks: new ComposerBlockRegistry(), maxConcurrentFileUploads: 2,
   })
   await fiber.await()
   const conversation = new UiConversation(runtime.ctx, runtime.sessions)

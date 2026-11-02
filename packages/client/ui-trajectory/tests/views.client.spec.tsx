@@ -179,7 +179,7 @@ function emptySessions() {
 
 function emptyWorkspaces() {
   const store = createSnapshotStore<WorkspaceSnapshot>({
-    items: [], archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+    items: [], worktrees: { byRepo: {}, prefs: {}, namesByWorkspaceId: {} }, archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
   })
   return bindSnapshotSelector(store)
 }
@@ -238,6 +238,7 @@ function standaloneProps(
     ...allowAllAccess,
     useConversation: bindSnapshotSelector(createSnapshotStore(conversationSnapshot(trajectory))),
     useInput: bindSnapshotSelector(input),
+    viewActions: { activate: () => {} },
     inputActions,
     useProjection,
     inspectCall: undefined,
@@ -377,6 +378,7 @@ function mount(fixture: Awaited<ReturnType<typeof bench>>) {
     ...allowAllAccess,
     useProjection,
     useInput,
+    viewActions: { activate: () => {} },
     inputActions,
   }
   // Minimal outlet twin: resolve the ring entry by the `only` filter and

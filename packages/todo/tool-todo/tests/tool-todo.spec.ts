@@ -166,7 +166,7 @@ describe('dsh-tool-todo', () => {
     })
     expect(text(result)).toContain('1 pending, 1 in progress, 2 completed, 1 cancelled')
 
-    const event = agent.session.events.findLast(e => e.type === 'todo/write')!
+    const event = agent.session.snapshotEvents().findLast(e => e.type === 'todo/write')!
     expect(event.data.todos).toEqual(todos)
   })
 
@@ -180,7 +180,7 @@ describe('dsh-tool-todo', () => {
     }] }, { agent })
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('at most one task may be in_progress across the whole tree')
-    expect(agent.session.events.some(e => e.type === 'todo/write')).toBe(false)
+    expect(agent.session.snapshotEvents().some(e => e.type === 'todo/write')).toBe(false)
   })
 
   it('rejects duplicate content across different levels', async () => {
@@ -305,7 +305,7 @@ describe('dsh-tool-todo', () => {
     expect(result.isError).toBe(false)
     if (result.isError) throw new Error('expected todo_write success')
 
-    const stored = agent.session.events.findLast(e => e.type === 'todo/write')!.data.todos
+    const stored = agent.session.snapshotEvents().findLast(e => e.type === 'todo/write')!.data.todos
     expect(stored).toEqual([
       { content: 'phase one', status: 'in_progress', children: [
         { content: 'step a', status: 'completed' },
@@ -327,7 +327,7 @@ describe('dsh-tool-todo', () => {
       ] }] },
     ] }] }, { agent })
     expect(result.isError).toBe(false)
-    const stored = agent.session.events.findLast(e => e.type === 'todo/write')!.data.todos
+    const stored = agent.session.snapshotEvents().findLast(e => e.type === 'todo/write')!.data.todos
     expect(stored).toEqual([{ content: 'a', status: 'pending', children: [
       { content: 'b', status: 'pending', children: [{ content: 'c', status: 'pending' }] },
     ] }])

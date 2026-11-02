@@ -4190,7 +4190,7 @@ describe('SubagentRuntime.selectModel', () => {
     ctx.subagents.selectModel(childId, { provider: 'alternate', model: 'later-choice' }, { kind: 'ancestor', agent: parent })
 
     expect(child.model.current()).toEqual({ provider: 'alternate', model: 'later-choice' })
-    expect(child.session.events.filter(event => event.type === 'model/selection').map(event => event.data))
+    expect(child.session.snapshotEvents().filter(event => event.type === 'model/selection').map(event => event.data))
       .toEqual([replacement, { provider: 'alternate', model: 'later-choice' }])
     release.resolve(undefined)
     await waitNoActivation(ctx, childId)
