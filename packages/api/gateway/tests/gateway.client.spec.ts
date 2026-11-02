@@ -765,6 +765,19 @@ describe('Client Remote transport readiness', () => {
 })
 
 describe('Client Typert API', () => {
+  it('mounts a Remote method named remove without colliding with namespace cleanup', async () => {
+    const ctx = await bench(vi.fn<ConnectionHandle['rpc']['call']>())
+    const dispose = await ctx.remote.$mount({
+      package: '@fixture/remove',
+      descriptors: [{ ...directDescriptor(), method: 'remove' }],
+    })
+    const namespace = ctx.remote.probe
+    expect(typeof Reflect.get(namespace, 'remove')).toBe('function')
+    await dispose()
+    expect(Reflect.has(namespace, 'remove')).toBe(false)
+    await ctx.fiber.dispose()
+  })
+
   it('mounts concrete direct methods, forwards inputs, and withdraws retained handles', async () => {
     const call = vi.fn<ConnectionHandle['rpc']['call']>()
       .mockResolvedValue({ ok: true, value: { ref: 'goal-1' } })
@@ -970,7 +983,7 @@ describe('Client Typert API', () => {
     })).rejects.toThrow('scoped method probe/rename is already mounted')
     await expect(ctx.remote.$mount({
       package: '@fixture/service-method-conflict',
-      descriptors: [{ ...context, id: '@fixture/probe#probe/remove', method: 'remove' }],
+      descriptors: [{ ...context, id: '@fixture/probe#probe/uninstallMethod', method: 'uninstallMethod' }],
     })).rejects.toThrow('conflicts with its namespace service')
     const scopedService = ctx.get('remote.probe') as unknown as object
     Object.defineProperty(scopedService, 'custom', { configurable: true, value: () => undefined })
