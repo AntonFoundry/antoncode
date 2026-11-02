@@ -1,5 +1,5 @@
 ---
-description: "Scope-grouped read-only plugin inventory tab in Web Plugins settings for the dsh web client: agent-preset compositions first, the global plane behind a disclosure, search across both."
+description: "Scope-grouped plugin inventory with Host and agent preset enablement controls in Web Settings."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English
 
 ## Summary
 
-The **Plugin list** tab lists agent presets, open by default, then the collapsed global inventory. A Global plugins shortcut above the lists collapses the session list and opens the Host entries with their enable and disable switches; a search opens both groups. Cards show localized titles and descriptions when available, identify instances by stable entry id, and expose enablement, source details, runtime status, disabled conditions, and discovery failures; preset-provided global entries name their presets. Search covers both groups and points to matches in other presets. The tab handles loading, empty, no-match, failure, and retry states without exposing transport details, and still shows the global inventory without a preset roster.
+The **Plugin list** tab lists agent presets, open by default, then the collapsed global inventory. Session plugin switches save a literal child row into the active profile for future Agents. A Global plugins shortcut above the lists collapses the session list and opens the Host entries with their enable and disable switches; a search opens both groups. Cards show localized titles and descriptions when available, identify instances by stable entry id, and expose enablement, source details, runtime status, disabled conditions, and discovery failures; preset-provided global entries name their presets. Search covers both groups and points to matches in other presets. The tab handles loading, empty, no-match, failure, and retry states without exposing transport details, and still shows the global inventory without a preset roster.
 
 ## Table of Contents
 
@@ -55,7 +55,7 @@ The Plugin list also shows synchronization failures on the current page. Its ret
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The tab is a read-only projection of a Host-owned snapshot; it performs no Remote read during plugin activation and takes the snapshot on first selection.
+The tab takes a Host snapshot on first selection. Global switches save through `pluginInventory/toggle`; session plugin switches save through `pluginInventory/togglePreset` and reload the snapshot. A conditional child or one without an entry id has no switch.
 
 ### Registration
 
@@ -98,7 +98,7 @@ None; this package neither assembles nor sends a provider request.
 These limits define the freshness and reach of the inventory view; they are current package constraints.
 
 - **One snapshot per Settings mount or retry** — the tab does not subscribe to Loader changes or automatically refetch after reconnect; switching tabs preserves the current snapshot, while reopening Settings obtains a new one.
-- **Read-only in both planes** — the tab shows global and preset enablement but mutates neither; enable/disable controls that write a custom preset's own composition file are deliberate follow-up work.
+- **Preset changes affect later Agents** — existing Agents retain their mounted preset revision. Session plugin switches require an editable profile and a unique literal child id.
 
 <a id="dev-note"></a>
 ### Dev Note

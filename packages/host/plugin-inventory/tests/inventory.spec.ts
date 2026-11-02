@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { lstatSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -78,6 +78,15 @@ function metadataFixture(mode: 'native' | 'runtime') {
 }
 
 describe('PluginInventoryGateway', () => {
+  it('sends preset plugin changes to the owning registry', async () => {
+    const { ctx, inventory } = await harness()
+    await expect(inventory.togglePreset('standard', 'persona', false)).rejects.toThrow('unavailable')
+    const setPluginEnabled = vi.fn(async () => {})
+    ctx.provide('agentPresets', { setPluginEnabled } as Partial<AgentPresetRegistry> as never)
+    await inventory.togglePreset('standard', 'persona', false)
+    expect(setPluginEnabled).toHaveBeenCalledExactlyOnceWith('standard', 'persona', false)
+  })
+
   it.each(['native', 'runtime'] as const)('reads local metadata while the package entry remains disabled with %s resolution', async (mode) => {
     const { dir, baseUrl, resolution, expectUnlinked } = metadataFixture(mode)
     mkdirSync(join(dir, 'locale'), { recursive: true })
@@ -150,7 +159,7 @@ describe('PluginInventoryGateway', () => {
     }
   })
 
-  it('publishes direct list, toggle, and configure methods under the pluginInventory namespace', async () => {
+  it('publishes direct inventory and edit methods under the pluginInventory namespace', async () => {
     const { inventory } = await harness()
     expect(inventory.typertRemote).toMatchObject({
       serviceKey: 'pluginInventory',
@@ -159,6 +168,7 @@ describe('PluginInventoryGateway', () => {
     expect(remoteMethods(inventory)).toEqual([
       { method: 'list', invocation: { kind: 'direct' } },
       { method: 'toggle', invocation: { kind: 'direct' } },
+      { method: 'togglePreset', invocation: { kind: 'direct' } },
       { method: 'configure', invocation: { kind: 'direct' } },
     ])
   })
@@ -177,13 +187,14 @@ describe('PluginInventoryGateway', () => {
     for (let index = 0; index < 2; index++) {
       expect((await inventory.list()).entries).toContainEqual({
         entryId: entry.id, moduleName: 'cordis:failing', enabled: true,
-        fiberPhase: 'failed', diagnostic: 'native preparation unavailable', isProtected: false,
+        fiberPhase: 'failed', diagnostic: 'native preparation unavailable', isProtected: false, config: { fail: true },
       })
     }
     await entry.update({ config: { fail: false } })
     await entry.fiber!.await()
     expect((await inventory.list()).entries).toContainEqual({
       entryId: entry.id, moduleName: 'cordis:failing', enabled: true, fiberPhase: 'active', isProtected: false,
+      config: { fail: false },
     })
   })
 

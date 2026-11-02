@@ -115,6 +115,18 @@ export class PluginInventoryGateway extends TypertRemoteService {
     updatePluginEntry(entryId, { disabled: !enabled })
   }
 
+  /** Save one session plugin's enablement in its owning agent preset.
+   * @param presetId - registered agent preset id.
+   * @param entryId - child plugin id from the preset inventory.
+   * @param enabled - whether subsequent Agents mount the child.
+   */
+  @Remote('togglePreset')
+  async togglePreset(presetId: string, entryId: string, enabled: boolean): Promise<void> {
+    const presets = this.ctx.get('agentPresets')
+    if (presets === undefined) throw new Error('Agent presets are unavailable')
+    await presets.setPluginEnabled(presetId, entryId, enabled)
+  }
+
   /**
    * Merge scalar config values into a Loader entry's config and reload it.
    * The merged full config is persisted durably next to the disabled set; a

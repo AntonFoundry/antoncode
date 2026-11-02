@@ -47,6 +47,12 @@ export function apply(ctx: ClientContext): void {
       throw new Error(`pluginInventory.toggle failed: ${result.error.code}: ${result.error.message}`)
     }
   }
+  const togglePreset: PluginInventorySettingsTabInjected['togglePreset'] = async (presetId, entryId, enabled) => {
+    const result = await ctx.remote.pluginInventory.togglePreset(presetId, entryId, enabled)
+    if (!result.ok) {
+      throw new Error(`pluginInventory.togglePreset failed: ${result.error.code}: ${result.error.message}`)
+    }
+  }
   const configure: PluginInventorySettingsTabInjected['configure'] = async (entryId, patch) => {
     const result = await ctx.remote.pluginInventory.configure(entryId as never, patch)
     if (!result.ok) {
@@ -59,7 +65,7 @@ export function apply(ctx: ClientContext): void {
   const presetName: PluginInventorySettingsTabInjected['presetName'] = preset =>
     presetDisplayText(preset, agentPresetCopy).name
   const injected = (): PluginInventorySettingsTabInjected => ({
-    list, toggle, configure, presetName,
+    list, toggle, togglePreset, configure, presetName,
     resolveText: text => ctx.locale.resolveText(text),
     hooks: { clientSync: ctx.modules.entries.state },
     retryClient: () => { void ctx.modules.entries.retry().catch((error: unknown) => { ctx.logger.error(error) }) },

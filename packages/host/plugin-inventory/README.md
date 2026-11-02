@@ -1,5 +1,5 @@
 ---
-description: "Projection of the current Cordis Loader plugin state with each agent preset's composition beside it, plus durable toggle and scalar-config edits: the pluginInventory service and its pluginInventory/list, toggle, and configure Remotes for web GUI host clients."
+description: "Projection of Host plugins and agent preset compositions with saved enablement controls and scalar Host configuration edits."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English
 
 ## Summary
 
-Clients can call `pluginInventory/list` to display the host’s current plugins in load order, including each entry’s identifier, module specifier, effective enablement, live phase, and available display text. Deployments with an agent-preset roster also report each preset’s metadata, health, and flattened plugin composition; without a roster, preset data is absent. Each response is a point-in-time snapshot for display and diagnostics with no history or change subscription. Each entry also reports whether it is protected core infrastructure (`isProtected`) and its JSON-scalar config values (`config`). `pluginInventory/toggle(entryId, enabled)` enables or disables a non-protected Loader entry and `pluginInventory/configure(entryId, patch)` merges scalar values into its config and reloads it; both reject protected entries and write through to the durable plugin state.
+Clients can call `pluginInventory/list` to display the Host's current plugins in load order and each agent preset's flattened composition. `pluginInventory/toggle(entryId, enabled)` changes a non-protected Host plugin, while `pluginInventory/togglePreset(presetId, entryId, enabled)` saves a declared preset child through the active profile editor; later Agents use the revised preset. `pluginInventory/configure(entryId, patch)` merges scalar Host configuration. Each response is a point-in-time snapshot with no change subscription.
 
 ## Table of Contents
 
@@ -39,7 +39,7 @@ With a roster composed, `agentPresets` carries one group per preset in roster or
 
 ### What you can and cannot do with it
 
-The inventory is a snapshot for display and diagnostics: a client can render the roster, flag failed entries, and detect changes by comparing snapshots. It cannot enable, disable, add, or remove plugins, and it carries no history — a fiber that already failed and was removed is absent. Because the service reads the Loader on every call, the answer always reflects the current composition rather than a cached view.
+The inventory is a point-in-time read. Host switches persist through plugin state; preset switches require a profile editor, a declared child id, and literal enablement. Conditional rows and duplicate child ids cannot be changed through this API. Changes affect new Agent compositions; existing Agents retain the revision they joined.
 
 Failed entries include the current startup diagnostic read from their Cordis fiber. Recovery removes it; inventory reads do not wait for loading entries or retain a separate error cache.
 

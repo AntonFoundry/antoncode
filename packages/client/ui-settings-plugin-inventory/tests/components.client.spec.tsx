@@ -107,6 +107,14 @@ const globalToggle = (): HTMLElement =>
 const presetToggle = (): HTMLElement => screen.getByRole('button', { name: en.presetTitle })
 
 describe('PluginInventorySettingsTab', () => {
+  it('saves a session plugin switch through its preset declaration', async () => {
+    const togglePreset = vi.fn(async () => {})
+    render(<PluginInventorySettingsTab {...props(async () => SNAPSHOT)} togglePreset={togglePreset} />)
+    const switchControl = (await screen.findAllByRole('switch'))[0]!
+    fireEvent.click(switchControl)
+    await waitFor(() => { expect(togglePreset).toHaveBeenCalledWith('standard', 'bash', false) })
+  })
+
   it('opens global plugin switches from the shortcut above the session list', async () => {
     await renderReady()
     fireEvent.click(screen.getByRole('button', { name: `${en.enabledTag} / ${en.disabledTag}: ${en.globalTitle}` }))

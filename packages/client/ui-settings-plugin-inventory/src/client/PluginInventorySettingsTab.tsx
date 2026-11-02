@@ -36,6 +36,8 @@ export interface PluginInventorySettingsTabInjected {
   presetName: (preset: AgentPresetGroup) => string
   /** Toggle a plugin's enabled state. */
   toggle: (entryId: string, enabled: boolean) => Promise<void>
+  /** Persist one child plugin's enablement in its agent preset. */
+  togglePreset: (presetId: string, entryId: string, enabled: boolean) => Promise<void>
   /** Merge scalar config values into a plugin entry and reload it. */
   configure: (entryId: string, patch: Record<string, string | number | boolean | null>) => Promise<void>
 }
@@ -266,7 +268,7 @@ type ConfigSaveState = 'idle' | 'saving' | 'saved' | 'error'
 
 /** Render the read-only plugin inventory: agent presets first, then the global plane. */
 export function PluginInventorySettingsTab(
-  { list, toggle, configure, presetName, resolveText, t, useClientSync, retryClient }: PluginInventorySettingsTabProps,
+  { list, toggle, togglePreset, configure, presetName, resolveText, t, useClientSync, retryClient }: PluginInventorySettingsTabProps,
 ): ReactNode {
   const clientSync = useClientSync(snapshot => snapshot)
   const sectionId = useId()
@@ -279,6 +281,8 @@ export function PluginInventorySettingsTab(
   const [globalOpen, setGlobalOpen] = useState<boolean | null>(null)
   const [state, setState] = useState<ViewState>({ status: 'loading' })
   const [toggling, setToggling] = useState<Set<PluginInventoryEntry['entryId']>>(new Set())
+  const [presetToggling, setPresetToggling] = useState<Set<string>>(new Set())
+  const [presetToggleFailure, setPresetToggleFailure] = useState<string | undefined>()
   const [drafts, setDrafts] = useState<Record<string, Record<string, string>>>({})
   const [saveState, setSaveState] = useState<ConfigSaveState>('idle')
 
@@ -345,6 +349,25 @@ export function PluginInventorySettingsTab(
     setExpanded(current => current === key ? null : key)
   }
 
+  const handlePresetToggle = async (preset: AgentPresetGroup, row: AgentPresetRow): Promise<void> => {
+    if (row.entryId === null || typeof row.enabled !== 'boolean') return
+    const key = `${preset.id}:${row.entryId}`
+    setPresetToggling(current => new Set(current).add(key))
+    setPresetToggleFailure(undefined)
+    try {
+      await togglePreset(preset.id, row.entryId, !row.enabled)
+      setState({ status: 'ready', snapshot: await list() })
+    } catch (error) {
+      setPresetToggleFailure(error instanceof Error ? error.message : String(error))
+    } finally {
+      setPresetToggling((current) => {
+        const next = new Set(current)
+        next.delete(key)
+        return next
+      })
+    }
+  }
+
   /** Trailing status and detail facts for one row of the selected preset. */
   const presetRowCard = (preset: AgentPresetGroup, row: AgentPresetRow, index: number): ReactNode => {
     const key = `preset:${preset.id}:${String(index)}`
@@ -354,6 +377,7 @@ export function PluginInventorySettingsTab(
       ? t('failedTag')
       : row.enabled === true ? t('enabledTag') : row.enabled === false ? t('disabledTag') : t('conditionalTag')
     const kind = failed ? 'failed' : row.enabled === true ? 'enabled' : row.enabled === false ? 'disabled' : 'conditional'
+    const toggleable = row.entryId !== null && typeof row.enabled === 'boolean' && row.condition === undefined
     return (
       <PluginCard
         key={key}
@@ -367,6 +391,20 @@ export function PluginInventorySettingsTab(
         expanded={expanded}
         onToggle={toggleRow}
         ariaLabel={cardLabel(title, row.entryId, stateText)}
+        control={toggleable ? (
+          <button className={css.toggle} type="button" role="switch"
+            aria-checked={row.enabled}
+            data-checked={row.enabled ? 'true' : 'false'}
+            aria-label={`${t(row.enabled ? 'disabledTag' : 'enabledTag')}: ${title} (${presetName(preset)})`}
+            disabled={presetToggling.has(`${preset.id}:${row.entryId}`)}
+            onClick={(event) => {
+              event.stopPropagation()
+              event.preventDefault()
+              void handlePresetToggle(preset, row)
+            }}>
+            <span className={css.toggleThumb} />
+          </button>
+        ) : undefined}
         trailing={(
           <>
             {row.enabled === true && showsPhaseDot(row.fiberPhase)
@@ -630,6 +668,7 @@ export function PluginInventorySettingsTab(
           ) : null}
           {entries.length === 0 && presets.length === 0 ? <p className={css.status}>{t('empty')}</p> : null}
           {nothingMatches ? <p className={css.status}>{t('emptySearch')}</p> : null}
+          {presetToggleFailure === undefined ? null : <p className={css.failure} role="alert">{presetToggleFailure}</p>}
 
           {selected !== undefined ? (
             <section className={css.group} data-plugin-scope="preset" data-preset-id={selected.id}>

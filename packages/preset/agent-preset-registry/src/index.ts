@@ -10,6 +10,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session } from '@deepseek-ai/dsh-session'
 // Type-only: the optional `settings` service this registry keeps off the generated pages.
 import type {} from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-config-editor'
 import type {} from '@deepseek-ai/dsh-tools'
 import type { AgentPresetDocument, AgentPresetRoster } from './types.ts'
 import { entryListProblem, type PresetDefinition } from './definition.ts'
@@ -48,6 +49,53 @@ interface Definition {
 interface Binding {
   parent: ScopeParentBinding
   generation: Generation
+}
+
+/** Change one declared child row while preserving its neighboring rows and expressions.
+ * @param plugins - validated preset child rows from a detached config copy.
+ * @param entryId - inventory id, optionally prefixed by ancestor group ids.
+ * @param enabled - requested child enablement.
+ * @param inherited - optional profile-layer children used to drop a reverted override.
+ */
+export function setDeclaredPluginEnabled(plugins: unknown[], entryId: string, enabled: boolean, inherited: unknown[] = []): void {
+  const leafId = entryId.split(':').at(-1)
+  if (leafId === undefined || leafId === '') throw new Error('Preset plugin entry id is required')
+  const inheritedRows: Record<string, unknown>[] = []
+  const collectInherited = (rows: unknown[]): void => {
+    for (const value of rows) {
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) continue
+      const row = value as Record<string, unknown>
+      if (row.group === true) {
+        if (Array.isArray(row.config)) collectInherited(row.config)
+      } else if (row.id === leafId) inheritedRows.push(row)
+    }
+  }
+  collectInherited(inherited)
+  let matches = 0
+  const visit = (rows: unknown[]): void => {
+    for (const value of rows) {
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) continue
+      const row = value as Record<string, unknown>
+      if (row.group === true) {
+        if (Array.isArray(row.config)) visit(row.config)
+        continue
+      }
+      if (row.id !== leafId) continue
+      matches++
+      if (row.disabled !== undefined && typeof row.disabled !== 'boolean') {
+        throw new Error(`Preset plugin ${entryId} has conditional enablement`)
+      }
+      const baseline = inheritedRows.length === 1 ? inheritedRows[0] : undefined
+      if (baseline !== undefined && (baseline.disabled === undefined || typeof baseline.disabled === 'boolean')
+        && Boolean(baseline.disabled) !== enabled) {
+        if (baseline.disabled === undefined) Reflect.deleteProperty(row, 'disabled')
+        else row.disabled = baseline.disabled
+      } else row.disabled = !enabled
+    }
+  }
+  visit(plugins)
+  if (matches === 0) throw new Error(`Preset plugin ${entryId} was not found`)
+  if (matches > 1) throw new Error(`Preset plugin ${entryId} is ambiguous`)
 }
 
 /** Registry of YAML-declared presets and the revisions live Agents retain. */
@@ -114,6 +162,27 @@ export class AgentPresetRegistry extends TypertRemoteService {
     record.ready = this.activate(record)
     await record.ready
     return unregister
+  }
+
+  /** Persist a preset child plugin's enablement for subsequently created Agents.
+   * @param presetId - registered preset whose declaration owns the child.
+   * @param entryId - child entry id shown by the composition inventory.
+   * @param enabled - whether the child should be mounted.
+   */
+  async setPluginEnabled(presetId: string, entryId: string, enabled: boolean): Promise<void> {
+    const record = this.definitions.get(presetId)
+    if (record === undefined) throw new Error(`Unknown agent preset: ${presetId}`)
+    const entry = record.context.fiber.entry
+    const editor = this.owner.get('configEditor')
+    if (entry === undefined || editor === undefined) throw new Error('Agent preset configuration is unavailable')
+    await editor.edit(entry, (current, inherited) => {
+      const plugins: unknown = current.plugins
+      const problem = entryListProblem(plugins)
+      if (problem !== undefined) throw new Error(problem)
+      if (!Array.isArray(plugins)) throw new Error('Preset plugins must be a list')
+      setDeclaredPluginEnabled(plugins, entryId, enabled, Array.isArray(inherited.plugins) ? inherited.plugins : [])
+      return { ...current, plugins }
+    })
   }
 
   private async activate(record: Definition): Promise<void> {
