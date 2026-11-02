@@ -32,3 +32,16 @@ export function removeObsoleteToolsRow(patchPath: string): void {
   writeFileSync(patchPath, next.trim() === '' ? '[]\n' : next)
   console.info(`Removed the obsolete tools row from ${patchPath} (original kept as ${backup})`)
 }
+
+/** Replace Anton's managed desktop-tools row while preserving later user rows.
+ * @param patch - existing profile patch text.
+ * @returns patch with one current managed row.
+ */
+export function upsertDesktopToolsRow(patch: string): string {
+  const marker = '# anton-desktop-tools: managed'
+  const block = `${marker}\n- insert:\n    - id: anton-desktop-tools\n      name: ./plugins/anton-desktop-tools.js\n`
+  const managed = /^# anton-desktop-tools: managed\r?\n- insert:\r?\n    - id: anton-desktop-tools\r?\n      name: [^\r\n]+\r?\n?/m
+  if (patch.includes(marker) && !managed.test(patch)) throw new Error('Malformed managed desktop-tools row in profile patch')
+  const body = patch.replace(managed, '').replace(/\n?\[\]\s*$/, '').trimEnd()
+  return body === '' ? block : `${body}\n\n${block}`
+}

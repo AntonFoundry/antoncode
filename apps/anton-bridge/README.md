@@ -145,8 +145,8 @@ the window stays visible and interruptible. The notification queue is bounded
 The plugin source is `src/desktop-tools.ts`; `pnpm --filter
 @deepseek-ai/anton-bridge run build:tools` builds `dist/anton-desktop-tools.js`
 for a checkout run, and the macOS build ships it under `Resources/plugins`.
-`ensureDesktopTools` copies it to `profiles/web/plugins/` and appends one
-managed entry to that profile's `cordis.patch.yml`, so the tools are part of the
+`ensureDesktopTools` copies it to `profiles/web/plugins/` and maintains one
+managed entry in that profile's `cordis.patch.yml` while preserving user entries after it, so the tools are part of the
 normal agent composition — there is no separate persona, preset, or allow-list.
 The session permission policy applies to every call.
 

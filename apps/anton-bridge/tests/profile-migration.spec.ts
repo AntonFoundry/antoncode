@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { removeObsoleteToolsRow } from '../src/profile-migration.ts'
+import { removeObsoleteToolsRow, upsertDesktopToolsRow } from '../src/profile-migration.ts'
 
 const directories: string[] = []
 afterEach(() => { for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true }) })
@@ -64,5 +64,30 @@ describe('removeObsoleteToolsRow', () => {
     const other = patch('- id: web\n  config:\n    port: 1\n')
     removeObsoleteToolsRow(other)
     expect(readFileSync(other, 'utf8')).toBe('- id: web\n  config:\n    port: 1\n')
+  })
+})
+
+describe('upsertDesktopToolsRow', () => {
+  it('keeps profile settings and preset declarations that follow the managed row', () => {
+    const original = [
+      '- id: web',
+      '# anton-desktop-tools: managed',
+      '- insert:',
+      '    - id: anton-desktop-tools',
+      '      name: ./plugins/old-desktop-tools.js',
+      '- id: llm-pi-ai',
+      '  config:',
+      '    providers: {}',
+      '- insert:',
+      '    - id: preset-blueant',
+      "      name: '@deepseek-ai/dsh-agent-preset'",
+      '',
+    ].join('\n')
+    const next = upsertDesktopToolsRow(original)
+    expect(next).toContain('- id: llm-pi-ai\n  config:\n    providers: {}')
+    expect(next).toContain('- id: preset-blueant')
+    expect(next).toContain('name: ./plugins/anton-desktop-tools.js')
+    expect(next).not.toContain('old-desktop-tools.js')
+    expect(upsertDesktopToolsRow(next)).toBe(next)
   })
 })

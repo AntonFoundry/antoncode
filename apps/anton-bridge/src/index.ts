@@ -3,7 +3,7 @@ import { homedir } from 'node:os'
 import { dirname, basename, join, resolve } from 'node:path'
 import { getChromeManager } from './chrome.ts'
 import { readNativeConsentKey } from './consent-key.ts'
-import { removeObsoleteToolsRow } from './profile-migration.ts'
+import { removeObsoleteToolsRow, upsertDesktopToolsRow } from './profile-migration.ts'
 import { NativeChallengeInbox } from './consent-challenges.ts'
 import { signForwardedMailRequest } from './consent-forward.ts'
 
@@ -434,17 +434,11 @@ function ensureDesktopTools(profileDir: string): void {
   mkdirSync(join(profileDir, 'plugins'), { recursive: true })
   writeFileSync(join(profileDir, 'plugins', 'anton-desktop-tools.js'), readFileSync(source))
   const patchPath = join(profileDir, 'cordis.patch.yml')
-  const marker = '# anton-desktop-tools: managed'
   // A profile patch inserts rows; it cannot address a row that no bundle
   // declares. The managed block is rewritten in full on every start so an
   // older form (or a stale path) never survives an upgrade.
-  const block = `${marker}\n- insert:\n    - id: anton-desktop-tools\n      name: ./plugins/anton-desktop-tools.js\n`
   const patch = existsSync(patchPath) ? readFileSync(patchPath, 'utf8') : ''
-  const markerIndex = patch.indexOf(marker)
-  let body = markerIndex === -1 ? patch : patch.slice(0, markerIndex)
-  // The profile template starts as the empty list `[]`; an insert replaces it.
-  body = body.replace(/\n?\[\]\s*$/, '').trimEnd()
-  const next = body === '' ? block : `${body}\n\n${block}`
+  const next = upsertDesktopToolsRow(patch)
   if (next !== patch) writeFileSync(patchPath, next)
 }
 
