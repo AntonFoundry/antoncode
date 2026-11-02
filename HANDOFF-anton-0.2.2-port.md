@@ -106,6 +106,16 @@ paths in virtual CSS ids (client bundler and the inspector's DevTools build) —
 repository/front_end-relative. The bridge has no tsconfig or Bun types, so type-aware lint reports
 it wholesale (inherited from `main`).
 
+**Installed 2026-11-02.** `/Applications/Anton.app` runs the 0.2.2 port against the live `DSH_HOME`.
+Full pre-install backup (verified, 4.9 GB, 1,796 session files identical):
+`~/Library/Application Support/Anton.backup-pre-0.2.2-20261102`; the previous app bundle went to the
+Trash. Old sessions migrate lazily on open; each v0 original stays beside its new
+`session.v4.jsonl.zstd`. The fork migration adapter (`0fbd144ba9`) opens 1,643 of 1,748 logs; the rest
+stay unopened and intact: 63 continuable-child logs whose follow-up messages were spliced between turns,
+28 logs whose pre-step prompt precedes any Anton-fork record, ~14 with empty tool-call ids or names.
+c0ntext was ported in `../c0ntext` (uncommitted there, beside the owner's own uncommitted work; pre-port
+snapshot ref `refs/anton-port/pre-0.2-snapshot`, source copy `../c0ntext-plugin-backup-pre-0.2.2-20261102`).
+
 **UI gaps against the live app (staged screenshot vs live, 2026-11-02):** Anton branding (logo and
 name; shows "deepseek HARNESS" / "DSH Local Build"); the persona hero image; Anton's sidebar (New
 Workspace, workspace list, Todo Tree, Settings foot) — upstream `ui-sidebar` renders instead;
