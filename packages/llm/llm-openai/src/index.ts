@@ -59,16 +59,23 @@ export const name = 'llm-openai'
 export const inject = ['llm']
 
 
+/** Selector labels for the routes this adapter knows by name. */
+const COMPATIBLE_DISPLAY_NAME = 'OpenAI Compatible'
+const DISPLAY_NAMES: Readonly<Record<string, string>> = {
+  'openai': 'OpenAI',
+  'openai-compatible': COMPATIBLE_DISPLAY_NAME,
+}
+
 /**
  * The provider routes this plugin declares in the configurable-provider
- * directory, with their selector labels: the official API and any
- * OpenAI-compatible installation. The declaration is static so a dormant
- * route keeps its settings address and stays offered by configuration
- * surfaces; profiles under these keys (or any other) make routes live.
+ * directory. The declaration is static so a dormant route keeps its settings
+ * address and stays offered by configuration surfaces; profiles under these
+ * keys (or any other) make routes live. The official `openai` route is not
+ * declared: upstream's pi-ai adapter owns it, and the directory admits one
+ * declaration per provider.
  */
 const DECLARED: readonly { provider: string; displayName: string }[] = [
-  { provider: 'openai', displayName: 'OpenAI' },
-  { provider: 'openai-compatible', displayName: 'OpenAI Compatible' },
+  { provider: 'openai-compatible', displayName: COMPATIBLE_DISPLAY_NAME },
 ]
 
 const DEFAULT_MODELS: OpenAICatalogModel[] = [
@@ -289,7 +296,7 @@ export function resolveAdapterOptions(config: Config, provider: string, environm
       ?? environment?.get(BASE_URL_ENV)?.value
       ?? PUBLIC_BASE_URL,
     displayName: route?.displayName
-      ?? DECLARED.find(entry => entry.provider === provider)?.displayName
+      ?? DISPLAY_NAMES[provider]
       ?? provider,
     ...(route?.headers === undefined ? {} : { headers: { ...route.headers } }),
     defaults: {

@@ -10,7 +10,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { build, type TsdownBundle, type UserConfig } from 'tsdown'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished } from 'vitest'
 import { packageAssetRevision } from '../packages/client/modules/src/assets.ts'
 import { clientBundle } from '../packages/client/tsdown.client.ts'
 
@@ -168,6 +168,28 @@ describe('client bundle CSS Modules', () => {
 
     expect(context.watched).toEqual([stylesheet])
     expect(output).toContain('data-plugin-css')
+  })
+})
+
+describe('client bundle stylesheet module ids', () => {
+  it.each([
+    ['dsh-css-modules-inline', './Fixture.module.css'],
+    ['dsh-css-global-inline', './base.css'],
+    ['dsh-css-text-inline', './base.css?inline'],
+  ] as const)('%s keeps the build machine path out of a repository stylesheet id', async (name, source) => {
+    // Rolldown prints virtual ids in its //#region comments, which ship in the bundle.
+    const root = join(import.meta.dirname, '../node_modules/.cache')
+    await mkdir(root, { recursive: true })
+    const directory = await mkdtemp(join(root, 'client-css-id-'))
+    onTestFinished(() => rm(directory, { recursive: true, force: true }))
+    await writeFile(join(directory, source.replace('?inline', '')), '.root { color: red; }\n')
+    const plugin = bundlePlugin(name)
+    const id = hooks(plugin).resolveId(source, join(directory, 'index.ts'))
+    expect(typeof id).toBe('string')
+    expect(id).not.toContain(join(import.meta.dirname, '..'))
+    const context = recordingContext()
+    expect(await hooks(plugin).load.call(context, id as string)).toContain('red')
+    expect(context.watched).toEqual([join(directory, source.replace('?inline', ''))])
   })
 })
 

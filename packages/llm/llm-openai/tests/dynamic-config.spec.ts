@@ -147,15 +147,15 @@ describe('declaredDefaultEffort', () => {
 })
 
 describe('request-level dynamic profiles', () => {
-  it('mounts bare and dormant, with both declared routes addressed inside the providers dict', async () => {
+  it('mounts bare and dormant, with its declared route addressed inside the providers dict', async () => {
     const dir = await home()
     const ctx = await boot(dir, {})
 
     expect(ctx.llm.listProviders()).toEqual([])
     // Dormant ≠ invisible: the declared routes keep their settings addresses
     // so configuration surfaces can offer them before any profile exists.
+    // pi-ai owns the official `openai` route, so only the compatible route is declared here.
     expect(ctx.llm.listConfigurableProviders()).toEqual([
-      { provider: 'openai', displayName: 'OpenAI', settingsNs: 'llm-openai', settingsPath: ['providers', 'openai'] },
       { provider: 'openai-compatible', displayName: 'OpenAI Compatible', settingsNs: 'llm-openai', settingsPath: ['providers', 'openai-compatible'] },
     ])
   })

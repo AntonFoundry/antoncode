@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!-- Daily Anton vault backup: copy to ~/Library/LaunchAgents/ and load with
+     launchctl. The program path points at the repo checkout; fix it after
+     copying if the repo moves. -->
+<dict>
+  <key>Label</key>
+  <string>dev.antoncode.anton-vault</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/pankajdoharey/Development/Projects/ML/antoncode/deepseek-harness/apps/anton-bridge/vault/anton-vault-backup.sh</string>
+    <string>backup</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>11</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+  <!-- Missed schedule (asleep/laptop closed): one coalesced run at next wake. -->
+  <key>StandardOutPath</key>
+  <string>/tmp/anton-vault-backup.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/anton-vault-backup.log</string>
+  <key>Nice</key>
+  <integer>10</integer>
+</dict>
+</plist>

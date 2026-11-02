@@ -92,6 +92,26 @@ uses upstream's sandboxed iframe, so sites that refuse framing stay blank; a nat
 buffer through the Anton bridge would remove that limit. The surface's host is parked inside the
 frame (not detached) because Browser resolves its viewport through `document.getElementById`.
 
+**Anton.app builds from this branch (2026-11-02).** `scripts/build-anton-macos.ts` and
+`apps/anton-bridge` came over from `main`; `pnpm anton:build:macos` builds, smoke-tests and installs.
+**Only `ANTON_BUILD_ONLY=1` has been run**: installing would boot the 0.2 runtime against the live
+`DSH_HOME` and migrate its format-0 sessions one way (constraint 2). Bundled Node comes from the
+runtime lock (24.21.0, SHA-256 pinned) through the Desktop download cache. The smoke is fenced from
+live state (`ANTON_BRIDGE_CONFIG`, `ANTON_INSTALL_CLI=false`, `ANTON_AUTO_REPAIR=false`) and fails on
+a degraded boot. Bridge changes for 0.2: readiness accepts 401; the launch token is read from the
+`dsh web:` line and supplied on a cookie-less index visit; `--no-open`; every WebSocket upgrade is
+relayed (0.2 uses `/api/remote.mux`) in both directions with the browser cookie; stale
+`content-encoding`/`content-length` dropped after fetch() decodes. The bundle scan found build
+paths in virtual CSS ids (client bundler and the inspector's DevTools build) — both now
+repository/front_end-relative. The bridge has no tsconfig or Bun types, so type-aware lint reports
+it wholesale (inherited from `main`).
+
+**UI gaps against the live app (staged screenshot vs live, 2026-11-02):** Anton branding (logo and
+name; shows "deepseek HARNESS" / "DSH Local Build"); the persona hero image; Anton's sidebar (New
+Workspace, workspace list, Todo Tree, Settings foot) — upstream `ui-sidebar` renders instead;
+composer worktree pickers (branch / "From origin/main", `ui-worktree`, 3.3) and the Blueant preset
+(3.4). Theme and fonts come from the user's settings, not code.
+
 **Agent board Session actions:** `interruptSession`, `promptSession`, `sessionTail` and `models`
 do not exist on the 0.2 sessions controller (they were `as unknown` casts that would throw a
 `TypeError`). Interrupt and prompt now throw a named error; tail and model labels report no data.

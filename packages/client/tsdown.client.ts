@@ -55,6 +55,39 @@ const INLINE_CSS_QUERY = '?inline'
  * Emit one plugin-owned style injector and an optional CSS Modules export.
  * @param css - JavaScript expression yielding the stylesheet text; see {@link stylesheetSource}.
  */
+/** Marks a virtual stylesheet id whose path is relative to the repository root. */
+const REPOSITORY_RELATIVE = 'repo:'
+
+/**
+ * Build a virtual stylesheet module id. Rolldown prints virtual ids verbatim in
+ * its `//#region` comments, so a path inside the repository is carried relative
+ * to its root; an absolute id would ship the build machine's directory layout
+ * in every client bundle.
+ * @param prefix - the plugin's virtual-id prefix.
+ * @param path - the stylesheet path the import resolved to.
+ * @returns the virtual id.
+ */
+function cssVirtualId(prefix: string, path: string): string {
+  const inside = isAbsolute(path) ? relative(REPOSITORY_ROOT, path) : undefined
+  const carried = inside !== undefined && inside !== '' && !inside.startsWith('..') && !isAbsolute(inside)
+    ? REPOSITORY_RELATIVE + inside.split(sep).join(posix.sep)
+    : path
+  return prefix + carried + CSS_VIRTUAL_SUFFIX
+}
+
+/**
+ * Recover the stylesheet path from a virtual id built by {@link cssVirtualId}.
+ * @param prefix - the plugin's virtual-id prefix.
+ * @param virtualId - the id Rolldown passes to `load`.
+ * @returns the stylesheet path.
+ */
+function cssVirtualFile(prefix: string, virtualId: string): string {
+  const carried = virtualId.slice(prefix.length, -CSS_VIRTUAL_SUFFIX.length)
+  return carried.startsWith(REPOSITORY_RELATIVE)
+    ? resolvePath(REPOSITORY_ROOT, carried.slice(REPOSITORY_RELATIVE.length))
+    : carried
+}
+
 function styleInjectionModule(
   id: string,
   fileId: string,
@@ -857,11 +890,11 @@ function clientConfig(
       resolveId(source: string, importer: string | undefined) {
         if (!source.endsWith('.module.css')) return null
         const abs = importer !== undefined ? sourceAssetPath(source, importer) : source
-        return CSS_VIRTUAL_PREFIX + abs + CSS_VIRTUAL_SUFFIX
+        return cssVirtualId(CSS_VIRTUAL_PREFIX, abs)
       },
       async load(virtualId: string) {
         if (!virtualId.startsWith(CSS_VIRTUAL_PREFIX)) return null
-        const fileId = virtualId.slice(CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length)
+        const fileId = cssVirtualFile(CSS_VIRTUAL_PREFIX, virtualId)
         // The virtual id otherwise hides the physical stylesheet from Rolldown's watch graph.
         this.addWatchFile(fileId)
         const source = await readFile(fileId)
@@ -885,11 +918,11 @@ function clientConfig(
         if (!source.endsWith(`.css${INLINE_CSS_QUERY}`)) return null
         const stylesheet = source.slice(0, -INLINE_CSS_QUERY.length)
         const abs = importer !== undefined ? sourceAssetPath(stylesheet, importer) : stylesheet
-        return INLINE_CSS_VIRTUAL_PREFIX + abs + CSS_VIRTUAL_SUFFIX
+        return cssVirtualId(INLINE_CSS_VIRTUAL_PREFIX, abs)
       },
       async load(virtualId: string) {
         if (!virtualId.startsWith(INLINE_CSS_VIRTUAL_PREFIX)) return null
-        const fileId = virtualId.slice(INLINE_CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length)
+        const fileId = cssVirtualFile(INLINE_CSS_VIRTUAL_PREFIX, virtualId)
         this.addWatchFile(fileId)
         const source = await readFile(fileId)
         const stylesheetAssets = assets.urlRewrite(this, fileId)
@@ -901,11 +934,11 @@ function clientConfig(
       resolveId(source: string, importer: string | undefined) {
         if (!source.endsWith('.css') || source.endsWith('.module.css')) return null
         const abs = importer !== undefined ? sourceAssetPath(source, importer) : source
-        return GLOBAL_CSS_VIRTUAL_PREFIX + abs + CSS_VIRTUAL_SUFFIX
+        return cssVirtualId(GLOBAL_CSS_VIRTUAL_PREFIX, abs)
       },
       async load(virtualId: string) {
         if (!virtualId.startsWith(GLOBAL_CSS_VIRTUAL_PREFIX)) return null
-        const fileId = virtualId.slice(GLOBAL_CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length)
+        const fileId = cssVirtualFile(GLOBAL_CSS_VIRTUAL_PREFIX, virtualId)
         this.addWatchFile(fileId)
         const source = await readFile(fileId)
         const stylesheetAssets = assets.urlRewrite(this, fileId)

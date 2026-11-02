@@ -36,7 +36,9 @@ export const LOCAL_FETCH_PATTERN = "data:application/json,{}", REMOTE_FETCH_PATT
       const sourcePath = relative(front, file).split('\\').join('/')
       if (generated.has(sourcePath)) return `${VIRTUAL}${sourcePath}`
       if (sourcePath === 'core/platform/node/node.js') return join(front, 'core/platform/browser/browser.ts')
-      if (file.endsWith('.css.js')) return `${VIRTUAL}css:${file.slice(0, -3)}.mjs`
+      // Virtual ids appear in the bundle's //#region comments, so they carry the
+      // front_end-relative path rather than the build machine's absolute one.
+      if (file.endsWith('.css.js')) return `${VIRTUAL}css:${sourcePath.slice(0, -3)}.mjs`
       if (file.endsWith('.js')) {
         const tsFile = file.slice(0, -3) + '.ts'
         try { if ((await stat(tsFile)).isFile()) return tsFile } catch (error) {
@@ -48,7 +50,7 @@ export const LOCAL_FETCH_PATTERN = "data:application/json,{}", REMOTE_FETCH_PATT
     async load(id) {
       if (id === EMPTY) return 'export {};'
       if (id.startsWith(`${VIRTUAL}css:`)) {
-        const path = id.slice(`${VIRTUAL}css:`.length, -4)
+        const path = join(front, id.slice(`${VIRTUAL}css:`.length, -4))
         this.addWatchFile(path)
         return cssTextModule(await readFile(path, 'utf8'))
       }
