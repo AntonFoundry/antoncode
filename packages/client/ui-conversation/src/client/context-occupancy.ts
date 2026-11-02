@@ -1,4 +1,4 @@
-import type { ContextPressureProjection } from '@deepseek-ai/dsh-token-meter/client'
+import type { ContextPressureProjection, ContextBreakdownProjection } from '@deepseek-ai/dsh-token-meter/client'
 
 /** Context usage rendered by conversation and Chat status surfaces. */
 export interface ContextOccupancy {
@@ -10,12 +10,15 @@ export interface ContextOccupancy {
 /**
  * Resolve bounded display occupancy from independently updated pressure fields.
  * @param pressure - latest token-meter projection.
- * @returns occupancy, or null until numerator and capacity are known.
+ * @param breakdown - heuristic composition used before a provider supplies a pressure sample.
+ * @returns measured or estimated occupancy, or null until numerator and capacity are known.
  */
 export function contextOccupancy(
   pressure: ContextPressureProjection | undefined,
+  breakdown?: ContextBreakdownProjection,
 ): ContextOccupancy | null {
   const usedTokens = pressure?.projectedTokens ?? pressure?.pressureTokens
+    ?? (breakdown === undefined ? undefined : breakdown.systemTokens + breakdown.toolsTokens + breakdown.messageTokens)
   if (usedTokens === undefined || pressure?.contextWindow === undefined) return null
   return {
     percent: Math.min(100, Math.round(usedTokens / pressure.contextWindow * 100)),

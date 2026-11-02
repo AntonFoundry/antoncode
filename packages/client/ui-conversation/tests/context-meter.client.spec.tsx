@@ -24,7 +24,7 @@ if (additionMarkerClass === undefined) throw new Error('additionMarker class mis
 /** Stub the projection seat: a key-addressed table of whole values, with the selector overload. */
 function projections(values: Record<string, unknown>): ContextMeterProps['useProjection'] {
   return ((key: string, selector?: (value: unknown) => unknown) =>
-    selector === undefined ? values[key] : selector(values[key])) as ContextMeterProps['useProjection']
+    selector === undefined ? values[key] : selector(values[key]))
 }
 
 function meter(values: Record<string, unknown>, translate: ContextMeterProps['t'] = t) {
@@ -80,9 +80,10 @@ describe('ContextMeter', () => {
       c0ntext: { evictionWindow: { thresholdRatio: 0.8, windowTokens: 128_000 } },
     })
     fireEvent.click(view.getByRole('button', { name: '上下文已用 25%' }))
-    const marker = view.container.querySelector('[role="dialog"]')!.getElementsByClassName(additionMarkerClass)[0] as HTMLElement
+    const marker = view.getByRole('dialog').getElementsByClassName(additionMarkerClass)[0] as HTMLElement
     expect(marker).toBeDefined()
     expect(marker.style.left).toBe('80%')
+    view.unmount()
 
     // A threshold published against a different window than the displayed
     // route is stale: hide the marker instead of pointing at the wrong spot.
@@ -92,7 +93,36 @@ describe('ContextMeter', () => {
       c0ntext: { evictionWindow: { thresholdRatio: 0.8, windowTokens: 1_000_000 } },
     })
     fireEvent.click(stale.container.querySelector<HTMLElement>('[aria-haspopup="dialog"]')!)
-    expect(stale.container.querySelector('[role="dialog"]')!.getElementsByClassName(additionMarkerClass)).toHaveLength(0)
+    expect(stale.getByRole('dialog').getElementsByClassName(additionMarkerClass)).toHaveLength(0)
+  })
+
+  it('shows estimated context and its eviction marker without provider usage', () => {
+    const view = meter({
+      contextPressure: { contextWindow: 128_000 },
+      contextBreakdown: { systemTokens: 1_000, toolsTokens: 2_000, messageTokens: 29_000 },
+      c0ntext: { evictionWindow: { thresholdRatio: 0.8, windowTokens: 128_000 } },
+    }, tEn)
+    const trigger = view.getByRole('button', { name: '25% of context used' })
+    expect(trigger.textContent).toContain('Estimated')
+    expect(trigger.getElementsByClassName(additionMarkerClass)).toHaveLength(1)
+    fireEvent.click(trigger)
+    const panel = view.getByRole('dialog')
+    expect(panel.textContent).toContain('80% eviction threshold')
+    expect(panel.textContent).toContain('Input tokensNot reported')
+    expect(panel.textContent).toContain('Output tokensNot reported')
+  })
+
+  it('shows measured input, output and total counts in the context panel', () => {
+    const view = meter({
+      contextPressure: { pressureTokens: 32_000, contextWindow: 128_000 },
+      tokenUsage: { uncachedInputTokens: 1_000, cacheReadTokens: 200, cacheWriteTokens: 0, outputTokens: 500 },
+    }, tEn)
+    fireEvent.click(view.getByRole('button', { name: '25% of context used' }))
+    const panel = view.getByRole('dialog')
+    expect(panel.textContent).toContain('Input tokens1.2K')
+    expect(panel.textContent).toContain('Output tokens500')
+    expect(panel.textContent).toContain('Total tokens1.7K')
+    expect(panel.textContent).not.toContain('Not reported')
   })
 
   it('lets each locale own the headline word order around the reading', () => {

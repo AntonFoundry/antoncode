@@ -1,8 +1,8 @@
 /** Composer context-occupancy meter: a ring and percentage below the card fed by the
  * `contextPressure` projection, with a click-open panel of the heuristic
  * `contextBreakdown` composition (system prompt, tools, conversation).
- * Renders nothing until a provider reports both pressure and a route
- * capacity. */
+ * Uses the heuristic composition when no provider pressure sample exists;
+ * renders nothing until route capacity and a context estimate are known. */
 
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -73,11 +73,21 @@ export interface ContextMeterProps {
 export function ContextMeter({ useProjection, t }: ContextMeterProps) {
   const pressure = useProjection('contextPressure')
   const breakdown = useProjection('contextBreakdown')
+  const usage = useProjection('tokenUsage')
   const eviction = useProjection('c0ntext', hint => hint?.evictionWindow)
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLSpanElement | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
-  const context = contextOccupancy(pressure)
+  const context = contextOccupancy(pressure, breakdown)
+  const estimated = pressure?.projectedTokens === undefined && pressure?.pressureTokens === undefined
+  const inputTokens = usage === undefined ? 0 : usage.uncachedInputTokens + usage.cacheReadTokens + usage.cacheWriteTokens
+  const outputTokens = usage?.outputTokens ?? 0
+  const totalTokens = inputTokens + outputTokens
+  const usageRows = [
+    { label: 'context.input', value: inputTokens },
+    { label: 'context.output', value: outputTokens },
+    { label: 'context.total', value: totalTokens },
+  ] as const
   const available = context !== null
   const position = useAnchoredPosition({
     open: open && available,
@@ -155,6 +165,15 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
             />
           </svg>
           <span>{reading}</span>
+          {estimated && <span>{t('context.estimated')}</span>}
+          <span>{t('context.usage', {
+            input: totalTokens === 0 ? '—' : formatTokens(inputTokens, t),
+            output: totalTokens === 0 ? '—' : formatTokens(outputTokens, t),
+          })}</span>
+          <span className={`${css.bar} ${css.compactBar}`} aria-hidden>
+            <span className={css.segment} style={{ width: `${percent}%` }} />
+            {thresholdPercent !== null && <span className={css.additionMarker} style={{ left: `${thresholdPercent}%` }} />}
+          </span>
         </button>
       </Tooltip>
       {open && createPortal(
@@ -202,6 +221,15 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
               ))}
             </dl>
           )}
+          {thresholdPercent !== null && <div className={css.row}>{t('context.threshold', { percent: String(thresholdPercent) })}</div>}
+          <dl className={css.rows}>
+            {usageRows.map(row => (
+              <div className={css.row} key={row.label}>
+                <dt>{t(row.label)}</dt>
+                <dd>{totalTokens === 0 ? t('context.unreported') : formatTokens(row.value, t)}</dd>
+              </div>
+            ))}
+          </dl>
         </div>,
         document.body,
       )}
