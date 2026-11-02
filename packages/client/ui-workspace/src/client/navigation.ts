@@ -85,7 +85,8 @@ export interface UiWorkspace {
    * Open the Workspace blank `connectWorkspace` resolves, so New Session returns to that blank's
    * unsent draft. A creation the Host refuses is shown through the Workspace notice and leaves the
    * selection as it was.
-   * @param workspaceId - explicit target; absent inherits the current or most recent Workspace.
+   * @param workspaceId - explicit target, preserved regardless of worktree preferences;
+   * absent inherits the current or most recent Workspace and applies its worktree preference.
    * @param options - initial content, the blank's preset, and `whenDraftExists`, which decides
    * whether existing text or attachments are kept, replaced, or followed by the prompt.
    */
@@ -364,7 +365,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       this.clearMain()
       return
     }
-    const landing = await this.worktreeTarget(target, workspace)
+    const landing = workspaceId === undefined ? await this.worktreeTarget(target, workspace) : workspaceId
     const opening = this.openWorkspace(landing, initializeDraft ? (id) => {
       const binding = this.sessions.binding(id)
       if (binding === undefined) this.draftPreparationFailed()

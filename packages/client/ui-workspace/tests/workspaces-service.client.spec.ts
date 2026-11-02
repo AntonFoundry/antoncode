@@ -813,6 +813,21 @@ describe('UiWorkspaceService', () => {
     expect(b.selectPanel).toHaveBeenCalledWith(null)
   })
 
+  it('creates inside the explicitly named Workspace even with a new-worktree preference', async () => {
+    const state = workspaceState([workspace('a'), workspace('b')])
+    const b = bench({
+      sessions: sessionState([], 'pending'),
+      workspaces: { ...state, worktrees: { ...state.worktrees, prefs: { '/w/b': { mode: 'new' } } } },
+    })
+    b.uiWorkspace.startSession(wid('b'))
+    await vi.waitFor(() => {
+      expect(b.sessions.create).toHaveBeenCalledExactlyOnceWith({ workspaceId: wid('b') })
+    })
+    expect(b.workspaces.createWorktree).not.toHaveBeenCalled()
+    expect(b.workspaces.worktreeStatus).not.toHaveBeenCalled()
+    expect(b.workspaces.setWorktreePref).not.toHaveBeenCalled()
+  })
+
   describe('startSession draft initialization', () => {
     it.each<{ name: string; options: DraftInitializationOptions }>([
       { name: 'plain text', options: { prompt: '草稿 🧭\nsecond line', clearPreviousDraft: true } },
