@@ -304,10 +304,10 @@ async function installControllers(
   try {
     controller = new TestController(
       ctx,
-      {
+      SessionController.Config({
         ...defaults.nativeOpen === undefined ? {} : { nativeOpen: defaults.nativeOpen },
         ...defaults.listWorkSliceMs === undefined ? {} : { listWorkSliceMs: defaults.listWorkSliceMs },
-      },
+      }),
       {
         ...defaults.openPath === undefined ? {} : { openPath: defaults.openPath },
         ...defaults.fileApplications === undefined ? {} : { fileApplications: defaults.fileApplications },

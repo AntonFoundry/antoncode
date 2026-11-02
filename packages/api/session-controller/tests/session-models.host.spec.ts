@@ -471,6 +471,9 @@ describe('Web session model selection', () => {
     expect(catalog.failures).toContainEqual({
       id: 'string-failure', name: 'String Failure', message: 'string catalog failure',
     })
+    const filtered = await buildModelCatalog(ctx, { provider: 'plain', model: 'plain-model' }, ['plain', 'string-failure'])
+    expect(filtered.groups.some(group => group.id === 'plain')).toBe(false)
+    expect(filtered.failures.some(failure => failure.id === 'string-failure')).toBe(false)
     await ctx.fiber.dispose()
   })
 

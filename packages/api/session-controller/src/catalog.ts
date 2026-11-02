@@ -15,13 +15,16 @@ import type {
  * Build the browser model catalog without requiring a Session.
  * @param ctx - Host context carrying the live LLM registry.
  * @param defaultSelection - deployment default used before a Session selects a model.
+ * @param disabledProviders - configured routes hidden from browser model choices.
  * @returns successful non-empty provider groups and isolated provider failures.
  */
 export async function buildModelCatalog(
   ctx: Context,
   defaultSelection: ModelSelection = ctx.agentDefaultModel.currentSelection(),
+  disabledProviders: readonly string[] = [],
 ): Promise<ModelCatalog> {
-  const providers = ctx.llm.listProviders()
+  const hidden = new Set(disabledProviders)
+  const providers = ctx.llm.listProviders().filter(provider => !hidden.has(provider.id))
   const catalog = await Promise.all(providers.map(async (provider) => {
     try {
       const models = await ctx.llm.listModels(provider.id)

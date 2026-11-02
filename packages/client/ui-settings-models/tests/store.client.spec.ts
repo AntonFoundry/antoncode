@@ -208,7 +208,7 @@ describe('ModelsSettingsStore', () => {
     expect(state.namespaces.get('llm-pi-ai')?.ns).toBe('llm-pi-ai')
   })
 
-  it('derives per-provider catalog visibility from the model-catalog namespace', async () => {
+  it('derives per-provider catalog visibility from the session-controller namespace', async () => {
     const { ctx, mirror } = api({
       describeSettings: () => Promise.resolve(remoteOk({
         writable: true,
@@ -216,7 +216,7 @@ describe('ModelsSettingsStore', () => {
         namespaces: [
           ...NAMESPACES,
           {
-            ns: 'model-catalog',
+            ns: 'session-controller',
             autoGenerate: true,
             schema: {},
             value: { disabledProviders: ['openai'] },

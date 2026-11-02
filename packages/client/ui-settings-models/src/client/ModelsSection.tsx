@@ -5,7 +5,7 @@
  * and show each provider's logo and branded name. Their accessible solid
  * configured or missing dots report confirmed API-key, subscription-login, or
  * stored OAuth-session state. Each row carries a switch that hides or shows
- * the provider's models in the session model catalog (`model-catalog`
+ * the provider's models in the session model catalog (`session-controller`
  * `disabledProviders`); OAuth routes (OpenCode, Claude) add login, re-login,
  * and log-out actions, and a shipped row with stored credentials offers their
  * confirmed removal. A whole-section provider without a
@@ -235,7 +235,7 @@ export async function removeProviderProfile(
 
 /**
  * Set one provider's catalog visibility: membership in the gateway's
- * `model-catalog` `disabledProviders` list. The write carries the described
+ * `session-controller` `disabledProviders` list. The write carries the described
  * revision so a concurrent edit elsewhere refuses instead of clobbering; the
  * snapshot is read at call time, so two quick toggles compose rather than
  * overwrite each other's list.

@@ -2179,7 +2179,7 @@ describe('ModelsSection', () => {
 
 describe('catalog visibility switch', () => {
   const MODEL_CATALOG_VIEW: SettingsNamespaceView = {
-    ns: 'model-catalog',
+    ns: 'session-controller',
     autoGenerate: true,
     schema: {},
     value: { disabledProviders: ['openai'] },
@@ -2208,7 +2208,7 @@ describe('catalog visibility switch', () => {
     // Enabling openai removes it from the disabled list.
     fireEvent.click(openai)
     await waitFor(() => {
-      expect(mutate).toHaveBeenCalledWith('model-catalog',
+      expect(mutate).toHaveBeenCalledWith('session-controller',
         [{ op: 'set', path: ['disabledProviders'], value: [] }],
         7)
     })
@@ -2218,7 +2218,7 @@ describe('catalog visibility switch', () => {
     // overwrites).
     fireEvent.click(screen.getByRole('switch', { name: deepSeekCopy(en.disableProvider) }))
     await waitFor(() => {
-      expect(mutate).toHaveBeenLastCalledWith('model-catalog',
+      expect(mutate).toHaveBeenLastCalledWith('session-controller',
         [{
           op: 'set',
           path: ['disabledProviders'],

@@ -26,7 +26,7 @@ export async function createBenchmarkSessionController(ctx: Context, config: Con
       mediaTypes: ['image/png'],
     },
   } as never)
-  const controller = new BenchmarkSessionController(ctx, config, { canOpenPath: () => false })
+  const controller = new BenchmarkSessionController(ctx, SessionController.Config(config), { canOpenPath: () => false })
   await controller.initialize()
   return controller
 }

@@ -82,8 +82,8 @@ export function joinProviderDirectory(
       - (right.provider === 'deepseek-account' ? 0 : right.provider === 'deepseek-official' ? 1 : 2))
 }
 
-/** The host gateway's catalog-visibility namespace (`ModelCatalogSettings`). */
-export const MODEL_CATALOG_NAMESPACE = 'model-catalog'
+/** Session Controller settings namespace that owns model-catalog visibility. */
+export const MODEL_CATALOG_NAMESPACE = 'session-controller'
 
 /** One provider row the page renders. */
 export interface ProviderRow {
@@ -199,9 +199,9 @@ function apiKeyEnvOf(
 
 /**
  * The provider ids the catalog-visibility section hides. The schema resolves
- * the stored document to `{ disabledProviders: string[] }`, so a well-formed
+ * the stored Session Controller entry to `{ disabledProviders: string[] }`, so a well-formed
  * list is the only shape; an unmounted namespace means every provider shows.
- * @param namespace - the `model-catalog` namespace view, when described.
+ * @param namespace - the `session-controller` namespace view, when described.
  * @param schema - settings schema operations.
  * @returns the disabled provider route ids.
  */

@@ -4,7 +4,7 @@ import { hostname } from 'node:os'
 import { resolve } from 'node:path'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-fs'
-import { Context, Service } from '@deepseek-ai/cordis'
+import { Context, Service, type Volatile } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { errorChain, ReasoningEffortId, type MessageSource } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-client-file-upload'
@@ -112,10 +112,12 @@ export interface Config {
   readonly nativeOpen?: boolean
   /** Positive integral milliseconds of list work before yielding between complete rows. */
   readonly listWorkSliceMs?: number
+  /** Provider routes omitted from the browser model catalog while retaining their profiles and credentials. */
+  readonly disabledProviders?: string[]
 }
 
 /** Deployment policy after schema defaults have been applied. */
-type ResolvedConfig = Config & { readonly listWorkSliceMs: number }
+type ResolvedConfig = Omit<Config, 'disabledProviders'> & { readonly listWorkSliceMs: number; readonly disabledProviders: Volatile<string[]> }
 
 /** Host integrations replaceable by direct unit tests. */
 export interface SessionControllerInternals {
@@ -152,6 +154,7 @@ export class SessionController extends TypertRemoteService {
   static Config: z<Config, ResolvedConfig> = z.object({
     nativeOpen: z.boolean(),
     listWorkSliceMs: z.natural().min(1).default(16),
+    disabledProviders: z.array(z.string()).default([]).volatile(),
   })
 
   private historyController!: HistoryController
@@ -168,6 +171,7 @@ export class SessionController extends TypertRemoteService {
   private readonly revealPath: (path: string, signal: AbortSignal) => Promise<void>
   private readonly canOpenPath: () => boolean
   private readonly listWorkSliceMs: number
+  private readonly disabledProviders: Volatile<string[]>
   private readonly promotions = new Set<Promise<void>>()
 
   /**
@@ -175,9 +179,10 @@ export class SessionController extends TypertRemoteService {
    * @param config - native-opener and list-scheduling deployment policy.
    * @param internals - host integrations replaceable by direct unit tests.
    */
-  constructor(ctx: Context, config: Config, internals: SessionControllerInternals = {}) {
+  constructor(ctx: Context, config: ResolvedConfig, internals: SessionControllerInternals = {}) {
     super(ctx, 'sessionController', { namespace: 'session' })
-    this.listWorkSliceMs = SessionController.Config(config).listWorkSliceMs
+    this.listWorkSliceMs = config.listWorkSliceMs
+    this.disabledProviders = config.disabledProviders
     this.fileApplications = internals.fileApplications ?? nativeFileApplications
     this.openFileApplication = internals.openFileApplication ?? openNativeFileApplication
     this.openPath = internals.openPath ?? openNativeAssociatedPath
@@ -339,7 +344,7 @@ export class SessionController extends TypertRemoteService {
    */
   @Remote('modelCatalog')
   modelCatalog(): Promise<ModelCatalog> {
-    return buildModelCatalog(this.ctx)
+    return buildModelCatalog(this.ctx, this.ctx.agentDefaultModel.currentSelection(), this.disabledProviders.get())
   }
 
   /**
