@@ -495,7 +495,7 @@ export function projectToolUpdates(
 export const IMAGE_OMITTED_TEXT = '[image omitted: the selected model cannot accept image input]'
 
 /**
- * Replace image blocks — recursively inside tool results — with the omitted
+ * Replace image blocks with the omitted
  * placeholder text. Returns the same array untouched when no image is
  * present, so callers keep reference stability on the common path. This is
  * the graceful-degradation counterpart to {@link contentHasImage}: instead
@@ -510,10 +510,6 @@ export function withoutImageBlocks(blocks: readonly ContentBlock[]): ContentBloc
   for (const block of blocks) {
     if (block.type === 'image') {
       out.push({ type: 'text', text: IMAGE_OMITTED_TEXT })
-      continue
-    }
-    if (block.type === 'tool-result' && contentHasImage(block.content)) {
-      out.push({ ...block, content: [...withoutImageBlocks(block.content)] })
       continue
     }
     out.push(block)
