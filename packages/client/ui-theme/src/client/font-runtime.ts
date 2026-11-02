@@ -7,7 +7,7 @@
  * settings namespace as the theme preference.
  */
 import type { Context } from '@deepseek-ai/cordis'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
   CHAT_SIZE_RANGE, CHAT_ZOOM_BASE, DEFAULT_CHAT_SIZE, DEFAULT_MONO_FONT,
   DEFAULT_MONO_SIZE, DEFAULT_TERM_SIZE, DEFAULT_UI_FAMILY, DEFAULT_UI_SIZE,
@@ -72,7 +72,7 @@ export function applyFontVars(selection: FontSelection): void {
  */
 export class FontRuntime {
   private readonly ctx: Context
-  private readonly host: SettingsScope<ThemeSettings>
+  private readonly host: ConfigForm<ThemeSettings>
   private selection: FontSelection
   private revision = 0
   private snapshot: FontSnapshot
@@ -82,7 +82,7 @@ export class FontRuntime {
    * listener is released through ctx.effect on dispose).
    * @param host - durable settings scope shared with ThemeRuntime.
    */
-  constructor(ctx: Context, host: SettingsScope<ThemeSettings>) {
+  constructor(ctx: Context, host: ConfigForm<ThemeSettings>) {
     this.ctx = ctx
     this.host = host
     this.selection = { ...DEFAULT_SELECTION }

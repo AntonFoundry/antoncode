@@ -7,7 +7,7 @@
  */
 import { useState } from 'react'
 import type { PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
-import { IconChevronDownOutline14, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   CHAT_SIZE_RANGE, MONO_FONTS, MONO_SIZE_RANGE, TERM_SIZE_RANGE, UI_SIZE_RANGE,
   SYSTEM_UI_STACK, monoFontStack, uiFamilyStack,
@@ -127,7 +127,7 @@ function FamilyMenu({ options, selected, selectedLabel, filterable = false, onSe
           onClick={() => { setOpen(v => !v) }}
         >
           {active?.label ?? selectedLabel}
-          <IconChevronDownOutline14 className={css.chevron} />
+          <IconChevronDownOutlineMedium className={css.chevron} />
         </button>
       )}
     />

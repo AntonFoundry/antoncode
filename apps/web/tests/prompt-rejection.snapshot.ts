@@ -7,7 +7,7 @@ import { installAssembledBootEnv, mountAssembledApp } from './assembled-boot.ts'
 installAssembledBootEnv()
 
 it('names the admission failure without claiming that the agent is busy', async () => {
-  mountAssembledApp('?fixture&fixturePrompt=reject')
+  mountAssembledApp({ remote: { rejectPrompt: true } })
   const tree = await screen.findByRole('tree', { name: 'Sessions' })
   const group = (await within(tree).findAllByText('fixture'))
     .map(el => el.closest<HTMLElement>('[role="treeitem"]'))

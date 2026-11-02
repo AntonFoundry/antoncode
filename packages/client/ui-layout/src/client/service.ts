@@ -90,12 +90,21 @@ export interface ILayout {
   closeRightbar(): void
   /** Toggle the sidebar panel (closed ⟷ contract default width). */
   toggleSidebar(): void
+  /** Open the settings window without changing the selected Session. */
+  openSettings(): void
+  /** Close the settings window. */
+  closeSettings(): void
+  /** Toggle the settings window. */
+  toggleSettings(): void
+  /** Whether the settings window is open. */
+  settingsOpen(): boolean
+  /** Subscribe to settings-window changes; returns the disposer. */
+  onSettingsOpenChange(listener: () => void): () => void
 }
 
 /**
  * The window-manager additions to {@link ILayout}: details, settings and
- * inline-file panes. Only the frame's own package calls these; `ctx.layout`
- * stays typed as the upstream face.
+ * inline-file panes. The settings controls are shared with the settings shell.
  */
 export interface IWmLayout extends ILayout {
   /** Open the details panel (no-op when already open). */
@@ -104,20 +113,6 @@ export interface IWmLayout extends ILayout {
   closeDetails(): void
   /** Toggle the details panel (closed ⟷ open). */
   toggleDetails(): void
-  /** Open the settings window (no-op when already open). */
-  openSettings(): void
-  /** Close the settings window. */
-  closeSettings(): void
-  /** Toggle the settings window (closed ⟷ open). */
-  toggleSettings(): void
-  /** Whether the settings window leaf currently exists in the wm tree (false before a wm store attaches). */
-  settingsOpen(): boolean
-  /**
-   * Subscribe to settings-window open-state changes; returns the disposer.
-   * Forwards the attached wm store's notifications; before attachment the
-   * listener never fires and the disposer is a no-op.
-   */
-  onSettingsOpenChange(listener: () => void): () => void
   /**
    * Open one file path inline: split the focused leaf row-wise into a
    * `buffer:file:<path>` buffer and focus it — the same flow the frame's
