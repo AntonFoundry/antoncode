@@ -479,8 +479,10 @@ interface SashDragBase {
 
 /** The frame's right panel host and the window-side callbacks that adopt it. */
 interface RightbarDockShare {
-  /** Detached element the `rightbar` occupant is portalled into for the frame's lifetime. */
+  /** Element the `rightbar` occupant is portalled into for the frame's lifetime. */
   host: HTMLElement
+  /** Return the host to the frame's hidden parking element when no window shows it. */
+  park: () => void
   /** Report the adopting window's body width in px. */
   onWidth: (px: number) => void
   /** Ask the surface to expand once a window shows its buffer. */
@@ -489,13 +491,13 @@ interface RightbarDockShare {
 
 /**
  * The window body for the right panel's buffer. The occupant stays mounted in
- * a detached host, so tools can reach its surface while no window shows it
- * and moving or closing the window never remounts it; this body adopts the
- * host while mounted and sizes the surface to the window.
+ * one host, so tools can reach its surface while no window shows it and
+ * moving or closing the window never remounts it; this body adopts the host
+ * while mounted, sizes the surface to the window, and parks it on unmount.
  * @param props - the frame's dock share.
  * @returns the adopting container.
  */
-function RightbarDock({ host, onWidth, onShown }: RightbarDockShare) {
+function RightbarDock({ host, park, onWidth, onShown }: RightbarDockShare) {
   const ref = useRef<HTMLDivElement | null>(null)
   useLayoutEffect(() => {
     const el = ref.current
@@ -508,9 +510,9 @@ function RightbarDock({ host, onWidth, onShown }: RightbarDockShare) {
     onShown()
     return () => {
       observer.disconnect()
-      host.remove()
+      park()
     }
-  }, [host, onWidth, onShown])
+  }, [host, park, onWidth, onShown])
   return <div ref={ref} className={css.rightbarDock} data-rightbar-dock />
 }
 
@@ -2079,19 +2081,30 @@ export function WmFrame({
       : clampWidth(panels.details, CONTEXT_MIN, CONTEXT_MAX)
 
   // The right panel is a buffer like any other: its surface stays mounted in
-  // a detached host for the frame's lifetime and fills whichever window shows
-  // it, at that window's width. No window reserves space for it.
+  // one host for the frame's lifetime and fills whichever window shows it, at
+  // that window's width. No window reserves space for it. While no window
+  // shows it the host is parked in a hidden element inside the frame: the
+  // surface's components look their elements up through `document`, so the
+  // host must stay connected, and the portal renders only once it is.
+  const rightbarParkRef = useRef<HTMLDivElement | null>(null)
+  const [rightbarParked, setRightbarParked] = useState(false)
   const [rightbarHost] = useState(() => {
     const el = document.createElement('div')
     el.className = css.rightbarHost ?? ''
     return el
   })
   const [rightbarWidth, setRightbarWidth] = useState(contextWidth)
+  const parkRightbar = useCallback(() => { rightbarParkRef.current?.append(rightbarHost) }, [rightbarHost])
+  useLayoutEffect(() => {
+    if (!rightbarHost.isConnected) parkRightbar()
+    setRightbarParked(true)
+  }, [rightbarHost, parkRightbar])
   const rightbarDock = useMemo<RightbarDockShare>(() => ({
     host: rightbarHost,
+    park: parkRightbar,
     onWidth: (px) => { if (px > 0) setRightbarWidth(px) },
     onShown: expandRightPanel,
-  }), [rightbarHost, expandRightPanel])
+  }), [rightbarHost, parkRightbar, expandRightPanel])
 
   const filesShared: FilesBufferShared = {
     listDirectory,
@@ -2293,7 +2306,8 @@ export function WmFrame({
       <div className={css.overlayLayer} data-shell-overlay>
         {renderSlot('shell.overlay', {})}
       </div>
-      {createPortal(renderSlot('rightbar', {
+      <div ref={rightbarParkRef} className={css.rightbarPark} aria-hidden data-rightbar-park />
+      {rightbarParked && createPortal(renderSlot('rightbar', {
         width: rightbarWidth, viewportWidth: viewport, canShow: true,
       } satisfies RightbarOwnerProps), rightbarHost)}
     </div>

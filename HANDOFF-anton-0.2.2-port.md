@@ -85,6 +85,13 @@ whichever window shows its buffer adopts the host. Surface expand/collapse repor
 `shell.leading` declared but not rendered (brand row owns the toggle); `llm-openai` collides with
 pi-ai's `openai` provider at boot (`configurable provider "openai" is already declared`).
 
+**Links open in a split (2026-11-02):** `ui-sidebar-browser` is enabled in every profile (the
+`web-app` bundle row; upstream enables it on Desktop only). Chat links default to "In-App Sidebar",
+so a link opens a Browser tab in the right panel's surface and the WM pops that buffer's window. Web
+uses upstream's sandboxed iframe, so sites that refuse framing stay blank; a native `WKWebView`
+buffer through the Anton bridge would remove that limit. The surface's host is parked inside the
+frame (not detached) because Browser resolves its viewport through `document.getElementById`.
+
 **Agent board Session actions:** `interruptSession`, `promptSession`, `sessionTail` and `models`
 do not exist on the 0.2 sessions controller (they were `as unknown` casts that would throw a
 `TypeError`). Interrupt and prompt now throw a named error; tail and model labels report no data.

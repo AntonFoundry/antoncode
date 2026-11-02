@@ -631,7 +631,7 @@ afterEach(() => {
 
 describe('WmFrame render', () => {
   it('renders a mode line per leaf with the buffer titles and slot contents', () => {
-    const { getByText, getByTestId, getAllByLabelText, queryByText, queryByTestId, container } = mountFrame()
+    const { getByText, getByTestId, getAllByLabelText, queryByText, container } = mountFrame()
     const modeLineText = (text: string): Element[] =>
       [...container.querySelectorAll('[class*=bufferName]')].filter(el => el.textContent === text)
     expect(getByText('Workspace')).toBeTruthy()
@@ -640,7 +640,8 @@ describe('WmFrame render', () => {
     expect(queryByText('Context')).toBeNull()
     expect(getByTestId('sidebar-content')).toBeTruthy()
     expect(getByTestId('center-content')).toBeTruthy()
-    expect(queryByTestId('details-content')).toBeNull()
+    // The right panel's surface is parked, not shown in any window.
+    expect(container.querySelector('[data-buffer="details"]')).toBeNull()
     // Every pane carries a close button (the last window standing is
     // guarded at the operation, not the button).
     expect(getAllByLabelText('Close').length).toBe(2)
@@ -699,17 +700,17 @@ describe('WmFrame render', () => {
   })
 
   it("the right panel's buffer adopts its always-mounted surface without remounting it", () => {
-    const { getByLabelText, container, queryByTestId } = mountFrame()
+    const { getByLabelText, container } = mountFrame()
     expandRightPanelStub.mockClear()
-    // Mounted from the start, but in a detached host: no window shows it.
-    expect(queryByTestId('details-content')).toBeNull()
+    // Mounted from the start, parked in the frame's hidden element: no window shows it.
+    expect(container.querySelector('[data-rightbar-park] [data-testid="details-content"]')).not.toBeNull()
     act(() => { getByLabelText('Toggle context panel').click() })
     const surface = container.querySelector('[data-buffer="details"] [data-testid="details-content"]')
     expect(surface).not.toBeNull()
     expect(expandRightPanelStub).toHaveBeenCalledOnce()
     act(() => { getByLabelText('Toggle context panel').click() })
-    expect(queryByTestId('details-content')).toBeNull()
-    expect(surface?.isConnected).toBe(false)
+    // Quitting the window parks the surface again; it stays connected.
+    expect(container.querySelector('[data-rightbar-park] [data-testid="details-content"]')).toBe(surface)
     act(() => { getByLabelText('Toggle context panel').click() })
     // The same element returns: quitting the window never unmounted the surface.
     expect(container.querySelector('[data-buffer="details"] [data-testid="details-content"]')).toBe(surface)
@@ -927,14 +928,14 @@ describe('WmFrame render', () => {
   })
 
   it('switching between real sessions removes the details leaf', () => {
-    const { rerenderFrame, wm, queryByTestId } = mountFrame()
+    const { rerenderFrame, wm, container } = mountFrame()
     // Context open (via the toggle path's tree transform), then a real
     // session switch takes it back down.
     act(() => { wm.actions.setTree(shipped3()) })
     selectedSession.current = 's-next' as SessionId
     act(() => { rerenderFrame() })
     expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
-    expect(queryByTestId('details-content')).toBeNull()
+    expect(container.querySelector('[data-buffer="details"]')).toBeNull()
   })
 
   it('a blank session switch does not close details', () => {

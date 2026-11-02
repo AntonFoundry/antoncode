@@ -974,3 +974,9 @@
   width: 100%;
   height: 100%;
 }
+
+/* Where the right panel's host waits while no window shows its buffer:
+ * connected to the document, rendered nowhere. */
+.rightbarPark {
+  display: none;
+}
