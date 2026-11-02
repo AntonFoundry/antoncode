@@ -7,7 +7,6 @@ import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { DesktopKeyboardApi, DesktopShortcutInput, ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/protocol'
 import type { createSettingsShellStore } from '../../ui-settings-general/src/client/shell-store.ts'
-import type { createLayoutStore } from '../../ui-layout/src/client/stores.ts'
 import type { ReferenceInjected } from '../src/client/Reference.tsx'
 import type { createShortcutsStore } from '../src/client/store.ts'
 
@@ -76,7 +75,7 @@ describe('assembled shortcut command owners', () => {
     const shortcuts = client.ctx.shortcuts
     const settings = (client.ctx.slots.entries('sidebar.settings')[0]!.store as ReturnType<typeof createSettingsShellStore>).create()
     const reference = (client.ctx.slots.entries('shell.overlay').find(entry => entry.options.id === 'shortcuts')!.store as ReturnType<typeof createShortcutsStore>).create()
-    const layout = (client.ctx.slots.entries('root')[0]!.store as ReturnType<typeof createLayoutStore>).create()
+    const toggleSidebar = vi.spyOn(client.ctx.layout, 'toggleSidebar')
     function Dialogs() {
       const settingsState = useSyncExternalStore(listener => settings.subscribe(listener), () => settings.getSnapshot())
       const referenceState = useSyncExternalStore(listener => reference.subscribe(listener), () => reference.getSnapshot())
@@ -128,15 +127,14 @@ describe('assembled shortcut command owners', () => {
     expect(reference.getSnapshot().open).toBe(true)
     press('Comma')
     expect(settings.getSnapshot().open).toBe(false)
-    const sidebar = layout.getSnapshot().layoutInfo.sidebar
     press('KeyB')
-    expect(layout.getSnapshot().layoutInfo.sidebar).not.toBe(sidebar)
+    expect(toggleSidebar).toHaveBeenCalledTimes(1)
     press('Slash')
     expect(reference.getSnapshot().open).toBe(false)
     press('KeyB')
-    expect(layout.getSnapshot().layoutInfo.sidebar).toBe(sidebar)
+    expect(toggleSidebar).toHaveBeenCalledTimes(2)
     press('KeyB', true)
-    expect(layout.getSnapshot().layoutInfo.sidebar).toBe(sidebar)
+    expect(toggleSidebar).toHaveBeenCalledTimes(2)
     const menu = (commandId: ShortcutCommandId): void => {
       act(() => {
         for (const listener of listeners) listener({ kind: 'menu', commandId, revision: shortcuts.config.getSnapshot().revision })

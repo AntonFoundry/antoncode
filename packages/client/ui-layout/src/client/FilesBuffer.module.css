@@ -1,0 +1,166 @@
+/* Dired-lite files buffer: crumbs above a dense row list, hint line below. */
+
+.dired {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  outline: none;
+}
+
+.crumbs {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 12px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.crumbSep {
+  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
+}
+
+.crumbButton {
+  padding: 1px 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .crumbButton:hover {
+    background: var(--dsw-alias-button-floating-hover);
+    color: var(--dsw-alias-label-primary);
+  }
+}
+
+.status {
+  padding: 8px 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.status[data-error] {
+  color: var(--dsw-alias-label-danger, var(--dsw-alias-label-primary));
+}
+
+.rows {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 12px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .row:hover {
+    background: var(--dsw-alias-button-floating-hover);
+  }
+}
+
+.row[data-hidden] {
+  opacity: 0.6;
+}
+
+.row[data-up] .name {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  flex: none;
+  display: flex;
+  gap: 14px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.perms {
+  min-width: 9em;
+  text-align: right;
+}
+
+.size {
+  min-width: 5em;
+  text-align: right;
+}
+
+.date {
+  min-width: 11em;
+  text-align: right;
+  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
+}
+
+.hint {
+  flex: none;
+  padding: 4px 12px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+}
+
+/* The navigation toolbar: back / forward / up / home / refresh, one slim
+   row above the crumbs. */
+.toolbar {
+  display: flex;
+  gap: 4px;
+  padding: 2px 0 6px;
+}
+.toolButton {
+  cursor: pointer;
+  width: 26px;
+  height: 24px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+@media (hover: hover) {
+  .toolButton:hover:not(:disabled) {
+    background: var(--dsw-alias-interactive-bg-hover);
+    color: var(--dsw-alias-label-primary);
+  }
+}
+.toolButton:disabled {
+  opacity: 0.35;
+  cursor: default;
+}

@@ -289,8 +289,9 @@ function bench(options: BenchOptions = {}) {
   if (options.conversation !== false) ctx.provide('conversation', { input: { requestDraftInitialization } })
   const layout = new LayoutController({
     selectPanel: vi.fn(), retainMainPanels: vi.fn(),
-    setSidebar: vi.fn(), toggleSidebar: vi.fn(), setViewportWidth: vi.fn(),
-    setRightbar: vi.fn(), openRightbar: vi.fn(), closeRightbar: vi.fn(),
+    setSidebar: vi.fn(), toggleSidebar: vi.fn(), setNarrow: vi.fn(),
+    setDetails: vi.fn(), openDetails: vi.fn(), closeDetails: vi.fn(), setMode: vi.fn(), toggleTabbing: vi.fn(),
+    openRightbar: vi.fn(), closeRightbar: vi.fn(),
   }, () => true, createSnapshotStore({ activePanelId: null }))
   const selectPanel = vi.spyOn(layout, 'selectPanel')
   ctx.provide('layout', layout)

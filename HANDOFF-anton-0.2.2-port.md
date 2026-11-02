@@ -58,7 +58,47 @@ client/ui-efficiency-discipline
 
 ## 3. Work remaining — full tree
 
-### 3.1 Phase 4 · item 1 — WM visual layer **(next step; in flight)**
+### 3.1 Phase 4 · item 1 — WM visual layer **(landed in the working tree, 2026-11-02; uncommitted)**
+
+**Status.** The checkpoint below is restored into `packages/client/ui-layout`. The WM frame keeps
+upstream's slot vocabulary and renders upstream occupants in panes. Client `src` typecheck 0 errors
+(it was 62 across 8 packages — the earlier "src compiles clean" was an artifact of the aggregate seeing
+other packages' `src` only through project references), client test aggregate 0 errors (was 221),
+`vitest packages/client` green apart from `ui-sidebar-documentpreview` license bundle (pnpm 11
+`pack --json` output, environmental). Boot-smoked from source against a `DSH_HOME` copy.
+
+Fixed on the way: `ui-layout` injected `uiWorkspace` while `ui-workspace` injects `layout` (whole client
+deadlocked at boot); chat panes rendered an unoccupied `conversation` slot (upstream registers
+`main['conversation']`); 468 stray emitted `.js`/`.d.ts` in `src/` trees (duplicate-module test
+failures); `theme-macos.css` + `body[data-ds-theme]` and `--dsw-alias-mode-line-active` dropped by the
+port (focused mode line rendered white-on-white); Windows caption drag band and `--dsh-frame-*`
+variables. Borders moved to 0.5px hairlines (decision: user); WM radii recorded in
+`radius-exceptions.expected.json`.
+
+**Right panel decision (user):** the `rightbar` surface is a buffer like any other — no reserved
+space, placeable anywhere. It stays mounted in a detached host (portal) for the frame's lifetime;
+whichever window shows its buffer adopts the host. Surface expand/collapse reports show/quit its window
+(transitions only); a window showing it asks the surface to expand via `ctx.sidebarRight`.
+
+**Still open in 3.1:** per-pane Session pinning (needs a retained `SessionReference` per pane through
+`SessionProvider`, as `ui-sidebar-right/session-views.ts` does; 5 tests `it.skip` with FIXME);
+`shell.leading` declared but not rendered (brand row owns the toggle); `llm-openai` collides with
+pi-ai's `openai` provider at boot (`configurable provider "openai" is already declared`).
+
+**Agent board Session actions:** `interruptSession`, `promptSession`, `sessionTail` and `models`
+do not exist on the 0.2 sessions controller (they were `as unknown` casts that would throw a
+`TypeError`). Interrupt and prompt now throw a named error; tail and model labels report no data.
+Re-expressing them is part of 3.2.
+
+**Not in the original tree:** `scripts/build-anton-macos.ts` and the `anton:*` package scripts exist on
+`main` but not on this branch — the port cannot produce Anton.app until they are ported.
+
+**Live-app hazards found 2026-11-02:** the installed Anton's web profile linked `dsh-resume-note` and
+`dsh-web-search-browser` into this checkout (repointed to the app bundle), and something running port
+code migrated the live `.credentials.yaml` to the version-1 layout the installed app cannot read
+(restored flat; v1 copy kept as `.credentials.yaml.v1-backup-20261102`).
+
+#### Original checkpoint notes
 
 **Checkpoint: `.anton-port/wm-inprogress/`** (committed) — 48 files.
 `src/` and `tests/` map onto `packages/client/ui-layout/`; the three `_`-prefixed files are

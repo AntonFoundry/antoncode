@@ -5,6 +5,30 @@
   "ui-deliverables/src/client/Deliverables.module.css": [
     ".fileIcon: border-radius: 10px"
   ],
+  "ui-layout/src/client/FilesBuffer.module.css": [
+    ".toolButton: border-radius: 6px"
+  ],
+  "ui-layout/src/client/Minibuffer.module.css": [
+    ".input: border-radius: 6px",
+    ".candidate: border-radius: 6px"
+  ],
+  "ui-layout/src/client/WmFrame.module.css": [
+    ".brandToggle: border-radius: 8px",
+    ".modeButton: border-radius: 6px",
+    ".tab: border-radius: 6px 6px 0 0",
+    ".prefixIndicator: border-radius: 6px",
+    ".whichKeyList: border-radius: 8px",
+    ".modeSwitch: border-radius: 8px",
+    ".modeTab: border-radius: 6px",
+    ".agentWsCard: border-radius: 10px",
+    ".agentWs: border-radius: 10px",
+    ".agentPanePreset: border-radius: 8px",
+    ".agentSubChip: border-radius: 8px",
+    ".agentPaneWait: border-radius: 8px",
+    ".agentPaneModel: border-radius: 6px",
+    ".agentPaneAction, .agentPaneStop: border-radius: 6px",
+    ".agentPaneInput: border-radius: 8px"
+  ],
   "ui-plan/src/client/PlanPreview.module.css": [
     ".cardIcon: border-radius: 10px"
   ],

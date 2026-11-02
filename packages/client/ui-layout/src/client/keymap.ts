@@ -1,0 +1,265 @@
+/**
+ * Emacs chord parser for the window-manager frame: a pure keydown
+ * classifier. The C-x / C-c prefixes are state machines ACROSS keypresses,
+ * so the caller (WmFrame) carries the armed prefix and passes it in; this
+ * module stays stateless and DOM-free.
+ *
+ * Element-safety contract: the parser is target-agnostic and safe to run
+ * over text fields — chords are ctrl/alt sequences, and a bare key only
+ * ever runs once a prefix is armed (the caller consumes that keystroke, so
+ * it is never inserted into the field). The caller owns what an unarmed
+ * bare Escape means for the focused element.
+ */
+
+/** One window command the chord tables bind. */
+export type WmCommand =
+  /** Open the switch-buffer minibuffer (C-x b). */
+  | 'switch-buffer'
+  /** Find-file minibuffer: type a path; Enter opens the file (directories land dired) (C-x C-f). */
+  | 'find-file'
+  /** Open the dired buffer at the home directory (C-x d). */
+  | 'dired'
+  /** Open the kill-buffer minibuffer (C-x k). */
+  | 'kill-buffer'
+  /** Split the focused leaf below (C-x 2). */
+  | 'split-below'
+  /** Split the focused leaf right (C-x 3). */
+  | 'split-right'
+  /** Close the focused leaf, canClose-guarded (C-x 0). */
+  | 'close'
+  /** Single window: keep only the focused leaf (C-x 1). */
+  | 'single'
+  /** Cycle focus to the next leaf (C-x o). */
+  | 'other-window'
+  /** Open the switch-workspace minibuffer (C-x w). */
+  | 'switch-workspace'
+  /** Show the previous registry buffer in the focused leaf (C-x ←). */
+  | 'previous-buffer'
+  /** Show the next registry buffer in the focused leaf (C-x →). */
+  | 'next-buffer'
+  /** Save: flush the scratch debounce; no-op elsewhere (C-x C-s). */
+  | 'save-scratch'
+  /** Reset the window layout to the shipped tree (C-x l). */
+  | 'reset-layout'
+  /** Winner mode: restore the previous window layout (C-c ←). */
+  | 'winner-undo'
+  /** Winner mode: redo an undone layout (C-c →). */
+  | 'winner-redo'
+  /** Cancel the pending prefix or an open minibuffer (C-g / Escape). */
+  | 'cancel'
+  /** Open the M-x extended-command palette over the minibuffer. */
+  | 'm-x'
+  /** Restart the harness behind the app, then reload the page when it answers. */
+  | 'restart-app'
+  /** Dump the window tree JSON into *scratch* (layout diagnostics). */
+  | 'dump-layout'
+  /** Open an interactive terminal buffer (login bash on a node-pty). */
+  | 'term'
+  /** Open the shared webcam buffer: live GPU background-removal camera view. */
+  | 'webcam'
+  /** Kill the shared webcam buffer wherever it shows, releasing the camera. */
+  | 'webcam-stop'
+  /** Toggle keystroke broadcast across every open terminal (multi-cursor). */
+  | 'multi-cursor'
+  /** Balance every split's weights to equal shares (tidy panes). */
+  | 'tidy-panes'
+  /** Swap the focused pane with its sibling in the parent split. */
+  | 'flip-pane'
+  /** Move the focused pane one step left (i3-style; ⌘⇧H). */
+  | 'move-window-left'
+  /** Move the focused pane one step right (⌘⇧L). */
+  | 'move-window-right'
+  /** Move the focused pane one step up (⌘⇧K). */
+  | 'move-window-up'
+  /** Move the focused pane one step down (⌘⇧J). */
+  | 'move-window-down'
+  /** Focus the nearest pane to the left (⌘H). */
+  | 'focus-left'
+  /** Focus the nearest pane to the right (⌘L). */
+  | 'focus-right'
+  /** Focus the nearest pane above (⌘K). */
+  | 'focus-up'
+  /** Focus the nearest pane below (⌘J). */
+  | 'focus-down'
+  /** Toggle the focused container between tabbed group and side-by-side split (⌘⇧E). */
+  | 'toggle-tabbed'
+  /** Restore the pre-expand layout (undo expand-to-full). */
+  | 'restore-layout'
+  /** Save the current window tree as the workspace's layout (M-x). */
+  | 'save-layout'
+  /** Load a named theme from the frame's palette (compos load-theme). */
+  | 'load-theme'
+
+/** One parse outcome: arm a prefix, run a command, or nothing. */
+export type ChordResult = { prefix: 'x' | 'c' } | { command: WmCommand } | null
+
+/** The armed-prefix state the caller carries between keydowns. */
+export type ArmedPrefix = 'x' | 'c' | undefined
+
+/** The parser's view of a keyboard event (structural — testable without DOM). */
+export interface KeyEventLike {
+  ctrlKey: boolean
+  key: string
+  altKey?: boolean
+  metaKey?: boolean
+  /** Shift selects the directional MOVE table over FOCUS (⌘⇧hjkl vs ⌘hjkl). */
+  shiftKey?: boolean
+  /** The physical key code — M-x detection survives Option-key character mapping. */
+  code?: string
+}
+
+/**
+ * Classify one keydown against the chord tables.
+ *
+ * - Ctrl+X / Ctrl+C arm their prefix: `{ prefix: 'x' | 'c' }`.
+ * - With C-x armed, the next key completes: plain b/d/k/o/w/0/1/2/3,
+ *   ArrowLeft/ArrowRight (buffer cycling), and ctrl-chorded f/s
+ *   (C-x C-f find-file, C-x C-s save). C-x C-g cancels.
+ * - With C-c armed, ArrowLeft/ArrowRight run winner undo/redo.
+ * - ⌘H/⌘J/⌘K/⌘L focus left/down/up/right; with Shift the same four keys
+ *   move the focused window instead (the i3 directional tables).
+ * - Ctrl+G and Escape cancel any pending prefix or minibuffer from anywhere.
+ * - Anything else is `null`; a `null` while a prefix is armed means the
+ *   chord failed and the caller must disarm.
+ * @param event - the keydown's modifier/key facts.
+ * @param prefix - the currently armed prefix, if any.
+ * @returns the parse outcome.
+ */
+export function parseChord(event: KeyEventLike, prefix: ArmedPrefix): ChordResult {
+  // M-x (the extended-command palette): matched on the physical code, so
+  // the Option-key character mapping (macOS Option+X types a symbol) cannot
+  // hide it. Meta is other apps'; ctrl chords run their own tables.
+  if (event.altKey === true && ! event.ctrlKey && event.metaKey !== true && event.code === 'KeyX') {
+    return { command: 'm-x' }
+  }
+  // ⌘ (meta) hjkl: the i3-style directional table. Shift selects the MOVE
+  // table (the window travels), plain selects FOCUS (the cursor travels):
+  // ⌘H/⌘J/⌘K/⌘L focus left/down/up/right; ⌘⇧H/⌘⇧J/⌘⇧K/⌘⇧L move the window
+  // the same four ways. Only these four physical keys are claimed; every
+  // other meta chord stays other apps'.
+  if (event.metaKey === true && ! event.ctrlKey && event.altKey !== true) {
+    // ⌘⇧E toggles the focused container's tabbed/split arrangement (i3
+    // $mod+e); plain ⌘E stays other apps'.
+    if (event.code === 'KeyE' && event.shiftKey === true) return { command: 'toggle-tabbed' }
+    if (event.code !== 'KeyH' && event.code !== 'KeyJ' && event.code !== 'KeyK' && event.code !== 'KeyL') return null
+    const vertical = event.code === 'KeyJ' || event.code === 'KeyK'
+    const forward = event.code === 'KeyL' || event.code === 'KeyJ'
+    const direction = vertical ? (forward ? 'down' : 'up') : (forward ? 'right' : 'left')
+    return event.shiftKey === true
+      ? { command: `move-window-${direction}` as WmCommand }
+      : { command: `focus-${direction}` as WmCommand }
+  }
+  // Meta/alt-chorded keys are other apps' shortcuts; never intercept.
+  if (event.metaKey || event.altKey) return null
+  const key = event.key
+  if (event.ctrlKey) {
+    if (key === 'g' || key === 'G') return { command: 'cancel' }
+    if (key === 'x' || key === 'X') return { prefix: 'x' }
+    if (key === 'c' || key === 'C') return { prefix: 'c' }
+    if (prefix === 'x') {
+      if (key === 'f' || key === 'F') return { command: 'find-file' }
+      if (key === 's' || key === 'S') return { command: 'save-scratch' }
+    }
+    return null
+  }
+  if (key === 'Escape') return { command: 'cancel' }
+  if (prefix === undefined) return null
+  switch (key) {
+    case 'b': return prefix === 'x' ? { command: 'switch-buffer' } : null
+    case 'w': return prefix === 'x' ? { command: 'switch-workspace' } : null
+    case 'd': return prefix === 'x' ? { command: 'dired' } : null
+    case 'k': return prefix === 'x' ? { command: 'kill-buffer' } : null
+    case 'l': return prefix === 'x' ? { command: 'reset-layout' } : null
+    case 't': return prefix === 'x' ? { command: 'term' } : null
+    case 'v': return prefix === 'x' ? { command: 'webcam' } : null
+    case 'o': return prefix === 'x' ? { command: 'other-window' } : null
+    case '0': return prefix === 'x' ? { command: 'close' } : null
+    case '1': return prefix === 'x' ? { command: 'single' } : null
+    case '2': return prefix === 'x' ? { command: 'split-below' } : null
+    case '3': return prefix === 'x' ? { command: 'split-right' } : null
+    case 'ArrowLeft': return { command: prefix === 'x' ? 'previous-buffer' : 'winner-undo' }
+    case 'ArrowRight': return { command: prefix === 'x' ? 'next-buffer' : 'winner-redo' }
+    default: return null
+  }
+}
+
+/** One entry of the M-x palette: an Emacs-style name, its command id, and its binding. */
+export interface CommandEntry {
+  /** The palette name (Emacs spelling — this is what M-x completes). */
+  name: string
+  /** The WmCommand the entry dispatches. */
+  command: WmCommand
+  /** The keybinding hint shown in the palette and which-key popup. */
+  keys: string
+}
+
+/** The extended-command registry: one row per window command (compos M-x). */
+export const COMMANDS: readonly CommandEntry[] = [
+  { name: 'execute-extended-command', command: 'm-x', keys: 'M-x' },
+  { name: 'switch-buffer', command: 'switch-buffer', keys: 'C-x b' },
+  { name: 'switch-workspace', command: 'switch-workspace', keys: 'C-x w' },
+  { name: 'find-file', command: 'find-file', keys: 'C-x C-f' },
+  { name: 'dired', command: 'dired', keys: 'C-x d' },
+  { name: 'kill-buffer', command: 'kill-buffer', keys: 'C-x k' },
+  { name: 'save-scratch', command: 'save-scratch', keys: 'C-x C-s' },
+  { name: 'split-below', command: 'split-below', keys: 'C-x 2' },
+  { name: 'split-right', command: 'split-right', keys: 'C-x 3' },
+  { name: 'delete-window', command: 'close', keys: 'C-x 0' },
+  { name: 'delete-other-windows', command: 'single', keys: 'C-x 1' },
+  { name: 'other-window', command: 'other-window', keys: 'C-x o' },
+  { name: 'previous-buffer', command: 'previous-buffer', keys: 'C-x ←' },
+  { name: 'next-buffer', command: 'next-buffer', keys: 'C-x →' },
+  { name: 'winner-undo', command: 'winner-undo', keys: 'C-c ←' },
+  { name: 'winner-redo', command: 'winner-redo', keys: 'C-c →' },
+  { name: 'reset-layout', command: 'reset-layout', keys: 'C-x l' },
+  { name: 'keyboard-quit', command: 'cancel', keys: 'C-g' },
+  { name: 'restart-app', command: 'restart-app', keys: 'M-x' },
+  { name: 'dump-layout', command: 'dump-layout', keys: 'M-x' },
+  { name: 'term', command: 'term', keys: 'C-x t' },
+  { name: 'webcam', command: 'webcam', keys: 'C-x v' },
+  { name: 'webcam-stop', command: 'webcam-stop', keys: 'M-x' },
+  { name: 'multi-cursor', command: 'multi-cursor', keys: 'M-x' },
+  { name: 'tidy-panes', command: 'tidy-panes', keys: 'M-x' },
+  { name: 'flip-pane', command: 'flip-pane', keys: 'M-x' },
+  { name: 'move-window-left', command: 'move-window-left', keys: '⌘⇧H' },
+  { name: 'move-window-right', command: 'move-window-right', keys: '⌘⇧L' },
+  { name: 'move-window-up', command: 'move-window-up', keys: '⌘⇧K' },
+  { name: 'move-window-down', command: 'move-window-down', keys: '⌘⇧J' },
+  { name: 'focus-left', command: 'focus-left', keys: '⌘H' },
+  { name: 'focus-right', command: 'focus-right', keys: '⌘L' },
+  { name: 'focus-up', command: 'focus-up', keys: '⌘K' },
+  { name: 'focus-down', command: 'focus-down', keys: '⌘J' },
+  { name: 'tabbed-mode', command: 'toggle-tabbed', keys: '⌘⇧E' },
+  { name: 'restore-layout', command: 'restore-layout', keys: 'M-x' },
+  { name: 'save-layout', command: 'save-layout', keys: 'M-x' },
+  { name: 'load-theme', command: 'load-theme', keys: 'M-x' },
+]
+
+/** One which-key row: the keys that complete an armed prefix, and what they do. */
+export interface PrefixHint { keys: string; label: string }
+
+/** The which-key table: completions shown while C-x / C-c is armed. */
+export const PREFIX_HINTS: Record<'x' | 'c', readonly PrefixHint[]> = {
+  x: [
+    { keys: 'C-x b', label: 'switch buffer' },
+    { keys: 'C-x w', label: 'switch workspace' },
+    { keys: 'C-x C-f', label: 'find file' },
+    { keys: 'C-x d', label: 'dired' },
+    { keys: 'C-x k', label: 'kill buffer' },
+    { keys: 'C-x C-s', label: 'save scratch' },
+    { keys: 'C-x 2', label: 'split below' },
+    { keys: 'C-x 3', label: 'split right' },
+    { keys: 'C-x 0', label: 'delete window' },
+    { keys: 'C-x 1', label: 'delete other windows' },
+    { keys: 'C-x o', label: 'other window' },
+    { keys: 'C-x ←', label: 'previous buffer' },
+    { keys: 'C-x →', label: 'next buffer' },
+    { keys: 'C-x l', label: 'reset layout' },
+    { keys: 'C-x t', label: 'terminal' },
+    { keys: 'C-x v', label: 'webcam' },
+  ],
+  c: [
+    { keys: 'C-c ←', label: 'winner undo' },
+    { keys: 'C-c →', label: 'winner redo' },
+  ],
+}

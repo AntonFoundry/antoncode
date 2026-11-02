@@ -1,7 +1,9 @@
 /**
  * Global theme DOM applier: projects the resolved ThemeSnapshot onto the
  * document — `html { color-scheme }` for native UA chrome (scrollbars, form
- * controls), `body[data-ds-dark-theme]` for the token palette, the active
+ * controls), `body[data-ds-dark-theme]` for the token palette,
+ * `body[data-ds-theme]` carrying the active theme id for theme-scoped
+ * sheets, the active
  * theme's alias-token overrides as inline CSS variables on body, the content
  * font-size axis (`--dsh-content-font-size`), the code and terminal sizes
  * (`--dsh-code-font-size`, `--dsh-terminal-font-size`), the user font lists
@@ -15,6 +17,9 @@ import type { FontRole, ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/c
 
 /** Body attribute selecting the dark base palette in the token stylesheets. */
 export const DARK_ATTRIBUTE = 'data-ds-dark-theme'
+
+/** Body attribute carrying the active theme id, keyed by theme-scoped sheets (`theme-macos.css`). */
+export const THEME_ATTRIBUTE = 'data-ds-theme'
 
 /**
  * Root attribute publishing the theme source (`light`, `dark`, or `system`)
@@ -74,6 +79,7 @@ export class ThemePresenter {
     const body = document.body
     if (scheme === 'dark') body.setAttribute(DARK_ATTRIBUTE, '')
     else body.removeAttribute(DARK_ATTRIBUTE)
+    body.setAttribute(THEME_ATTRIBUTE, snapshot.active.id)
     for (const [role, name] of Object.entries(FONT_SIZE_VARIABLES)) {
       body.style.setProperty(name, `${snapshot.fontSizes[role as FontRole]}px`)
     }
@@ -93,14 +99,15 @@ export class ThemePresenter {
   }
 
   /**
-   * Retract root color-scheme, the theme-source attribute, the palette
-   * attribute, token variables, the font sizes, font lists, and the owned metadata node.
+   * Retract root color-scheme, the theme-source attribute, the palette and
+   * theme-id attributes, token variables, the font sizes, font lists, and the owned metadata node.
    */
   dispose(): void {
     document.documentElement.style.removeProperty('color-scheme')
     document.documentElement.removeAttribute(THEME_SOURCE_ATTRIBUTE)
     const body = document.body
     body.removeAttribute(DARK_ATTRIBUTE)
+    body.removeAttribute(THEME_ATTRIBUTE)
     for (const name of Object.values(FONT_SIZE_VARIABLES)) body.style.removeProperty(name)
     for (const name of Object.values(FONT_FAMILY_VARIABLES)) body.style.removeProperty(name)
     for (const name of this.appliedTokens) body.style.removeProperty(name)

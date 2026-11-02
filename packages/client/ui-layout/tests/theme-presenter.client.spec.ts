@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { FontFamilies, ThemePreference, ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
 import { fontFamilyVariable } from '@deepseek-ai/dsh-client-ui-theme/src/theme-settings.ts'
-import { DARK_ATTRIBUTE, THEME_SOURCE_ATTRIBUTE, ThemePresenter } from '@deepseek-ai/dsh-client-ui-layout/src/client/theme-presenter.ts'
+import { DARK_ATTRIBUTE, THEME_ATTRIBUTE, THEME_SOURCE_ATTRIBUTE, ThemePresenter } from '@deepseek-ai/dsh-client-ui-layout/src/client/theme-presenter.ts'
 
 const LIGHT_THEME_COLOR = 'rgb(255, 255, 255)'
 const DARK_THEME_COLOR = 'rgb(21, 21, 23)'
@@ -33,6 +33,7 @@ beforeEach(() => {
   document.documentElement.style.removeProperty('color-scheme')
   document.documentElement.removeAttribute(THEME_SOURCE_ATTRIBUTE)
   document.body.removeAttribute(DARK_ATTRIBUTE)
+  document.body.removeAttribute(THEME_ATTRIBUTE)
   document.body.removeAttribute('style')
   const style = document.createElement('style')
   style.dataset.themePresenterTest = ''
@@ -46,6 +47,17 @@ beforeEach(() => {
 afterEach(clearThemePresentation)
 
 describe('ThemePresenter', () => {
+  it('publishes the active theme id for theme-scoped sheets, independently of the color scheme', () => {
+    const presenter = new ThemePresenter()
+    const macos = snapshot('dark')
+    presenter.apply({ ...macos, active: { ...macos.active, id: 'macos-dark' } })
+    expect(document.body.getAttribute(THEME_ATTRIBUTE)).toBe('macos-dark')
+    presenter.apply(snapshot('dark'))
+    expect(document.body.getAttribute(THEME_ATTRIBUTE)).toBe('dark-test')
+    presenter.dispose()
+    expect(document.body.hasAttribute(THEME_ATTRIBUTE)).toBe(false)
+  })
+
   it('light scheme sets root color-scheme and leaves the dark attribute absent', () => {
     const presenter = new ThemePresenter()
     presenter.apply(snapshot('light'))

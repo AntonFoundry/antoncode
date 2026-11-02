@@ -26,7 +26,7 @@ const SHELL_SHEET = 'client/web/src/base.css'
 const SHELL_DRAG_SELECTOR = "html[data-platform='darwin'] [data-window-drag]"
 
 /** The frame's Windows caption row, relative to packages/; the other platform's chrome. */
-const WINDOWS_CAPTION = 'client/ui-layout/src/client/AppFrame.module.css'
+const WINDOWS_CAPTION = 'client/ui-layout/src/client/WmFrame.module.css'
 
 /** That caption row's selector, as authored. */
 const WINDOWS_CAPTION_SELECTOR = ':global([data-windows-titlebar]) .frame::before'

@@ -14,6 +14,19 @@ import { apply as nodeApply } from '@deepseek-ai/dsh-client-ui-layout'
 import type { MainPanelId } from '../src/client/service.ts'
 import type { createLayoutStore } from '../src/client/stores.ts'
 
+/** The window tree's persistence key (stores.ts createWmStore). */
+const WM_PERSIST_KEY = 'dsh.layout.wm'
+
+/**
+ * Whether the persisted window tree holds the sidebar pane.
+ * @returns true when a leaf shows the sidebar buffer.
+ */
+function persistedTreeHasSidebar(): boolean {
+  const stored = localStorage.getItem(WM_PERSIST_KEY)
+  if (stored === null) return true
+  return stored.includes('"buffer":"sidebar"')
+}
+
 const owners = new Set<Fiber>()
 let originalRootStyle: string | null
 let originalBodyStyle: string | null
@@ -27,6 +40,9 @@ beforeEach(() => {
   originalThemeMetadata = [...document.head.querySelectorAll('meta[name="theme-color"]')]
   originalThemeMetadata.forEach((node) => { node.remove() })
   vi.stubGlobal('innerWidth', 1920)
+  // The harness boot watcher polls the bridge; no bridge answers under jsdom.
+  vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('no bridge in jsdom'))))
+  localStorage.removeItem(WM_PERSIST_KEY)
 })
 
 afterEach(async () => {
@@ -62,6 +78,9 @@ async function bench() {
   ctx.provide('remote', { $on: () => () => {} } as never)
   ctx.provide('configForms', { developerTools: { enabled: createSnapshotStore(true) }, get: () => stubConfigForm().scope } as never)
   await ctx.plugin({ inject: themeInject, apply: themeApply }).await()
+  // The frame reads the Workspace and Session list snapshots; empty lists suffice here.
+  ctx.provide('workspaces', { list: createSnapshotStore({ items: [] }) } as never)
+  ctx.provide('sessions', { list: createSnapshotStore({ ids: [], byId: {} }) } as never)
   await slotsFiber.await()
   const slots = ctx.get('slots') as SlotRegistry
   let host: SlotRendererHost | undefined
@@ -76,7 +95,7 @@ async function bench() {
 
 describe('ui-layout client apply', () => {
   it('declares its service dependencies', () => {
-    expect(inject).toEqual(['slots', 'theme', 'locale', 'shortcuts'])
+    expect(inject).toEqual(['slots', 'theme', 'locale', 'shortcuts', 'workspaces', 'sessions'])
   })
 
   it('provides ctx.layout and declares the root-scoped frame slots', async () => {
@@ -104,8 +123,10 @@ describe('ui-layout client apply', () => {
     expect(handle.create()).toBe(instance)
     const layout = ctx.get('layout') as LayoutController
     expect(() => { layout.selectPanel('missing' as MainPanelId) }).toThrow('main panel "missing" is not registered')
+    // The window manager toggles the sidebar pane in the window tree.
+    expect(persistedTreeHasSidebar()).toBe(true)
     layout.toggleSidebar()
-    expect(instance.getSnapshot().layoutInfo.sidebar).toBe(0)
+    expect(persistedTreeHasSidebar()).toBe(false)
     const host = rendererHost()
     expect(host.storeOf(entry, undefined)).toBe(instance)
     const panelInfo = host.root.getSnapshot().hooks.panelInfo!
@@ -118,7 +139,7 @@ describe('ui-layout client apply', () => {
     disposePanel()
     await vi.waitFor(() => { expect(panelInfo.getSnapshot()).toEqual({ activePanelId: null }) })
     expect(() => { layout.selectPanel(panelId) }).toThrow('main panel "panel-a" is not registered')
-    expect(instance.getSnapshot().layoutInfo.sidebar).toBe(0)
+    expect(persistedTreeHasSidebar()).toBe(false)
     const pending = layout.beginNavigation()
     await fiber.dispose()
     expect(pending.aborted).toBe(true)

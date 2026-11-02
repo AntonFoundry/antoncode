@@ -1,105 +1,147 @@
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+/**
+ * LayoutController behavior: the cross-plugin panel-action face. Geometry
+ * lives in the entry store (layout-store.spec.ts) — here we assert the
+ * delegation contract: attachPanels wiring, the panel actions forwarding, the
+ * unwired fail-loud, re-attach overwriting a stale action set, and the
+ * inline file opener (openFile) against a fake wm store.
+ */
 import { describe, expect, it, vi } from 'vitest'
-import { LayoutController } from '../src/client/service.ts'
-import type { MainPanelId, PanelActions } from '../src/client/service.ts'
+import { LayoutController, type WmTreeSource } from '@deepseek-ai/dsh-client-ui-layout/src/client/service.ts'
+import type { PanelActions } from '@deepseek-ai/dsh-client-ui-layout/src/client/service.ts'
+import { findLeaf, type WmBuffer, type WmNode } from '@deepseek-ai/dsh-client-ui-layout/src/client/wm.ts'
 
 function fakePanels(): PanelActions {
   return {
+    setSidebar: vi.fn(),
+    setDetails: vi.fn(),
+    toggleSidebar: vi.fn(),
+    setNarrow: vi.fn(),
+    openDetails: vi.fn(),
+    closeDetails: vi.fn(),
+    setMode: vi.fn(),
+    toggleTabbing: vi.fn(),
     selectPanel: vi.fn(),
     retainMainPanels: vi.fn(),
-    setSidebar: vi.fn(),
-    toggleSidebar: vi.fn(),
-    setViewportWidth: vi.fn(),
-    setRightbar: vi.fn(),
     openRightbar: vi.fn(),
     closeRightbar: vi.fn(),
   }
 }
 
+/** A mutable in-memory wm store fake: snapshots read the same object. */
+function fakeWm(): WmTreeSource & {
+  state: { tree: WmNode; buffers: WmBuffer[]; focusedLeafId: string | undefined; sidebarBootDropped?: boolean }
+} {
+  const state: { tree: WmNode; buffers: WmBuffer[]; focusedLeafId: string | undefined; sidebarBootDropped?: boolean } = {
+    tree: { kind: 'leaf', id: 'conversation', buffer: 'buffer:session' },
+    buffers: [{ id: 'buffer:session', kind: 'session' }],
+    focusedLeafId: 'conversation',
+  }
+  return {
+    state,
+    getSnapshot: () => state,
+    subscribe: () => () => {},
+    actions: {
+      setTree: (tree) => { state.tree = tree },
+      setBuffers: (buffers) => { state.buffers = [...buffers] },
+      setFocus: (leafId) => { state.focusedLeafId = leafId },
+      setSidebarBootDropped: (closed) => { state.sidebarBootDropped = closed },
+    },
+  }
+}
+
 describe('LayoutController', () => {
-  it('forwards right column transitions to the constructor-supplied actions', () => {
+  it('forwards the three panel actions to the attached set', () => {
+    const service = new LayoutController()
     const panels = fakePanels()
-    const service = new LayoutController(panels, () => true, createSnapshotStore({ activePanelId: null }))
+    service.attachPanels(panels)
 
-    service.openRightbar(true, false)
-    service.openRightbar(true, true)
-    service.openRightbar(false, true)
-    service.closeRightbar()
+    service.toggleSidebar()
+    service.openDetails()
+    service.closeDetails()
 
-    expect(panels.openRightbar).toHaveBeenNthCalledWith(1, true, false)
-    expect(panels.openRightbar).toHaveBeenNthCalledWith(2, true, true)
-    expect(panels.openRightbar).toHaveBeenNthCalledWith(3, false, true)
-    expect(panels.closeRightbar).toHaveBeenCalledTimes(1)
-    // The drag width stays the frame's own business, never the caller's.
-    expect(panels.setRightbar).not.toHaveBeenCalled()
+    expect(panels.toggleSidebar).toHaveBeenCalledTimes(1)
+    expect(panels.openDetails).toHaveBeenCalledTimes(1)
+    expect(panels.closeDetails).toHaveBeenCalledTimes(1)
+    expect(panels.setSidebar).not.toHaveBeenCalled()
+    expect(panels.setDetails).not.toHaveBeenCalled()
   })
 
-  it('can toggle the sidebar immediately after construction', () => {
-    const panels = fakePanels()
-    const service = new LayoutController(panels, () => true, createSnapshotStore({ activePanelId: null }))
+  it('fails loud before the root entry wired its actions', () => {
+    const service = new LayoutController()
+    expect(() => { service.toggleSidebar() }).toThrow(/panel actions not wired/)
+    expect(() => { service.openDetails() }).toThrow(/panel actions not wired/)
+    expect(() => { service.closeDetails() }).toThrow(/panel actions not wired/)
+  })
+
+  it('re-attach overwrites the stale action set (entry re-register)', () => {
+    const service = new LayoutController()
+    const stale = fakePanels()
+    const fresh = fakePanels()
+    service.attachPanels(stale)
+    service.attachPanels(fresh)
 
     service.toggleSidebar()
 
-    expect(panels.toggleSidebar).toHaveBeenCalledTimes(1)
-    expect(panels.setSidebar).not.toHaveBeenCalled()
+    expect(stale.toggleSidebar).not.toHaveBeenCalled()
+    expect(fresh.toggleSidebar).toHaveBeenCalledTimes(1)
   })
 
-  it('forwards panel selection and returning to the Conversation without changing geometry', () => {
-    const panels = fakePanels()
-    const service = new LayoutController(panels, () => true, createSnapshotStore({ activePanelId: null }))
-    const panelId = 'panel-a' as MainPanelId
-    service.selectPanel(panelId)
-    service.selectPanel(panelId)
-    service.selectPanel(null)
-    expect(panels.selectPanel).toHaveBeenNthCalledWith(1, panelId)
-    expect(panels.selectPanel).toHaveBeenNthCalledWith(2, panelId)
-    expect(panels.selectPanel).toHaveBeenNthCalledWith(3, null)
-    expect(panels.toggleSidebar).not.toHaveBeenCalled()
-    expect(panels.openRightbar).not.toHaveBeenCalled()
-    expect(panels.closeRightbar).not.toHaveBeenCalled()
+  it('openFile splits the focused leaf into a file buffer and reports handled', () => {
+    const service = new LayoutController()
+    const wm = fakeWm()
+    service.attachWm(wm)
+
+    expect(service.openFile('plans/implementation_plan.md')).toBe(true)
+    const bufferId = 'buffer:file:plans/implementation_plan.md'
+    const leafId = `leaf:${bufferId}`
+    expect(wm.state.buffers).toContainEqual({ id: bufferId, kind: 'file', path: 'plans/implementation_plan.md' })
+    expect(findLeaf(wm.state.tree, leafId)).toEqual({ kind: 'leaf', id: leafId, buffer: bufferId })
+    expect(wm.state.focusedLeafId).toBe(leafId)
   })
 
-  it('keeps separately constructed controllers bound to their own instances', () => {
-    const first = fakePanels()
-    const second = fakePanels()
-    const firstService = new LayoutController(first, () => true, createSnapshotStore({ activePanelId: null }))
-    const secondService = new LayoutController(second, () => true, createSnapshotStore({ activePanelId: null }))
-    firstService.toggleSidebar()
-    expect(first.toggleSidebar).toHaveBeenCalledTimes(1)
-    expect(second.toggleSidebar).not.toHaveBeenCalled()
-    secondService.closeRightbar()
-    expect(first.closeRightbar).not.toHaveBeenCalled()
-    expect(second.closeRightbar).toHaveBeenCalledTimes(1)
+  it('openFile anchors on the first leaf when nothing is focused', () => {
+    const service = new LayoutController()
+    const wm = fakeWm()
+    wm.state.focusedLeafId = undefined
+    service.attachWm(wm)
+
+    expect(service.openFile('notes.md')).toBe(true)
+    expect(wm.state.focusedLeafId).toBe('leaf:buffer:file:notes.md')
   })
 
-  it('rejects an absent main entry without changing selection or cancelling pending navigation', () => {
-    const panels = fakePanels()
-    const present = new Set(['panel-a'])
-    const service = new LayoutController(panels, id => present.has(id), createSnapshotStore({ activePanelId: null }))
-    service.selectPanel('panel-a' as MainPanelId)
-    const navigation = service.beginNavigation()
-    present.delete('panel-a')
-    expect(() => { service.selectPanel('panel-a' as MainPanelId) }).toThrow('main panel "panel-a" is not registered')
-    expect(panels.selectPanel).toHaveBeenCalledOnce()
-    expect(navigation.aborted).toBe(false)
-    service.selectPanel(null)
-    expect(navigation.aborted).toBe(true)
+  it('openFile reports unhandled for OS-open families without writing the wm', () => {
+    const service = new LayoutController()
+    const wm = fakeWm()
+    service.attachWm(wm)
+    const before = { ...wm.state }
+
+    expect(service.openFile('asset.pdf')).toBe(false)
+    expect(wm.state).toEqual(before)
   })
 
-  it('supersedes asynchronous navigation on another request, any valid selection, and disposal', () => {
-    const service = new LayoutController(fakePanels(), () => true, createSnapshotStore({ activePanelId: null }))
-    const first = service.beginNavigation()
-    const second = service.beginNavigation()
-    expect(first.aborted).toBe(true)
-    expect(second.aborted).toBe(false)
-    service.selectPanel('panel-a' as MainPanelId)
-    expect(second.aborted).toBe(true)
-    const repeated = service.beginNavigation()
-    service.selectPanel('panel-a' as MainPanelId)
-    expect(repeated.aborted).toBe(true)
-    const pending = service.beginNavigation()
-    service.dispose()
-    expect(pending.aborted).toBe(true)
-    service.dispose()
+  it('openFile reports unhandled for directory-ish paths without writing the wm', () => {
+    const service = new LayoutController()
+    const wm = fakeWm()
+    service.attachWm(wm)
+    const before = { ...wm.state }
+
+    expect(service.openFile('.')).toBe(false)
+    expect(service.openFile('src/')).toBe(false)
+    expect(wm.state).toEqual(before)
+  })
+
+  it('openFile reports unhandled without an attached wm store', () => {
+    const service = new LayoutController()
+    expect(service.openFile('notes.md')).toBe(false)
+  })
+
+  it('openFile reports unhandled on a tree without leaves', () => {
+    const service = new LayoutController()
+    const wm = fakeWm()
+    wm.state.tree = { kind: 'split', id: 'root', dir: 'row', children: [], weights: [] }
+    wm.state.focusedLeafId = undefined
+    service.attachWm(wm)
+
+    expect(service.openFile('notes.md')).toBe(false)
   })
 })

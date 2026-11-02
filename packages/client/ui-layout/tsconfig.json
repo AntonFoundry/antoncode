@@ -9,25 +9,28 @@
   ],
   "references": [
     {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../api/remotes/tsconfig.client.json"
+    },
+    {
       "path": "../../util/brand"
     },
     {
-      "path": "../../../vendor/cordis"
+      "path": "../connection/tsconfig.client.json"
     },
     {
       "path": "../locale/tsconfig.client.json"
     },
     {
-      "path": "../ui-slots"
-    },
-    {
-      "path": "../ui-theme/tsconfig.client.json"
-    },
-    {
-      "path": "../ui-primitives"
+      "path": "../shortcuts/tsconfig.client.json"
     },
     {
       "path": "../store"
+    },
+    {
+      "path": "../ui-primitives"
     },
     {
       "path": "../ui-renderer"
@@ -36,7 +39,13 @@
       "path": "../ui-session"
     },
     {
-      "path": "../shortcuts/tsconfig.client.json"
+      "path": "../ui-settings/tsconfig.client.json"
+    },
+    {
+      "path": "../ui-slots"
+    },
+    {
+      "path": "../ui-theme/tsconfig.client.json"
     }
   ]
 }

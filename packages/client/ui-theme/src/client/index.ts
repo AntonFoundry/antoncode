@@ -69,6 +69,13 @@ export interface ThemeTokenModes {
 /** Override-layer dictionary: token names to per-mode value pairs. */
 export type ThemeTokenOverrides = Record<string, ThemeTokenModes>
 
+/**
+ * Syntax-highlight palette: the theme's `--shiki-token-*` colors, keyed by the
+ * token sheet's variable names. Foreground and background stay aliased to the
+ * markdown code-block tokens, so a theme only supplies the nine token hues.
+ */
+export type ThemeSyntaxPalette = Record<string, string>
+
 /** One selectable theme: id, dark/light semantics, and alias-token overrides. */
 export interface ThemeDefinition {
   /** Theme id (the setTheme argument for concrete themes). */
@@ -80,6 +87,12 @@ export interface ThemeDefinition {
   colorScheme: 'light' | 'dark'
   /** Alias-layer overrides applied as inline CSS variables over the base palette. */
   tokens: ThemeTokens
+  /**
+   * Theme's own syntax-highlight hues, projected as inline `--shiki-*`
+   * variables over the shiki.css default pair. Omitted themes keep the
+   * stylesheet defaults.
+   */
+  syntax?: ThemeSyntaxPalette
   /**
    * Product icon replacements: ui-primitives `ICON_SYMBOLS` ids to complete
    * SVG documents, trusted like the registering plugin's code. The icon
@@ -158,6 +171,7 @@ const BUILTIN_INSPECT_TOKENS: readonly ThemeTokenInspection[] = Object.freeze([
   { name: '--dsw-alias-border-l1', description: 'Primary subtle border.', valueType: 'CSS color', requiresLightAndDark: true, cssVariable: '--dsw-alias-border-l1' },
   { name: '--dsw-alias-border-l2', description: 'Secondary stronger border.', valueType: 'CSS color', requiresLightAndDark: true, cssVariable: '--dsw-alias-border-l2' },
   { name: '--dsw-alias-brand-primary', description: 'Primary brand accent.', valueType: 'CSS color', requiresLightAndDark: true, cssVariable: '--dsw-alias-brand-primary' },
+  { name: '--dsw-alias-mode-line-active', description: 'Active window mode-line fill (bright, visible in every palette).', valueType: 'CSS color', requiresLightAndDark: true, cssVariable: '--dsw-alias-mode-line-active' },
   { name: '--dsw-alias-label-primary', description: 'Primary text color.', valueType: 'CSS color', requiresLightAndDark: true, cssVariable: '--dsw-alias-label-primary' },
   { name: '--dsw-alias-label-secondary', description: 'Secondary text color.', valueType: 'CSS color', requiresLightAndDark: true, cssVariable: '--dsw-alias-label-secondary' },
   { name: '--dsw-alias-state-error-primary', description: 'Primary error state color.', valueType: 'CSS color', requiresLightAndDark: true, cssVariable: '--dsw-alias-state-error-primary' },

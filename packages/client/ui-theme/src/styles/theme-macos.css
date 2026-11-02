@@ -1,0 +1,28 @@
+/* macOS Aqua look refinements for the registered `macos`/`macos-dark`
+ * palettes (ui-layout's themes.ts). The token palettes carry the surfaces,
+ * accents, state hues, scrollbars, and shadows; this sheet holds the
+ * refinements a CSS custom property cannot express. Every rule is keyed on
+ * the presenter-owned `body[data-ds-theme]` attribute, so the base light/dark
+ * palettes and every other named theme render exactly as before.
+ *
+ * The type stack needs no override: `--dsw-font-family` already leads with
+ * the SF system stack (`-apple-system`), which macOS resolves to SF Pro, and
+ * the shell base sheet already applies grayscale antialiasing globally. */
+
+/* SF Symbols-style icon strokes: rounded terminals and joins on every
+ * stroked shape. Fill-only glyphs are unaffected — line caps apply only to
+ * strokes — and per-icon stroke widths keep their designed hierarchy. */
+body[data-ds-theme='macos'] svg :is(path, circle, rect, line, polyline, polygon),
+body[data-ds-theme='macos-dark'] svg :is(path, circle, rect, line, polyline, polygon) {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Aqua text selection: the systemBlue accent at popover tint strength. */
+body[data-ds-theme='macos'] ::selection {
+  background: rgba(0, 122, 255, 0.22);
+}
+
+body[data-ds-theme='macos-dark'] ::selection {
+  background: rgba(10, 132, 255, 0.35);
+}
