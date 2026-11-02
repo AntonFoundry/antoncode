@@ -16,18 +16,23 @@ import css from './ContextMeter.module.css'
 
 /**
  * The slice of the external c0ntext plugin's `c0ntext` projection this meter
- * reads: where its eviction threshold sits. Declared locally as an optional
- * hint — the plugin owns the real key and is not a workspace dependency; the
- * client store returns `undefined` for any key no mounted plugin publishes,
- * so absence simply hides the marker.
+ * reads: where its eviction threshold sits. The optional compact window
+ * projection supplies this policy independently of the memory-map detail.
+ * The external plugin owns both keys and is not a workspace dependency.
  */
 interface C0ntextEvictionHint {
   evictionWindow?: { thresholdRatio: number; windowTokens: number }
+}
+interface C0ntextWindowHint {
+  thresholdRatio: number
+  windowTokens?: number
 }
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionMap {
     /** Eviction-policy telemetry published by the optional c0ntext plugin. */
     c0ntext: C0ntextEvictionHint
+    /** Compact policy supplied by c0ntext without memory-map detail. */
+    c0ntextWindow: C0ntextWindowHint
   }
 }
 
@@ -75,6 +80,7 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
   const breakdown = useProjection('contextBreakdown')
   const usage = useProjection('tokenUsage')
   const eviction = useProjection('c0ntext', hint => hint?.evictionWindow)
+  const windowPolicy = useProjection('c0ntextWindow') ?? eviction
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLSpanElement | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
@@ -134,12 +140,12 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
   const segments = parts.filter(part => part.width > 0)
   // The red marker sits at c0ntext's eviction threshold — the surface fraction
   // of the routed model's window where paging begins — rather than trailing the
-  // occupancy fill. No published threshold (plugin absent, window unresolved,
-  // or a window measured against a different route) hides the marker.
-  const thresholdPercent = eviction !== undefined
+  // occupancy fill. A configured ratio can precede the first recorded window;
+  // a recorded window for a different route hides the marker.
+  const thresholdPercent = windowPolicy !== undefined
     && context.contextWindow > 0
-    && eviction.windowTokens === context.contextWindow
-    ? Math.min(100, Math.max(0, eviction.thresholdRatio * 100))
+    && (windowPolicy.windowTokens === undefined || windowPolicy.windowTokens === context.contextWindow)
+    ? Math.min(100, Math.max(0, windowPolicy.thresholdRatio * 100))
     : null
 
   return (

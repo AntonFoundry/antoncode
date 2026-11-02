@@ -125,6 +125,18 @@ describe('ContextMeter', () => {
     expect(panel.textContent).not.toContain('Not reported')
   })
 
+  it('uses the compact eviction policy without a memory-detail projection', () => {
+    const view = meter({
+      contextPressure: { contextWindow: 128_000 },
+      contextBreakdown: { systemTokens: 1_000, toolsTokens: 2_000, messageTokens: 29_000 },
+      c0ntextWindow: { thresholdRatio: 0.8 },
+    }, tEn)
+    const trigger = view.getByRole('button', { name: '25% of context used' })
+    expect(trigger.getElementsByClassName(additionMarkerClass)).toHaveLength(1)
+    fireEvent.click(trigger)
+    expect(view.getByRole('dialog').textContent).toContain('80% eviction threshold')
+  })
+
   it('lets each locale own the headline word order around the reading', () => {
     const values = {
       contextPressure: { pressureTokens: 32_000, contextWindow: 128_000 },
