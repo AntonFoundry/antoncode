@@ -11,3 +11,4 @@ export {
   assertReleasedV1Header,
   restoreReleasedV1Artifact,
 } from './validation.ts'
+export { ANTON_FORK_V0_EVENT_TYPES } from './anton-fork-events.ts'

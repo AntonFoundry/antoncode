@@ -124,6 +124,20 @@ describe('streaming V2 system prompt migration', () => {
     expect(() => migrate([...opening(), event('step/end', { turn: 1, step: 1 }), event('request/header', request('late'))])).toThrow(/outside an open step/)
   })
 
+  it("opens a step early for an Anton-fork log's pre-step prompt and carries fork records opaque", () => {
+    const fork = { ...event('c0ntext/window', { opaque: true }), ignorable: true }
+    const target = migrate([
+      event('turn/start', { turn: 1 }), fork, event('request/header', request('early')),
+      event('user/message', user(), 'append'), event('step/start', { turn: 1, step: 1 }),
+    ])
+    const types = target.events.map(e => e.type)
+    // The step opens at the first fork record that needs it; the source step/start maps onto it.
+    expect(types).toEqual(['turn/start', 'c0ntext/window', 'step/start', 'system/message', 'request/header', 'user/message'])
+    expect(target.events[1]).toMatchObject({ type: 'c0ntext/window', ignorable: true, data: { opaque: true } })
+    // Without an Anton-fork record the same history is refused, as upstream does.
+    expect(() => migrate([event('turn/start', { turn: 1 }), event('request/header', request('early')), event('step/start', { turn: 1, step: 1 })])).toThrow(/outside an open step/)
+  })
+
   it.each([undefined, 0, 1, 2])('preserves delivery generation coordinates (%s) and validates ownership before promotion', (version) => {
     const marker = event('session-log-deepseek/delivery-accepted', { sessionId: header.id, throughSeq: 1, ...(version === undefined ? {} : { sessionFormatVersion: version }) })
     const target = migrate([...opening(), marker])

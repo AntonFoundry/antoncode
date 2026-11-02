@@ -3,7 +3,8 @@
 import { createHash } from 'node:crypto'
 import { SessionFormatError, SessionFormatUnsupportedMigrationError, defineSessionFormatMigration, sessionFormatCount } from '@deepseek-ai/dsh-session-format'
 import type { SessionFormatEvent, SessionFormatEventRun, SessionFormatJsonObject, SessionFormatJsonValue, SessionFormatMigrationContext, SessionFormatMigrationStage, SessionFormatMigrationStageInput } from '@deepseek-ai/dsh-session-format'
-import { assertReleasedV2Header } from '@deepseek-ai/dsh-session-format-v1-to-v2'
+import { assertReleasedV2Header, RELEASED_V2_EVENT_DISPOSITIONS } from '@deepseek-ai/dsh-session-format-v1-to-v2'
+import { ANTON_FORK_V0_EVENT_TYPES } from '@deepseek-ai/dsh-session-format-v0-to-v1'
 import { assertEvent, canonicalizeTransformedEvent, record, SURFACE_TYPES } from './payload.ts'
 import { remapEvent } from './references.ts'
 import { assertReleasedV3Header } from './validation.ts'
@@ -31,6 +32,12 @@ class ReleasedV2ToV3Stage implements SessionFormatMigrationStage {
   private targetCut: number | undefined
   private lastForeignDeliverySeq: number | undefined
   private step: { turn: number; step: number } | undefined
+  /** The open turn and its last started step, for steps Anton's fork opened late. */
+  private openTurn: { turn: number; lastStep: number } | undefined
+  /** Whether this log has shown an Anton-fork record, which admits opening a late step early. */
+  private forkLineage = false
+  /** A step opened early for fork records written before its step/start; that step/start maps onto it. */
+  private earlyStep: { turn: number; step: number; seq: number } | undefined
   private head: number | undefined
   private prompt = ''
 
@@ -43,10 +50,30 @@ class ReleasedV2ToV3Stage implements SessionFormatMigrationStage {
 
   transformEvent(event: SessionFormatEvent, context: SessionFormatMigrationContext): void {
     if (event.seq !== this.mapping.length) throw new SessionFormatError('format v2 source events must be dense')
+    // Anton's fork-only records are carried opaque: only their envelope is renumbered.
+    if (event.ignorable === true && ANTON_FORK_V0_EVENT_TYPES.has(event.type)
+      && RELEASED_V2_EVENT_DISPOSITIONS[event.type] === undefined) {
+      this.forkLineage = true
+      const opaque = remapEvent(event, this.targetSeq, this.mapping)
+      this.mapping.push(this.targetSeq++)
+      context.emitEvent(opaque)
+      return
+    }
     assertEvent(event, 2)
     this.observeMessageIds(event)
     let source = event
     const data = record(event.data, event.type)
+    if (event.type === 'step/start' && this.earlyStep !== undefined
+      && data['turn'] === this.earlyStep.turn && data['step'] === this.earlyStep.step) {
+      // This step was opened early for fork records that preceded it.
+      this.mapping.push(this.earlyStep.seq)
+      this.earlyStep = undefined
+      return
+    }
+    if (this.forkLineage && this.step === undefined && this.openTurn !== undefined
+      && ((SURFACE_TYPES.has(event.type) && this.head === undefined) || event.type === 'request/header')) {
+      this.openStepEarly(event, context)
+    }
     if (event.type === 'request/header') {
       const { system, ...header } = record(data['header'], 'request header')
       const prompt = typeof system === 'string' ? system : ''
@@ -68,8 +95,14 @@ class ReleasedV2ToV3Stage implements SessionFormatMigrationStage {
     const target = remapEvent(source, this.targetSeq, this.mapping)
     this.mapping.push(this.targetSeq++)
     context.emitEvent(canonicalizeTransformedEvent(renamePtcEvent(target)))
+    if (event.type === 'turn/start') {
+      this.openTurn = { turn: data['turn'] as number, lastStep: 0 }
+    } else if (event.type === 'turn/end') {
+      this.openTurn = undefined
+    }
     if (event.type === 'step/start') {
       this.step = { turn: data['turn'] as number, step: data['step'] as number }
+      if (this.openTurn !== undefined) this.openTurn = { ...this.openTurn, lastStep: data['step'] as number }
       if (this.head === undefined) this.emitSystem('', event, context)
     } else if (event.type === 'step/end' || event.type === 'turn/end') {
       this.step = undefined
@@ -106,8 +139,32 @@ class ReleasedV2ToV3Stage implements SessionFormatMigrationStage {
     }
   }
 
+  /**
+   * Open the next step of the open turn at a fork record written before its
+   * step/start. Anton's 0.1.x fork wrote request headers and the prompt
+   * message after turn/start but before step/start; upstream logs never do.
+   * The step/start payload is only its coordinate (steps count from 1 within
+   * a turn), so emitting it here loses nothing; the source step/start later
+   * maps onto this event.
+   * @param anchor - the fork record that needs an open step.
+   * @param context - migration output.
+   */
+  private openStepEarly(anchor: SessionFormatEvent, context: SessionFormatMigrationContext): void {
+    const turn = this.openTurn
+    if (turn === undefined) return
+    const coordinate = { turn: turn.turn, step: turn.lastStep + 1 }
+    const seq = this.targetSeq++
+    context.emitEvent(canonicalizeTransformedEvent({ type: 'step/start', seq, time: anchor.time, data: coordinate }))
+    this.step = coordinate
+    this.openTurn = { ...turn, lastStep: coordinate.step }
+    this.earlyStep = { ...coordinate, seq }
+    // A request/header anchor emits its own system message, which becomes the head.
+    if (this.head === undefined && anchor.type !== 'request/header') this.emitSystem('', anchor, context)
+  }
+
   private emitSystem(prompt: string, anchor: SessionFormatEvent, context: SessionFormatMigrationContext): void {
-    if (this.step === undefined) {
+    const step = this.step
+    if (step === undefined) {
       throw new SessionFormatUnsupportedMigrationError('format v2 changed request prompt outside an open step cannot retain source chronology')
     }
     const identity = JSON.stringify(['session-format-v2-to-v3', this.input.sourceHeader.id, anchor.seq, anchor.type])
@@ -120,7 +177,7 @@ class ReleasedV2ToV3Stage implements SessionFormatMigrationStage {
     context.emitEvent(canonicalizeTransformedEvent({
       type: 'system/message', seq, time: anchor.time,
       data: {
-        ...this.step,
+        ...step,
         message: {
           id,
           role: 'system', source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt' },

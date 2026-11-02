@@ -195,6 +195,7 @@ The edge preserves historical request meaning and model configuration; it does n
 
 - **Historical preset ambiguity** — released `code` references cannot distinguish a custom preset with the legacy built-in id; the [exact rename](#header-and-presets) is host-independent.
 - **No file or settings migration** — this package never changes committed generations or `settings.yaml`. Persistence owns publishing the final successor; an existing V3 generation does not rerun its incoming edge. See [format release status](../../../docs/session-format-status.md) and the compatibility obligations in the [released-format policy](../../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md).
+- **Anton fork records** — the five Anton-fork event types are carried opaque. Once a log has shown one, a request header or first message written after `turn/start` but before `step/start` opens that step early (the source `step/start` maps onto it) instead of refusing; logs without an Anton-fork record keep the upstream refusal.
 
 <a id="dev-note"></a>
 ### Dev Note

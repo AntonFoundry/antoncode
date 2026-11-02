@@ -20,6 +20,7 @@ import {
   assertReleasedV1Header,
 } from './validation.ts'
 import { assertReleasedV0Keys, releasedV0Record } from './validation-helpers.ts'
+import { ANTON_FORK_V0_EVENT_TYPES, normalizeAntonForkV0Event } from './anton-fork-events.ts'
 
 const LEGACY_ASSISTANT_SOURCE_KEY = ['pro', 'venance'].join('')
 
@@ -87,7 +88,10 @@ function normalizeReleasedV0Event(
   sessionId: string,
   state: LegacyNormalizationState,
 ): SessionFormatEvent {
-  const named = normalizeLegacyCompactionType(event)
+  // Anton-fork records first become their upstream v0 form (see anton-fork-events.ts).
+  const upstream = normalizeAntonForkV0Event(event)
+  if (upstream.ignorable === true && ANTON_FORK_V0_EVENT_TYPES.has(upstream.type)) return upstream
+  const named = normalizeLegacyCompactionType(upstream)
   assertSupportedLegacyType(named, sessionId)
   const start = normalizeLegacyTurnStart(named, sessionId)
   const end = normalizeLegacyTurnEnd(start, sessionId)

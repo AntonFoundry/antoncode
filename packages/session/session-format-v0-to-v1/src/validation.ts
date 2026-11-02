@@ -15,6 +15,7 @@ import type {
 import { RELEASED_V0_EVENT_DISPOSITIONS } from './dispositions.ts'
 import { assertReleasedPayloadSemantics } from './payload-validation.ts'
 import { assertReleasedV0Keys, releasedV0Record } from './validation-helpers.ts'
+import { ANTON_FORK_V0_EVENT_TYPES } from './anton-fork-events.ts'
 
 const HEADER_REQUIRED = ['version', 'id', 'createdAt', 'isSeeded', 'delegationDepth'] as const
 const HEADER_OPTIONAL = ['cwd', 'parentSession', 'origin', 'agentPreset'] as const
@@ -111,7 +112,7 @@ export function assertReleasedArtifactCoordinates(
     const type = record['type']
     if (typeof type !== 'string') throw new SessionFormatError(`Session event ${index} type must be a string`)
     const disposition = RELEASED_V0_EVENT_DISPOSITIONS[type]
-    const legacy = allowLegacySteering && LEGACY_SOURCE_TYPES.has(type)
+    const legacy = allowLegacySteering && (LEGACY_SOURCE_TYPES.has(type) || ANTON_FORK_V0_EVENT_TYPES.has(type))
     const currentKnown = knownEventTypes?.has(type) === true
     const ignorableCurrent = !allowLegacySteering && !currentKnown && record['ignorable'] === true
     if (!currentKnown && !legacy && !ignorableCurrent && !vocabularyNeutral) {

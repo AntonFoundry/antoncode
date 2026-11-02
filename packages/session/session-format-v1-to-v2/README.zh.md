@@ -106,6 +106,7 @@ v2 物理 header 要求 `isSeeded`，且不存储数值切点。编解码器从�
 - **封闭的第一方源清单**——未知 v1 事件会使迁移失败，包括带有 `ignorable: true` 的事件。
 - **线性重映射状态**——流式处理不保留完整 v1 事件数组，但最终 v2 事件数组和旧到新序号映射仍为 O(事件数)。
 - **不负责发布或兼容回退**——持久化拥有排他 successor 发布，保留的 v1 generation 不是自动 downgrade 或 restore 输入。
+- **Anton 分叉记录** — v0 边标记为 `ignorable` 的五种 Anton 分叉事件类型以不透明方式携带（仅重新编号信封）；其他任何未知事件，无论是否 ignorable，仍被拒绝。
 
 <a id="dev-note"></a>
 ### 开发备注

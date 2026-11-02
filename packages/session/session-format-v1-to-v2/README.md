@@ -106,6 +106,7 @@ The restored model-message sequence stays unchanged, so the migration alone does
 - **Closed first-party source inventory** — an unknown v1 event refuses migration, including an event marked `ignorable: true`.
 - **Linear remap state** — streaming retains no complete v1 event array, but the final v2 event array and old-to-new sequence map remain O(event count).
 - **No publication or compatibility fallback** — persistence owns exclusive successor publication, and retained v1 generations are not automatic downgrade or restore inputs.
+- **Anton fork records** — the five Anton-fork event types the v0 edge marked `ignorable` are carried opaque (envelope renumbered only); every other unknown event, ignorable or not, is still refused.
 
 <a id="dev-note"></a>
 ### Dev Note

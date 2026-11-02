@@ -15,12 +15,7 @@ import type {
   SessionFormatMigrationStage,
   SessionFormatMigrationStageInput,
 } from '@deepseek-ai/dsh-session-format'
-import {
-  RELEASED_V0_EVENT_DISPOSITIONS,
-  assertReleasedEventPayload,
-  assertReleasedV1Header,
-  isReleasedAssistantChunkRun,
-} from '@deepseek-ai/dsh-session-format-v0-to-v1'
+import { RELEASED_V0_EVENT_DISPOSITIONS, assertReleasedEventPayload, assertReleasedV1Header, isReleasedAssistantChunkRun, ANTON_FORK_V0_EVENT_TYPES } from '@deepseek-ai/dsh-session-format-v0-to-v1'
 import { assertReleasedV2Header } from './validation.ts'
 
 const CHUNK_EVENT_REQUIRED = ['type', 'seq', 'time', 'data'] as const
@@ -128,7 +123,13 @@ function transformReleasedEvent(
 ): void {
   if (event.type === 'assistant/chunk') assertChunkEnvelope(event)
   if (RELEASED_V0_EVENT_DISPOSITIONS[event.type] === undefined) {
-    throw refusal(`format v1 contains unknown event type ${JSON.stringify(event.type)} at seq ${event.seq}`)
+    // Anton's fork-only records arrive here ignorable from the v0 edge and are
+    // carried opaque; every other unknown event is refused.
+    if (event.ignorable !== true || !ANTON_FORK_V0_EVENT_TYPES.has(event.type)) {
+      throw refusal(`format v1 contains unknown event type ${JSON.stringify(event.type)} at seq ${event.seq}`)
+    }
+    emitSource(state, event, context)
+    return
   }
   const interrupted = legacyInterruptedTurn(state.legacyTurns, event)
   if (event.type === 'turn/start' && state.legacyTurns.openTurn !== null && interrupted === undefined) {
