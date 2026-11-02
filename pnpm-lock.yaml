@@ -1464,6 +1464,25 @@ importers:
         specifier: workspace:*
         version: link:../../typert/registry
 
+  packages/api/oauth-controller:
+    dependencies:
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-llm-claude':
+        specifier: workspace:*
+        version: link:../../llm/llm-claude
+      '@deepseek-ai/dsh-llm-opencode':
+        specifier: workspace:*
+        version: link:../../llm/llm-opencode
+      '@deepseek-ai/dsh-typert-protocol':
+        specifier: workspace:*
+        version: link:../../typert/protocol
+
   packages/api/remote-access:
     dependencies:
       '@deepseek-ai/dsh-typert-protocol':
@@ -1525,6 +1544,9 @@ importers:
       '@deepseek-ai/dsh-api-job-controller':
         specifier: workspace:*
         version: link:../job-controller
+      '@deepseek-ai/dsh-api-oauth-controller':
+        specifier: workspace:*
+        version: link:../oauth-controller
       '@deepseek-ai/dsh-api-session-controller':
         specifier: workspace:*
         version: link:../session-controller
@@ -3029,6 +3051,9 @@ importers:
       '@deepseek-ai/dsh-api-job-controller':
         specifier: workspace:*
         version: link:../../api/job-controller
+      '@deepseek-ai/dsh-api-oauth-controller':
+        specifier: workspace:*
+        version: link:../../api/oauth-controller
       '@deepseek-ai/dsh-api-remotes':
         specifier: workspace:*
         version: link:../../api/remotes

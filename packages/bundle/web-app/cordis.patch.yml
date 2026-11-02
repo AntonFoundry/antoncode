@@ -164,6 +164,9 @@
     - id: account-controller
       name: '@deepseek-ai/dsh-api-account-controller'
 
+    - id: oauth-controller
+      name: '@deepseek-ai/dsh-api-oauth-controller'
+
     - id: settings-controller
       name: '@deepseek-ai/dsh-api-settings-controller'
 
@@ -599,6 +602,7 @@
 # `command-compact` stays on as the rare, human-invoked special command.
 
 - id: compaction-basic
+  disabled: true
   config:
     # Mounted service-only: `command-compact` (the human `/compact`) needs
     # this backend, but automatic compaction is off — context pressure is
@@ -610,7 +614,7 @@
     auto: false
 
 - id: command-compact
-  disabled: false
+  disabled: true
 
 - id: tool-result-pruner
   disabled: true

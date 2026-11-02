@@ -213,8 +213,38 @@ export function createModelsOperations(ctx: ClientContext): ModelsOperations {
         ? { kind: 'described', configured: response.value[ref]?.configured === true }
         : { kind: 'refused', message: response.error.message }
     },
-    // FIXME: bind `opencodeLogin` and `claudeLogin` once the Host serves the
-    // `opencodeOAuth` and `claudeOAuth` Remote namespaces.
+    opencodeLogin: {
+      start: async () => {
+        const response = await ctx.remote.oauth.startOpencode()
+        return response.ok ? { kind: 'login', login: response.value } : { kind: 'refused', message: response.error.message }
+      },
+      status: async (loginId) => {
+        const response = await ctx.remote.oauth.statusOpencode(loginId)
+        return response.ok ? { kind: 'login', login: response.value } : { kind: 'refused', message: response.error.message }
+      },
+      select: async (loginId, orgID) => {
+        const response = await ctx.remote.oauth.selectOpencode(loginId, orgID)
+        return response.ok ? { kind: 'login', login: response.value } : { kind: 'refused', message: response.error.message }
+      },
+      cancel: async (loginId) => {
+        const response = await ctx.remote.oauth.cancelOpencode(loginId)
+        return response.ok ? { kind: 'login', login: response.value } : { kind: 'refused', message: response.error.message }
+      },
+    },
+    claudeLogin: {
+      start: async () => {
+        const response = await ctx.remote.oauth.startClaude()
+        return response.ok ? { kind: 'login', login: response.value } : { kind: 'refused', message: response.error.message }
+      },
+      submit: async (loginId, pasted) => {
+        const response = await ctx.remote.oauth.submitClaude(loginId, pasted)
+        return response.ok ? { kind: 'login', login: response.value } : { kind: 'refused', message: response.error.message }
+      },
+      cancel: async (loginId) => {
+        const response = await ctx.remote.oauth.cancelClaude(loginId)
+        return response.ok ? { kind: 'login', login: response.value } : { kind: 'refused', message: response.error.message }
+      },
+    },
     writeSettings: async (ns, ops, expectedRevision) => {
       const response = await ctx.remote.settings.mutate(ns, ops, expectedRevision)
       if (response.ok) return { kind: 'written', view: response.value }

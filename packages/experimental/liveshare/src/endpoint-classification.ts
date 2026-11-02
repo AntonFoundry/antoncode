@@ -107,6 +107,13 @@ export const VIEWER_ENDPOINT_CLASSES = {
   'credentials/describe': 'owner-only', // owner credentials; secrets never reach a reader
   'credentials/set': 'owner-only', // owner credentials; secrets never reach a reader
   'credentials/unset': 'owner-only', // owner credentials; secrets never reach a reader
+  'oauth/cancelClaude': 'owner-only', // owner subscription login
+  'oauth/cancelOpencode': 'owner-only', // owner subscription login
+  'oauth/selectOpencode': 'owner-only', // owner subscription login
+  'oauth/startClaude': 'owner-only', // owner subscription login
+  'oauth/startOpencode': 'owner-only', // owner subscription login
+  'oauth/statusOpencode': 'owner-only', // owner subscription login
+  'oauth/submitClaude': 'owner-only', // owner subscription login
   'settings/describe': 'owner-only', // owner settings
   'settings/mutate': 'owner-only', // owner settings
   'settings/openSettingsDocument': 'owner-only', // owner settings

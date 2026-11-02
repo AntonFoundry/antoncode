@@ -23,15 +23,15 @@ Run `pnpm run gen-cli-help` to regenerate; run `pnpm run verify-cli-help` to che
 Invocations: `dsh --help`
 
 ```text
-Usage: dsh [--profile] <name> [options] [app-args...]
-       dsh plugin --profile <name> <pnpm-args...>
+Usage: anton [--profile] <name> [options] [app-args...]
+       anton plugin --profile <name> <pnpm-args...>
 
-dsh: boot a DeepSeek Harness profile — an ordered stack of plugin-bundle patch
-layers under your own overrides.
+anton: boot an Anton (DeepSeek Harness) profile — an ordered stack of
+plugin-bundle patch layers under your own overrides.
 
 Arguments:
   args                           arguments for the booted profile's app (see:
-                                 dsh --profile <name> --help)
+                                 anton --profile <name> --help)
 
 Options:
   -V, --version                  output the version number
@@ -46,15 +46,22 @@ Options:
   --dump-default-config          print the profile tree without its user layer
                                  or --patch overlays and exit
 
+Help:
+  anton -h | --help                            print this help
+  anton --profile <name> --help                the booted app's own flags and help
+
 Examples:
-  dsh web                                   boot the web profile (same as: dsh --profile web)
-  dsh rescue --from-default-profile web
-                                            recreate rescue from the shipped web template, then boot it
-  dsh headless "run the tests"              answer one task, print the result, and exit
-  dsh tui --patch ./extra.yml               boot a custom profile with one extra overlay
-  dsh tui --resume <session>                arguments after the launcher flags reach the app
-  dsh web --help                            the web app's own flags and help
-  dsh plugin --profile tui add <package>    install a plugin into the tui profile
+  anton web                                    boot the web profile (same as: anton --profile web)
+  anton rescue --from-default-profile web
+                                               recreate rescue from the shipped web template, then boot it
+  anton headless "run the tests"               answer one task, print the result, and exit
+  anton tui --patch ./extra.yml                boot a custom profile with one extra overlay
+  anton tui --resume <session>                 arguments after the launcher flags reach the app
+  anton web --help                             the web app's own flags and help
+  anton models                                 list the profile's providers and models
+  anton plugin --profile tui add <package>     install a plugin into the tui profile
+  anton status | start | stop | restart        control the local Anton app's Harness
+  anton rebuild start | status | cancel        rebuild and reinstall the Anton app
 
 ```
 
@@ -64,7 +71,7 @@ Examples:
 Invocations: `dsh plugin --help`
 
 ```text
-Usage: dsh plugin [options] [args...]
+Usage: anton plugin [options] [args...]
 
 manage a profile's plugins by forwarding the remaining arguments to pnpm in the
 profile directory

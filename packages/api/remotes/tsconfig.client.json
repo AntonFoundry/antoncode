@@ -114,6 +114,9 @@
       "path": "../account-controller"
     },
     {
+      "path": "../oauth-controller"
+    },
+    {
       "path": "../../credentials/deepseek-account"
     },
     {
