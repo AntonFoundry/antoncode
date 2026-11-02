@@ -1,0 +1,899 @@
+/* Emacs-style window-manager frame: a fixed brand strip above a recursive
+   split tree, with the shell overlay layer floating above everything. */
+
+.frame {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-base);
+  /* Interface font section: zoom scales the chrome, sidebar, settings, and
+   * file panes together (the ui-theme font row owns the var). */
+  zoom: var(--dsh-zoom-ui, 1);
+}
+
+/* Brand strip: same surface tokens as the sidebar's logo row, fixed at the
+   top so the Anton brand survives closing the workspace leaf. */
+.brandRow {
+  flex: none;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  background: var(--dsw-specific-sidebar-fill);
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-primary);
+}
+
+.brandToggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.brandToggle:hover {
+  background: var(--dsw-alias-button-floating-hover);
+}
+
+/* The tree area sits under the brand strip and hosts the recursive splits. */
+.treeArea {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.split {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  /* Fill guarantee chain, link 1: a split fills its parent slot along the
+     main axis (basis 0, grow 1) and stretches across it. */
+  flex: 1 1 0%;
+  align-items: stretch;
+}
+
+/* Pane: one leaf window — mode line above the slot body. */
+.pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  /* Fill guarantee chain, link 3: the pane fills its weight wrapper with a
+     zero basis, so content size never sets the pane size. */
+  flex: 1 1 0%;
+  width: 100%;
+  /* Size container: the narrow-pane toolbar compaction queries it. The
+     pane's size comes from the flex layout, never its contents, so size
+     containment cannot collapse it. */
+  container-type: size;
+}
+
+/* Chat font section: the session pane carries the compensated chat/ui zoom
+ * ratio (zoom multiplies through the frame's interface zoom, so the runtime
+ * publishes chatScale/uiScale here). */
+.pane[data-buffer='session'] {
+  zoom: var(--dsh-zoom-chat, 1);
+}
+
+/* Slim mode line: buffer name left, window commands right (Emacs echo of
+   the same layout). The conversation pane tints with the sidebar surface so
+   the shipped layout keeps its old column separation cues via sash borders. */
+.modeLine {
+  flex: none;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  box-sizing: border-box;
+  background: var(--dsw-alias-bg-base);
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  user-select: none;
+}
+
+.bufferName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modeActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.modeButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.modeButton:hover {
+  background: var(--dsw-alias-button-floating-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Narrow-pane toolbar compaction: a pane narrower than ~320px (a squeezed
+   middle window, a small app window) cannot fit the full nine-button row at
+   24px each — the tail buttons clip out of view. Compact chrome keeps every
+   command reachable; below 220px the row itself scrolls instead of clipping. */
+@container (max-width: 320px) {
+  .modeLine {
+    padding: 0 4px;
+  }
+
+  .modeActions {
+    flex: none;
+    gap: 0;
+  }
+
+  .modeButton {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+@container (max-width: 220px) {
+  .modeActions {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    justify-content: flex-start;
+  }
+
+  .bufferName {
+    flex: none;
+  }
+}
+
+.paneBody {
+  position: relative;
+  /* Fill guarantee chain, link 4: the buffer body fills the pane below the
+     mode line (basis 0). */
+  flex: 1 1 0%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Tabbed container (i3): a slim tab strip above exactly one visible child. */
+.tabbed {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 0%;
+  overflow: hidden;
+}
+
+.tabStrip {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 2px 4px 0;
+  background: var(--dsw-specific-sidebar-fill);
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  overflow-x: auto;
+  min-width: 0;
+}
+
+.tab {
+  appearance: none;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  padding: 2px 10px;
+  font-size: 11px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.tab[aria-selected] {
+  background: var(--dsw-alias-bg-base);
+  border-color: var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+/* Tab-drop shade: brief brand overlay on the pane that absorbed the moved
+   window as a new tab (the non-drag stand-in for i3's drop highlight). */
+.tabShade {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 22%, transparent);
+  box-shadow: inset 0 0 0 2px var(--dsw-alias-brand-primary);
+}
+
+/* Sash between sibling panes: a 1px border line with a 7px pointer hit
+   strip centered on it (negative margins keep layout at 1px). */
+.sash {
+  flex: none;
+  position: relative;
+  z-index: 2;
+  touch-action: none;
+  /* A pane boundary must read as a full-length line at rest, not fade into
+     the panes it divides. */
+  background: var(--dsw-alias-border-l3);
+}
+
+.sash.row {
+  width: 2px;
+  margin: 0 -4px;
+  cursor: col-resize;
+}
+
+.sash.column {
+  height: 2px;
+  margin: -4px 0;
+  cursor: row-resize;
+}
+
+.sash::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+}
+
+.sash:hover,
+.sash[data-dragging] {
+  background: var(--dsw-alias-border-l3);
+}
+
+.overlayLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.overlayLayer > * {
+  pointer-events: auto;
+}
+
+/* Weight wrapper around each recursive child: the flex-grow carrier. */
+.paneWrapper {
+  /* Fill guarantee chain, link 2: the weight wrapper carries flex-grow from
+     the split's weights (inline style); these floors keep content from
+     inflating it. */
+  min-width: 0;
+  min-height: 0;
+  align-self: stretch;
+}
+
+/* The focused pane's mode line: brighter title and a stronger rule so the
+   focus cursor is visible at a glance (commands act on this leaf). */
+.pane[data-focused] .modeLine {
+  color: var(--dsw-alias-label-primary);
+  border-bottom-color: var(--dsw-alias-border-l3);
+}
+
+/* The selection ring: the focused buffer carries a brand-accent inset
+   outline — "current buffer" made visible, so C-x k's default target is
+   never a guess. */
+.pane[data-focused] {
+  box-shadow: inset 0 0 0 1.5px var(--dsw-alias-brand-primary);
+}
+.pane[data-focused] .bufferName {
+  color: var(--dsw-alias-brand-primary);
+  font-weight: 600;
+}
+
+/* Pending-chord panel (which-key): the armed "C-x-" echo heads the list of
+   completions; parked at the tree's top right corner, non-interactive. */
+.whichKey {
+  position: absolute;
+  top: 52px;
+  right: 10px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  pointer-events: none;
+  user-select: none;
+}
+.prefixIndicator {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-base);
+  border: 1px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+.whichKeyList {
+  margin: 0;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  list-style: none;
+  min-width: 190px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+  border: 1px solid var(--dsw-alias-border-l2);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 18%);
+}
+.whichKeyList li {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.whichKeyKeys {
+  color: var(--dsw-alias-label-primary);
+  font-variant-numeric: tabular-nums;
+}
+.whichKeyLabel {
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* Mode switcher: the Agent | Code | Chat segmented control centered in the
+   brand row. */
+.modeSwitch {
+  display: flex;
+  gap: 2px;
+  margin: 0 auto;
+  padding: 2px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+}
+
+.modeTab {
+  appearance: none;
+  border: 0;
+  border-radius: 6px;
+  padding: 3px 14px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+
+.modeTab[data-active] {
+  background: var(--dsw-alias-interactive-bg-hover-accent);
+  color: var(--dsw-static-deepseek-450);
+}
+
+/* Right-most brand chrome: pinned to the header's far corner. */
+.topbarRight {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+/* Focused pane's mode line: the theme accent (mode-line-active fill + brand
+   inset) so the active window reads at a glance. Appended after the legacy
+   focused rules so it wins the cascade. */
+.pane[data-focused] .modeLine {
+  background: var(--dsw-alias-mode-line-active);
+  box-shadow: inset 0 2px 0 0 var(--dsw-static-deepseek-450);
+  color: var(--dsw-static-neutral-bluish-00);
+}
+
+.pane[data-focused] .modeLine [class*='bufferName'] {
+  color: var(--dsw-static-neutral-bluish-00);
+}
+
+/* Mode-line controls (split/flip/close/expand) sit on the brand fill when
+   focused: light ink keeps them readable in every palette. */
+.pane[data-focused] .modeLine button,
+.pane[data-focused] .modeLine [class*='modeButton'],
+.pane[data-focused] .modeLine [class*='paneAction'],
+.pane[data-focused] .modeLine [class*='bufferName'] [class*='Icon'] {
+  color: var(--dsw-static-neutral-bluish-00);
+}
+
+/* Board: a vertical stack of workspace space boxes. Each section is its own
+   grid sized to its own pane count, so a one-pane workspace renders one box —
+   never a full-width row of dead columns (the flat-grid defect this replaces).
+   The board scrolls; panes clip their own overflow. */
+.agentBoard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px;
+  /* The tree area is a flex ROW: without an explicit fill the grid item
+     collapses to its min-content track (one narrow column) — claim the row. */
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  overflow: auto;
+}
+
+/* Overview level (Panorama): every workspace as a square-ish preview card in
+   a grid; clicking a card zooms into that space's session/subagent grid. */
+.agentOverview {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
+  gap: 10px;
+  align-content: start;
+}
+
+.agentWsCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 230px;
+  /* Square preview card, matching the panes' thumbnail grammar. */
+  aspect-ratio: 1 / 1;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-base);
+  cursor: pointer;
+  user-select: none;
+  overflow: hidden;
+}
+
+.agentWsCard:hover {
+  border-color: var(--dsw-alias-label-tertiary);
+}
+
+.agentWsCard[data-current-section] {
+  border-color: var(--dsw-static-deepseek-450);
+}
+
+.agentWsCard .agentWsHeader {
+  border-radius: 0;
+}
+
+.miniTiles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 10px 10px;
+  overflow: hidden;
+}
+
+.miniTile {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.miniDot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dsw-alias-label-tertiary);
+}
+
+.miniDot[data-status='running'] {
+  background: var(--dsw-static-green-500);
+}
+
+.miniDot[data-status='pending'] {
+  background: var(--dsw-static-amber-500);
+}
+
+.miniDot[data-status='done'] {
+  background: var(--dsw-static-green-500);
+  opacity: 0.55;
+}
+
+.miniTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.miniSubs {
+  flex: none;
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* One workspace space: the Firefox tab-group grammar — a labeled bordered box
+   whose panes tile window-by-window inside it. min() lets panes shrink below
+   the preferred width in small windows, so the space tiles at any size.
+   Square-ish rows: the taller floor keeps panes reading as window cards. */
+.agentWs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(var(--agent-pane-min, 340px), 100%), 1fr));
+  grid-auto-rows: auto;
+  gap: 1px;
+  flex: none;
+  background: var(--dsw-alias-border-l1);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.agentWsHeader {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--dsw-alias-interactive-bg-hover-accent);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.agentWsTitle {
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.agentWsCount {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.agentPane {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  min-height: 0;
+  padding: 10px 12px;
+  text-align: left;
+  background: var(--dsw-alias-bg-base);
+  border: 1px solid transparent;
+  cursor: pointer;
+  /* Square preview: the pane reads as tall as its column is wide (the
+     Firefox-thumbnail grammar); a busy pane grows past the square via
+     min-height rather than clipping. */
+  aspect-ratio: 1 / 1;
+  min-height: 220px;
+  /* Windowed rendering: the browser skips layout/paint for offscreen panes,
+     so a 56-session wall stays as cheap as the visible rows. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 170px;
+}
+
+.agentPane:hover {
+  background: var(--dsw-alias-interactive-bg-hover-accent);
+}
+
+.agentPane[data-current] {
+  border-color: var(--dsw-static-deepseek-450);
+}
+
+.agentPaneHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.agentStatusDot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dsw-alias-label-tertiary);
+}
+
+.agentPane[data-status='running'] .agentStatusDot {
+  background: var(--dsw-static-green-500);
+  animation: agentPulse 1.2s ease-in-out infinite;
+}
+
+.agentPane[data-status='pending'] .agentStatusDot {
+  background: var(--dsw-static-amber-500);
+}
+
+.agentPane[data-status='done'] .agentStatusDot {
+  background: var(--dsw-static-deepseek-450);
+}
+
+@keyframes agentPulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.agentPaneTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.agentPanePreset {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  background: var(--dsw-alias-interactive-bg-hover-accent);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.agentPaneClock {
+  flex: none;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.agentPaneSubs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.agentSubChip {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  background: var(--dsw-alias-interactive-bg-hover-accent);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.agentSubChip[data-running] {
+  color: var(--dsw-alias-label-primary);
+}
+
+.agentSubRun {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.agentPaneFoot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  min-width: 0;
+}
+
+.agentPaneWait {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  background: var(--dsw-static-amber-500);
+  color: var(--dsw-static-neutral-bluish-00);
+}
+
+.agentPaneUpdated {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* Pane header model chip: the swarm fact — which route this pane runs. */
+.agentPaneModel {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Pane header/foot actions: zoom toggle and stop control. Nested role=button
+   spans must not trigger the pane's open-on-click. */
+.agentPaneAction,
+.agentPaneStop {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  background: var(--dsw-alias-interactive-bg-hover-accent);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.agentPaneAction:hover,
+.agentPaneStop:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.agentPaneStop {
+  background: var(--dsw-static-amber-500);
+  color: var(--dsw-static-neutral-bluish-00);
+}
+
+/* A spawned subagent pane: same live pane, nested under its parent — an
+   inset rail marks the lineage without a second visual language. */
+.agentPane[data-nested] {
+  min-height: 120px;
+  padding-left: 18px;
+  box-shadow: inset 2px 0 0 var(--dsw-alias-border-l1);
+}
+
+/* Zoomed board: only the focused pane's space stays visible, and the pane
+   fills it. `:has` scopes the hide to sibling spaces without touching the
+   zoomed pane's own section chrome. */
+.agentBoard[data-zoom] .agentWs:not(:has(.agentPane[data-zoomed])),
+.agentBoard[data-zoom] .agentWsHeader {
+  display: none;
+}
+
+.agentBoard[data-zoom] .agentPane[data-zoomed] {
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+  /* The focused pane fills its space — the square grammar yields to focus. */
+  aspect-ratio: auto;
+  height: 100%;
+  min-height: 0;
+}
+
+/* The zoomed space claims the board column's free height and its single
+   pane row stretches with it. */
+.agentBoard[data-zoom] .agentWs:has(.agentPane[data-zoomed]) {
+  flex: 1 1 auto;
+  grid-auto-rows: 1fr;
+}
+
+/* Board preference bar: sort and pane-width toggles above the tiles. */
+.agentBoardBar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: var(--dsw-alias-bg-base);
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+
+.agentBoardBarLabel {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dsw-alias-label-tertiary);
+  margin-right: auto;
+}
+
+/* Codex-style pane chrome: per-pane prompt input, model·cwd strip, and the
+   running "Working · elapsed" label. */
+.agentPaneInput {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-base);
+}
+
+.agentPaneInput::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.agentPaneInput:focus {
+  outline: none;
+  border-color: var(--dsw-static-deepseek-450);
+}
+
+.agentPaneStrip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.agentPaneStripModel {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.agentPaneStripCwd {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agentPaneWorking {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--dsw-static-green-500);
+}
+
+/* Activity tail: the pane's last few derived lines, newest last. */
+.agentPaneTail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow: hidden;
+  flex: 1;
+}
+
+.agentPaneTailEmpty {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  font-style: italic;
+}
+
+.agentTailLine {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* CLI tail mode: the terminal-style projection — monospace, taller, tool
+   output lines rendered as raw text instead of one summary line. */
+.agentPaneTail[data-mode='cli'] {
+  overflow-y: auto;
+  font-family: var(--dsw-alias-font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+}
+
+.agentPaneTail[data-mode='cli'] .agentTailLine[data-kind='user'] {
+  color: var(--dsw-alias-label-primary);
+}
+
+.agentTailLine[data-kind='user'] {
+  color: var(--dsw-alias-label-primary);
+}
+
+.agentTailLine[data-kind='error'] {
+  color: var(--dsw-static-amber-600);
+}

@@ -1,0 +1,29 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.note {
+  margin: 0;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* CodeBlock draws its own card chrome (banner, background, radius, mono font);
+   the pane only positions it: fill the pane, drop the card's flow margins.
+   The banner wrapper must keep its natural height — stretching it to the pane
+   height would push the code body below the fold. */
+.body {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  overflow: auto;
+}
+
+.body > :global(div) {
+  margin: 0;
+}

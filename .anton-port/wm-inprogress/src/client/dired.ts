@@ -1,0 +1,248 @@
+/**
+ * Dired pure helpers: sorting, filtering, formatting, and path ancestry for
+ * the files buffer (compos's dired.scm behavior, client side). The wire
+ * (`host.listDirectory` with `includeFiles`) carries stat'd rows — kind,
+ * size, mtime, POSIX mode — plus a crumbs ancestry chain; the formatting
+ * helpers fall back gracefully over rows a platform left without stats.
+ */
+
+/** One listing row (the wire shape; the stat fields mirror the wire optionals). */
+export interface DiredEntry {
+  /** Base name shown in the row. */
+  name: string
+  /** Absolute host path — navigation never joins path segments itself. */
+  path: string
+  /** Hidden by the host platform's convention (dot-prefixed on POSIX). */
+  hidden: boolean
+  /** An enterable directory (Enter descends) versus a plain row (Enter opens with the host). */
+  isDirectory?: boolean
+  /** Byte size. */
+  size?: number
+  /** Modification time (epoch ms). */
+  modified?: number
+  /** POSIX mode bits (type nibble included, e.g. `0o100644`). */
+  mode?: number
+}
+
+/**
+ * Icon classification for a listing row (the lsd/LS_COLORS idea, expressed
+ * as theme-token classes instead of terminal colors): a folder kind for
+ * enterable directories, and extension-driven kinds for plain files.
+ * @param name - the row's base name (extension read from it).
+ * @param isDirectory - the row kind flag; undefined counts as a directory.
+ * @returns the icon kind the row should render.
+ */
+export function diredIconKind(name: string, isDirectory?: boolean): DiredIconKind {
+  if (isDirectory !== false) return 'folder'
+  const ext = name.slice(name.lastIndexOf('.') + 1).toLowerCase()
+  if (name.startsWith('.') && name.indexOf('.', 1) === -1) return 'config'
+  switch (ext) {
+    case 'ts': case 'tsx': case 'js': case 'jsx': case 'mjs': case 'cjs':
+    case 'py': case 'rb': case 'go': case 'rs': case 'c': case 'h': case 'cpp':
+    case 'java': case 'php': case 'swift': case 'kt': case 'elm': case 'ex':
+      return 'code'
+    case 'md': case 'mdx': case 'txt': case 'rst': case 'org': case 'pdf':
+      return 'doc'
+    case 'png': case 'jpg': case 'jpeg': case 'gif': case 'webp': case 'svg': case 'ico':
+      return 'image'
+    case 'zip': case 'tar': case 'gz': case 'bz2': case '7z': case 'xz':
+      return 'archive'
+    case 'json': case 'yml': case 'yaml': case 'toml': case 'ini': case 'env':
+      return 'config'
+    default:
+      return 'file'
+  }
+}
+
+/** The icon kinds the dired rows render (see {@link diredIconKind}). */
+export type DiredIconKind = 'folder' | 'file' | 'code' | 'doc' | 'image' | 'archive' | 'config'
+
+/**
+ * Ido-style flex match: every query character must appear in the row name
+ * in order (case-insensitive). The empty query matches everything.
+ * @param entries - the listing rows.
+ * @param query - the typed segment.
+ * @returns the matching rows in listing order (input untouched).
+ */
+export function flexDiredMatch(entries: readonly DiredEntry[], query: string): DiredEntry[] {
+  const q = query.toLowerCase()
+  if (q === '') return [...entries]
+  return entries.filter((entry) => {
+    const name = entry.name.toLowerCase()
+    let at = 0
+    for (const ch of q) {
+      at = name.indexOf(ch, at)
+      if (at === -1) return false
+      at += 1
+    }
+    return true
+  })
+}
+
+/**
+ * Format POSIX mode bits as the classic nine-flag string (compos's perms
+ * column): the type nibble renders `d`/`l`/`-`, then the rwx triples.
+ * @param mode - the stat mode bits, or undefined (renders an empty column).
+ * @returns e.g. `drwxr-xr-x`, or '' without a mode.
+ */
+export function formatDiredMode(mode: number | undefined): string {
+  if (mode === undefined) return ''
+  const bit = (n: number): string => (mode & (1 << n)) === 0 ? '-' : 'rwx'.charAt(2 - (n % 3))
+  const type = (mode & 0o170000) === 0o040000 ? 'd' : (mode & 0o170000) === 0o120000 ? 'l' : '-'
+  return type + [8, 7, 6, 5, 4, 3, 2, 1, 0].map(bit).join('')
+}
+
+/**
+ * Format a byte size the dired way: raw below 1k, then one-decimal k/M/G.
+ * @param bytes - the size, or undefined (renders an empty column).
+ * @returns e.g. `13k`, `1.5M`, or '' without a size.
+ */
+export function formatDiredSize(bytes: number | undefined): string {
+  if (bytes === undefined) return ''
+  if (bytes < 1024) return String(bytes)
+  const units = ['k', 'M', 'G', 'T'] as const
+  let value = bytes
+  let unit = -1
+  do {
+    value /= 1024
+    unit += 1
+  } while (value >= 1024 && unit < units.length - 1)
+  const text = value >= 10 ? String(Math.round(value)) : value.toFixed(1)
+  return text + (units[unit] ?? 'k')
+}
+
+/**
+ * Format a modification time as the dired date column: `Mon DD HH:MM` for
+ * the current year, `Mon DD  YYYY` for older rows (Emacs ls behavior).
+ * @param mtimeMs - epoch milliseconds, or undefined (renders an empty column).
+ * @returns e.g. `Aug 29 19:40`, or '' without a time.
+ */
+export function formatDiredDate(mtimeMs: number | undefined): string {
+  if (mtimeMs === undefined) return ''
+  const d = new Date(mtimeMs)
+  const mon = d.toLocaleString('en-US', { month: 'short' })
+  const day = String(d.getDate()).padStart(2, ' ')
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  const sameYear = d.getFullYear() === new Date().getFullYear()
+  return sameYear ? `${mon} ${day} ${hm}` : `${mon} ${day}  ${d.getFullYear()}`
+}
+
+/** Sort keys, cycled by the `s` key: name → size → modified. */
+export type DiredSort = 'name' | 'size' | 'modified'
+
+/**
+ * The next sort key in the cycle.
+ * @param sort - current key.
+ * @returns name → size → modified → name.
+ */
+export function nextDiredSort(sort: DiredSort): DiredSort {
+  return sort === 'name' ? 'size' : sort === 'size' ? 'modified' : 'name'
+}
+
+/**
+ * Sort one listing: directories first (compos groups enterable rows ahead),
+ * then by the active key; `reverse` flips the key order within each group.
+ * Directories-first holds in both directions (the group split is not
+ * reversed). The wire carries no dir flag today, so every row is treated as
+ * enterable — the group split is future-proofing for a stat extension.
+ * Missing sort values sort last within their group.
+ * @param entries - the listing rows.
+ * @param sort - active sort key.
+ * @param reverse - reverse the key comparison.
+ * @returns a new sorted array (input untouched).
+ */
+export function sortDired(entries: readonly DiredEntry[], sort: DiredSort, reverse: boolean): DiredEntry[] {
+  const key = (e: DiredEntry): string | number => {
+    switch (sort) {
+      case 'name': return e.name.toLowerCase()
+      case 'size': return e.size ?? Number.NaN
+      case 'modified': return e.modified ?? Number.NaN
+    }
+  }
+  const missingLast = (a: number, b: number): number => {
+    const aNaN = Number.isNaN(a)
+    const bNaN = Number.isNaN(b)
+    if (aNaN || bNaN) return aNaN && bNaN ? 0 : aNaN ? 1 : -1
+    return a - b
+  }
+  const sorted = [...entries].sort((a, b) => {
+    const ka = key(a)
+    const kb = key(b)
+    const cmp = typeof ka === 'string' && typeof kb === 'string'
+      ? ka.localeCompare(kb)
+      : missingLast(ka as number, kb as number)
+    return reverse ? -cmp : cmp
+  })
+  return sorted
+}
+
+/**
+ * Apply the dotfiles toggle (`d` key): hidden rows drop out unless shown.
+ * @param entries - the listing rows.
+ * @param showDotfiles - whether hidden rows are visible.
+ * @returns the visible rows (input untouched when everything shows).
+ */
+export function filterDired(entries: readonly DiredEntry[], showDotfiles: boolean): DiredEntry[] {
+  return showDotfiles ? [...entries] : entries.filter(e => !e.hidden)
+}
+
+/**
+ * The parent directory of an absolute POSIX-style path (pure fallback; the
+ * live buffer prefers the listing's crumbs chain, which carries the host's
+ * own ancestry).
+ * @param path - absolute directory path.
+ * @returns the parent path, or undefined at the filesystem root.
+ */
+export function parentOf(path: string): string | undefined {
+  if (path === '' || path === '/') return undefined
+  const trimmed = path.endsWith('/') ? path.slice(0, -1) : path
+  const cut = trimmed.lastIndexOf('/')
+  if (cut <= 0) return cut === 0 ? '/' : undefined
+  return trimmed.slice(0, cut)
+}
+
+/** Dired navigation history: the visited levels plus the cursor into them. */
+export interface DiredHistory {
+  /** The visited directory paths in visit order (undefined = the host home). */
+  readonly levels: readonly (string | undefined)[]
+  /** The cursor: levels[index] is the directory on screen. */
+  readonly index: number
+}
+
+/** The fresh history: one level (the starting directory). */
+export function freshDiredHistory(path: string | undefined): DiredHistory {
+  return { levels: [path], index: 0 }
+}
+
+/**
+ * Record one navigation: the forward stack drops (Emacs dired does not
+ * branch histories), the target appends, the cursor moves onto it.
+ * Re-navigating to the level already on screen returns the same history.
+ * @param history - the current history.
+ * @param path - the target directory (undefined = the host home).
+ * @returns the new history (input untouched).
+ */
+export function pushDiredLevel(history: DiredHistory, path: string | undefined): DiredHistory {
+  if (history.levels[history.index] === path) return history
+  return { levels: [...history.levels.slice(0, history.index + 1), path], index: history.index + 1 }
+}
+
+/**
+ * Step one level back.
+ * @param history - the current history.
+ * @returns the history at the previous level, or null when none exists.
+ */
+export function diredBack(history: DiredHistory): DiredHistory | null {
+  if (history.index === 0) return null
+  return { levels: history.levels, index: history.index - 1 }
+}
+
+/**
+ * Step one level forward.
+ * @param history - the current history.
+ * @returns the history at the next level, or null when none exists.
+ */
+export function diredForward(history: DiredHistory): DiredHistory | null {
+  if (history.index >= history.levels.length - 1) return null
+  return { levels: history.levels, index: history.index + 1 }
+}
