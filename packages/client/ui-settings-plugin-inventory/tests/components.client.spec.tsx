@@ -107,6 +107,14 @@ const globalToggle = (): HTMLElement =>
 const presetToggle = (): HTMLElement => screen.getByRole('button', { name: en.presetTitle })
 
 describe('PluginInventorySettingsTab', () => {
+  it('opens global plugin switches from the shortcut above the session list', async () => {
+    await renderReady()
+    fireEvent.click(screen.getByRole('button', { name: `${en.enabledTag} / ${en.disabledTag}: ${en.globalTitle}` }))
+    expect(presetToggle().getAttribute('aria-expanded')).toBe('false')
+    expect(globalToggle().getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByRole('switch', { name: 'Disable hmr' })).toBeTruthy()
+  })
+
   it.each(['global', 'preset'])('shortens package and module name fallbacks in the %s inventory', async (scope) => {
     const names = [
       ['@deepseek-ai/dsh-tool-subagent', 'tool-subagent'],
@@ -649,6 +657,7 @@ describe('PluginInventorySettingsTab', () => {
     const toggle = vi.fn(async (_entryId: string, _enabled: boolean) => {})
     render(<PluginInventorySettingsTab {...props(list)} toggle={toggle} />)
 
+    fireEvent.click(await screen.findByRole('button', { name: (name: string) => name.startsWith(en.globalTitle) }))
     const switchBtn = await screen.findByRole('switch', { name: 'Disable hmr' })
     expect(switchBtn.getAttribute('aria-checked')).toBe('true')
     expect(switchBtn.getAttribute('data-checked')).toBe('true')
@@ -663,6 +672,7 @@ describe('PluginInventorySettingsTab', () => {
     cleanup()
     const failingToggle = vi.fn(async () => { throw new Error('toggle rejected') })
     render(<PluginInventorySettingsTab {...props(list)} toggle={failingToggle} />)
+    fireEvent.click(await screen.findByRole('button', { name: (name: string) => name.startsWith(en.globalTitle) }))
     const activeSwitch = await screen.findByRole('switch', { name: 'Disable hmr' })
     fireEvent.click(activeSwitch)
     expect(failingToggle).toHaveBeenCalledWith('8a1b2c3d', false)

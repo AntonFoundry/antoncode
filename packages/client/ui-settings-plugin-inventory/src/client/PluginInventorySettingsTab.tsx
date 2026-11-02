@@ -621,6 +621,13 @@ export function PluginInventorySettingsTab(
               onChange={(event) => { setQuery(event.currentTarget.value) }}
             />
           </label>
+          {entries.length > 0 && selected !== undefined ? (
+            <button type="button" className={css.globalShortcut}
+              aria-label={`${t('enabledTag')} / ${t('disabledTag')}: ${t('globalTitle')}`}
+              onClick={() => { setPresetOpen(false); setGlobalOpen(true) }}>
+              {t('globalTitle')}
+            </button>
+          ) : null}
           {entries.length === 0 && presets.length === 0 ? <p className={css.status}>{t('empty')}</p> : null}
           {nothingMatches ? <p className={css.status}>{t('emptySearch')}</p> : null}
 
