@@ -1,9 +1,9 @@
 ---
-description: "English"
+description: "OpenCode model generation through the local service or direct Zen transports."
 kind: "package-reference"
 ---
 
-This provider registers `opencode-free` on `ctx.llm`: one route over three transports, picked per request. A logged-in Zen workspace session (device-flow OAuth via `dsh opencode-login` or the Models-page Log in button, approved once in the browser and stored as JSON in the credentials seam under `OPENCODE_ZEN_OAUTH` with silent refresh) selects the direct inference gateway at `https://opencode.ai/inference/openai/v1` with workspace identity (workspace discovery, paid models, and zero-cost turns where the gateway admits this client); zero-cost turns additionally take the free-tier gate (client-identity headers, a fixed marker with flattened history, and a fenced text tool protocol parsed back into Harness tool calls). A stored Zen bearer key (`OPENCODE_API_KEY` by default, resolved per request through the credential seam or the environment) selects direct OpenCode Zen generation — the models.dev `opencode` free tier over `https://opencode.ai/zen/v1` with the Harness's own tool schemas, so returned tool calls come back to the Harness and execute through Harness tools, never through OpenCode's local agent loop. Without either, the route serves the user's own OpenCode service (discovered from `OPENCODE_SERVER_URL`, the CLI state-home `service.json`, or live `opencode service status`, auto-started by default; Basic password from its registration file with `OPENCODE_SERVER_PASSWORD` as fallback) through transient text generation. When no service is reachable either, the request falls through to anonymous direct and surfaces the gateway's real verdict instead of a misleading transport error. No Zen API key is required for the service path.
+# @deepseek-ai/dsh-llm-opencode
 
 English
 
@@ -11,34 +11,21 @@ English
 
 Set `transport: service` on the `llm-opencode` profile entry to reuse the running OpenCode service and its saved login. Anton reads the local service registration and Basic password; OpenCode owns the hosted OAuth credentials and refresh. This mode bypasses direct gateway credentials, direct catalog polling, and anonymous gateway fallback. No additional Harness login or Console key is needed.
 
+## Use this package
+
 The service generates text through `/api/session/:id/generate`. Offered Harness tools are included as text schemas; fenced calls return to the Harness tool executor, and their results are included in the next request. OpenCode's agent loop and tools are not invoked. Image attachments are rejected because this service endpoint accepts text. `transport: auto`, the default, retains credential-based routing.
 
 For tool-capable service use, copy [the backend agent](examples/anton-harness.md) to `~/.config/opencode/agents/anton-harness.md` and [the companion plugin](examples/anton-harness.ts) to `~/.config/opencode/plugins/anton-harness.ts`, then set `agent: anton-harness` alongside `transport: service`. The companion appends Harness delegation instructions for that agent and sets `tool_choice: none` on its transient-generation HTTP requests. Native declarations remain present, but the model requests Harness tools through fenced text, which the adapter parses and the Harness executes. OpenCode transient generation returns only text and discards native tool calls; without the companion, a native call can appear as an empty response or an introductory sentence. Other agents and primary, title, and compaction requests keep their normal behavior.
 
 ## Table of Contents
 
+- [Use this package](#use-this-package)
 - [Understand the implementation](#understand-the-implementation)
 - [Dev Note](#dev-note)
 
 ## Understand the implementation
 
-English
-
-This provider registers `opencode-free` on `ctx.llm`: one route over two
-transports, picked per request. A stored Zen bearer key (`OPENCODE_API_KEY`
-by default, resolved per request through the credential seam or the
-environment) selects direct OpenCode Zen generation — the models.dev
-`opencode` free tier over `https://opencode.ai/zen/v1` with the Harness's
-own tool schemas, so returned tool calls come back to the Harness and
-execute through Harness tools, never through OpenCode's local agent loop.
-Without a key the route serves the user's own OpenCode service (discovered
-from `OPENCODE_SERVER_URL`, the CLI state-home `service.json`, or live
-`opencode service status`, auto-started by default; Basic password from its
-registration file with `OPENCODE_SERVER_PASSWORD` as fallback) through
-transient text generation. When no service is reachable either, the request
-falls through to anonymous direct and surfaces the gateway's real verdict
-instead of a misleading transport error. No Zen API key is required for the
-service path.
+This provider registers `opencode-free` on `ctx.llm`: one route over three transports, picked per request. A logged-in Zen workspace session (device-flow OAuth via `dsh opencode-login` or the Models-page Log in button, approved once in the browser and stored as JSON in the credentials seam under `OPENCODE_ZEN_OAUTH` with silent refresh) selects the direct inference gateway at `https://opencode.ai/inference/openai/v1` with workspace identity (workspace discovery, paid models, and zero-cost turns where the gateway admits this client); zero-cost turns additionally take the free-tier gate (client-identity headers, a fixed marker with flattened history, and a fenced text tool protocol parsed back into Harness tool calls). A stored Zen bearer key (`OPENCODE_API_KEY` by default, resolved per request through the credential seam or the environment) selects direct OpenCode Zen generation — the models.dev `opencode` free tier over `https://opencode.ai/zen/v1` with the Harness's own tool schemas, so returned tool calls come back to the Harness and execute through Harness tools, never through OpenCode's local agent loop. Without either, the route serves the user's own OpenCode service (discovered from `OPENCODE_SERVER_URL`, the CLI state-home `service.json`, or live `opencode service status`, auto-started by default; Basic password from its registration file with `OPENCODE_SERVER_PASSWORD` as fallback) through transient text generation. When no service is reachable either, the request falls through to anonymous direct and surfaces the gateway's real verdict instead of a misleading transport error. No Zen API key is required for the service path.
 
 Direct requests carry OpenCode's client identity with real Harness
 identifiers: `x-opencode-session-id` always, plus `x-opencode-session`,
@@ -71,14 +58,7 @@ Authentication failures on this route name their fix in the failed turn: anonymo
 
 ## Model Experience
 
-Keyed turns send the Harness system text, message history, and tool schemas
-to Zen over chat-completions or Responses per the catalog protocol, with
-the selected effort passed through verbatim. Anonymous turns send the
-Harness system text and complete message history as a text prompt to
-OpenCode's transient generator. Past tool traffic is quoted in that prompt;
-no new model-visible text is added by the plugin. The generator returns
-text only, so the service path emits no tool calls or separate reasoning
-blocks.
+Keyed turns send the Harness system text, message history, and tool schemas to Zen over chat-completions or Responses per the catalog protocol, with the selected effort passed through verbatim. Service turns send the Harness system text, complete history, and offered tool schemas as a text prompt to OpenCode's transient generator. Past tool traffic is quoted. The companion appends backend delegation guidance and disables native tool selection; fenced requests in the generated text become Harness tool calls. The service response contains no separate usage or reasoning blocks.
 
 OAuth workspace turns send the workspace bearer and billed workspace id (`x-opencode-org-id`) with the request. Zero-cost turns additionally reshape the Responses body for the free-tier gate: a fixed developer marker first, the history flattened into one user message (past tool traffic quoted, never re-executed), no native `tools` field, and the tool definitions appended to the system prompt as fenced ```tool JSON blocks; fenced calls in the reply parse back into Harness tool-call chunks for Harness-side execution. Title and compaction calls skip the text protocol and stream parsing.
 
