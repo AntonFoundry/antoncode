@@ -1,0 +1,18 @@
+{
+  "meta": {
+    "title": "Sticky notes",
+    "description": "A wall of sticky notes in the sidebar for capturing ideas as they arrive."
+  },
+  "panel": "Sticky notes",
+  "title": "Sticky notes",
+  "subtitle": "Capture an idea before it escapes.",
+  "placeholder": "Write an idea…",
+  "add": "Add note",
+  "empty": "No notes yet. Write one above.",
+  "emptyHint": "Notes stay in this browser.",
+  "delete": "Delete note",
+  "saved": "Saved",
+  "storageFull": "This browser is out of local storage space, so the last change may not have been kept.",
+  "countOne": "1 note",
+  "countOther": "{count} notes"
+}
