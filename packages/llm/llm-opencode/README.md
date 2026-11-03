@@ -13,7 +13,7 @@ Set `transport: service` on the `llm-opencode` profile entry to reuse the runnin
 
 The service generates text through `/api/session/:id/generate`. Offered Harness tools are included as text schemas; fenced calls return to the Harness tool executor, and their results are included in the next request. OpenCode's agent loop and tools are not invoked. Image attachments are rejected because this service endpoint accepts text. `transport: auto`, the default, retains credential-based routing.
 
-For tool-capable service use, copy [the backend agent](examples/anton-harness.md) to `~/.config/opencode/agents/anton-harness.md`, then set `agent: anton-harness` alongside `transport: service`. The dedicated agent treats the supplied Harness instructions as authoritative. Its `ask` rules retain native tool declarations; transient generation never executes those tools. The agent is not selected by ordinary OpenCode sessions.
+For tool-capable service use, copy [the backend agent](examples/anton-harness.md) to `~/.config/opencode/agents/anton-harness.md` and [the companion plugin](examples/anton-harness.ts) to `~/.config/opencode/plugins/anton-harness.ts`, then set `agent: anton-harness` alongside `transport: service`. The companion appends Harness delegation instructions for that agent and sets `tool_choice: none` on its transient-generation HTTP requests. Native declarations remain present, but the model requests Harness tools through fenced text, which the adapter parses and the Harness executes. OpenCode transient generation returns only text and discards native tool calls; without the companion, a native call can appear as an empty response or an introductory sentence. Other agents and primary, title, and compaction requests keep their normal behavior.
 
 ## Table of Contents
 
@@ -91,7 +91,7 @@ selected model.
 
 ## Known Limitations and Deferred Work
 
-- The transient generation API accepts text, not Harness tool schemas or image attachments. Anonymous turns can answer chat but cannot drive Harness coding tools through structured tool calls; run `dsh opencode-login` for workspace turns or store a Zen key for keyed tool-capable turns.
+- The transient generation API accepts text rather than Harness tool schemas or image attachments. Service turns carry tool schemas through the text protocol and require the backend agent and companion described above. Image attachments are rejected.
 - Live-verified 2026-10-16: the inference gateway answers `FreeTierError` to harness-runtime requests even with a valid workspace session, byte-exact client headers, catalog-correct protocol, and gate-shaped bodies on both wire protocols — only genuine OpenCode network stacks pass the client check. The local-service path therefore remains the working free path (text-only); the workspace session still owns discovery narrowing, paid-model turns, silent refresh, and exact failure guidance.
 - Automatic startup searches `PATH`, `~/.opencode/bin`, and the usual Homebrew executable locations; `OPENCODE_EXECUTABLE` can name another path. If the CLI is absent, start the service separately or configure a reachable `serverURL`. The provider does not stop the service.
 

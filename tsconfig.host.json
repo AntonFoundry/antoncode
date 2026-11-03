@@ -236,6 +236,7 @@
     "apps/desktop-host/tests/**/*.ts",
     "benchmarks/**/*.ts",
     "packages/*/*/tests/**/*.ts",
+    "packages/llm/llm-opencode/examples/anton-harness.ts",
     "packages/experimental/cua-macos/native/generate-protocol.ts",
     "packages/experimental/claude-code-mods/examples/*/index.ts",
     "packages/experimental/inspector/scripts/**/*.ts",
