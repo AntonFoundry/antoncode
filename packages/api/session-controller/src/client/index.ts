@@ -9,7 +9,7 @@ import { createSessionControlStream } from './transport.ts'
 import { ClientSessions } from './sessions/service.ts'
 import type { SessionRemotes } from './sessions/remotes.ts'
 import type {} from '../remote-events.ts'
-import { createSessionHistoryCache, type SessionHistoryCache } from './history-cache.ts'
+import { createSessionHistoryCache } from './history-cache.ts'
 
 export {
   createSessionControlStream,
@@ -92,8 +92,6 @@ declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Client Session object layer and Agent scope owner. */
     sessions: import('./contract/sessions.ts').ISessions
-    /** Optional origin-local cache of committed Session history. */
-    sessionHistoryCache: SessionHistoryCache
   }
 }
 
@@ -117,10 +115,9 @@ export function apply(ctx: Context): void {
   const connection = ctx.get('connection') as ConnectionHandle
   const historyCache = createSessionHistoryCache(() => connection.generation.getSnapshot()?.host.home)
   if (historyCache !== undefined) {
-    ctx.provide('sessionHistoryCache', historyCache)
     ctx.effect(() => () => historyCache.close(), 'session-controller.client.history-cache')
   }
-  const sessions = new ClientSessions(ctx, remotes)
+  const sessions = new ClientSessions(ctx, remotes, historyCache)
   ctx.remote.$on('api-session/added', (summary) => { sessions.handleSessionAdded(summary) })
   ctx.remote.$on('api-session/removed', (sessionId) => { sessions.handleSessionRemoved(sessionId) })
   ctx.remote.$on('api-session/status', (sessionId, running) => {

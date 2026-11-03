@@ -1,5 +1,6 @@
 /** Client catalog and source-labelled ownership of exact Session generations. */
 import type { Context, Fiber } from '@deepseek-ai/cordis'
+import type { SessionHistoryCache } from '../history-cache.ts'
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
 import { workspaceTitleOf } from '@deepseek-ai/dsh-util-workspace-path'
@@ -256,12 +257,14 @@ export class ClientSessions implements ISessions {
   /**
    * @param ctx - client root context (scope fibers mount under it).
    * @param remote - generated Remote namespaces shared with every Session.
+   * @param historyCache - optional browser history cache owned by this Client root.
    */
   constructor(
     private readonly rootCtx: Context,
     remote: SessionRemotes,
+    historyCache?: SessionHistoryCache,
   ) {
-    this.manager = new SessionManager(remote, rootCtx.get('sessionHistoryCache'))
+    this.manager = new SessionManager(remote, historyCache)
     this.list = createSnapshotStore<SessionListState>({
       ids: [], byId: {}, phase: 'pending', projectionsBySession: {},
     })

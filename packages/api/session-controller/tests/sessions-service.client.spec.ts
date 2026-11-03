@@ -9,6 +9,7 @@ import { RemoteStreamCarrierError } from '@deepseek-ai/dsh-api-gateway/client'
 import { SESSION_FORMAT_VERSION, SessionSeq } from '@deepseek-ai/dsh-session/types'
 import { ok, streamHandle, type RemoteMock } from '@deepseek-ai/dsh-remote-mock'
 import { createClientTest, webApp } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
+import type { SessionHistoryCache } from '../src/client/history-cache.ts'
 import { ClientSessions, SessionCreateError, SessionForkError } from '../src/client/sessions/service.ts'
 import { scopeOf } from '../src/client/scope.ts'
 import type {
@@ -29,7 +30,7 @@ interface Bench {
   unblock: Array<() => void>
 }
 
-type BenchFactory = () => Bench
+type BenchFactory = (cache?: SessionHistoryCache) => Bench
 
 const it = createClientTest({ roster: API_ROSTER }).extend<{ bench: BenchFactory }>({
   bench: async ({ mock, start }, use) => {
@@ -37,9 +38,9 @@ const it = createClientTest({ roster: API_ROSTER }).extend<{ bench: BenchFactory
     const client = await start()
     const benches: Bench[] = []
     try {
-      await use(() => {
+      await use((cache) => {
         const ctx = new Context()
-        const svc = new ClientSessions(ctx, client.ctx.remote)
+        const svc = new ClientSessions(ctx, client.ctx.remote, cache)
         const b = { ctx, mock, svc, unblock: [] as Array<() => void> }
         benches.push(b)
         return b
@@ -171,6 +172,20 @@ describe('search', () => {
 })
 
 describe('scope tree', () => {
+  it('passes the Client-root cache into newly retained session streams', async ({ bench }) => {
+    const cache: SessionHistoryCache = {
+      read: vi.fn(async () => undefined), replace: vi.fn(async () => {}), append: vi.fn(async () => {}),
+      prepend: vi.fn(async () => {}), remove: vi.fn(async () => {}), close: vi.fn(async () => {}),
+    }
+    const b = bench(cache)
+    b.mock.stream(FOLLOW, followScript(ok({ cursor: -1, records: [], hasMore: false })))
+    await feedList(b, [{ id: 's1' }])
+    using reference = b.svc.retain(sid('s1'), { source: 'controllerOperation' })
+    await reference.ready
+    await vi.waitFor(() => { expect(cache.read).toHaveBeenCalledWith({ kind: 'session', sessionId: sid('s1') }) })
+    expect(cache.replace).toHaveBeenCalled()
+  })
+
   it('opens a conversation from follow projections without a second projection request', async ({ bench }) => {
     const b = bench()
     b.mock.stream(FOLLOW, followScript(ok({
