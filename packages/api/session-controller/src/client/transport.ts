@@ -28,6 +28,8 @@ import {
 import type { SessionEventLikeEntry, SessionLiveEventEntry } from './contract/events.ts'
 import type { SessionRemotes } from './sessions/remotes.ts'
 import { assertSessionWireEvent } from './session-wire-event.ts'
+import type { SessionHistoryCache } from './history-cache.ts'
+import { SessionHistoryWindow } from './history-window.ts'
 
 export {
   SESSION_SEARCH_RESULT_LIMIT,
@@ -141,15 +143,19 @@ export class SessionEventStream extends RemoteJournalStream<
   ClientSessionPageRequest,
   SessionAssistantStreamFrame
 > {
+  private readonly history: SessionHistoryWindow
+  private readonly preview: SessionEventStreamOptions['publish']
   /**
    * @param remote - generated Session namespace and Gateway stream factory.
    * @param address - durable ordinary-Session or direct-subagent address.
    * @param options - Session event-window destinations.
+   * @param cache - optional browser cache shared by the Client root.
    */
   constructor(
     private readonly remote: SessionRemotes,
     private readonly address: SessionAddress,
     options: SessionEventStreamOptions,
+    cache?: SessionHistoryCache,
   ) {
     super(remote, {
       name: 'session event stream',
@@ -166,6 +172,8 @@ export class SessionEventStream extends RemoteJournalStream<
         : { carrierFailed: options.carrierFailed }),
       failed: options.failed,
     })
+    this.preview = options.publish
+    this.history = new SessionHistoryWindow(address, cache)
   }
 
   /** @inheritdoc */
@@ -176,11 +184,17 @@ export class SessionEventStream extends RemoteJournalStream<
     SessionHistoryRecord, number, SessionJournalPage, SessionAssistantStreamFrame
   >> {
     let assistantRevision: number | undefined
+    const preview = this.history.preview(signal, (history) => {
+      this.preview({ type: 'replace', entries: historyEntries(history.records), hasMore: history.hasMore,
+        page: { records: history.records, hasMore: history.hasMore } })
+    })
+    if (preview !== undefined) await preview
     for await (const frame of this.remote.session.follow({
       address: this.address,
       activate: true,
       assistantStream: true,
       ...this.repairRequest(request),
+      ...this.history.resumeRequest(),
     }, signal)) {
       if (frame.type === 'snapshot') {
         for (const record of frame.records) assertSessionWireEvent(record.event)
@@ -192,12 +206,12 @@ export class SessionEventStream extends RemoteJournalStream<
           )
         }
         assistantRevision = frame.assistantStream.revision
+        const window = this.history.opening(frame)
         yield {
           type: 'opened',
           cursor: frame.cursor,
           page: {
-            records: frame.records,
-            hasMore: frame.hasMore,
+            ...window,
             projections: frame.projections,
             assistantStream: frame.assistantStream,
           },
@@ -216,6 +230,7 @@ export class SessionEventStream extends RemoteJournalStream<
         continue
       }
       assertSessionWireEvent(frame.event)
+      this.history.append(frame)
       yield { type: 'entry', entry: frame }
     }
   }
@@ -232,6 +247,8 @@ export class SessionEventStream extends RemoteJournalStream<
     )
     if (!result.ok) throw result.error
     for (const record of result.value.records) assertSessionWireEvent(record.event)
+    signal.throwIfAborted()
+    this.history.prepend(result.value)
     return result.value
   }
 

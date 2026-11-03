@@ -851,7 +851,7 @@ describe('remaining branches', () => {
     const snapshot = session.getSnapshot()
     expect(snapshot.openState).toBe('error')
     expect(snapshot.openError).toMatchObject({
-      code: 'gateway/internal', message: 'session event stream page did not end at its requested cursor',
+      code: 'gateway/internal', message: 'Incomplete Session history window',
     })
     expect(eventSeqs(session)).toEqual([])
   })

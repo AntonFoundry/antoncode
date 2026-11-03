@@ -261,7 +261,7 @@ export class ClientSessions implements ISessions {
     private readonly rootCtx: Context,
     remote: SessionRemotes,
   ) {
-    this.manager = new SessionManager(remote)
+    this.manager = new SessionManager(remote, rootCtx.get('sessionHistoryCache'))
     this.list = createSnapshotStore<SessionListState>({
       ids: [], byId: {}, phase: 'pending', projectionsBySession: {},
     })

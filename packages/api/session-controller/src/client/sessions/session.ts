@@ -36,6 +36,7 @@ import type { SessionRemotes } from './remotes.ts'
 import { ProjectionValueStore } from './projection-store.ts'
 import type { ProjectionsBaseline } from './projection-store.ts'
 import { resolvedClientTimeZone } from '../time-zone.ts'
+import type { SessionHistoryCache } from '../history-cache.ts'
 import {
   ClientAssistantStream,
   type ClientAssistantStreamResult,
@@ -69,6 +70,8 @@ interface PendingHistory {
 
 /** Manager-owned observers of a Session object's local state edges. */
 export interface SessionOptions {
+  /** Disposable browser history shared by this Client root. */
+  historyCache?: SessionHistoryCache
   /** Catalog-discovered address selecting non-activating subagent transport. */
   address?: SubagentAddress
   /** Whether the exact direct parent Agent is available in Host summaries; absent until known. */
@@ -648,7 +651,7 @@ export class Session implements SessionFace {
       failed: (error) => {
         this.failEventStream(events, generation, error)
       },
-    })
+    }, this.options.historyCache)
     this.events = events
     try {
       await events.open(HISTORY_PAGE_OPTIONS)

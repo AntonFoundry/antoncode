@@ -80,6 +80,8 @@ Queue edits replace pending content with non-empty text only.
 
 The controller composes `ArchivedSessionGate` through `ctx.plugin`: it loads once the Agent registry, Session store, and Workspace registry exist and unwinds with the controller. Its `agent/pre-step` listener rejects a step proposed for an archived Session or for a subagent descendant of one — read from the Session header's lineage fields, never a fork — so a late waking delivery ends its turn as `blocked` without a model request; unarchiving lifts the gate for the whole lineage. The work an archived Session still runs is reported and stopped by its owners through the Workspace registry's archive admission ([seam](../../workspace/workspace/README.md)): the running turn by the [Agent registry](../../core/agent/README.md), owned jobs by the [job registry seam](../../jobs/jobs/README.md), subagent descendants by the [Subagent](../../subagent/subagent/README.md) runtime, reminders by the [Schedule](../../schedule/schedule/README.md) plugin; this controller reports nothing itself.
 
+The browser keeps committed history windows in an origin-local IndexedDB cache scoped to the Host account home and durable Session address. Opening a cached chat renders its messages before the Host responds, then `follow` requests only events after the saved cursor. The Host accepts that cursor only for the same Session creation time and format version, and returns a complete tail when the cached cursor is stale or outside the bounded opening window. Live durable events update individual database records; temporary Assistant chunks stay in memory. Clearing browser data, invalid cache records, denied storage, and exhausted quota use ordinary Host history loading. JSONL Session logs remain authoritative.
+
 <a id="client-references"></a>
 ## Client references
 
@@ -132,6 +134,8 @@ No direct effect; model requests remain owned by the Agent and LLM packages.
 - File-reference completion uses the shared Agent lookup and can resume a cold Session; the `skills/list` catalog is the non-activating alternative for skill metadata.
 - Accepted/running display memory lives only in Client memory and is lost on page reload.
 - That memory is not shared between tabs: one tab can show a converted row while another still shows `New Session` for the same Session.
+
+
 
 
 <a id="dev-note"></a>

@@ -100,6 +100,28 @@ async function setup(): Promise<{ ctx: Context; history: HistoryController; web:
 }
 
 describe('Session history and Web follow', () => {
+  it('resumes after a browser cursor and rejects stale identities without truncating history', async () => {
+    const { ctx, web } = await setup()
+    const session = ctx.sessions.create(SessionId('browser-resume'), { meta: { cwd: '/workspace' } })
+    session.append('turn/start', { turn: 1 })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    for (const createdAt of [session.header.createdAt, session.header.createdAt + 1]) {
+      const abort = new AbortController()
+      const iterator = web.follow({ address: { kind: 'session', sessionId: session.id }, resume: {
+        afterSeq: 0, createdAt, version: SESSION_FORMAT_VERSION,
+      } }, abort.signal)[Symbol.asyncIterator]()
+      try {
+        const opening = await iterator.next()
+        if (opening.done || opening.value.type !== 'snapshot') throw new Error('Expected opening')
+        expect(opening.value.records.map(record => record.event.seq)).toEqual(createdAt === session.header.createdAt ? [1] : [0, 1])
+        expect(opening.value.resumed).toBe(createdAt === session.header.createdAt ? true : undefined)
+      } finally { abort.abort(); await iterator.return?.() }
+    }
+    await expect(web.follow({ address: { kind: 'session', sessionId: session.id }, resume: {
+      afterSeq: -2, createdAt: session.header.createdAt, version: SESSION_FORMAT_VERSION,
+    } }, signal())[Symbol.asyncIterator]().next()).rejects.toMatchObject({ code: 'gateway/bad-request' })
+  })
+
   it('opens at the current cursor and follows later events from an ordinary Session', async () => {
     const { ctx, history, web } = await setup()
     const session = ctx.sessions.create(SessionId('ordinary'), { meta: { cwd: '/workspace' } })

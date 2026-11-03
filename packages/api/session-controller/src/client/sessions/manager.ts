@@ -21,6 +21,7 @@ import { flattenLineage } from './lineage.ts'
 // the 'title' projection key this manager projects into list rows (and any
 // useProjection('title') consumer reads). Zero value imports by construction.
 import type {} from '@deepseek-ai/dsh-session-title/client'
+import type { SessionHistoryCache } from '../history-cache.ts'
 import { Notifier } from './notifier.ts'
 import { ProjectionValueStore } from './projection-store.ts'
 import { Session } from './session.ts'
@@ -127,8 +128,11 @@ export class SessionManager {
     this.listSnapshotCache = this.buildListSnapshot()
   })
 
-  /** @param remote - generated Remote namespaces used by catalog and history readers. */
-  constructor(private readonly remote: SessionRemotes) {
+  /**
+   * @param remote - generated Remote namespaces used by catalog and history readers.
+   * @param historyCache - optional browser cache shared by the Client root.
+   */
+  constructor(private readonly remote: SessionRemotes, private readonly historyCache?: SessionHistoryCache) {
     this.listSnapshotCache = this.buildListSnapshot()
   }
 
@@ -296,6 +300,7 @@ export class SessionManager {
         this.sessions.get(engaged.sessionId)?.handleBlank(false)
       },
       projections: this.projectionStore(sessionId),
+      ...(this.historyCache === undefined ? {} : { historyCache: this.historyCache }),
     })
   }
 
@@ -704,6 +709,10 @@ export class SessionManager {
    * @param sessionId - removed Session identity.
    */
   handleSessionRemoved(sessionId: SessionId): void {
+    const child = this.addresses.get(sessionId)
+    void this.historyCache?.remove(child === undefined
+      ? { kind: 'session', sessionId }
+      : { kind: 'subagent', parentSessionId: child.parentSessionId, childSessionId: child.childSessionId, mode: child.mode })
     const durableSubagent = this.subagentAddress(sessionId) !== undefined
       || this.summaries.some(summary => summary.sessionId === sessionId && summary.origin === 'subagent')
     this.recordMutation(durableSubagent

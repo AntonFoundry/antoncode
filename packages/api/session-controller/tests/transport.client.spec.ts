@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { CachedSessionHistory, SessionHistoryCache } from '../src/client/history-cache.ts'
 import {
   RemoteStream,
   RemoteStreamCarrierError,
@@ -89,6 +90,7 @@ function sessionClient(remote: SessionTransportRemote): SessionRemotes {
 }
 
 interface FollowGeneration {
+  readonly waitBeforeFrames?: Promise<void>
   readonly frames: readonly SessionFollowFrame[]
   readonly terminal?: Error
   readonly hold?: boolean
@@ -116,6 +118,7 @@ class ScriptedSessionRemote implements SessionTransportRemote {
     if (generation === undefined) throw new Error('no scripted Session generation')
     this.followRequests.push(request)
     this.signals.push(signal)
+    if (generation.waitBeforeFrames !== undefined) await generation.waitBeforeFrames
     for (const frame of generation.frames) yield frame
     await generation.waitAfterFrames
     if (generation.terminal !== undefined) throw generation.terminal
@@ -586,7 +589,9 @@ describe('Session Client stream adapters', () => {
 
     expect(remote.followRequests).toEqual([
       { address: ADDRESS, activate: true, assistantStream: true, maxMessages: 500, turnWindow: { minMessages: 50, minTurns: 2 } },
-      { address: ADDRESS, activate: true, assistantStream: true, maxMessages: 500, turnWindow: { minMessages: 50, minTurns: 2 } },
+      { address: ADDRESS, activate: true, assistantStream: true, maxMessages: 500,
+        turnWindow: { minMessages: 50, minTurns: 2 },
+        resume: { afterSeq: 2, createdAt: 0, version: SESSION_FORMAT_VERSION } },
     ])
     expect(remote.pageRequests).toEqual([])
     expect(changes.map(change => change.type)).toEqual(['replace', 'append', 'replace'])
@@ -617,7 +622,7 @@ describe('Session Client stream adapters', () => {
     await vi.waitFor(() => { expect(remote.followRequests).toHaveLength(2) })
     expect(remote.followRequests).toEqual([
       { address: ADDRESS, activate: true, assistantStream: true },
-      { address: ADDRESS, activate: true, assistantStream: true },
+      { address: ADDRESS, activate: true, assistantStream: true, resume: { afterSeq: 0, createdAt: 0, version: SESSION_FORMAT_VERSION } },
     ])
     expect(remote.pageRequests).toEqual([])
     await stream.dispose()
@@ -721,5 +726,63 @@ describe('Session Client stream adapters', () => {
     })
     expect(failed).not.toHaveBeenCalled()
     await after.dispose()
+  })
+})
+
+
+describe('browser-first Session transport', () => {
+  it('publishes cached messages before the Host responds and syncs only the missing suffix', async () => {
+    const opening = snapshot(1, [entry(0), entry(1)])
+    if (opening.type !== 'snapshot') throw new Error('Expected opening')
+    const cached: CachedSessionHistory = { header: opening.header, cursor: 1, records: opening.records, hasMore: false }
+    const cache: SessionHistoryCache = {
+      read: vi.fn(async () => cached), replace: vi.fn(async () => {}), prepend: vi.fn(async () => {}), append: vi.fn(async () => {}),
+      remove: vi.fn(async () => {}), close: vi.fn(async () => {}),
+    }
+    const ready = Promise.withResolvers<undefined>()
+    const delta = snapshot(2, [entry(2)])
+    if (delta.type !== 'snapshot') throw new Error('Expected opening')
+    const remote = new ScriptedSessionRemote([{
+      frames: [{ ...delta, resumed: true }, entry(3)], waitBeforeFrames: ready.promise, hold: true,
+    }], [])
+    const changes: SessionJournalChange[] = []
+    const stream = new SessionEventStream(sessionClient(remote), ADDRESS, {
+      publish: (change) => { changes.push(change) }, failed: vi.fn(),
+    }, cache)
+    try {
+      const opened = stream.open({})
+      await vi.waitFor(() => { expect(changes).toHaveLength(1) })
+      expect(changes[0]).toMatchObject({ type: 'replace', entries: [entry(0), entry(1)] })
+      ready.resolve(undefined)
+      await opened
+      await vi.waitFor(() => { expect(changes).toHaveLength(3) })
+      expect(remote.followRequests[0]?.resume).toEqual({ afterSeq: 1, createdAt: 0, version: SESSION_FORMAT_VERSION })
+      expect(changes[1]).toMatchObject({ type: 'replace', entries: [entry(0), entry(1), entry(2)] })
+      expect(changes[2]).toMatchObject({ type: 'append', entry: entry(3) })
+      expect(cache.replace).not.toHaveBeenCalled()
+      expect(cache.append).toHaveBeenCalledWith(ADDRESS, opening.header, [entry(2)])
+      expect(cache.append).toHaveBeenCalledWith(ADDRESS, opening.header, [entry(3)])
+    } finally { ready.resolve(undefined); await stream.dispose() }
+  })
+
+  it('replaces a rejected local identity with the full Host snapshot', async () => {
+    const old = snapshot(0, [entry(0)])
+    if (old.type !== 'snapshot') throw new Error('Expected opening')
+    const cache: SessionHistoryCache = {
+      read: vi.fn(async () => ({ header: { ...old.header, createdAt: 200 }, cursor: 0, records: old.records, hasMore: false })),
+      replace: vi.fn(async () => {}), prepend: vi.fn(async () => {}), append: vi.fn(async () => {}),
+      remove: vi.fn(async () => {}), close: vi.fn(async () => {}),
+    }
+    const remote = new ScriptedSessionRemote([{ frames: [snapshot(1, [entry(0), entry(1)])], hold: true }], [])
+    const changes: SessionJournalChange[] = []
+    const stream = new SessionEventStream(sessionClient(remote), ADDRESS, {
+      publish: (change) => { changes.push(change) }, failed: vi.fn(),
+    }, cache)
+    try {
+      await stream.open({})
+      expect(changes).toHaveLength(2)
+      expect(changes[1]).toMatchObject({ type: 'replace', entries: [entry(0), entry(1)] })
+      expect(cache.replace).toHaveBeenCalledWith(ADDRESS, { header: old.header, cursor: 1, records: [entry(0), entry(1)], hasMore: false })
+    } finally { await stream.dispose() }
   })
 })

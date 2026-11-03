@@ -1,10 +1,10 @@
 /** Web opening aggregation over one observation and a shared transforming buffer. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
+import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionObservation } from '@deepseek-ai/dsh-session-query'
 import type { HistoryController } from '../history/controller.ts'
-import { addressId, rejectNotFound } from '../history.ts'
+import { addressId, rejectNotFound, pageRecords } from '../history.ts'
 import { EventListener, ListenerBuffer } from '../history/listener.ts'
 import { history, projections, resolveHistoryRequest, validateObservationAddress } from '../history/controller.ts'
 import type { SessionFollowFrame, SessionFollowRequest } from '../types.ts'
@@ -32,6 +32,7 @@ export class WebController {
   async *follow(request: SessionFollowRequest, signal: AbortSignal): AsyncIterable<SessionFollowFrame> {
     const sessionId = addressId(request.address)
     const spec = resolveHistoryRequest(request)
+    validateResume(request.resume)
     using queue = new ListenerBuffer<SessionFollowFrame>(this.ctx, signal)
     using listener = new EventListener(this.ctx, sessionId, signal, queue)
     const streams = this.historyController.streamsListener
@@ -48,7 +49,7 @@ export class WebController {
       type: 'snapshot',
       header: { ...observation.header },
       projections: projections(observation),
-      ...history(observation, spec),
+      ...openingHistory(observation, spec, request.resume),
     }
     listener.setCursor(opening.cursor)
     if (assistantListener !== undefined) {
@@ -75,4 +76,23 @@ export class WebController {
     yield opening
     yield* queue.items()
   }
+}
+
+function validateResume(resume: SessionFollowRequest['resume']): void {
+  if (resume !== undefined && (!Number.isSafeInteger(resume.afterSeq) || Object.is(resume.afterSeq, -0) || resume.afterSeq < -1
+    || !Number.isSafeInteger(resume.createdAt) || resume.createdAt < 0
+    || !Number.isSafeInteger(resume.version) || resume.version < 0)) {
+    throw new RemoteError('gateway/bad-request', 'Invalid Session history resume cursor', {})
+  }
+}
+
+function openingHistory(observation: SessionObservation, spec: ReturnType<typeof resolveHistoryRequest>,
+  resume: SessionFollowRequest['resume']): Pick<Extract<SessionFollowFrame, { type: 'snapshot' }>, 'cursor' | 'records' | 'hasMore' | 'resumed'> {
+  const page = history(observation, spec)
+  if (resume !== undefined && resume.createdAt === observation.header.createdAt
+    && resume.version === observation.header.version && resume.afterSeq <= observation.cursor
+    && resume.afterSeq >= (page.records[0]?.event.seq ?? 0) - 1) {
+    return { ...page, records: pageRecords(observation.events.slice(resume.afterSeq + 1)), resumed: true }
+  }
+  return page
 }

@@ -491,6 +491,12 @@ export interface SessionFollowRequest extends Pick<SessionPageRequest, 'maxMessa
   readonly activate?: boolean
   /** Include process-local assistant presentation frames for the Web client. */
   readonly assistantStream?: true
+  /** Reuse a browser-held prefix only when the Session identity and cursor still match. */
+  readonly resume?: {
+    readonly afterSeq: number
+    readonly createdAt: number
+    readonly version: number
+  }
 }
 
 /** One active assistant attempt in a reconnect opening snapshot. */
@@ -561,6 +567,8 @@ export type SessionFollowFrame =
     readonly hasMore: boolean
     readonly projections: SessionProjectionBaseline
     readonly assistantStream?: SessionAssistantStreamBaseline
+    /** Records contain only events after the accepted request resume cursor. */
+    readonly resumed?: true
   }
   | SessionEventEntry
   | { readonly type: 'assistant-stream'; readonly frame: SessionAssistantStreamFrame }
