@@ -198,7 +198,12 @@ export class ToolExecutionPipeline {
     }
     const invalidArgs = this.invalidArgumentsResult(exec)
     if (invalidArgs !== undefined) {
-      return { kind: 'final-result', exec, result: invalidArgs }
+      // Argument violations are model-visible failures like any body error: they
+      // must reach `tools/post-execute` so loop guards (repeat detection),
+      // PostToolUse hooks, and audit observers see the retry they cause. A
+      // `final-result` here made a repeating wrong-arity call invisible to every
+      // post-execute listener while `tools/result` still reported it.
+      return { kind: 'post-result', exec, result: invalidArgs }
     }
     try {
       const carrier = scopeTarget(this.tools, exec.agent)
@@ -286,9 +291,16 @@ export class ToolExecutionPipeline {
           properties: properties !== null && typeof properties === 'object' ? Object.keys(properties) : [],
         }
       })
-    const match = toolsMatchingArgumentKeys(keys, candidates)[0]
-    if (match === undefined) return result
-    const hinted = `${message}; the supplied properties (${keys.join(', ')}) match tool "${match}" — retry with that tool and the same arguments`
+    const matches = toolsMatchingArgumentKeys(keys, candidates)
+    if (matches.length === 0) return result
+    // Several visible tools can share one parameter object (`path` alone fits
+    // both `read` and `glob`). Naming only the first is arbitrary and can steer
+    // the model onto a sibling it never meant, so an ambiguous payload names
+    // every candidate and leaves the choice to the model.
+    const target = matches.length === 1
+      ? `match tool "${matches[0]}" — retry with that tool and the same arguments`
+      : `match tools ${matches.map(name => `"${name}"`).join(', ')} — retry with the intended one and the same arguments`
+    const hinted = `${message}; the supplied properties (${keys.join(', ')}) ${target}`
     const info = result.error.info
     return {
       isError: true,
@@ -354,7 +366,9 @@ export class ToolExecutionPipeline {
 
   /**
    * Run around-dispatch and the tool body. Tool and unknown-tool failures still
-   * receive post-execute; pipeline failures are already final. Started bodies
+   * receive post-execute; argument violations raised during preparation do too,
+   * so post-execute observers see every model-correctable failure. Preparation
+   * refusals and cancellation stay final. Started bodies
    * drain on cancellation before a successful outcome becomes `ABORTED`.
    * @param exec - the execution returned by this pipeline's prepare stage.
    * @returns whether the result still needs post-execute.

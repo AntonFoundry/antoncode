@@ -2739,6 +2739,51 @@ describe('validateArgs (the runtime-validation Agent Note, part 1)', () => {
 })
 
 describe('defineTool validation (the runtime-validation Agent Note, part 1)', () => {
+  it('delivers an argument violation to tools/post-execute so repeat guards can see it', async () => {
+    const ctx = await setup()
+    ctx.tools.register(defineContentToolFixture({
+      name: 'subagent',
+      description: 'delegates a task',
+      parameters: {
+        description: { type: 'string', required: true },
+        prompt: { type: 'string', required: true },
+      },
+      async execute() { return [{ type: 'text', text: 'started' }] },
+    }))
+    const seen: ToolExecutionResult[] = []
+    ctx.on('tools/post-execute', async (_exec, result, next): Promise<PostToolDecision> => {
+      seen.push(result)
+      return next()
+    })
+    const result = await executeToolFixture(ctx, {
+      signal: testToolSignal, callId: ToolCallId('bad-args'), name: 'subagent',
+      arguments: { command: 'git status', workdir: '/tmp' },
+    })
+    expect(result.isError).toBe(true)
+    // The guard observes the failure instead of it becoming a final result
+    // that only tools/result reporters ever see.
+    expect(seen).toHaveLength(1)
+    expect(seen[0]?.error?.message).toContain('missing required property "prompt"')
+  })
+
+  it('lets a post-execute listener still replace argument-violation feedback', async () => {
+    const ctx = await setup()
+    ctx.tools.register(defineContentToolFixture({
+      name: 'reader',
+      description: 'reads a path',
+      parameters: { path: { type: 'string', required: true } },
+      async execute(args) { return [{ type: 'text', text: args.path }] },
+    }))
+    ctx.on('tools/post-execute', async () => ({
+      kind: 'accept',
+      content: [{ type: 'text', text: 'corrected guidance' }],
+    }))
+    const result = await executeToolFixture(ctx, {
+      signal: testToolSignal, callId: ToolCallId('rewritten'), name: 'reader', arguments: {},
+    })
+    expect(result.content).toEqual([{ type: 'text', text: 'corrected guidance' }])
+  })
+
   it('names the sibling tool whose schema the wrong-tool payload matches', async () => {
     const ctx = await setup()
     ctx.tools.register(defineContentToolFixture({
@@ -2781,6 +2826,37 @@ describe('defineTool validation (the runtime-validation Agent Note, part 1)', ()
     })
     expect(unmatched.content[0]).toMatchObject({
       text: 'Error: invalid arguments: missing required property "description"',
+    })
+  })
+
+  it('names every sibling when several share the payload parameter object', async () => {
+    const ctx = await setup()
+    ctx.tools.register(defineContentToolFixture({
+      name: 'commander',
+      description: 'runs a command',
+      parameters: {
+        command: { type: 'string', required: true },
+        description: { type: 'string', required: true },
+      },
+      async execute() { return [] },
+    }))
+    for (const name of ['globber', 'reader']) {
+      ctx.tools.register(defineContentToolFixture({
+        name,
+        description: `${name} takes a path`,
+        parameters: { path: { type: 'string', required: true } },
+        async execute() { return [] },
+      }))
+    }
+    const result = await executeToolFixture(ctx, {
+      signal: testToolSignal, callId: ToolCallId('ambiguous'), name: 'commander',
+      arguments: { path: '/x' },
+    })
+    expect(result.isError).toBe(true)
+    // Naming only the first candidate would steer the model arbitrarily.
+    expect(result.content[0]).toMatchObject({
+      text: 'Error: invalid arguments: missing required property "command"; missing required property "description"; '
+        + 'the supplied properties (path) match tools "globber", "reader" — retry with the intended one and the same arguments',
     })
   })
 
