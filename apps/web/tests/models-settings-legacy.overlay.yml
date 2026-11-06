@@ -1,0 +1,9 @@
+# Exercise the generic pi-ai editor, including its legacy authentication routes.
+# Native ownership defaults are covered by the base provider composition suite.
+- id: llm-pi-ai
+  config:
+    reservedProviders: []
+
+# pi-ai owns openai in this editor scenario; native OpenAI declares the same id.
+- id: llm-openai
+  disabled: true

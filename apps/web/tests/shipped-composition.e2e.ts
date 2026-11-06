@@ -564,11 +564,11 @@ it('assembles the shipped Web transport, catalog, guidance, and defaults', async
   `)
   await ctx.settings.update('llm-pi-ai', {
     providers: {
-      openai: {},
-      anthropic: { retryPolicy: { mode: 'always' } },
+      openrouter: {},
+      'kimi-coding': { retryPolicy: { mode: 'always' } },
     },
   })
-  expect(ctx.llm.providerRetryPolicy('openai')).toMatchInlineSnapshot(`
+  expect(ctx.llm.providerRetryPolicy('openrouter')).toMatchInlineSnapshot(`
     {
       "initialDelayMs": 500,
       "jitterRatio": 0.1,
@@ -584,7 +584,7 @@ it('assembles the shipped Web transport, catalog, guidance, and defaults', async
       ],
     }
   `)
-  expect(ctx.llm.providerRetryPolicy('anthropic')).toMatchInlineSnapshot(`
+  expect(ctx.llm.providerRetryPolicy('kimi-coding')).toMatchInlineSnapshot(`
     {
       "initialDelayMs": 500,
       "jitterRatio": 0.1,

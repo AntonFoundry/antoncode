@@ -69,6 +69,12 @@ The `opencode-free` row uses the local [OpenCode service adapter](../../llm/llm-
 
 On macOS and Linux you get the bash shell tools; on Windows you get the PowerShell twins instead, so exactly one shell stack is available per machine. The safety behavior is identical on every platform. A Windows host that prefers the unconfined PowerShell executor can switch the shell rows in its profile patch — the switch must disable both PowerShell rows and re-enable both bash rows, otherwise the profile fails to load.
 
+### Provider ownership
+
+The base composition offers native `openai`, `claude-code`, and `codex` routes. Its `llm-pi-ai.reservedProviders` is `[openai, anthropic, openai-codex]`, so pi-ai omits the duplicate Anthropic and Codex directory entries while unrelated providers such as `kimi-coding` remain configurable. Native Codex reads the console's `codex login` session; its route becomes active when `llm-codex.providers.codex` is configured. Native Claude Code retains its own subscription login and settings.
+
+A configured pi-ai `anthropic` or `openai-codex` profile is refused when that route is reserved; the bundle does not delete configuration or credentials. To retain keyed Anthropic or another intentional pi-ai route, explicitly remove its id from `reservedProviders` in your existing `llm-pi-ai` profile override, retaining the override's complete configuration. A higher-layer override replaces this default rather than merging it. See the [migration and opt-out guide](../../../docs/upgrade-guide/v0.2.2-alpha.2/native-provider-ownership/guide.md).
+
 ### Changing the defaults
 
 To change what a profile built on this core provides — a different default model, a stricter permission mode, extra or fewer tools — edit your profile's `cordis.patch.yml` or add a later bundle. Each patch entry replaces the target's whole configuration, so restate every setting you want to keep. Keep the sandboxed filesystem provider as the single file-write path: adding the plain filesystem provider on top of it makes the profile fail to load.

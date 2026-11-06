@@ -102,7 +102,7 @@ A profile's `models` list replaces the route's installed catalog rather than ext
 
 On a live-refreshed route (`zai`, `moonshotai`, `deepseek`, `nvidia`), the startup catalog read from models.dev, NVIDIA's LLM API reference, or the endpoint listing (`liveModelDiscovery: true`) supplies the served models when no `models` list is set. `liveModelUnion: true` relaxes a `models` list's replacement: discovered ids join configured entries by id, and the installed catalog keeps serving anything neither source named. Without the flag a `models` list is strict curation, and no live fetch runs for the route. The fetch repeats every `modelsDevRefreshMs` (eight hours by default; the mount-time value applies until restart).
 
-Provider and model labels use readable capitalization and spaces; provider and model ids remain unchanged for routing and settings. `reservedProviders` names routes a native adapter in the same composition owns: the directory omits them and a profile naming one is refused.
+Provider and model labels use readable capitalization and spaces; provider and model ids remain unchanged for routing and settings. `reservedProviders` excludes routes from the directory and refuses activation when a configured profile names one. The standalone plugin defaults to no reservations; [base-backed profiles](../../bundle/base/README.md#provider-ownership) reserve `openai`, `anthropic`, and `openai-codex` in favor of native routes. Intentional keyed Anthropic deployments can opt out through a complete composition override; existing configuration and credentials are not deleted.
 
 ### Run with reasoning and wire compatibility
 

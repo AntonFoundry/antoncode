@@ -162,9 +162,10 @@
     - id: llm-pi-ai
       name: '@deepseek-ai/dsh-llm-pi-ai'
       config:
-        # `openai` is owned by the native adapter below. pi-ai remains the
-        # flexible route family for Kimi and other configured providers.
-        reservedProviders: [openai]
+        # Native adapters own OpenAI, Claude Code, and Codex authentication.
+        # Reserve pi-ai's duplicate routes; unrelated providers remain available.
+        # Legacy keyed Anthropic deployments can override this list (see README).
+        reservedProviders: [openai, anthropic, openai-codex]
 
     - id: session-persistence-jsonl
       name: '@deepseek-ai/dsh-session-persistence-jsonl'
