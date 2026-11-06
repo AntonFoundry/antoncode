@@ -8,6 +8,9 @@ import { historicalSchemaRegion } from './historical-schema-region.ts'
 
 const root = resolve(import.meta.dirname, '..')
 const blockedTerm = 'prove' + 'nance'
+const legacyBlockDecoder = 'packages/flowbuilder/flowbuilder-domain/src/block-storage.ts'
+const legacyBlockKeyDeclaration = `export const legacyBlockMetadataKey = '${blockedTerm}'`
+
 const excludedPrefixes = ['vendor/', '.agents/notes/archived/'] as const
 
 /** One blocked term occurrence in a tracked path or text line. */
@@ -44,7 +47,10 @@ export function findConcreteTermViolations(file: string, source: string): Concre
   const schemaRegion = historicalSchemaRegion(file, source)
   for (const [index, line] of lines.entries()) {
     if (schemaRegion !== undefined && index >= schemaRegion[0] && index < schemaRegion[1]) continue
-    if (containsBlockedTerm(line)) violations.push({ file, line: index + 1 })
+    const legacyReadKey = file === legacyBlockDecoder
+      && line === legacyBlockKeyDeclaration
+      && lines.filter(candidate => candidate === legacyBlockKeyDeclaration).length === 1
+    if (containsBlockedTerm(line) && !legacyReadKey) violations.push({ file, line: index + 1 })
   }
   return violations
 }

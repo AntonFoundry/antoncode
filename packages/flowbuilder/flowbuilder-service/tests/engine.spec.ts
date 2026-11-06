@@ -166,7 +166,7 @@ describe('executeRun', () => {
         inputs: [{ name: 'in', type: 'string' }],
         outputs: [{ name: 'out', type: 'string' }],
         params: [],
-        provenance: { createdAt: '2026-01-01T00:00:00.000Z' },
+        createdAt: '2026-01-01T00:00:00.000Z',
       },
     ])
     const terminal = await executeRun(host, flow(

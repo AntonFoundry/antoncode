@@ -10,10 +10,11 @@ import { z } from 'zod'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import type { FlowId } from './types.ts'
 import type { FlowDefinitionRecord, FlowRunRecordRecord } from './schema.ts'
-import { blockLibraryEntrySchema, flowDefinitionSchema, flowRunRecordSchema } from './schema.ts'
+import { flowDefinitionSchema, flowRunRecordSchema } from './schema.ts'
 import type { BlockId } from './types.ts'
 import type { BlockLibraryEntryRecord } from './schema.ts'
 import type { FlowRunId } from './types.ts'
+import { storedBlockLibraryEntrySchema } from './block-storage.ts'
 
 /**
  * Durable service state singleton. `initialized` distinguishes a valid empty
@@ -35,14 +36,15 @@ export type FlowbuilderDomainState = z.infer<typeof flowbuilderDomainState>
  */
 export const flowbuilderDomainSpec = defineDomain({
   name: 'flowbuilder',
-  version: 1,
+  version: 2,
+  compatibleVersions: [1],
   global: {
     schema: flowbuilderDomainState,
     initial: { initialized: false },
   },
   tables: {
     flows: domainTable<FlowId, FlowDefinitionRecord>(flowDefinitionSchema),
-    library: domainTable<BlockId, BlockLibraryEntryRecord>(blockLibraryEntrySchema),
+    library: domainTable<BlockId, BlockLibraryEntryRecord>(storedBlockLibraryEntrySchema),
     runs: domainTable<FlowRunId, FlowRunRecordRecord>(flowRunRecordSchema),
   },
 })

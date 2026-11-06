@@ -45,6 +45,25 @@ describe('concrete terminology policy', () => {
     }
   })
 
+  it('permits only the exact retired block read-key declaration once in its decoder', () => {
+    const file = 'packages/flowbuilder/flowbuilder-domain/src/block-storage.ts'
+    const declaration = `export const legacyBlockMetadataKey = '${blockedTerm}'`
+    expect(findConcreteTermViolations(file, declaration)).toEqual([])
+    expect(findConcreteTermViolations(file, `${declaration}\n${declaration}`)).toHaveLength(2)
+    for (const source of [
+      `// ${blockedTerm}`,
+      `const writer = { ${blockedTerm}: {} }`,
+      `${declaration} // public writer`,
+      `export const otherKey = '${blockedTerm}'`,
+    ]) expect(findConcreteTermViolations(file, source)).toEqual([{ file, line: 1 }])
+    for (const other of [
+      'packages/flowbuilder/flowbuilder-domain/src/schema.ts',
+      'packages/flowbuilder/flowbuilder-service/src/service.ts',
+      'packages/host/apiproxy/src/api/flow.schema.ts',
+      'packages/flowbuilder/flowbuilder-domain/tests/schema.spec.ts',
+    ]) expect(findConcreteTermViolations(other, declaration)).toEqual([{ file: other, line: 1 }])
+  })
+
   it('accepts exact replacement terms', () => {
     expect(findConcreteTermViolations(
       'packages/example/src/origin.ts',

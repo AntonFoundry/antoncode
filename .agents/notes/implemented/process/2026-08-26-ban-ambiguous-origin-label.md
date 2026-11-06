@@ -13,7 +13,7 @@ The existing [concrete prose reference](../../../skills/dsh-prose-standard/SKILL
 
 Maintained tracked paths and text must not contain that token in any case variant. Each use is replaced with the exact local concept, such as source-event references, provider metadata, model identity, context producer, configuration source, artifact identity, or recorded evidence.
 
-The rule applies to source, tests, documentation, active Agent Notes, prompts, snapshots, workflow files, scripts, identifiers, fields, exported types, and filenames. Because the repository is pre-release, coordinated public symbol and current durable-field renames are preferred over aliases. A compatibility reader may reconstruct the retired durable key at runtime without embedding the token in maintained text.
+The rule applies to source, tests, documentation, active Agent Notes, prompts, snapshots, workflow files, scripts, identifiers, fields, exported types, and filenames. Because the repository is pre-release, coordinated public symbol and current durable-field renames are preferred over aliases. The sole current-data exception is the exact `legacyBlockMetadataKey` declaration in `packages/flowbuilder/flowbuilder-domain/src/block-storage.ts`: the storage-only decoder must recognize the v1 block metadata key without hiding it through string construction. Current block schemas, writes, and RPC responses use flat `createdAt` and `sourceFlowId` fields. The terminology check admits that declaration once in that file and rejects comments, other declarations, duplicate declarations, and the same declaration elsewhere.
 
 `verify-concrete-terms` scans tracked filenames, symlink targets, and text case-insensitively after NFKC normalization. It runs as a quick leaf of `doc-sync`, and its tests prove rejection in prose, identifiers, and paths. Vendored sources and frozen archived Agent Notes remain excluded because their repository policies prohibit direct edits.
 
@@ -27,7 +27,7 @@ This decision partially supersedes the earlier decision's rejection of fixed wor
 
 **Replace every occurrence with one umbrella term such as `origin` or `source`.** Rejected because one new broad label would preserve the ambiguity between event references, model metadata, build identity, and recorded evidence.
 
-**Exempt all identifiers, durable fields, and generated files.** Rejected because callers and current generated reference material would continue teaching the retired label. The pre-release policy permits coordinated renames, while the legacy parser can retain read compatibility without retaining the literal token. The narrow historical evidence exclusions preserve captured declarations without exempting current names or authored guidance.
+**Exempt all identifiers, durable fields, and generated files.** Rejected because callers and current generated reference material would continue teaching the retired label. The pre-release policy permits coordinated renames, while the storage-only block decoder retains one explicit legacy read key under the narrow declaration rule. The narrow historical evidence exclusions preserve captured declarations without exempting current names or authored guidance.
 
 **Scan vendored and archived sources.** Rejected because vendored content is updated through its synchronization procedure and archived Agent Notes are frozen records. Their explicit exclusions keep this policy consistent with those ownership rules.
 

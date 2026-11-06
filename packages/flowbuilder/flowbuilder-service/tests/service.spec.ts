@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -7,6 +7,7 @@ import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageJson from '@deepseek-ai/dsh-storage-json'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import { FlowBuilderService } from '../src/index.ts'
+import { legacyBlockMetadataKey } from '@deepseek-ai/dsh-flowbuilder-domain/src/block-storage.ts'
 import type { FlowNode, FlowSaveRequest } from '@deepseek-ai/dsh-flowbuilder-domain'
 import { Service } from '@deepseek-ai/cordis'
 import type { PtcJsonValue, PtcRunRequest, PtcRunResult, PtcRunSpec } from '@deepseek-ai/dsh-ptc-runtime'
@@ -201,7 +202,7 @@ describe('FlowBuilderService library', () => {
   it('saves, searches, and deletes blocks', async () => {
     const { service } = await harness()
     const saved = await service.saveBlock(blockRequest())
-    expect(saved.provenance.createdAt.length).toBeGreaterThan(0)
+    expect(saved.createdAt.length).toBeGreaterThan(0)
     await service.saveBlock(blockRequest({ name: 'summarize', kind: 'llm', description: 'Summarizes text' }))
     expect(service.listBlocks()).toHaveLength(2)
     expect(service.listBlocks('summar').map(block => block.name)).toEqual(['summarize'])
@@ -211,13 +212,58 @@ describe('FlowBuilderService library', () => {
     await expect(service.deleteBlock(saved.id)).rejects.toThrow(/unknown block/)
   })
 
-  it('replaces a same-name block when no id is given, preserving id and provenance', async () => {
+  it('replaces a same-name block when no id is given, preserving id and creation timestamp', async () => {
     const { service } = await harness()
     const saved = await service.saveBlock(blockRequest())
     const revised = await service.saveBlock(blockRequest({ description: 'Fetches a page title, v2' }))
     expect(revised.id).toBe(saved.id)
-    expect(revised.provenance.createdAt).toBe(saved.provenance.createdAt)
+    expect(revised.createdAt).toBe(saved.createdAt)
     expect(service.listBlocks()).toHaveLength(1)
+  })
+
+  it('reads v1 blocks and reopens mixed stored generations after a v2 mutation', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'flowbuilder-legacy-'))
+    roots.push(root)
+    const createdAt = '2026-01-01T00:00:00.000Z'
+    const oldBlock = (id: string) => ({
+      ...blockRequest({ name: id }), id,
+      [legacyBlockMetadataKey]: { createdAt, sourceFlowId: 'flow-original' },
+    })
+    const path = join(root, 'flowbuilder.json')
+    const original = JSON.stringify({
+      unit: { name: 'flowbuilder', version: 1 }, global: { initialized: true },
+      tables: { flows: {}, runs: {}, library: { old1: oldBlock('old1'), old2: oldBlock('old2') } },
+    })
+    await writeFile(path, original)
+    const first = await harness(root)
+    try {
+      expect(await readFile(path, 'utf8')).toBe(original)
+      expect(first.service.getBlock('old1')).toMatchObject({ createdAt, sourceFlowId: 'flow-original' })
+      expect(first.service.getBlock('old1')).not.toHaveProperty(legacyBlockMetadataKey)
+      const revised = await first.service.saveBlock(blockRequest({ id: 'old1', name: 'old1', description: 'Updated' }))
+      expect(revised).toMatchObject({ createdAt, sourceFlowId: 'flow-original' })
+      expect(revised).not.toHaveProperty(legacyBlockMetadataKey)
+      const stored = JSON.parse(await readFile(path, 'utf8')) as {
+        unit: { version: number }
+        tables: { library: Record<string, Record<string, unknown>> }
+      }
+      expect(stored.unit.version).toBe(2)
+      expect(stored.tables.library.old1).toMatchObject({ createdAt, sourceFlowId: 'flow-original' })
+      expect(stored.tables.library.old1).not.toHaveProperty(legacyBlockMetadataKey)
+      expect(stored.tables.library.old2).toEqual(oldBlock('old2'))
+    } finally {
+      await first.ctx.storageDomain.closeAll()
+    }
+    const second = await harness(root)
+    try {
+      expect(second.service.listBlocks()).toHaveLength(2)
+      for (const id of ['old1', 'old2']) {
+        expect(second.service.getBlock(id)).toMatchObject({ createdAt, sourceFlowId: 'flow-original' })
+        expect(second.service.getBlock(id)).not.toHaveProperty(legacyBlockMetadataKey)
+      }
+    } finally {
+      await second.ctx.storageDomain.closeAll()
+    }
   })
 
   it('rejects a code block without code', async () => {

@@ -55,7 +55,8 @@ export const blockWireSchema = z.object({
     default: z.union([z.string(), z.number(), z.boolean(), z.null()]).optional(),
     description: z.string().optional(),
   })),
-  provenance: z.object({ sourceFlowId: z.string().optional(), createdAt: z.string() }),
+  sourceFlowId: z.string().optional(),
+  createdAt: z.string(),
 })
 
 /** One run record on the wire. */

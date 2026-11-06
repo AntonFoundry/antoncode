@@ -89,11 +89,9 @@ export const blockLibraryEntrySchema = z.object({
   inputs: z.array(flowPortSchema),
   outputs: z.array(flowPortSchema),
   params: z.array(flowParamSchema),
-  provenance: z.object({
-    sourceFlowId: z.string().optional(),
-    createdAt: z.string(),
-  }),
-})
+  sourceFlowId: z.string().optional(),
+  createdAt: z.string(),
+}).strict()
 
 /** One node's settlement inside a run record. */
 export const flowNodeRunStateSchema = z.object({
@@ -127,8 +125,8 @@ export const flowSaveRequestSchema = z.object({
 })
 
 /**
- * Save-request for one library block. The id and the provenance record are
- * service-owned; `sourceFlowId` is the one provenance field a client may set.
+ * Save-request for one library block. The id and creation timestamp are
+ * service-owned; `sourceFlowId` identifies the flow a client extracted the block from.
  * A `code` block carries its code at save time — an empty code body is a
  * caller bug, rejected at the durable boundary.
  */

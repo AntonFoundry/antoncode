@@ -53,7 +53,8 @@ export interface BlockWire {
     default?: string | number | boolean | null | undefined
     description?: string | undefined
   }[]
-  provenance: { sourceFlowId?: string | undefined; createdAt: string }
+  sourceFlowId?: string | undefined
+  createdAt: string
 }
 
 /** One run record on the wire (per-node states included). */
@@ -77,7 +78,7 @@ export interface FlowSavePayload {
   edges: FlowEdgeWire[]
 }
 
-/** Save payload for one library block (id optional; provenance service-owned). */
+/** Save payload for one library block (id optional; creation timestamp service-owned). */
 export interface BlockSavePayload {
   id?: string
   name: string

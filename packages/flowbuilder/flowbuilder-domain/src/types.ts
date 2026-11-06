@@ -162,13 +162,10 @@ export interface BlockLibraryEntry {
   outputs: FlowPort[]
   /** Declared parameters. */
   params: FlowParam[]
-  /** Where the block came from. */
-  provenance: {
-    /** The flow the block was extracted from, when it has one. */
-    sourceFlowId?: string | undefined
-    /** ISO-8601 creation timestamp. */
-    createdAt: string
-  }
+  /** The flow the block was extracted from, when it has one. */
+  sourceFlowId?: string | undefined
+  /** ISO-8601 creation timestamp. */
+  createdAt: string
 }
 
 /** Why a run settled. Closed union: `completed` reached every sink, `error` hit a node failure, `cancelled` was caller-cancelled. */

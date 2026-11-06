@@ -18,6 +18,8 @@ Store workflow definitions, reusable blocks, and run records with shared validat
 
 ## Understand the implementation
 
+Block records expose a required `createdAt` timestamp and optional `sourceFlowId` directly. The v2 domain accepts v1 data through a storage-only decoder; reads preserve the saved file, and saves write current records. Untouched legacy records remain readable alongside current rows after the unit stamp advances. Mixed metadata representations and malformed records reject rather than losing timestamps or source flow ids. A v1 reader refuses a unit stamped v2; downgrade is unsupported.
+
 Durable vocabulary for the flowbuilder capability family: workflow definitions, block library entries, and run records as zod-validated records, the `defineDomain` spec the service opens, and the pure graph validator (`validateFlowStructure`) every save path calls.
 
 ## Model Experience
