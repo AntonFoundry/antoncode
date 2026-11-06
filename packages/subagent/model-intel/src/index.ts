@@ -4,7 +4,7 @@
  *
  * The datasheet lives at `$DSH_HOME/model-intel.json`: one entry per researched
  * route with 0-100 strength axes (reasoning / coding / agentic / speed) and the
- * research provenance. A scheduler built on `ctx.interval()` plus the persisted
+ * research sources. A scheduler built on `ctx.interval()` plus the persisted
  * `fetchedAt` marker runs one research pass per configured interval (default
  * weekly) — restarts neither lose the schedule nor re-run an early pass. Each
  * pass registers a real job in the `jobs` registry (kind `model-intel`) so the

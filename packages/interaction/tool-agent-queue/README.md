@@ -85,8 +85,5 @@ A new digest appends step-local context and does not mutate a completed model re
 
 ### Dev Note
 
-- The tools borrow the service's authority rather than re-deriving it: authorization for a
-  cross-workspace send is decided by resolving the recipient's live workspace, so a stale
-  session id cannot address a mailbox it no longer belongs to.
-- Tool results report the settled durable facts (sequence numbers and cursors) rather than an
-  acknowledgement of intent, so a replay can be reasoned about after a restart.
+- The tools borrow the service's authority rather than re-deriving it: authorization for a cross-workspace send is decided by resolving the recipient's live workspace, so a stale session id cannot address a mailbox it no longer belongs to.
+- Tool results report the settled durable facts (sequence numbers and cursors) rather than an acknowledgement of intent, so a replay can be reasoned about after a restart.

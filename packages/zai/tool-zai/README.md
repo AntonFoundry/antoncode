@@ -23,26 +23,14 @@ Give an agent Z.AI vision, search, page-reading, and repository tools without pe
 
 ## Understand the implementation
 
-Native Z.AI tools: the exact behavior of the four ZAI MCP servers
-(`zai-vision`, `zai-web-search`, `zai-web-reader`, `zai-read-github`) as
-in-process `defineTool` registrations — thirteen model-facing tools, zero
-server processes, zero ports.
+Native Z.AI tools: the exact behavior of the four ZAI MCP servers (`zai-vision`, `zai-web-search`, `zai-web-reader`, `zai-read-github`) as in-process `defineTool` registrations — thirteen model-facing tools, zero server processes, zero ports.
 
 ## Why this exists instead of `mcp-client` entries
 
-Each bridged MCP server costs a live connection plus supervisor state, and
-each `stdio` one costs a child process. These tools' backends are plain
-HTTPS, so the plugin calls them directly:
+Each bridged MCP server costs a live connection plus supervisor state, and each `stdio` one costs a child process. These tools' backends are plain HTTPS, so the plugin calls them directly:
 
-- The remote trio (`web_search_prime`, `webReader`, `search_doc`,
-  `read_file`, `get_repo_structure`) reuses the MCP Streamable HTTP
-  endpoints through a short-lived per-call session
-  (initialize → `tools/call`); nothing persists between calls.
-- The eight vision tools call the same `chat/completions` endpoint
-  `@z_ai/mcp-server` calls, with its verbatim system prompts
-  (`src/prompts.ts`, vendored from the Apache-2.0 npm distribution) and its
-  file handling (URLs pass through, local images become data URLs, 5 MB
-  image / 8 MB video caps, jpg/jpeg/png and mp4/mov/m4v only).
+- The remote trio (`web_search_prime`, `webReader`, `search_doc`, `read_file`, `get_repo_structure`) reuses the MCP Streamable HTTP endpoints through a short-lived per-call session (initialize → `tools/call`); nothing persists between calls.
+- The eight vision tools call the same `chat/completions` endpoint `@z_ai/mcp-server` calls, with its verbatim system prompts (`src/prompts.ts`, vendored from the Apache-2.0 npm distribution) and its file handling (URLs pass through, local images become data URLs, 5 MB image / 8 MB video caps, jpg/jpeg/png and mp4/mov/m4v only).
 
 ## Config
 
@@ -53,10 +41,7 @@ HTTPS, so the plugin calls them directly:
 | `timeoutMs` | `300000` | Per-call HTTP timeout in milliseconds. |
 | `enabledTools` | all thirteen | Allowlist; unknown names fail loud at load. |
 
-One plugin instance registers the enabled tools under their plain MCP names
-(`web_search_prime`, `webReader`, …) — no `mcp__` namespacing, since there
-is exactly one owner. The Plugins settings card (one card, one key field,
-per-tool toggles) binds this plugin's settings namespace.
+One plugin instance registers the enabled tools under their plain MCP names (`web_search_prime`, `webReader`, …) — no `mcp__` namespacing, since there is exactly one owner. The Plugins settings card (one card, one key field, per-tool toggles) binds this plugin's settings namespace.
 
 ## Services consumed
 
