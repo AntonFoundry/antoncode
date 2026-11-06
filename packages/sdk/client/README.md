@@ -9,7 +9,7 @@ English
 
 ## Summary
 
-`dsh-sdk-client` lets TypeScript programs start and drive a complete DeepSeek Harness runtime over stdio JSON-RPC. Use `DeepSeekHarness` to open sessions, send text or image prompts, collect event and notification streams, and obtain the last committed assistant response when the runtime becomes idle; use `HarnessClient` for direct protocol requests and subscriptions. Callers may provide `dshBin`; otherwise the client resolves the same-version `@deepseek-ai/dsh` profile launcher from its `anton` bin entry (`dsh` when `anton` is absent), or its string-form npm bin. Other named executables are rejected. The client owns the subprocess across runs, exposes typed transport and protocol failures, and reaps it on `close()` or `await using`. It is suitable when the caller can choose the runtime profile and launch settings.
+`dsh-sdk-client` drives a complete Harness runtime over stdio JSON-RPC. `DeepSeekHarness` opens sessions, sends text or images, collects events, and returns the last committed assistant response at idle; `HarnessClient` provides protocol requests and subscriptions. Callers choose the profile and launch settings. They may supply `dshBin`; otherwise the client resolves the same-version `@deepseek-ai/dsh` launcher from `anton`, `dsh` when `anton` is absent, or a string-form npm bin. Other named executables are rejected. The client owns the subprocess across runs, exposes typed failures, and reaps it on `close()` or `await using`.
 
 ## Table of Contents
 
