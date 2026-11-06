@@ -451,10 +451,17 @@
 
   /* Shared width axis for the transcript, dock cards, composer, and takeover
      cards. Main width controls publish the live body width and optional user
-     preference; embedded occurrences override this adaptive axis below. */
+     preference; embedded occurrences override this adaptive axis below.
+
+     Until a drag sets --dsh-chat-user-width the column fills the body: the
+     adaptive term is the body width less the drag-handle edge budget
+     (ConversationWidthControls CONTENT_EDGE_BUDGET), so the default is exactly
+     the widest the handles can express, and `100%` caps it against the
+     scroller's own content box on a narrow body. A 680px floor keeps the
+     reading column whole before the first measurement lands. */
   --dsh-chat-content-width: var(
     --dsh-chat-user-width,
-    clamp(680px, calc(var(--dsh-conversation-column-width, 0px) * 0.64), 920px)
+    clamp(680px, calc(var(--dsh-conversation-column-width, 0px) - 176px), 100%)
   );
   --dsh-composer-card-max-width: calc(var(--dsh-chat-content-width) + 32px);
   --dsh-composer-side-clearance: 16px;

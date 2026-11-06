@@ -6,6 +6,8 @@ import css from './ConversationRoot.module.css'
 const WIDTH_PREF_KEY = 'dsh.conversation.contentWidth'
 /** Floor for a dragged content width; matches the layout center-column minimum. */
 const CONTENT_MIN = 640
+/** Floor of the undragged column; mirrors the CSS clamp's lower bound. */
+const CONTENT_DEFAULT_MIN = 680
 /** Horizontal room reserved for both handles and their safe edge zones. */
 const CONTENT_EDGE_BUDGET = 176
 const WHEEL_DELTA_LINE = 1
@@ -24,7 +26,9 @@ function readWidthPreference(): number | null {
 function resolveContentWidth(columnWidth: number, preference: number | null): number {
   const max = Math.max(CONTENT_MIN, columnWidth - CONTENT_EDGE_BUDGET)
   if (preference !== null) return Math.min(Math.max(preference, CONTENT_MIN), max)
-  return Math.max(680, Math.min(columnWidth * 0.64, 920))
+  // The undragged column fills the body less the same edge budget, exactly as the
+  // CSS clamp in ConversationRoot.module.css resolves it.
+  return Math.max(CONTENT_DEFAULT_MIN, columnWidth - CONTENT_EDGE_BUDGET)
 }
 
 /** Convert a wheel event's vertical delta to scrollport pixels. */
