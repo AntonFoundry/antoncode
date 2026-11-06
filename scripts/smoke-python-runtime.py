@@ -1935,7 +1935,7 @@ def smoke_sdk_scheduler_recovery(base_url: str, executable: Path, update_snapsho
             ("tool", RECOVERY_CALL_IDS[0], False), ("tool", RECOVERY_CALL_IDS[1], True), ("tool", RECOVERY_CALL_IDS[2], True),
         ]:
             raise AssertionError(f"scheduler recovery duplicated or lost tool outcomes: {tool_results}")
-        if sum(record.get("type") == "todo/write" for record in records) != 1:
+        if sum(record.get("type") == "todo/tree-write" for record in records) != 1:
             raise AssertionError("scheduler recovery executed an unstarted todo update")
         replacements = [
             *snapshot_directory_replacements(root, "{{cwd}}"),
@@ -1963,6 +1963,7 @@ def smoke_sdk_scheduler_recovery(base_url: str, executable: Path, update_snapsho
         }
         compare_snapshot_files(
             files, update_snapshots, RECOVERY_SNAPSHOT_DIRECTORY, RECOVERY_SNAPSHOT_FILENAMES,
+            writer_oracles=True,
         )
 
 
@@ -2259,6 +2260,24 @@ def snapshot_session_filename(index: int, version: int) -> str:
     ordinal = "" if index == 0 else f".{index}"
     generation = "" if version == 0 else f".v{version}"
     return f"session{ordinal}{generation}.jsonl"
+
+
+def writer_snapshot_filename(index: int) -> str:
+    """Name a native writer output oracle without creating a replay generation."""
+    if index < 0:
+        raise ValueError("writer oracle index must be non-negative")
+    ordinal = "" if index == 0 else f".{index}"
+    return f"writer{ordinal}.expected.jsonl"
+
+
+def parse_writer_snapshot_filename(name: str) -> int | None:
+    """Parse an output-oracle role, rejecting noncanonical ordinal spellings."""
+    match = re.fullmatch(r"writer(?:\.([1-9][0-9]*))?\.expected\.jsonl", name)
+    if match is not None:
+        return int(match.group(1) or 0)
+    if name.startswith("writer") and name.endswith(".jsonl"):
+        raise AssertionError(f"invalid writer oracle filename: {name}")
+    return None
 
 
 def parse_snapshot_session_filename(name: str) -> tuple[int, int] | None:
@@ -3012,7 +3031,7 @@ def normalize_snapshot_comparison_text(
     native_writer_version: int | None = None,
 ) -> str:
     """Normalize Session generation metadata only while comparing committed expected outputs."""
-    if name.startswith("session") and name.endswith(".jsonl"):
+    if parse_snapshot_session_filename(name) is not None or parse_writer_snapshot_filename(name) is not None:
         parsed = [json.loads(line) for line in content.splitlines() if line]
         header = parsed[0] if parsed else None
         source_version = header.get("version") if isinstance(header, dict) else None
@@ -3052,8 +3071,9 @@ def compare_snapshot_files(
     filenames: tuple[str, ...],
     *,
     native_writer_output: bool = False,
+    writer_oracles: bool = False,
 ) -> None:
-    """Compare artifact roles and content, optionally matching each side's native delivery generation."""
+    """Compare exact outputs; explicit writer oracles preserve canonical replay generations during updates."""
     scenario = directory.name
 
     def role_name(name: str) -> str:
@@ -3068,7 +3088,9 @@ def compare_snapshot_files(
     if update:
         directory.mkdir(parents=True, exist_ok=True)
         for name, content in files.items():
-            (directory / name).write_text(content, encoding="utf-8", newline="\n")
+            parsed = parse_snapshot_session_filename(name)
+            output_name = writer_snapshot_filename(parsed[0]) if writer_oracles and parsed is not None else name
+            (directory / output_name).write_text(content, encoding="utf-8", newline="\n")
         print(f"smoke-python-runtime: updated snapshots in {directory}")
 
     existing = [path for path in directory.iterdir() if path.is_file()] if directory.is_dir() else []
@@ -3077,6 +3099,7 @@ def compare_snapshot_files(
     }
     existing_non_session = {
         path.name for path in existing if parse_snapshot_session_filename(path.name) is None
+        and not (writer_oracles and parse_writer_snapshot_filename(path.name) is not None)
     }
     if existing_non_session != expected_non_session:
         raise AssertionError(
@@ -3085,6 +3108,17 @@ def compare_snapshot_files(
             f"unexpected={sorted(existing_non_session - expected_non_session)}"
         )
     selected_expected = selected_snapshot_session_files(directory)
+    if writer_oracles:
+        retained_roles = set(selected_expected)
+        selected_expected = {
+            index: path for path in existing
+            if (index := parse_writer_snapshot_filename(path.name)) is not None
+        }
+        if set(selected_expected) != retained_roles:
+            raise AssertionError(
+                f"{scenario} writer oracle roles differ from retained Sessions: "
+                f"expected={sorted(retained_roles)}, actual={sorted(selected_expected)}",
+            )
     actual_sessions: dict[int, tuple[str, str]] = {}
     for name, content in files.items():
         parsed = parse_snapshot_session_filename(name)

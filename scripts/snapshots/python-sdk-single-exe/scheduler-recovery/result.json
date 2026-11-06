@@ -16,7 +16,7 @@
       "session/title",
       "assistant/message",
       "tool/call",
-      "todo/write",
+      "todo/tree-write",
       "tool/result",
       "tool/call",
       "tool/result",
@@ -57,7 +57,9 @@
       "turn/start",
       "agent/inbox/spliced",
       "step/start",
+      "system/message",
       "user/message",
+      "request/header",
       "assistant/message",
       "step/end",
       "turn/end"
@@ -65,6 +67,8 @@
     "notificationMethods": [
       "session.event",
       "session.status",
+      "session.event",
+      "session.event",
       "session.event",
       "session.event",
       "session.event",

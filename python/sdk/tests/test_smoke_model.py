@@ -783,3 +783,74 @@ def test_job_snapshot_normalization_preserves_pairing_and_uncertainty():
     assert normalize({"type": "tool/result", "data": {"startedAt": 100, "finishedAt": 200}}, []) == {
         "type": "tool/result", "data": {"startedAt": 100, "finishedAt": 200},
     }
+
+
+def test_writer_oracle_names_are_independent_of_session_generations() -> None:
+    name = SMOKE["writer_snapshot_filename"]
+    parse = SMOKE["parse_writer_snapshot_filename"]
+    assert name(0) == "writer.expected.jsonl"
+    assert name(2) == "writer.2.expected.jsonl"
+    assert parse(name(0)) == 0
+    assert parse(name(2)) == 2
+    assert parse("result.json") is None
+    with pytest.raises(ValueError, match="non-negative"):
+        name(-1)
+    for malformed in ("writer.0.expected.jsonl", "writer.01.expected.jsonl", "writer.v4.jsonl"):
+        with pytest.raises(AssertionError, match="invalid writer oracle"):
+            parse(malformed)
+
+
+def test_writer_oracle_update_preserves_same_version_replay_input(tmp_path: Path) -> None:
+    render = SMOKE["render_jsonl"]
+    header = {"type": "session", "version": SESSION_FORMAT_VERSION, "id": "s"}
+    retired = render([header, {"type": "todo/write", "data": {"todos": []}}])
+    current = render([header, {"type": "todo/tree-write", "data": {"todos": []}}])
+    canonical = f"session.v{SESSION_FORMAT_VERSION}.jsonl"
+    (tmp_path / canonical).write_text(retired, encoding="utf-8")
+    files = {canonical: current}
+    compare = SMOKE["compare_snapshot_files"]
+
+    with pytest.raises(AssertionError, match="writer oracle roles differ"):
+        compare(files, False, tmp_path, (canonical,), writer_oracles=True)
+    compare(files, True, tmp_path, (canonical,), writer_oracles=True)
+    assert (tmp_path / canonical).read_text(encoding="utf-8") == retired
+    assert (tmp_path / "writer.expected.jsonl").read_text(encoding="utf-8") == current
+    assert SMOKE["selected_snapshot_session_files"](tmp_path) == {0: tmp_path / canonical}
+    compare(files, False, tmp_path, (canonical,), writer_oracles=True)
+
+    changed = {canonical: current.replace('"todos":[]', '"todos":[{"content":"lost"}]')}
+    with pytest.raises(AssertionError, match="executable snapshot mismatch"):
+        compare(changed, False, tmp_path, (canonical,), writer_oracles=True)
+    with pytest.raises(AssertionError, match="snapshot files differ"):
+        compare(files, False, tmp_path, (canonical,))
+
+
+def test_writer_oracle_comparison_rejects_retired_todo_event(tmp_path: Path) -> None:
+    canonical = f"session.v{SESSION_FORMAT_VERSION}.jsonl"
+    current = SMOKE["render_jsonl"]([
+        {"type": "session", "version": SESSION_FORMAT_VERSION},
+        {"type": "todo/tree-write", "data": {"todos": []}},
+    ])
+    (tmp_path / canonical).write_text(current, encoding="utf-8")
+    (tmp_path / "writer.expected.jsonl").write_text(current, encoding="utf-8")
+    stale = current.replace('"todo/tree-write"', '"todo/write"')
+    with pytest.raises(AssertionError, match="executable snapshot mismatch"):
+        SMOKE["compare_snapshot_files"](
+            {canonical: stale}, False, tmp_path, (canonical,), writer_oracles=True,
+        )
+
+
+def test_writer_oracle_roles_must_match_retained_parent_and_children(tmp_path: Path) -> None:
+    render = SMOKE["render_jsonl"]
+    content = render([{"type": "session", "version": SESSION_FORMAT_VERSION}])
+    parent = f"session.v{SESSION_FORMAT_VERSION}.jsonl"
+    child = f"session.1.v{SESSION_FORMAT_VERSION}.jsonl"
+    (tmp_path / parent).write_text(content, encoding="utf-8")
+    (tmp_path / child).write_text(content, encoding="utf-8")
+    files = {parent: content, child: content}
+    compare = SMOKE["compare_snapshot_files"]
+    compare(files, True, tmp_path, (parent, child), writer_oracles=True)
+    assert (tmp_path / "writer.1.expected.jsonl").read_text(encoding="utf-8") == content
+    (tmp_path / "writer.1.expected.jsonl").unlink()
+    with pytest.raises(AssertionError, match="writer oracle roles differ"):
+        compare(files, False, tmp_path, (parent, child), writer_oracles=True)

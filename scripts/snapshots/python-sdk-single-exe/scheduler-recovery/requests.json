@@ -71,7 +71,7 @@
             "content": [
               {
                 "type": "text",
-                "text": "Updated todo list: 0 pending, 0 in progress, 0 completed."
+                "text": "Updated todo tree: 0 pending, 0 in progress, 0 completed, 0 cancelled."
               }
             ],
             "is_error": false
