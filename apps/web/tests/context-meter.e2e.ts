@@ -1,5 +1,5 @@
 /** Context details stay inside the viewport with and without Chat's statistics contribution. */
-import { readFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { describe, expect, it } from 'vitest'
@@ -38,34 +38,49 @@ describe.skipIf(webSnapshotMode() === 'record')('web e2e: context details placem
         await settled
         const trigger = page.getByRole('button', { name: /% of context used$/ })
         await trigger.waitFor()
-        expect(await trigger.textContent()).toMatch(/^\d+%$/)
+        expect(await trigger.textContent()).toMatch(/^\d+%.*In .*Out /)
         expect(await page.getByRole('button', { name: /tok · Cache hit/ }).count()).toBe(withStats ? 1 : 0)
-        expect(await card.evaluate((element) => {
-          const dock = element.nextElementSibling!
-          return {
-            above: getComputedStyle(dock).paddingTop,
-            below: getComputedStyle(element.parentElement!).paddingBottom,
-          }
-        })).toEqual({ above: '4px', below: '4px' })
-        await trigger.click()
+        expect(await card.locator('[data-composer-dock]').count()).toBe(1)
+        expect(await card.locator('[data-composer-dock]').evaluate(element =>
+          getComputedStyle(element).justifyContent,
+        )).toBe('flex-end')
         const panel = page.getByRole('dialog', { name: 'of context used', exact: true })
-        await panel.waitFor()
         for (const width of [390, 800, 1280]) {
           await page.setViewportSize({ width, height: 900 })
-          await page.locator('[data-sidebar-collapsed="true"]').waitFor({
-            state: width <= 800 ? 'attached' : 'detached',
-          })
           await page.evaluate(async () => {
             await Promise.all(document.getAnimations()
               .filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity)
               .map(animation => animation.finished.catch(() => undefined)))
           })
+          await expect.poll(() => card.evaluate((element) => {
+            const dock = element.querySelector('[data-composer-dock]')!
+            const draft = element.querySelector('[data-composer-input]')!
+            const cardRect = element.getBoundingClientRect()
+            const dockRect = dock.getBoundingClientRect()
+            const draftRect = draft.getBoundingClientRect()
+            const triggerRect = dock.querySelector('[aria-haspopup="dialog"]')!.getBoundingClientRect()
+            return dockRect.top >= cardRect.top && dockRect.bottom <= draftRect.top
+              && dockRect.left >= cardRect.left && dockRect.right <= cardRect.right
+              && triggerRect.left >= dockRect.left && triggerRect.right <= dockRect.right
+              && document.documentElement.scrollWidth <= window.innerWidth
+          })).toBe(true)
+          if (process.env.DSH_LAYOUT_SCREENSHOTS === '1' && withStats) {
+            const evidence = new URL('../../../.artifacts/composer-usage/', import.meta.url)
+            await mkdir(evidence, { recursive: true })
+            await page.screenshot({ path: fileURLToPath(new URL(`usage-${width}.png`, evidence)) })
+          }
+          if (await trigger.getAttribute('aria-expanded') !== 'true') await trigger.click()
+          await panel.waitFor()
           await expect.poll(async () => {
             const rect = await panel.boundingBox()
             return rect !== null && rect.x >= 12 && rect.x + rect.width <= width - 12
               && rect.y >= 12 && rect.y + rect.height <= 888
           }).toBe(true)
+          await page.keyboard.press('Escape')
+          await panel.waitFor({ state: 'hidden' })
         }
+        await trigger.click()
+        await panel.waitFor()
         await panel.getByText('System prompt', { exact: true }).click()
         expect(await panel.isVisible()).toBe(true)
         await page.keyboard.press('Escape')

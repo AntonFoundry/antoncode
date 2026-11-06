@@ -2088,10 +2088,9 @@ describe('command launcher chrome and control seats', () => {
     // Every seat dispatched, nothing rendered (render passes may repeat; the
     // seat set is the contract).
     expect([...new Set(slotCalls.map(c => c.key))]).toEqual([
-      'conversation.input.overlay', 'conversation.input.attachments',
+      'conversation.input.overlay', 'conversation.composer.dock', 'conversation.input.attachments',
       'conversation.input.permission', 'conversation.input.plan', 'conversation.input.left',
       'conversation.input.right', 'conversation.input.model', 'conversation.input.activity',
-      'conversation.composer.dock',
     ])
     expect(view.queryByLabelText('Plan mode')).toBeNull()
     expect(view.queryByLabelText('Model')).toBeNull()
@@ -2186,8 +2185,9 @@ it('lets a toolbar activity replace accessories without replacing the draft edit
   expect(view.getByRole('button', { name: 'model choice' })).toBeTruthy()
 })
 
-it('places context usage below the composer and hides it until the activity closes', () => {
-  const { view } = bench({ draft: 'draft', contextPressure: { pressureTokens: 32_000, contextWindow: 128_000 },
+it('places the complete usage strip above the draft inside the composer and hides context until the activity closes', () => {
+  const { view } = bench({ draft: 'draft', footer: <span>Session statistics</span>,
+    contextPressure: { pressureTokens: 32_000, contextWindow: 128_000 },
     activityEntry: owner => <>
       <button onClick={() => { owner.onActiveChange(true) }}>microphone</button>
       <button onClick={() => { owner.onActiveChange(false) }}>close activity</button>
@@ -2195,7 +2195,14 @@ it('places context usage below the composer and hides it until the activity clos
   })
   const meter = view.getByRole('button', { name: '上下文已用 25%' })
   const microphone = view.getByRole('button', { name: 'microphone' })
-  expect(microphone.compareDocumentPosition(meter) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  const editor = view.getByRole('textbox')
+  const card = view.container.querySelector('[data-composer-card]')!
+  const dock = card.querySelector('[data-composer-dock]')!
+  expect(view.container.querySelectorAll('[data-composer-dock]')).toHaveLength(1)
+  expect(dock.contains(meter)).toBe(true)
+  expect(dock.contains(view.getByText('Session statistics'))).toBe(true)
+  expect(dock.compareDocumentPosition(editor) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(meter.compareDocumentPosition(microphone) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   fireEvent.click(meter)
   expect(view.getByRole('dialog', { name: '上下文已用' })).toBeTruthy()
   fireEvent.click(microphone)

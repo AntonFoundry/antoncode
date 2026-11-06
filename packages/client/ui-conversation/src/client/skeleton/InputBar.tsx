@@ -451,6 +451,12 @@ export const InputBar = memo(function InputBar({
         {sessionId !== undefined && (
           <div className={css.overlayAnchor} data-composer-overlay>{renderSlot('conversation.input.overlay', {})}</div>
         )}
+        <div className={css.dock} data-composer-dock>
+          {variant === 'composer' && input !== undefined && sessionId !== undefined
+            ? renderSlot('conversation.composer.dock', {})
+            : null}
+          {activity ? null : <ContextMeter useProjection={useProjection} t={t} />}
+        </div>
         {accessory !== undefined && <div className={css.accessory}>{accessory}</div>}
         {renderSlot('conversation.input.attachments', {
           attachments,
@@ -575,12 +581,6 @@ export const InputBar = memo(function InputBar({
             )}
           </div>
         </div>
-      </div>
-      <div className={css.dock} data-composer-dock>
-        {variant === 'composer' && input !== undefined && sessionId !== undefined
-          ? renderSlot('conversation.composer.dock', {})
-          : null}
-        {activity ? null : <ContextMeter useProjection={useProjection} t={t} />}
       </div>
     </div>
   )
