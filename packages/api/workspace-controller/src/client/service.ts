@@ -50,11 +50,28 @@ export interface IWorkspaces {
   readonly list: WorkspaceSource
   /** Reload worktree records and preferences from the Host. */
   refreshWorktrees(): Promise<void>
-  /** @param input - repository, optional name and base. @returns registered worktree. */
+  /**
+   * Create a Host-managed worktree and reload worktree records before returning.
+   * @param input - Repository path, optional worktree name, and optional base revision.
+   * @returns Registered worktree after the browser worktree list refreshes.
+   * @throws Error when the worktree Remote is unavailable or creation or refresh fails;
+   * a refresh failure does not undo a successful Host creation.
+   */
   createWorktree(input: { repoPath: string; name?: string; base?: string }): Promise<WorktreeView>
-  /** @param repoPath - repository path. @param pref - new-session location preference. */
+  /**
+   * Save the repository's new-session location preference, then update the browser snapshot.
+   * @param repoPath - Repository path whose preference should change.
+   * @param pref - New-session location preference to persist on the Host.
+   * @throws Error when the worktree Remote is unavailable or the Host rejects the write.
+   */
   setWorktreePref(repoPath: string, pref: WorktreeModePrefView): Promise<void>
-  /** @param path - working directory. @param signal - caller lifetime. @returns live git status. */
+  /**
+   * Query current Git status for a working directory without updating cached worktree records.
+   * @param path - Working directory to inspect on the Host.
+   * @param signal - Optional cancellation signal forwarded to the Remote request.
+   * @returns Live Git status returned by the Host.
+   * @throws Error when the worktree Remote is unavailable or the request fails.
+   */
   worktreeStatus(path: string, signal?: AbortSignal): Promise<WorktreeStatus>
   /**
    * Register an existing path as a Workspace.
