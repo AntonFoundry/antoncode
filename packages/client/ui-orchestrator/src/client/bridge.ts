@@ -1,15 +1,11 @@
-/**
- * Derives the board's `Run[]` from one `orchestrator.board` snapshot.
- * Pure over the wire projection: `running` is the attached agent's live flag
- * (never a heuristic), parent/child links follow `parentSessionId`, and
- * archived sessions never render. No DOM, no transport.
- */
+/** Pure run forest derivation over published Session and Workspace Controller snapshots. */
+import type {} from '@deepseek-ai/dsh-tool-todo/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionSummary, SessionListState, SessionProjectionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
-import { type PlanNode, type PlanRow, type Run, type RunState, dedupeErrors, flattenPlan } from './contract.ts'
+import { type PlanNode, type Run, type RunState, dedupeErrors, flattenPlan } from './contract.ts'
 
-/** Everything the board renders, exactly the `orchestrator.board` response value. */
+/** Controller snapshots consumed by the board; no backend-specific board RPC. */
 export interface BoardSnapshot {
   /** Workspace rows in the registry's durable display order. */
   items: WorkspaceView[]
@@ -17,6 +13,8 @@ export interface BoardSnapshot {
   archivedSessionIds: SessionId[]
   /** Visible session summaries (attached live + cold merged). */
   sessions: SessionSummary[]
+  /** Already-published full projections; absent when no projection source is supplied. */
+  projectionsBySession?: SessionListState['projectionsBySession']
 }
 
 /** Recency fallback window: a non-running session updated within 24h reads queued, else done. */
@@ -37,29 +35,12 @@ export function stateOf(summary: SessionSummary, now: number): RunState {
 }
 
 /**
- * Extracts the mission plan tree from one board summary's projections block,
- * keeping its nesting. The `todos` projection key is merged into
- * `SessionProjectionMap` by the todo tool; a summary without projections (or
- * before any write) plans nothing.
- * @param summary - Board summary carrying the session's projection block.
- * @returns The nested tree, or undefined when the session has no tree.
+ * Read the todo tree from a full Controller projection, not the summary payload.
+ * @param projection - Published projection; absent before it has been read or followed.
+ * @returns The tree, or undefined before a todo write or projection load.
  */
-export function readTodos(summary: SessionSummary): readonly PlanNode[] | undefined {
-  const todos = (summary.projectionValues as Partial<{ todos: unknown }> | undefined)?.todos
-  if (!Array.isArray(todos)) return undefined
-  return todos as readonly PlanNode[]
-}
-
-/**
- * Flattens one board summary's plan tree into ordered plan rows for the board
- * cards. The Dag Flow graph reads {@link readTodos} instead, because task cards
- * need the nesting a flatten discards.
- * @param summary - Board summary carrying the session's projection block.
- * @returns Flattened plan rows, or undefined when the session has no tree.
- */
-function flattenTodos(summary: SessionSummary): readonly PlanRow[] | undefined {
-  const todos = readTodos(summary)
-  return todos === undefined ? undefined : flattenPlan(todos)
+export function readTodos(projection?: SessionProjectionSnapshot): readonly PlanNode[] | undefined {
+  return projection?.values.todos ?? undefined
 }
 
 /**
@@ -67,22 +48,24 @@ function flattenTodos(summary: SessionSummary): readonly PlanRow[] | undefined {
  * @param summary - Session summary the run is derived from.
  * @param state - Board state machine value.
  * @param children - Already-built child runs.
+ * @param titles - Human-facing labels keyed by Session id.
+ * @param projection - Published full projection; absent until read or followed.
  * @returns The run row for the session.
  */
 function toRun(
   summary: SessionSummary,
   state: RunState,
   children: Run[],
-  titles: ReadonlyMap<string, string> = new Map(),
+  titles: ReadonlyMap<string, string>,
+  projection: SessionProjectionSnapshot | undefined,
 ): Run {
+  const todos = readTodos(projection)
   return {
     id: summary.id,
     parentId: summary.parentId,
     role: 'custom',
     title: titles.get(summary.id) ?? summary.id,
-    // The session's mission plan rides the wire's `todos` projection (the
-    // latest todo/write snapshot); absent before the first write.
-    plan: flattenTodos(summary),
+    plan: todos === undefined ? undefined : flattenPlan(todos),
     state,
     tier: 'reasoning',
     mode: 'interactive',
@@ -103,7 +86,7 @@ function toRun(
  * drops done families entirely — a done root hides its whole subtree, and a
  * done orphan subagent hides alone; an active root keeps its done children
  * visible.
- * @param board - One `orchestrator.board` snapshot.
+ * @param board - Published workspace rows, summaries, and available full projections.
  * @param opts - `now` overrides the comparison instant; `activeOnly` (default
  *   true) filters done families; `titles` overlays display titles (the
  *   runtime sessions service's human-facing label) onto card rows.
@@ -135,14 +118,14 @@ export function deriveRuns(
       const children = kidsOf(s.id)
         .map((c) => { placed.add(c.id); return c })
         .filter(keep)
-        .map(c => toRun(c, stateOf(c, now), [], titles))
-      runs.push(toRun(s, stateOf(s, now), children, titles))
+        .map(c => toRun(c, stateOf(c, now), [], titles, board.projectionsBySession?.[c.id]))
+      runs.push(toRun(s, stateOf(s, now), children, titles, board.projectionsBySession?.[s.id]))
     }
   }
   // Active subagent orphans whose parent is not on the board render at top level.
   for (const s of byId.values()) {
     if (s.origin === 'subagent' && !placed.has(s.id) && keep(s)) {
-      runs.push(toRun(s, stateOf(s, now), [], titles))
+      runs.push(toRun(s, stateOf(s, now), [], titles, board.projectionsBySession?.[s.id]))
     }
   }
   return runs

@@ -198,6 +198,7 @@
     "@deepseek-ai/dsh-client-ui-file-markdown": "workspace:*",
     "@deepseek-ai/dsh-client-ui-file-video": "workspace:*",
     "@deepseek-ai/dsh-client-ui-flowbuilder": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-orchestrator": "workspace:*",
     "@deepseek-ai/dsh-client-ui-conversation-agent-mail": "workspace:*",
     "@deepseek-ai/dsh-client-ui-terminal": "workspace:*",
     "@deepseek-ai/dsh-client-ui-webcam": "workspace:*",

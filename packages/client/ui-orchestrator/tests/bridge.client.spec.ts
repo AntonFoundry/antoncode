@@ -3,6 +3,7 @@
  * `running` flag wins over recency, parent/child linking, active-only
  * filtering, the archive set, and orphan subagents.
  */
+import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'
 import { describe, expect, it } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
@@ -38,7 +39,7 @@ const board = (over: Partial<BoardSnapshot> = {}): BoardSnapshot => ({
 })
 
 describe('deriveRuns: plan folding', () => {
-  const todos: readonly { content: string; status: 'completed' | 'in_progress' | 'pending'; children?: readonly { content: string; status: 'pending' }[] }[] = [
+  const todos: TodoItem[] = [
     { content: 'ship the board', status: 'completed' },
     { content: 'polish cards', status: 'in_progress', children: [{ content: 'plan rows', status: 'pending' }] },
   ]
@@ -46,7 +47,8 @@ describe('deriveRuns: plan folding', () => {
   it('flattens the todos projection into depth-first plan rows', () => {
     const runs = deriveRuns(board({
       items: [workspace('w', ['root'])],
-      sessions: [summary('root', { running: true, projectionValues: { todos } as NonNullable<WireSummary['projectionValues']> })],
+      sessions: [summary('root', { running: true })],
+      projectionsBySession: { root: { values: { todos: [...todos] }, state: 'ready', error: null } },
     }))
     expect(runs).toHaveLength(1)
     expect(runs[0]?.plan).toEqual([
@@ -59,7 +61,8 @@ describe('deriveRuns: plan folding', () => {
   it('plans nothing without a todos projection', () => {
     const runs = deriveRuns(board({
       items: [workspace('w', ['bare'])],
-      sessions: [summary('bare'), summary('nulled', { projectionValues: { todos: null } as NonNullable<WireSummary['projectionValues']> })],
+      sessions: [summary('bare'), summary('nulled')],
+      projectionsBySession: { nulled: { values: { todos: null }, state: 'ready', error: null } },
     }))
     expect(runs[0]?.plan).toBeUndefined()
     expect(runs[1]?.plan).toBeUndefined()

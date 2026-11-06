@@ -66,7 +66,7 @@ export interface Run {
 }
 
 /** Card action the board can request on a run. Only `kill` is server-side today. */
-export type RunAction = 'approve' | 'retry' | 'kill' | 'inject note' | 'focus'
+export type RunAction = 'kill'
 
 /** Fill color per run state. */
 export const STATE_COLOR: Record<RunState, string> = {

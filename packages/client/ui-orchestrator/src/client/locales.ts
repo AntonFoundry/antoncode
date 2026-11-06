@@ -6,6 +6,8 @@ export const NS = 'orchestrator'
 /** The orchestrator dictionary key set (the source of truth for both locales). */
 export type OrchestratorKey =
   | 'view.orchestrator'
+  | 'cancel.accepted'
+  | 'cancel.failed'
   | 'flow.canvas'
   | 'flow.empty'
   | 'flow.zoomIn'
@@ -47,6 +49,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh: Record<OrchestratorKey, string> = {
   'view.orchestrator': '编排器',
+  'cancel.accepted': '已请求停止会话',
+  'cancel.failed': '无法停止会话。请检查访问权限和连接后重试。',
   'flow.canvas': 'DAG 画布',
   'flow.empty': '板上暂无运行',
   'flow.zoomIn': '放大',
@@ -82,6 +86,8 @@ export const zh: Record<OrchestratorKey, string> = {
 /** English dictionary. */
 export const en: Record<OrchestratorKey, string> = {
   'view.orchestrator': 'Orchestrator',
+  'cancel.accepted': 'Session stop requested',
+  'cancel.failed': 'Could not stop the session. Check access and connection before trying again.',
   'flow.canvas': 'Dag Flow canvas',
   'flow.empty': 'No runs on the board yet',
   'flow.zoomIn': 'Zoom in',

@@ -80,7 +80,7 @@ function planSection(plan: readonly PlanRow[]): HTMLElement {
 /**
  * Create one run card with its state, optional plan, errors, and recursively nested children.
  * @param run - Derived run data rendered without changing it.
- * @param onAct - Callback invoked with this run's id when a blocked-card action is selected.
+ * @param onAct - Callback invoked with this run's id when cancellation is selected on an active card.
  * @param depth - Child nesting depth controlling indentation; defaults to zero.
  * @returns Detached DOM card; the caller owns insertion and removal.
  */
@@ -92,9 +92,9 @@ export function runCard(run: Run, onAct: ActFn, depth = 0): HTMLElement {
     h('strong', { textContent: run.title }),
     h('span', { style: 'font-size:10px;color:#9ca3af', textContent: `${run.role} · ${run.tier} · ${run.mode}` })))
   card.append(h('div', { style: `font-size:11px;color:${STATE_COLOR[run.state]}`, textContent: run.state }))
-  if (run.state === 'blocked') {
+  if (run.state === 'running' || run.state === 'blocked') {
     const row = h('div', { style: 'display:flex;gap:6px;margin-top:6px' })
-    for (const a of ['approve', 'retry', 'kill', 'inject note'] as const) {
+    for (const a of ['kill'] as const) {
       row.append(h('button', { textContent: a, onclick: () =>{  onAct(run.id, a) } }))
     }
     card.append(row)
