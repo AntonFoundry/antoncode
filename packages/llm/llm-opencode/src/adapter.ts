@@ -118,6 +118,7 @@ function wireCostFree(cost: unknown): boolean {
 /**
  * Narrow one raw server model entry to the fields the adapter routes on.
  * @returns the entry, or `undefined` when it is malformed or not zero-cost.
+ * @param raw - untrusted model entry returned by the server.
  */
 export function toServerModel(raw: unknown): ServerModel | undefined {
   if (!isRecord(raw)) return undefined
@@ -156,7 +157,11 @@ function wireVariants(raw: unknown): string[] {
   return ids
 }
 
-/** Display label for one server variant id. */
+/**
+ * Display label for one server variant id.
+ * @param variant - advertised server variant id.
+ * @returns its selector label, retaining an empty id unchanged.
+ */
 export function variantDisplayName(variant: string): string {
   if (variant === 'xhigh') return 'Extra High'
   return variant.length === 0 ? variant : variant.slice(0, 1).toUpperCase() + variant.slice(1)
@@ -166,6 +171,8 @@ export function variantDisplayName(variant: string): string {
  * Build the harness reasoning metadata for one model's server variants.
  * `undefined` when the model advertises none, which hides the effort picker
  * for it; the default stays unset so the picker offers the server default.
+ * @param variants - server variant ids in advertised order.
+ * @returns selectable efforts, or undefined when no variants are advertised.
  */
 export function reasoningFor(variants: readonly string[]): LlmModelReasoningInfo | undefined {
   if (variants.length === 0) return undefined
@@ -182,6 +189,9 @@ export function reasoningFor(variants: readonly string[]): LlmModelReasoningInfo
  * `undefined` (and the harness `off`, which likewise means provider default)
  * omits the variant so the server applies its own default.
  * @throws INVALID_REQUEST when the effort names no advertised variant.
+ * @param effort - requested effort; omission selects the server default.
+ * @param variants - variant ids the selected model advertises.
+ * @returns the admitted variant id, or undefined for the server default.
  */
 export function variantFor(effort: string | undefined, variants: readonly string[]): string | undefined {
   if (effort === undefined || effort === 'off') return undefined
@@ -251,6 +261,10 @@ function messageHasImage(message: RequestMessage): boolean {
  * generation route accepts text only; stream() adds offered tool schemas to
  * the system prompt. Images have no text
  * representation and are rejected instead of silently dropped.
+ * @param system - optional system prompt prepended to the rendered conversation.
+ * @param messages - admitted conversation in request order.
+ * @returns a single text prompt containing supported message content.
+ * @throws LlmError when an image cannot be represented by this transport.
  */
 export function renderPrompt(system: string | undefined, messages: readonly RequestMessage[]): string {
   const sections: string[] = []
@@ -283,7 +297,11 @@ interface AssistantTurn {
   finish: FinishReason
 }
 
-/** Read disjoint provider token counts into harness usage; `undefined` when the payload carries none. */
+/**
+ * Read disjoint provider token counts into harness usage; `undefined` when the payload carries none.
+ * @param raw - untrusted token-count object.
+ * @returns disjoint usage counts, or undefined when the input is not an object.
+ */
 export function wireTokens(raw: unknown): TokenUsage | undefined {
   if (!isRecord(raw)) return undefined
   const tokens = raw as {
@@ -307,7 +325,11 @@ export function wireTokens(raw: unknown): TokenUsage | undefined {
   }
 }
 
-/** Read one server assistant message into a streamable turn; `undefined` for anything else or empty content. */
+/**
+ * Read one server assistant message into a streamable turn; `undefined` for anything else or empty content.
+ * @param raw - untrusted server message.
+ * @returns reasoning, text, usage, and finish state, or undefined for an empty or non-assistant message.
+ */
 export function assistantTurn(raw: unknown): AssistantTurn | undefined {
   if (!isRecord(raw) || raw.type !== 'assistant') return undefined
   const content = Array.isArray(raw.content) ? raw.content : []
@@ -327,13 +349,21 @@ export function assistantTurn(raw: unknown): AssistantTurn | undefined {
   }
 }
 
-/** Read one server message's terminal outcome; `undefined` until the `idle` marker lands. */
+/**
+ * Read one server message's terminal outcome; `undefined` until the `idle` marker lands.
+ * @param raw - untrusted server message.
+ * @returns the idle outcome, or undefined before a terminal idle message.
+ */
 export function idleOutcome(raw: unknown): 'succeeded' | 'failed' | undefined {
   if (!isRecord(raw) || raw.type !== 'idle') return undefined
   return raw.outcome === 'failed' ? 'failed' : 'succeeded'
 }
 
-/** Best-effort provider error text from either wire generation's error envelope. */
+/**
+ * Best-effort provider error text from either wire generation's error envelope.
+ * @param body - untrusted provider error envelope.
+ * @returns the provider message, or "unknown error" when no non-empty message is present.
+ */
 export function errorMessage(body: unknown): string {
   if (!isRecord(body)) return 'unknown error'
   if (typeof body.message === 'string' && body.message.length > 0) return body.message
@@ -343,7 +373,11 @@ export function errorMessage(body: unknown): string {
   return 'unknown error'
 }
 
-/** Abort-aware delay between message polls. */
+/**
+ * Abort-aware delay between message polls.
+ * @param ms - delay duration in milliseconds.
+ * @param signal - cancellation that rejects the delay and clears its timer.
+ */
 export function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -359,7 +393,11 @@ export function sleep(ms: number, signal: AbortSignal): Promise<void> {
   })
 }
 
-/** Read transient generated text from either wire generation's envelope. */
+/**
+ * Read transient generated text from either wire generation's envelope.
+ * @param body - untrusted generation response envelope.
+ * @returns generated text, or undefined when neither supported envelope carries text.
+ */
 export function generatedText(body: unknown): string | undefined {
   const payload = isRecord(body) && body.data !== undefined ? body.data : body
   if (typeof payload === 'string') return payload
@@ -405,6 +443,7 @@ function effortOf(options: GenerateOptions): string | undefined {
   return options.reasoningEffort === undefined ? undefined : String(options.reasoningEffort)
 }
 
+/** Text-generation adapter using scoped transient sessions on the local OpenCode server. */
 export class OpenCodeServerAdapter extends LlmAdapter {
   readonly #options: (provider: string) => OpenCodeServerConnection
   readonly #transport: () => Promise<ServerTransport>

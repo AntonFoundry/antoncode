@@ -81,6 +81,7 @@ export interface OpenCodeRouterOptions {
   resolveTransport: (options: Pick<GenerateOptions, 'provider' | 'model' | 'purpose'>) => Promise<OpenCodeTransport>
 }
 
+/** Route OpenCode operations through the resolved OAuth, keyed, or local-service adapter. */
 export class OpenCodeRouterAdapter extends LlmAdapter {
   readonly #service: OpenCodeServerAdapter
   readonly #direct: ModelsDevAdapter

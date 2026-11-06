@@ -153,6 +153,9 @@ export interface ResolvedClaudeOptions {
  * The one explicit resolve step from raw config to validated connection
  * facts. Every default and bound is re-judged here — for the composition
  * entry at load (fail loud) and for each settings snapshot at its first use.
+ * @param config - raw plugin configuration.
+ * @returns validated connection facts with explicit defaults.
+ * @throws Error when a configured field is invalid.
  */
 export function resolveAdapterOptions(config: Config): ResolvedClaudeOptions {
   if (config.oauthRef !== undefined && config.oauthRef.length === 0) {
@@ -200,6 +203,7 @@ export interface ClaudeCodeAdapterOptions {
   inner: PiAiAdapter
 }
 
+/** Subscription-backed Claude adapter with per-request OAuth resolution and login guidance. */
 export class ClaudeCodeAdapter extends LlmAdapter {
   constructor(private readonly options: ClaudeCodeAdapterOptions) {
     super()
@@ -261,6 +265,8 @@ export class ClaudeCodeAdapter extends LlmAdapter {
  * facts (the same a keyed `anthropic` route would serve), with per-request
  * OAuth credentials instead of a stored key. Exported so tests drive the
  * identical construction against scripted gateways.
+ * @param options - resolved connection facts, credential resolver, and optional attachment resolver.
+ * @returns the Anthropic pi-ai adapter configured for subscription inference.
  */
 export function createInnerAdapter(options: {
   displayName: string

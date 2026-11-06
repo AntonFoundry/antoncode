@@ -41,6 +41,10 @@ export interface ClaudeCredentialSink {
  * Resolve one request's bearer token: the valid stored access token, else a
  * silent refresh (persisted for the next request), else `undefined` so the
  * caller fails loud with the login fix instead of sending nothing.
+ * @param ref - credential reference holding serialized OAuth state.
+ * @param source - credential reader; omission reads the process environment.
+ * @param sink - optional writer for renewed state; omission leaves renewal unpersisted.
+ * @returns a valid bearer token, or undefined when state lookup or renewal fails.
  */
 export async function resolveClaudeAccess(
   ref: CredentialRef,

@@ -156,7 +156,11 @@ async function defaultServiceStart(): Promise<string | undefined> {
   return serviceCommand('start')
 }
 
-/** Production system boundary: real environment, home, service files, and CLI discovery. */
+/**
+ * Production system boundary: real environment, home, service files, and CLI discovery.
+ * @param env - environment used for discovery; omission captures process.env.
+ * @returns production file, home-directory, and CLI discovery operations.
+ */
 export function defaultSystem(env: Record<string, string | undefined> = process.env): TransportSystem {
   return {
     env,
@@ -190,6 +194,8 @@ function noServerError(): LlmError {
  * unset) accepts — its 401 otherwise surfaces as `AUTH`.
  * @param config - caller-controlled transport halves.
  * @param system - injectable discovery boundary; defaults to production.
+ * @returns discovered server URL and authentication headers.
+ * @throws LlmError when the URL is invalid or no server can be found or started.
  */
 export async function resolveServerTransport(
   config: OpenCodeServerTransportConfig,

@@ -84,6 +84,7 @@ function declaredInput(value: unknown): readonly ('text' | 'image')[] | undefine
  * @param provider - the models.dev provider id to extract.
  * @returns the live models in document order, or `undefined` when the payload
  *   has no such provider.
+ * @param reasoningEfforts - optional reasoning-effort declarations for catalog enrichment.
  */
 export function parseModelsDevLiveModels(payload: unknown, provider: string,
   reasoningEfforts?: PiAiReasoningEfforts | undefined,

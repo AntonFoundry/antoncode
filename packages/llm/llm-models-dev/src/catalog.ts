@@ -211,6 +211,7 @@ export class ModelsDevCatalog {
    * @param onError - receives refresh failures when a stale snapshot serves.
    * @throws only when no snapshot exists at all and the fetch failed; the
    * adapter converts that case into an empty picker.
+   * @returns the current zero-cost model snapshot, including stale data after a reported refresh failure.
    */
   async freeModels(provider: string, onError?: (error: unknown) => void): Promise<ReadonlyMap<string, CatalogModel>> {
     const cached = this.#cache.get(provider)
@@ -231,6 +232,8 @@ export class ModelsDevCatalog {
   /**
    * The last successfully fetched snapshot without triggering a refresh, for
    * synchronous enrichment of already-discovered models.
+   * @param provider - catalog provider id.
+   * @returns the last successful model snapshot, or undefined before its first fetch.
    */
   peekCached(provider: string): ReadonlyMap<string, CatalogModel> | undefined {
     return this.#cache.get(provider)?.models
@@ -243,6 +246,7 @@ export class ModelsDevCatalog {
    * chat-completions default (or no snapshot has been fetched yet).
    * @param provider - the catalog provider id.
    * @param model - the wire model id.
+   * @returns the cached Responses marker, or undefined for chat-completions or an absent snapshot.
    */
   peekProtocol(provider: string, model: string): 'responses' | undefined {
     return this.#cache.get(provider)?.protocols.get(model)

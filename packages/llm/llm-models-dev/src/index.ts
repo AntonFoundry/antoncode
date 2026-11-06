@@ -197,6 +197,10 @@ export function resolveZenHeaders(provider: string, sessionId: string | undefine
 /**
  * The one explicit resolve step from raw config to one route's validated
  * connection facts. Called at load (fail loud) and per settings snapshot.
+ * @param config - raw plugin configuration.
+ * @param provider - provider route to resolve.
+ * @returns validated connection facts with explicit defaults.
+ * @throws Error when configuration values cannot serve the route.
  */
 export function resolveAdapterOptions(config: Config, provider: string): ResolvedModelsDevOptions {
   const catalogRefreshMs = config.catalogRefreshMs ?? DEFAULT_CATALOG_REFRESH_MS
@@ -256,12 +260,21 @@ export function resolveAdapterOptions(config: Config, provider: string): Resolve
   }
 }
 
-/** The effective anonymous posture of one route after profile layering. */
+/**
+ * The effective anonymous posture of one route after profile layering.
+ * @param config - raw configuration carrying route overrides.
+ * @param provider - route whose anonymous-access setting is selected.
+ * @returns the route override, shipped default, or false for an undeclared route.
+ */
 export function resolveAnonymous(config: Config, provider: string): boolean {
   return config.providers?.[provider]?.anonymous ?? declared(provider)?.anonymous ?? false
 }
 
-/** Reject a section this adapter could not serve, where it is written. */
+/**
+ * Reject a section this adapter could not serve, where it is written.
+ * @param config - raw configuration whose declared routes must resolve.
+ * @throws Error when a route or shared setting is invalid.
+ */
 export function assertServiceable(config: Config): void {
   const routes = Object.keys(config.providers ?? {})
   if (routes.length === 0) {

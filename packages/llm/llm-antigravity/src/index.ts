@@ -147,7 +147,13 @@ function resolveModels(models: readonly AntigravityCatalogModel[] | undefined): 
   })
 }
 
-/** Resolve a route's validated connection facts from raw config. */
+/**
+ * Resolve a route's validated connection facts from raw config.
+ * @param config - raw plugin configuration.
+ * @param provider - provider route to resolve.
+ * @returns validated connection facts with explicit defaults.
+ * @throws Error when configuration values cannot serve the route.
+ */
 export function resolveAdapterOptions(config: Config, provider: string): AntigravityConnectionOptions {
   if (config.defaultContextWindow !== undefined
     && (!Number.isInteger(config.defaultContextWindow) || config.defaultContextWindow <= 0)) {
@@ -182,7 +188,11 @@ export function resolveAdapterOptions(config: Config, provider: string): Antigra
   }
 }
 
-/** Reject a section this adapter could not serve. */
+/**
+ * Reject a section this adapter could not serve.
+ * @param config - raw configuration whose declared routes must resolve.
+ * @throws Error when a route or shared setting is invalid.
+ */
 export function assertServiceable(config: Config): void {
   const routes = Object.keys(config.providers ?? {})
   for (const provider of routes) {

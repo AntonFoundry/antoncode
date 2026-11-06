@@ -231,6 +231,9 @@ export interface ResolvedOpenCodeServerOptions extends OpenCodeServerConnection 
  * facts. Programmatic construction may bypass Schemastery normalization, so
  * every default and bound is re-judged here — for the composition entry at
  * load (fail loud) and for each settings snapshot at its first use.
+ * @param config - raw plugin configuration.
+ * @returns validated connection facts with explicit defaults.
+ * @throws Error when a configured field is invalid.
  */
 export function resolveAdapterOptions(config: Config): ResolvedOpenCodeServerOptions {
   if (config.serverURL !== undefined && config.serverURL.length === 0) {

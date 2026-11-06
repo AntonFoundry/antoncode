@@ -146,6 +146,8 @@ function requestId(headers: Headers): ReturnType<typeof ProviderRequestId> | und
 
 /**
  * Map an HTTP status + Antigravity error body to a stable LlmError code.
+ * @param status - HTTP response status.
+ * @returns stable authentication, throttling, request, server, or HTTP-specific code.
  */
 export function httpErrorCode(status: number): string {
   if (status === 401 || status === 403) return 'AUTH'

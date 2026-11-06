@@ -45,6 +45,7 @@ function effortName(level: string): string {
   return level.slice(0, 1).toUpperCase() + level.slice(1)
 }
 
+/** Catalog-enriched direct adapter exposing only models with zero input and output cost. */
 export class ModelsDevAdapter extends OpenAIAdapter {
   readonly #options: (provider: string) => ModelsDevConnectionOptions
   readonly #catalog: ModelsDevCatalog

@@ -12,11 +12,19 @@ export class OAuthController extends TypertRemoteService {
   /** @param ctx - Host context containing the login flows installed by the LLM plugins. */
   constructor(ctx: Context) { super(ctx, 'oauthController', { namespace: 'oauth' }) }
 
-  /** @returns a pending OpenCode login and its device code. */
+  /**
+   * Start an OpenCode device-code login without exposing credentials.
+   * @returns pending login progress and its device code.
+   */
   @Remote
   async startOpencode(): Promise<OpencodeLoginView> { return this.opencode().start() }
 
-  /** @param loginId - active login id. @returns its current safe progress. */
+  /**
+   * Read token-free progress for an existing OpenCode login.
+   * @param loginId - active login id.
+   * @returns current login progress.
+   * @throws RemoteError when the login no longer exists or the flow is unavailable.
+   */
   @Remote
   statusOpencode(loginId: string): OpencodeLoginView {
     const view = this.opencode().snapshot(loginId)
@@ -24,13 +32,24 @@ export class OAuthController extends TypertRemoteService {
     return view
   }
 
-  /** @param loginId - approved login id. @param orgID - optional billed workspace. @returns the persisted login result. */
+  /**
+   * Persist an approved OpenCode login for the selected workspace.
+   * @param loginId - approved login id.
+   * @param orgID - billed workspace id; omission leaves the session unbilled.
+   * @returns persisted login progress.
+   * @throws Error when approval, credential persistence, or the login flow fails.
+   */
   @Remote
   async selectOpencode(loginId: string, orgID?: string): Promise<OpencodeLoginView> {
     return this.opencode().select(loginId, orgID)
   }
 
-  /** @param loginId - active login id. @returns its terminal progress. */
+  /**
+   * Cancel an existing OpenCode login.
+   * @param loginId - active login id.
+   * @returns terminal login progress.
+   * @throws RemoteError when the login no longer exists or the flow is unavailable.
+   */
   @Remote
   cancelOpencode(loginId: string): OpencodeLoginView {
     const view = this.opencode().cancel(loginId)
@@ -38,17 +57,31 @@ export class OAuthController extends TypertRemoteService {
     return view
   }
 
-  /** @returns a pending Claude login and its approval link. */
+  /**
+   * Start a Claude browser-approval login without exposing credentials.
+   * @returns pending login progress and its approval link.
+   */
   @Remote
   startClaude(): ClaudeLoginView { return this.claude().start() }
 
-  /** @param loginId - pending login id. @param pasted - browser approval code. @returns the persisted login result. */
+  /**
+   * Exchange a browser approval code and persist the Claude session.
+   * @param loginId - pending login id.
+   * @param pasted - browser approval code, optionally followed by its #state.
+   * @returns persisted login progress.
+   * @throws Error when approval, credential persistence, or the login flow fails.
+   */
   @Remote
   async submitClaude(loginId: string, pasted: string): Promise<ClaudeLoginView> {
     return this.claude().submit(loginId, pasted)
   }
 
-  /** @param loginId - active login id. @returns its terminal progress. */
+  /**
+   * Cancel an existing Claude login.
+   * @param loginId - active login id.
+   * @returns terminal login progress.
+   * @throws RemoteError when the login no longer exists or the flow is unavailable.
+   */
   @Remote
   cancelClaude(loginId: string): ClaudeLoginView {
     const view = this.claude().cancel(loginId)
