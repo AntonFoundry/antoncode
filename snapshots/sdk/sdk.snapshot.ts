@@ -912,7 +912,8 @@ async function verifyHeaders(
 ): Promise<void> {
   const pin = headerPin(scenario)
   const [pinFixturePath] = await fixtureFiles(pin)
-  const pinFixture = await readFile(pinFixturePath as string, 'utf8')
+  const pinFixture = await readFile(pin.manifest.sessionFormat?.coverage[0] === 'retired-events'
+    ? join(pin.dir, writerSnapshotName(0)) : pinFixturePath as string, 'utf8')
   const firstLine = pinFixture.split('\n').find(line => line.trim() !== '') ?? '{}'
   const pinHeader = JSON.parse(firstLine) as JsonObject
   const pinned = normalizedHeaders(pinFixture, {
@@ -1133,7 +1134,8 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
         expect(toolResults.map(result => [result.role, result.toolCallId, result.isError])).toEqual([
           ['tool', 'scheduler-complete', false], ['tool', 'scheduler-fail', true], ['tool', 'scheduler-unstarted', true],
         ])
-        expect(events.filter(event => event.type === 'todo/write')).toHaveLength(1)
+        expect(events.filter(event => event.type === 'todo/tree-write')).toHaveLength(1)
+        expect(events.filter(event => event.type === 'todo/write')).toHaveLength(0)
       }
       if (scenario.name === 'subagent-activation-limit') {
         expect(ordered).toHaveLength(2)

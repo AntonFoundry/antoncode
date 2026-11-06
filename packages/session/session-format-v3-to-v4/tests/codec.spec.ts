@@ -128,6 +128,30 @@ describe('V4 framing and restoration', () => {
     expect(restoreReleasedV4Artifact(artifact, new Set([required.type]))).toBe(artifact)
   })
 
+  it('refuses required standing todo trees in a reader that only knows released flat todos', () => {
+    const event: SessionFormatEvent = {
+      type: 'todo/tree-write', seq: 0, time: 1,
+      data: { todos: [{ content: 'parent', status: 'pending', children: [{ content: 'retired', status: 'cancelled', priority: 'low' }] }] },
+    }
+    const artifact = { header, events: [event], inheritedEventCount: 0 }
+    const before = JSON.stringify(artifact)
+    const physical = releasedV4SessionFormatCodec.encodeEvent(event)
+    for (const recovery of ['strict', 'recoverable'] as const) {
+      const decoder = releasedV4SessionFormatCodec.createDecoder({ type: 'session', ...header }, recovery)
+      const output = new SessionFormatEventCollector()
+      decoder.decodeRow(physical, output)
+      decoder.finish(output)
+      expect(output.values).toEqual([event])
+      expect(() => restoreReleasedV4Artifact({ ...artifact, events: output.values }, new Set(['todo/write'])))
+        .toThrow('unknown event type "todo/tree-write"')
+      expect(JSON.stringify(releasedV4SessionFormatCodec.encodeEvent(output.values[0]!))).toBe(JSON.stringify(physical))
+    }
+    expect(() => restoreReleasedV4Artifact(artifact, new Set(['todo/write'])))
+      .toThrow('unknown event type "todo/tree-write"')
+    expect(JSON.stringify(artifact)).toBe(before)
+    expect(restoreReleasedV4Artifact(artifact, new Set(['todo/write', 'todo/tree-write']))).toBe(artifact)
+  })
+
   it('refuses wrapper-shaped and malformed native tool results before recovery', () => {
     const wrapper = { type: 'tool/result', seq: 0, time: 1, data: { message: { id: 'result', role: 'user', source: { kind: 'tool', callId: 'call' }, content: [] } } }
     const malformed = { type: 'tool/result', seq: 0, time: 1, data: { message: { id: 'result', role: 'tool', source: { kind: 'tool', callId: 'call' }, toolCallId: 'call', content: [], isError: 'yes' } } }

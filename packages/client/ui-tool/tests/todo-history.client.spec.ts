@@ -45,7 +45,7 @@ describe('recorded todo history', () => {
     assembler.prepend([entry(5, 'todo/write', { todos: first })], false)
     const baseline = history(assembler).get('second')
     expect(todoDiffModel(call(second), baseline, false, t)?.summary).toBe('1 added · 1 updated · 1 removed')
-    assembler.append(entry(11, 'todo/write', { todos: second }))
+    assembler.append(entry(11, 'todo/tree-write', { todos: second }))
     expect(history(assembler).get('second')).toEqual(baseline)
     assembler.append(entry(12, 'tool/ptc-dispatch-start', { parentCallId: 'root', rootCallId: 'root', subCallId: 'nested', name: 'todo_write', arguments: { todos: [] } }))
     expect(history(assembler).get('nested')?.todos).toEqual(second)

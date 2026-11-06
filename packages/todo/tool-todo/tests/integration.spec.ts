@@ -67,7 +67,7 @@ describe('todo_write tool through the agent loop', () => {
     expect(findEvent(log, 'tool/call').data.name).toBe('todo_write')
     expect(findEvent(log, 'tool/result').data.message.isError).toBe(false)
 
-    const todoEvent = findEvent(log, 'todo/write')
+    const todoEvent = findEvent(log, 'todo/tree-write')
     expect(todoEvent.data.todos).toEqual([
       { content: 'read the code', status: 'in_progress' },
       { content: 'write the fix', status: 'pending' },
@@ -91,9 +91,9 @@ describe('todo_write tool through the agent loop', () => {
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'plan then update' }], source: { kind: 'user' } }))
     await waitForIdle(ctx, agent)
 
-    const todoEvents = agent.session.snapshotEvents().filter(e => e.type === 'todo/write')
+    const todoEvents = agent.session.snapshotEvents().filter(e => e.type === 'todo/tree-write')
     expect(todoEvents).toHaveLength(2)
-    expect(findEvent(agent.session.snapshotEvents(), 'todo/write', 'last').data.todos).toEqual([
+    expect(findEvent(agent.session.snapshotEvents(), 'todo/tree-write', 'last').data.todos).toEqual([
       { content: 'step one', status: 'completed' },
       { content: 'step two', status: 'in_progress' },
     ])

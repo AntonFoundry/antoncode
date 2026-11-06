@@ -150,6 +150,10 @@ function keywords(text: string): Set<string> {
  * Deterministic token-overlap matcher: a recipe matches when its intent shares
  * at least one token with the rule name or the checklist. No scoring, no
  * ranking — the c0ntext engine owns relevance; the guard only narrows.
+ * @param recipes - Recipe summaries to filter without modifying their entries.
+ * @param ruleName - Rule name whose lowercase alphanumeric tokens participate in matching.
+ * @param checklist - Required checks matched against each recipe intent using tokens of at least three characters.
+ * @returns Matching summaries in their original order, preserving the input entry references.
  */
 export function matchingRecipes(recipes: readonly RecipeSummary[], ruleName: string, checklist: string): RecipeSummary[] {
   const gate = new Set([...keywords(ruleName), ...keywords(checklist)])
@@ -268,7 +272,7 @@ export const planGateProjectionDefinition = {
   stateSchema: planGateStateSchema,
   init: () => ({ hasTodo: false, todoCount: 0, hasImplementationPlan: false }),
   apply: (state, event) => {
-    if (event.type === 'todo/write') {
+    if (event.type === 'todo/write' || event.type === 'todo/tree-write') {
       const todoCount = countTodos((event.data as { todos?: unknown }).todos)
       return state.hasTodo && state.todoCount === todoCount ? state : { ...state, hasTodo: true, todoCount }
     }

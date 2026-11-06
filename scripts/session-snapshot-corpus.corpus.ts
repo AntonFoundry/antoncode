@@ -17,7 +17,7 @@ import {
   sessionFixtureNames,
   type SnapshotManifest,
 } from '@deepseek-ai/dsh-session-snapshot'
-import { assertSnapshotAdapterInventory, assertSnapshotCorpusPolicy } from './session-snapshot-corpus-policy.ts'
+import { assertRetiredTodoWriterOracles, assertSnapshotAdapterInventory, assertSnapshotCorpusPolicy } from './session-snapshot-corpus-policy.ts'
 
 const repoRoot = resolve(import.meta.dirname, '..')
 const corpusRoot = join(repoRoot, 'snapshots')
@@ -182,6 +182,12 @@ it('keeps every recorded session owned, pinned, redacted, and header-scrubbed', 
       assertSessionFixtureVersion(name, await readFile(join(dir, name), 'utf8'))
     }
     expect(redactSessionSnapshotIds(fixtures), `${key}: typed identity fixed point`).toEqual(fixtures)
+    if (manifest.sessionFormat?.coverage[0] === 'retired-events') {
+      const writers = await Promise.all(fixtures.map((_, index) => readFile(join(dir,
+        index === 0 ? 'writer.expected.jsonl' : `writer.${index}.expected.jsonl`), 'utf8')))
+      assertRetiredTodoWriterOracles(fixtures, writers)
+    }
+
     for (const [index, fixture] of fixtures.entries()) {
       expect(scrubSystemPrompts(fixture), `${key}/${names[index]}: system prompt must be a sidecar`).toBe(fixture)
       expect(scrubToolSchemas(fixture), `${key}/${names[index]}: tool schemas must be a sidecar`).toBe(fixture)

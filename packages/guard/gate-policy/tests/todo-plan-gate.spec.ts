@@ -39,7 +39,7 @@ async function harness(config: Config, adapter: MockAdapter): Promise<{ ctx: Con
     parameters: {},
     async execute(args, exec) {
       const todos = (args as { todos?: unknown })?.todos ?? [{ content: 'plan', status: 'in_progress' }]
-      exec.agent!.session.append('todo/write', { todos: todos as unknown as never })
+      exec.agent!.session.append('todo/tree-write', { todos: todos as unknown as never })
       return [{ type: 'text', text: 'planned' }]
     },
   }))

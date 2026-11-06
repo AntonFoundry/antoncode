@@ -97,6 +97,7 @@ describe('session-query semantic extraction', () => {
         surfaceOp: 'append',
       },
       { type: 'todo/write', seq: SessionSeq(6), time: 8, data: { todos: [{ status: 'in_progress', content: 'ship search' }] } },
+      { type: 'todo/tree-write', seq: SessionSeq(7), time: 9, data: { todos: [{ status: 'pending', content: 'tree search', children: [{ status: 'cancelled', content: 'retired child' }] }] } },
     ]
 
     for (const event of events.slice(0, 3)) {
@@ -122,6 +123,7 @@ describe('session-query semantic extraction', () => {
     expect(extractSessionEventText(events[4]!)).toBe('failed\nOops\nE_OOPS')
     expect(extractSessionEventText(events[5]!)).toBe('')
     expect(extractSessionEventText(events[6]!)).toBe('in_progress\nship search')
+    expect(extractSessionEventText(events[7]!)).toBe('pending\ntree search\ncancelled\nretired child')
   })
 
   it('extracts meaningful turn outcomes and skips structural or unknown events', () => {

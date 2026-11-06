@@ -24,6 +24,7 @@ export interface SnapshotCorpusGenerationSummary {
 const RETAINED_BASELINE_VERSION = 3
 // Includes native and PTC Office recordings that retain removed tools.
 const MAX_RETAINED_ROLES = 13
+const MAX_RETIRED_EVENT_ROLES = 6
 const REQUIRED_V0_COVERAGE = new Set([
   'multi-hop',
   'packed-row',
@@ -45,6 +46,7 @@ export function assertSnapshotCorpusPolicy(
   let baselineRoles = 0
   let retainedRoles = 0
   let retainedScenarios = 0
+  let retiredEventRoles = 0
   const coverageByVersion = new Map<number, Set<string>>()
 
   for (const scenario of scenarios) {
@@ -72,19 +74,28 @@ export function assertSnapshotCorpusPolicy(
         `${scenario.key}: selected Session generation v${mismatched} does not match expected v${expectedVersion}`,
       )
     }
+    const retiredEvents = scenario.retained.coverage.length === 1 && scenario.retained.coverage[0] === 'retired-events'
+    if (retiredEvents && (scenario.retained.events?.length !== 1 || scenario.retained.events[0] !== 'todo/write')) {
+      throw new Error(`${scenario.key}: retired-events must declare exactly todo/write`)
+    }
     const retiredTools = scenario.retained.coverage.length === 1 && scenario.retained.coverage[0] === 'retired-tools'
     if (!Number.isSafeInteger(scenario.retained.version)
       || scenario.retained.version < 0 || scenario.retained.version > SESSION_FORMAT_VERSION
-      || (scenario.retained.version === SESSION_FORMAT_VERSION && !retiredTools)) {
+      || (scenario.retained.version === SESSION_FORMAT_VERSION && !retiredTools && !retiredEvents)) {
       throw new Error(`${scenario.key}: retained Session format must precede current v${SESSION_FORMAT_VERSION} unless it pins retired tools at that version`)
     }
-    const allowedCoverage = retiredTools ? new Set(['retired-tools']) : scenario.retained.version === 0
+    const allowedCoverage = retiredEvents ? new Set(['retired-events']) : retiredTools ? new Set(['retired-tools']) : scenario.retained.version === 0
       ? REQUIRED_V0_COVERAGE
       : REQUIRED_ADJACENT_COVERAGE
     if (scenario.retained.coverage.some(item => !allowedCoverage.has(item))) {
       throw new Error(
         `${scenario.key}: v${scenario.retained.version} retained coverage must be ${[...allowedCoverage].join(', ')}`,
       )
+    }
+    if (retiredEvents) {
+      retiredEventRoles += scenario.selectedVersions.length
+      if (retiredEventRoles > MAX_RETIRED_EVENT_ROLES) throw new Error('Session corpus retains more than six writer-retired event roles')
+      continue
     }
     retainedRoles += scenario.selectedVersions.length
     retainedScenarios += 1
@@ -129,4 +140,27 @@ export function assertSnapshotAdapterInventory(actual: readonly string[], adapte
   if (discovered.size !== actual.length || registered.size !== adapters.length) {
     throw new Error('recorded-session adapter inventory contains duplicate paths')
   }
+}
+
+/**
+ * Verify that immutable replay input and fresh-writer oracles exercise a retired discriminator.
+ * @param inputs - Selected recorded parent and child event streams.
+ * @param writers - Fresh-writer oracle streams in the same role order.
+ */
+export function assertRetiredTodoWriterOracles(inputs: readonly string[], writers: readonly string[]): void {
+  if (inputs.length === 0 || inputs.length !== writers.length) throw new Error('retired todo oracle role inventory differs')
+  const types = (text: string): string[] => text.trim().split('\n').map(line => (JSON.parse(line) as { type: string }).type)
+  let retired = 0
+  for (const [index, input] of inputs.entries()) {
+    const before = types(input)
+    const writer = writers[index]
+    if (writer === undefined) throw new Error('retired todo oracle role inventory differs')
+    const after = types(writer)
+    const count = before.filter(type => type === 'todo/write').length
+    retired += count
+    if (after.includes('todo/write') || after.filter(type => type === 'todo/tree-write').length !== count) {
+      throw new Error(`retired todo writer oracle ${index} does not replace every legacy write`)
+    }
+  }
+  if (retired === 0) throw new Error('retired todo declaration has no legacy event in selected input')
 }

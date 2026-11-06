@@ -51,6 +51,8 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 The agent sends the ENTIRE tree on every update; the new tree replaces the previous one, so there are no partial updates or per-node edits. Each node is a short task description, a status of `pending`, `in_progress`, `completed`, or `cancelled`, an optional `priority` of `high`, `medium`, or `low`, and optional `children` — up to three levels (task, child, grandchild). A successful update returns the new counts over the whole tree — `Updated todo tree: <pending> pending, <inProgress> in progress, <completed> completed, <cancelled> cancelled.` — and the UI shows the new plan. Corrupted entries are repaired before validation: object keys are trimmed, a bare string becomes a `pending` node, entries without usable content are dropped, an unknown status becomes `pending`, an unknown priority is omitted, and nesting below the third level is ignored. Updates fail visibly when a task description is duplicated anywhere in the tree, when a non-empty tree has no salvageable entry, or — when parallel work is disabled — when more than one node in the tree is marked in progress.
 
+Historical flat `todo/write` records retain their released per-turn lifetime: the next `turn/start` clears them, and they do not become a standing prompt. Current tool calls write required `todo/tree-write` records instead; older readers that do not know this event refuse the Session before replay rather than dropping subtasks or misreading cancellation.
+
 The latest tree persists across turns and is the standing plan: the `todo:standing-plan` system-prompt section renders it as a checklist on every model request, with content kept literal (including `{{…}}` groups), so a request to continue extends the real plan.
 
 ### Single owner
@@ -71,7 +73,7 @@ This section explains the design decisions behind the tool and points at the cod
 
 The tool is built on four commitments:
 
-- **Whole-tree replace, log-backed state.** The model resends the entire tree; the `todo/write` snapshot lives on the event-sourced session log, so durability, replay, and resume reconstruction come from the log rather than a service.
+- **Whole-tree replace, log-backed state.** The model resends the entire tree; the `todo/tree-write` snapshot lives on the event-sourced session log, so durability, replay, and resume reconstruction come from the log rather than a service.
 - **Single owner.** The list belongs to the calling agent session; there is no shared or swarm scope, and non-agent callers are rejected.
 - **Deployment policy, not a coded rule.** `allowParallelInProgress` is a required composition choice because the tool cannot observe runtime concurrency.
 - **Repair, then validate.** A tolerant schema lets corrupted entries reach `execute`, which salvages them and then rejects duplicate content or excess active nodes, so one malformed node does not lose the whole call and the logged snapshot is the canonical tree the result echoes.
@@ -92,11 +94,11 @@ The plugin is a function/namespace plugin: it exports `name` / `inject` / `apply
 
 ### Session projection
 
-When the composition mounts `ctx.sessionProjections` ([`@deepseek-ai/dsh-session-projection`](../../session/session-projection/README.md)), this package registers the `todos` unit: the projection is the standing plan — the latest whole `todo/write` tree, `null` before the first write, kept across turns until the next write replaces it (`stateVersion` 4). The `todo:standing-plan` prompt section reads the same projection state. The key merges into `SessionProjectionMap` here; carriers serve the value on the history tail page and the `session/projection` push frame. See [src/index.ts](src/index.ts) for the unit registration.
+When the composition mounts `ctx.sessionProjections` ([`@deepseek-ai/dsh-session-projection`](../../session/session-projection/README.md)), this package registers the `todos` unit: the projection is the standing plan — the latest whole `todo/tree-write` tree, `null` before the first write, kept across turns until the next write replaces it (`stateVersion` 5). The `todo:standing-plan` prompt section reads the same projection state. The key merges into `SessionProjectionMap` here; carriers serve the value on the history tail page and the `session/projection` push frame. See [src/index.ts](src/index.ts) for the unit registration.
 
 ### Call mechanics
 
-Each call validates the submitted list against the schema, rejects incoherent input, and on success appends the full snapshot as a `todo/write` session event and returns the new counts; the current list is always the most recent `todo/write` in the log (last-write-wins on replay). See [src/index.ts](src/index.ts) for the exact validation and append steps.
+Each call validates the submitted list against the schema, rejects incoherent input, and on success appends the full snapshot as a `todo/tree-write` session event and returns the new counts; the current list is always the most recent `todo/tree-write` in the log (last-write-wins on replay). See [src/index.ts](src/index.ts) for the exact validation and append steps.
 
 </details>
 
@@ -107,7 +109,7 @@ Each call validates the submitted list against the schema, rejects incoherent in
 
 Read these pages when the package-level contract is not enough. They move from the session subsystem to the generated catalogs and the decision records behind the tool.
 
-- [Todo subsystem](../../../docs/subsystems/todo.md) — the `todo/write` event payload, ownership rules, and `TodoItem`.
+- [Todo subsystem](../../../docs/subsystems/todo.md) — the `todo/tree-write` event payload, ownership rules, and `TodoItem`.
 - [todo group map](../README.md) — the sibling group page and its package table.
 - [Generated tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-tool-todo) — the `todo_write` schema the model receives.
 - [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-tool-todo) — every accepted config field and its source declaration.

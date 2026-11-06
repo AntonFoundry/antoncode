@@ -205,3 +205,18 @@ describe('snapshot manifest', () => {
     expect(() => parseSnapshotManifest(source, 'case/snapshot.yml')).toThrow(message)
   })
 })
+
+it.each([
+  'events: []',
+  'events: [todo/write, todo/write]',
+  'events: [arbitrary/event]',
+  'events: [todo/write]\n  extra: true',
+])('rejects unsupported retired-event metadata %s', (metadata) => {
+  expect(() => parseSnapshotManifest(`version: 1\nprofile: headless\nsessionFormat:\n  version: 4\n  coverage: [retired-events]\n  ${metadata}\n`)).toThrow()
+})
+
+it('accepts exact writer-retired todo metadata and rejects its use with migration coverage', () => {
+  const source = 'version: 1\nprofile: headless\nsessionFormat:\n  version: 4\n  coverage: [retired-events]\n  events: [todo/write]\n'
+  expect(parseSnapshotManifest(source).sessionFormat?.events).toEqual(['todo/write'])
+  expect(() => parseSnapshotManifest(source.replace('[retired-events]', '[adjacent-migration]'))).toThrow('exclusively')
+})

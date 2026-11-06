@@ -34,6 +34,21 @@ describe('V4 source admission', () => {
     expect(restore(source)).toEqual(migrated)
   })
 
+  it.each(['resume-note', 'agent-queue'])('preserves %s in inbox and title request message slots', (kind) => {
+    const message = { id: 'attributed', role: 'user', source: { kind, form: 'notice', summary: 'source note' }, content: [{ type: 'text', text: 'context' }] }
+    for (const candidate of [
+      { type: 'agent/inbox/spliced', seq: 0, time: 0, data: { target: 'next-step', start: 0, inserted: [message] } },
+      { type: 'session/title-llm-request', seq: 0, time: 0, data: { messages: [message] } },
+    ]) {
+      const output = new SessionFormatEventCollector()
+      const decoder = releasedV4SessionFormatCodec.createDecoder(header, 'strict')
+      decoder.decodeRow(candidate, output)
+      decoder.finish(output)
+      expect(output.values).toEqual([candidate])
+      expect(() => { assertV4MessageSources(output.values[0]!) }).not.toThrow()
+    }
+  })
+
   it('rejects missing, malformed, empty, and retired source kinds', () => {
     for (const source of [null, [], {}, { kind: '' }, { kind: 1 }, { kind: 'plugin', plugin: 'compact' }]) {
       expect(() => restore(source)).toThrow(/producer-owned source kind/)

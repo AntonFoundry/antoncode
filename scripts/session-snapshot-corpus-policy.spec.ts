@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
-import { assertSnapshotAdapterInventory, assertSnapshotCorpusPolicy } from './session-snapshot-corpus-policy.ts'
+import { assertRetiredTodoWriterOracles, assertSnapshotAdapterInventory, assertSnapshotCorpusPolicy } from './session-snapshot-corpus-policy.ts'
 
 const completeV0 = {
   key: 'session/v0',
@@ -171,5 +171,40 @@ describe('recorded-session adapter inventory', () => {
     { actual: [adapter], registered: [adapter, adapter] },
   ])('rejects duplicate inventory paths', ({ actual, registered }) => {
     expect(() => { assertSnapshotAdapterInventory(actual, registered) }).toThrow('duplicate paths')
+  })
+})
+
+describe('writer-retired todo recordings', () => {
+  const legacy = '{"type":"todo/write","data":{"todos":[]}}\n'
+  const currentTree = '{"type":"todo/tree-write","data":{"todos":[]}}\n'
+  it('accepts an exact retired-event owner without consuming historical migration slots', () => {
+    expect(assertSnapshotCorpusPolicy([baseline, current, completeV0, ...adjacent, {
+      key: 'session/legacy-todos', selectedVersions: [SESSION_FORMAT_VERSION],
+      retained: { version: SESSION_FORMAT_VERSION, coverage: ['retired-events'], events: ['todo/write'] },
+    }]).retainedRoles).toBe(3)
+    expect(() => { assertRetiredTodoWriterOracles([legacy], [currentTree]) }).not.toThrow()
+  })
+  it('rejects future retired-event generations and an inventory beyond the reviewed role bound', () => {
+    const retained = { version: SESSION_FORMAT_VERSION, coverage: ['retired-events'] as const, events: ['todo/write'] as const }
+    expect(() => assertSnapshotCorpusPolicy([{
+      key: 'session/future-retired', selectedVersions: [SESSION_FORMAT_VERSION + 1],
+      retained: { ...retained, version: SESSION_FORMAT_VERSION + 1 },
+    }])).toThrow('retained Session format must precede')
+    expect(() => assertSnapshotCorpusPolicy([{
+      key: 'session/too-many-retired', selectedVersions: Array<number>(8).fill(SESSION_FORMAT_VERSION), retained,
+    }])).toThrow('more than six writer-retired')
+  })
+
+  it('rejects arbitrary event names and role inventories', () => {
+    expect(() => assertSnapshotCorpusPolicy([{
+      key: 'session/arbitrary', selectedVersions: [SESSION_FORMAT_VERSION],
+      retained: { version: SESSION_FORMAT_VERSION, coverage: ['retired-events'] },
+    }])).toThrow('declare exactly todo/write')
+    expect(() => { assertRetiredTodoWriterOracles([legacy], []) }).toThrow('role inventory')
+  })
+  it('rejects unused retention and writer oracles that preserve or drop the retired event', () => {
+    expect(() => { assertRetiredTodoWriterOracles([currentTree], [currentTree]) }).toThrow()
+    expect(() => { assertRetiredTodoWriterOracles([legacy], [legacy]) }).toThrow('replace every legacy write')
+    expect(() => { assertRetiredTodoWriterOracles([legacy], ['{"type":"session"}']) }).toThrow('replace every legacy write')
   })
 })

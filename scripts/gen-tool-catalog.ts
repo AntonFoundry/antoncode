@@ -656,12 +656,12 @@ const TOOL_PACKAGES: ToolPackage[] = [
     dir: 'tool-todo',
     source: 'packages/todo/tool-todo/src/index.ts',
     requires: ['ctx.tools', 'owning Agent session'],
-    writes: ['tool/call', 'todo/write', 'tool/result'],
+    writes: ['tool/call', 'todo/tree-write', 'tool/result'],
     async mount(ctx) {
       await ctx.plugin(ToolTodo, { allowParallelInProgress: true })
     },
     note:
-      'todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task.',
+      'todo_write is session-owned state; UIs render the latest todo/tree-write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-working-directory',

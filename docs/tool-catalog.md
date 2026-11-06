@@ -41,10 +41,10 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-session-query` | `session_event_read`, `session_event_search`, `session_event_trace`, `session_search`, `session_trace` | `ctx.tools`, `ctx.systemPrompt`, `ctx.sessionQuery`, `ctx.agents`, `a calling Agent for workspace authority` | `tool/call`, `tool/result` | - | The five read-only tools hide provider cursors and authorize every result from the immutable calling agent session. The package is opt-in; compositions that need enforced deadlines or bounded inline output also mount the generic timeout or spill policies. |
 | `@deepseek-ai/dsh-experimental-tool-subagent-oar` | `subagent_oar` | `ctx.tools`, `ctx.subagents` | `tool/call`, `tool/result`, `parent subagent catalog and completion notices` | - | The subagent_oar tool selects among configured aliases for external providers. This catalog shows Codex and Claude Code aliases; each deployment chooses its providers. Native model and permission settings belong to the selected provider configuration. |
 | `@deepseek-ai/dsh-tool-subagent` | `list_subagent_models`, `subagent` | `ctx.tools`, `ctx.subagents`, `ctx.systemPrompt`, `ctx.sessionProjections`, `ctx.llm for model discovery and selected-route validation` | `tool/call`, `tool/result`, `child session events through the chosen provider` | `subagent`, `subagent_fork` | The load-time `toolName` selects the delegation name (default `subagent`); `modelSelection` adds optional route fields. `modelDiscovery` defaults off and registers shared discovery on one instance per scope. Web and Desktop presets enable spawn discovery and route fields and leave `subagent_fork` route fields disabled. The Host settings service records authorization for each new top-level Session; child Sessions inherit it. Without a recorded policy, discovery and explicit selection permit only the current parent route. Every delegation returns a child id promptly; local children accept follow-ups, while external backends report their single execution automatically. |
-| `@deepseek-ai/dsh-tool-subagent-control` | `interrupt_agent`, `list_agents`, `send_message` | `ctx.tools`, `ctx.subagents`, `ctx.agents` | `tool/call`, `tool/result`, `child session events through ctx.subagents` | - | The globally named discovery, interruption, and local-message tools over managed subagents: provider-bound `tool-subagent` instances register distinct delegation tools, while one instance of this package registers `send_message`, `interrupt_agent`, and `list_agents`. |
+| `@deepseek-ai/dsh-tool-subagent-control` | `interrupt_agent`, `list_agents`, `send_message`, `set_agent_model` | `ctx.tools`, `ctx.subagents`, `ctx.agents`, `ctx.llm (set_agent_model only)` | `tool/call`, `tool/result`, `child session events through ctx.subagents` | - | The globally named discovery, interruption, local-message, and model-switch tools over managed subagents: provider-bound `tool-subagent` instances register distinct delegation tools, while one instance of this package registers `send_message`, `interrupt_agent`, `list_agents`, and `set_agent_model`. `set_agent_model` resolves the replacement route through `ctx.llm` before installing it; the other tools do not touch the model runtime. |
 | `@deepseek-ai/dsh-tool-jobs` | `job_kill`, `job_list`, `job_output` | `ctx.tools`, `ctx.jobs`, `ctx.systemPrompt` | `tool/call`, `tool/result`, `user/message via agent.inject() for background completion notices` | - | The kind-agnostic background-job controller: background bash commands and PTY sends are read, listed, and killed through the same three tools. Loading the plugin attaches the controller that arms producers' `ctx.jobs.start()`. |
 | `@deepseek-ai/dsh-experimental-tool-agent-team` | `interrupt_agent`, `list_agents`, `send_message`, `spawn_teammate`, `team_task_create`, `team_task_get`, `team_task_list`, `team_task_update`, `wait_agent` | `ctx.tools`, `ctx.systemPrompt`, `ctx.agentTeams`, `an exact live Team member Agent` | `tool/call`, `team/member`, `team/task`, `agent/inbox/spliced`, `user/message on inbox claim`, `tool/result` | - | All nine tools are scoped to implicit Team Leads and durable teammates. The shipped dsh-base bundle keeps the package disabled; the documented Agent Teams profile patch enables it while disabling the legacy continuable-child control names. |
-| `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`, `owning Agent session` | `tool/call`, `todo/write`, `tool/result` | - | todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task. |
+| `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`, `owning Agent session` | `tool/call`, `todo/tree-write`, `tool/result` | - | todo_write is session-owned state; UIs render the latest todo/tree-write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task. |
 | `@deepseek-ai/dsh-tool-working-directory` | `working_directory` | `ctx.tools`, `ctx.workingDirectory` | `tool/call`, `working-directory/change`, `user context for directory changes`, `tool/result` | - | Reads or changes the calling Session directory. Existing shells and processes retain their own directories; origin metadata and permission roots stay fixed. |
 | `@deepseek-ai/dsh-experimental-tool-worktree` | `create_worktree` | `ctx.tools`, `ctx.worktrees`, `a calling Agent` | `tool/call`, `Git branch and checkout`, `working-directory/change`, `tool/result` | - | Explicit experimental composition only. Creates a new branch and checkout from a pinned local commit under existing write permissions, then changes the Session directory. Leaving retains the branch and checkout. |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
@@ -686,35 +686,6 @@ Use only in plan mode. Present your plan for the user's review and, on approval,
     "path": {
       "type": "string",
       "description": "Optional workspace-relative path where the plan markdown is saved. Defaults to \"implementation_plan.md\"."
-    }
-  },
-  "required": [
-    "plan"
-  ]
-}
-```
-
-Source: [`packages/plan/plan-mode/src/index.ts`](../packages/plan/plan-mode/src/index.ts)
-
-### `plan_write`
-
-Record or update the standing implementation plan for the current work. Use this tool whenever an implementation plan has been produced (e.g. by a planning subagent) or updated. The plan persists across turns and is injected into every subsequent request as a standing guide for both the model and the user. Send the COMPLETE markdown plan, starting with a # heading.
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "plan": {
-      "type": "string",
-      "description": "The complete implementation plan, as markdown, starting with a # heading that names it."
-    },
-    "title": {
-      "type": "string",
-      "description": "Optional short title for the plan."
-    },
-    "path": {
-      "type": "string",
-      "description": "Optional workspace-relative file path to save the plan markdown. Defaults to \"implementation_plan.md\"."
     }
   },
   "required": [
@@ -2246,7 +2217,7 @@ Source: [`packages/subagent/tool-subagent/src/list-models.ts`](../packages/subag
 
 ### `subagent`
 
-Delegate a self-contained task to a subagent (a separate agent that works in its own context) to offload focused, independent work — research, a scoped implementation, an analysis — so it does not consume this conversation's context. The subagent returns its result, not its intermediate steps. This tool starts an independently managed subagent and immediately returns its id. The runtime notifies you when it finishes. The child reports results with `send_message`; use `send_message` to steer it while running or continue its conversation after it finishes.
+Delegate a self-contained task to a subagent (a separate agent that works in its own context) to offload focused, independent work — research, a scoped implementation, an analysis — so it does not consume this conversation's context. The subagent returns its result, not its intermediate steps. Delegation is the DEFAULT for decomposable work: when a task splits into two or more independent pieces — separate files, surfaces, or concerns — fan them out to parallel subagent calls in one message instead of doing them inline; keep only single-step or strictly sequential actions inline. This tool starts an independently managed subagent and immediately returns its id. The runtime notifies you when it finishes. The child reports results with `send_message`; use `send_message` to steer it while running or continue its conversation after it finishes. Prefer that continuation over a new child when an existing child already owns the task context.
 
 ```json
 {
@@ -2258,7 +2229,7 @@ Delegate a self-contained task to a subagent (a separate agent that works in its
     },
     "description": {
       "type": "string",
-      "description": "A short (3-5 word) description of the delegated task, for display."
+      "description": "A short (3-5 word) durable label naming the domain this child owns (subsystem, surface, or responsibility), not the one-off request. Later tasks match this label to decide whether to continue this child instead of starting a new one."
     },
     "prompt": {
       "type": "string",
@@ -2303,7 +2274,7 @@ Source: [`packages/subagent/tool-subagent-control/src/index.ts`](../packages/sub
 
 ### `list_agents`
 
-List subagents you started, with their ids, labels, and status. running means it is working; inactive means it is not currently working. You will be notified when a subagent finishes; there is no need to keep checking its status. Use send_message to continue the conversation.
+List subagents you started, with their ids, labels, and status. running means it is working; inactive means it is not currently working. You will be notified when a subagent finishes; there is no need to keep checking its status. Use send_message to continue the conversation. With scope descendants, a child entry may carry `tokens`: its cumulative provider usage, where hit is the cache-read share of its prompt tokens; a high hit means continuing it with send_message is cheaper than starting a fresh agent for related work.
 
 ```json
 {
@@ -2349,7 +2320,51 @@ Send a message to an agent. A working agent receives it at its next step; an idl
 
 Source: [`packages/subagent/tool-subagent-control/src/index.ts`](../packages/subagent/tool-subagent-control/src/index.ts)
 
-The globally named discovery, interruption, and local-message tools over managed subagents: provider-bound `tool-subagent` instances register distinct delegation tools, while one instance of this package registers `send_message`, `interrupt_agent`, and `list_agents`.
+### `set_agent_model`
+
+Switch a running subagent to another model. Use it when a subagent is stuck because its current model is exhausted, rate-limited, or otherwise unavailable. The change reaches its next model step and is kept if the subagent is later resumed. Only a subagent that is currently loaded can be switched. This changes no queued work; use send_message to give it another task. Prefer a model from the same or a cheaper provider that the subagent can reach.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "agent_id": {
+      "type": "string",
+      "description": "The id of an agent created under you: your direct child or a deeper descendant."
+    },
+    "provider": {
+      "type": "string",
+      "description": "Provider route of the replacement model, as shown in the available models list."
+    },
+    "model": {
+      "type": "string",
+      "description": "Provider-owned model id of the replacement model."
+    },
+    "reasoning_effort": {
+      "type": "string",
+      "description": "Optional reasoning effort for the replacement model. Omit to use that model's default.",
+      "enum": [
+        "off",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
+    }
+  },
+  "required": [
+    "agent_id",
+    "provider",
+    "model"
+  ]
+}
+```
+
+Source: [`packages/subagent/tool-subagent-control/src/index.ts`](../packages/subagent/tool-subagent-control/src/index.ts)
+
+The globally named discovery, interruption, local-message, and model-switch tools over managed subagents: provider-bound `tool-subagent` instances register distinct delegation tools, while one instance of this package registers `send_message`, `interrupt_agent`, `list_agents`, and `set_agent_model`. `set_agent_model` resolves the replacement route through `ctx.llm` before installing it; the other tools do not touch the model runtime.
 
 <a id="deepseek-aidsh-tool-jobs"></a>
 
@@ -2720,7 +2735,29 @@ All nine tools are scoped to implicit Team Leads and durable teammates. The ship
 
 ### `todo_write`
 
-Record and update a task list to plan multi-step work and show progress; skip it for trivial single-step tasks. Add one todo per concrete step before you start. While work remains, keep the todos being worked on `in_progress`, several only when work runs in parallel. Mark each todo `completed` as soon as it is done.
+Create and manage a structured task tree for the current work. Send the ENTIRE tree every call — it REPLACES the previous tree (there are no partial updates, no per-node edits). Use it to plan multi-step work and show progress. Using this tool is the DEFAULT, not an opt-in: before executing any work with more than one step, plan first — recording the plan with plan_write first when the work is non-trivial (3 or more tasks, multi-phase, cross-package, or architectural) — then write the tree and execute against it; do not wait for the user to ask for a plan.
+Workflow: plan first, then encode the plan as a todo tree, then execute it one node at a time:
+1. Plan: analyze the request and form a step-by-step plan before taking any action. For
+   non-trivial work (3 or more tasks, multi-phase, cross-package, or architectural), record
+   the plan with plan_write BEFORE calling this tool; if a delegating subagent fails or is
+   unavailable, author the plan from current knowledge and proceed inline — never stall on
+   a failed delegation.
+2. Write the tree: convert the plan into this tool's `todos` argument. Nest child tasks under a
+   parent when they are its concrete phases or subtasks — up to three levels (task, child,
+   grandchild); never deeper, and keep simple work flat rather than nesting for its own sake.
+3. Execute sequentially: keep exactly one branch of work `in_progress`, finish it, mark it
+   `completed`, and move to the next. Update statuses in real time — mark a node completed the
+   moment it is done, never batch completions.
+
+Persistence: the tree OUTLIVES the turn — the user sees it between and across messages, so it
+is the standing plan, not a per-turn scratchpad. At the start of any new user request that
+involves multi-step work, plan first (plan_write for non-trivial work), then write the tree
+(rewriting or extending the standing one) before any other tool call. When later phases or
+follow-ups remain, leave them `pending` on the tree rather than reporting everything
+completed; an all-settled tree is only correct when the whole request is genuinely finished.
+Delegation: every agent session owns its own tree. As the orchestrator, keep the top-level nodes here; when you delegate one node to a subagent, that node stays on your tree until its subtree reports back, and the subagent tracks its own finer-grained subtree in its own session rather than rewriting yours.
+Node fields: `status` is pending (not started) | in_progress (being worked on now) | completed (done) | cancelled (no longer needed); `priority` optionally ranks nodes (high | medium | low). Mark a parent completed only after all of its children are completed or cancelled. Only a trivial single-step request (one obvious action, no phases) may skip the tree; when in doubt, write it.
+Parallelism: mark every node being actively worked `in_progress` — several at once when work genuinely runs concurrently (e.g. parallel subagents or background commands); while work remains, at least one task should be `in_progress`.
 
 ```json
 {
@@ -2858,7 +2895,7 @@ Record and update a task list to plan multi-step work and show progress; skip it
 
 Source: [`packages/todo/tool-todo/src/index.ts`](../packages/todo/tool-todo/src/index.ts)
 
-todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task.
+todo_write is session-owned state; UIs render the latest todo/tree-write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task.
 
 <a id="deepseek-aidsh-tool-working-directory"></a>
 

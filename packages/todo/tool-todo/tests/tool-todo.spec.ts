@@ -106,7 +106,7 @@ describe('dsh-tool-todo', () => {
     })
     expect(text(result)).toContain('1 pending, 1 in progress, 0 completed, 0 cancelled')
 
-    const event = agent.session.snapshotEvents().findLast(e => e.type === 'todo/write')!
+    const event = agent.session.snapshotEvents().findLast(e => e.type === 'todo/tree-write')!
     expect(event.data.todos).toEqual(todos)
   })
 
@@ -116,7 +116,7 @@ describe('dsh-tool-todo', () => {
     const result = await callTodo(ctx, { todos: [{ content: '  plan the work  ', status: 'pending' }] }, { agent })
     expect(result.isError).toBe(false)
 
-    const event = agent.session.snapshotEvents().findLast(e => e.type === 'todo/write')!
+    const event = agent.session.snapshotEvents().findLast(e => e.type === 'todo/tree-write')!
     expect(event.data.todos).toEqual([{ content: 'plan the work', status: 'pending' }])
   })
 
@@ -129,7 +129,7 @@ describe('dsh-tool-todo', () => {
       { content: 'b', status: 'in_progress' },
     ] }, { agent })
 
-    const current = agent.session.snapshotEvents().findLast(e => e.type === 'todo/write')!.data.todos
+    const current = agent.session.snapshotEvents().findLast(e => e.type === 'todo/tree-write')!.data.todos
     expect(current).toEqual([
       { content: 'a', status: 'completed' },
       { content: 'b', status: 'in_progress' },
@@ -166,7 +166,7 @@ describe('dsh-tool-todo', () => {
     })
     expect(text(result)).toContain('1 pending, 1 in progress, 2 completed, 1 cancelled')
 
-    const event = agent.session.snapshotEvents().findLast(e => e.type === 'todo/write')!
+    const event = agent.session.snapshotEvents().findLast(e => e.type === 'todo/tree-write')!
     expect(event.data.todos).toEqual(todos)
   })
 
@@ -180,7 +180,7 @@ describe('dsh-tool-todo', () => {
     }] }, { agent })
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('at most one task may be in_progress across the whole tree')
-    expect(agent.session.snapshotEvents().some(e => e.type === 'todo/write')).toBe(false)
+    expect(agent.session.snapshotEvents().some(e => e.type === 'todo/tree-write')).toBe(false)
   })
 
   it('rejects duplicate content across different levels', async () => {
@@ -221,7 +221,7 @@ describe('dsh-tool-todo', () => {
       todos,
       counts: { pending: 1, inProgress: 2, completed: 0, cancelled: 0 },
     })
-    expect(agent.session.snapshotEvents().findLast(e => e.type === 'todo/write')!.data.todos).toEqual(todos)
+    expect(agent.session.snapshotEvents().findLast(e => e.type === 'todo/tree-write')!.data.todos).toEqual(todos)
   })
 
   describe('allowParallelInProgress', () => {
@@ -237,7 +237,7 @@ describe('dsh-tool-todo', () => {
       expect(result.isError).toBe(true)
       expect(text(result)).toContain('at most one task may be in_progress')
       // A rejected call must not reach the durable log.
-      expect(agent.session.snapshotEvents().some(e => e.type === 'todo/write')).toBe(false)
+      expect(agent.session.snapshotEvents().some(e => e.type === 'todo/tree-write')).toBe(false)
     })
 
     it('false still accepts one active item', async () => {
@@ -305,7 +305,7 @@ describe('dsh-tool-todo', () => {
     expect(result.isError).toBe(false)
     if (result.isError) throw new Error('expected todo_write success')
 
-    const stored = agent.session.snapshotEvents().findLast(e => e.type === 'todo/write')!.data.todos
+    const stored = agent.session.snapshotEvents().findLast(e => e.type === 'todo/tree-write')!.data.todos
     expect(stored).toEqual([
       { content: 'phase one', status: 'in_progress', children: [
         { content: 'step a', status: 'completed' },
@@ -327,7 +327,7 @@ describe('dsh-tool-todo', () => {
       ] }] },
     ] }] }, { agent })
     expect(result.isError).toBe(false)
-    const stored = agent.session.snapshotEvents().findLast(e => e.type === 'todo/write')!.data.todos
+    const stored = agent.session.snapshotEvents().findLast(e => e.type === 'todo/tree-write')!.data.todos
     expect(stored).toEqual([{ content: 'a', status: 'pending', children: [
       { content: 'b', status: 'pending', children: [{ content: 'c', status: 'pending' }] },
     ] }])
@@ -382,10 +382,10 @@ describe('todo/write event', () => {
       { content: 'plan the work', status: 'in_progress' },
       { content: 'write the code', status: 'pending' },
     ]
-    session.append('todo/write', { todos })
+    session.append('todo/tree-write', { todos })
 
-    const event = session.snapshotEvents().findLast(e => e.type === 'todo/write')!
-    expect(event.type).toBe('todo/write')
+    const event = session.snapshotEvents().findLast(e => e.type === 'todo/tree-write')!
+    expect(event.type).toBe('todo/tree-write')
     expect(event.data.todos).toEqual(todos)
 
     todos.push({ content: 'sneak in', status: 'pending' })
@@ -399,13 +399,13 @@ describe('todo/write event', () => {
   it('is last-write-wins: the current list is the most recent todo/write', () => {
     const session = Session.create(SessionId('t2'))
     session.append('turn/start', { turn: 1 })
-    session.append('todo/write', { todos: [{ content: 'first', status: 'pending' }] })
-    session.append('todo/write', { todos: [
+    session.append('todo/tree-write', { todos: [{ content: 'first', status: 'pending' }] })
+    session.append('todo/tree-write', { todos: [
       { content: 'first', status: 'completed' },
       { content: 'second', status: 'in_progress' },
     ] })
 
-    const current = session.snapshotEvents().findLast(e => e.type === 'todo/write')!.data.todos
+    const current = session.snapshotEvents().findLast(e => e.type === 'todo/tree-write')!.data.todos
     expect(current).toEqual([
       { content: 'first', status: 'completed' },
       { content: 'second', status: 'in_progress' },
@@ -419,7 +419,7 @@ describe('todo/write event', () => {
       content: [{ type: 'text', text: 'q' }], source: { kind: 'user' },
     }), { surfaceOp: 'append' })
     const before = session.deriveMessages().length
-    session.append('todo/write', { todos: [{ content: 'a task', status: 'pending' }] })
+    session.append('todo/tree-write', { todos: [{ content: 'a task', status: 'pending' }] })
 
     expect(session.deriveMessages()).toHaveLength(before)
     expect(session.surface.nodes).not.toContain(session.seq - 1)
@@ -428,11 +428,11 @@ describe('todo/write event', () => {
   it('round-trips through a seeded replay identically without surface metadata', () => {
     const original = Session.create(SessionId('t4'))
     original.append('turn/start', { turn: 1 })
-    original.append('todo/write', { todos: [{ content: 'only', status: 'completed' }] })
+    original.append('todo/tree-write', { todos: [{ content: 'only', status: 'completed' }] })
     original.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     const replayed = Session.create(SessionId('t4-replay'), original.snapshotEvents())
 
-    expect(replayed.snapshotEvents().findLast(e => e.type === 'todo/write')!.data.todos)
+    expect(replayed.snapshotEvents().findLast(e => e.type === 'todo/tree-write')!.data.todos)
       .toEqual([{ content: 'only', status: 'completed' }])
     expect(replayed.snapshotEvents(SessionLogOffset(0), original.seq)).toEqual(original.snapshotEvents())
     expect(replayed.firstLiveSeq).toBe(original.seq)

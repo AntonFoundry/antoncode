@@ -1220,7 +1220,7 @@ function buildAlphaLog(presented = false): SessionEvent[] {
   // toolTurn events run ... tool/call, tool/result, step/end, turn/end).
   const callIndex = events.length - 4
   const callTime = events[callIndex]?.time ?? 0
-  events.splice(callIndex + 1, 0, { type: 'todo/write', time: callTime + 400, data: { todos: fixtureTodos } })
+  events.splice(callIndex + 1, 0, { type: 'todo/tree-write', time: callTime + 400, data: { todos: fixtureTodos } })
   return events.map((event, index) => withEnvelope(event, SessionSeq(index)))
 }
 
@@ -1677,7 +1677,7 @@ function projectionFramesOf(
     return [{ type: 'projection', sessionId: id, key: 'goal', value: backscanGoal(log), seq: event.seq }]
   }
   // Standing-plan fold: writes replace the list; turn/start clears it (null).
-  if (type === 'todo/write' || type === 'turn/start') {
+  if (type === 'todo/write' || type === 'todo/tree-write' || type === 'turn/start') {
     return [{
       type: 'projection',
       sessionId: id,
@@ -1895,16 +1895,15 @@ function compareSearchCandidates(a: FixtureSearchCandidate, b: FixtureSearchCand
   return b.seq - a.seq
 }
 
-/**
- * Current plan projection over the full log (host parallel: latest todo/write
- * with no later turn/start; a new turn retires the previous plan).
- */
+/** Current standing trees persist; released flat lists clear at the next turn. */
 function backscanTodos(log: readonly SessionEvent[]): TodoItem[] | undefined {
+  let crossedTurn = false
   for (let i = log.length - 1; i >= 0; i--) {
     const event = log[i]
     if (event === undefined) continue
-    if (event.type === 'turn/start') return undefined
-    if (event.type === 'todo/write') return event.data.todos
+    if (event.type === 'turn/start') crossedTurn = true
+    if (event.type === 'todo/tree-write') return event.data.todos
+    if (event.type === 'todo/write') return crossedTurn ? undefined : event.data.todos
   }
   return undefined
 }

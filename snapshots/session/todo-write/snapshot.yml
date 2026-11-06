@@ -4,4 +4,11 @@ profile: headless
 composition: default
 recording: live
 header:
-  class: default
+  class: todo-write
+  pin: true
+  promptChanges: 1
+  changes: 1
+sessionFormat:
+  version: 4
+  coverage: [retired-events]
+  events: [todo/write]

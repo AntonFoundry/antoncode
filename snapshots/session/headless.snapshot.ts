@@ -921,7 +921,8 @@ async function verifyProviderCwdResume(
 
 async function verifyHeaders(scenario: HeadlessScenario, actualLogs: readonly SessionLog[], ctx: NormalizeContext): Promise<void> {
   const pin = pinOf(scenario)
-  const fixture = await readFile(join(pin.dir, await primaryFixtureFile(pin.dir)), 'utf8')
+  const fixture = await readFile(join(pin.dir, pin.manifest.sessionFormat?.coverage[0] === 'retired-events'
+    ? writerSnapshotName(0) : await primaryFixtureFile(pin.dir)), 'utf8')
   const pinned = normalizedHeaders(fixture, fixtureContext(fixture))
   const changes = pin.manifest.header.changes ?? 0
   expect(pinned, `${scenario.name}: pin header count`).toHaveLength(1 + changes)
@@ -956,7 +957,8 @@ async function verifyHeaders(scenario: HeadlessScenario, actualLogs: readonly Se
     if (headers.length > 0) {
       expect(systemPromptPrecedesRequests(log.content), `${scenario.name}: a system/message precedes the first request/header`).toBe(true)
       expect(prompts.length, `${scenario.name}: system/message count`)
-        .toBe(1 + (logIndex === 0 ? pin.manifest.header.promptChanges ?? 0 : 0))
+        .toBe(logIndex === 0 ? 1 + (pin.manifest.header.promptChanges ?? 0)
+          : 1 + [...(childPrompts.get(logIndex) ?? '').matchAll(/<!-- system\/message change \d+ -->/gu)].length)
     }
     for (const [index, header] of headers.entries()) {
       const selectedSchemas = childSchemas.get(logIndex)?.[index]
@@ -977,7 +979,8 @@ describe('headless recorded-session snapshots', () => {
   it('gives every composition and header class exactly one current-writer pin', () => {
     for (const scenario of scenarios) {
       expect(ownerOf(scenario), `${scenario.name}: composition owner`).toBeDefined()
-      expect(pinOf(scenario).manifest.sessionFormat, `${scenario.name}: current-writer header pin`).toBeUndefined()
+      const retained = pinOf(scenario).manifest.sessionFormat
+      expect(retained === undefined || retained.version === SESSION_FORMAT_VERSION && retained.coverage[0] === 'retired-events', `${scenario.name}: current-writer header pin`).toBe(true)
     }
   })
 

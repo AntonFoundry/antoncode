@@ -26,9 +26,9 @@ declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
 /** Durable writes are indexed independently of Tool success receipts. */
 export const todoWriteDefinition: ConversationNodeDefinition<readonly TodoItem[]> = {
   kind: 'tool-todo-write',
-  match: event => event.type === 'todo/write' ? { id: String(event.seq), role: 'start' } : null,
+  match: event => (event.type === 'todo/write' || event.type === 'todo/tree-write') ? { id: String(event.seq), role: 'start' } : null,
   start: (_context, match) => {
-    if (match.event.type !== 'todo/write') throw new Error('tool-todo-write requires todo/write')
+    if (match.event.type !== 'todo/write' && match.event.type !== 'todo/tree-write') throw new Error('tool-todo-write requires todo/write')
     return match.event.data.todos
   },
   update: context => context.state,

@@ -10,23 +10,31 @@ Source: [`packages/todo/tool-todo/src/types.ts`](../../packages/todo/tool-todo/s
 
 ```ts type-equiv
 /**
- * One entry in an agent's todo list — the unit of the `todo/write`
- * whole-list snapshot declared by this package.
+ * One node in an agent's todo tree — the unit of the `todo/tree-write`
+ * whole-tree snapshot declared by this package.
  *
- * Deliberately minimal: a human-readable `content` line and a three-state
- * `status`. No id, priority, or `activeForm` — the list is replaced wholesale
- * on every write (last-write-wins), so entries need no stable identity. The
- * three statuses describe the complete portable lifecycle needed by model and
- * UI consumers.
+ * A node carries a human-readable `content` line, a four-state `status`, an
+ * optional `priority`, and optional nested `children` — up to three levels
+ * (top-level task, child, grandchild), enforced at the tool-JSON boundary and
+ * by the owning package invariant, not by this type. The tree is replaced
+ * wholesale on every write (last-write-wins), so nodes need no stable identity.
  */
 interface TodoItem {
   /** What this task is — a short imperative line shown in the UI. */
   content: string
-  /** Lifecycle state. `in_progress` marks a task being worked now; parallel work may mark several. */
-  status: 'pending' | 'in_progress' | 'completed'
+  /**
+   * Lifecycle state. `in_progress` marks a task being worked now; parallel
+   * work may mark several. `cancelled` retires a node no longer needed without
+   * counting it unfinished.
+   */
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled'
+  /** Scheduling weight the model assigns; presentation-only. */
+  priority?: 'high' | 'medium' | 'low'
+  /** Nested subtasks, at most two levels below a top-level node (three levels total). */
+  children?: TodoItem[]
 }
 ```
 
 ## Durable event
 
-The package declaration-merges `todo/write: { todos: TodoItem[] }` into `SessionEventMap`. The event is log-only and carries the complete replacement list; the generated [persistence catalog](../persistence-catalog.md#todowrite--log-only) records its declaration site.
+The package declares log-only `todo/tree-write: { todos: TodoItem[] }` for standing trees and retains `todo/write` for released flat three-status lists. Both replace the whole value; only the legacy event clears on `turn/start`. An older reader that does not recognize the required tree event refuses the Session before adoption. The generated [persistence catalog](../persistence-catalog.md) records both declarations.

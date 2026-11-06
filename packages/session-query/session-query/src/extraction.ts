@@ -5,7 +5,7 @@ import type { SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-tool-todo'
 
 /** Every node of a todo tree in depth-first order — children nest up to three levels. */
-function flatTodoNodes(todos: SessionEventMap['todo/write']['todos']): typeof todos {
+function flatTodoNodes(todos: SessionEventMap['todo/tree-write']['todos']): typeof todos {
   return todos.flatMap(todo => [todo, ...flatTodoNodes(todo.children ?? [])])
 }
 
@@ -32,6 +32,7 @@ export function extractSessionEventText(event: SessionEvent): string {
         event.data.error?.code ?? '',
       ])
     case 'todo/write':
+    case 'todo/tree-write':
       return joinText(flatTodoNodes(event.data.todos).flatMap(todo => [todo.status, todo.content]))
     case 'turn/end':
       return turnEndText(event.data.reason)

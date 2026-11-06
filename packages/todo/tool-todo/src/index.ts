@@ -1,5 +1,5 @@
 /**
- * Model-facing whole-tree replacement. Each call appends a `todo/write` snapshot to the calling
+ * Model-facing whole-tree replacement. Each call appends a `todo/tree-write` snapshot to the calling
  * agent's session; replay is last-write-wins, and UIs render from session events. A non-agent
  * caller has no owning list and is rejected. Named exports preserve loader injection metadata.
  *
@@ -333,23 +333,26 @@ function repairTodoTree(raw: unknown): RawTodoNode[] {
  */
 export async function apply(ctx: Context, config: Config): Promise<void> {
   const allowParallel = config.allowParallelInProgress
-  // Standing-plan fold: the latest whole todo/write tree persists across
-  // turns — a plan the user can still see while follow-up work runs, not a
-  // per-turn scratchpad a new turn/start wipes. Only the next todo/write
-  // replaces it; null before the first write; every other event returns the
-  // same state reference.
-  const todosProjection = await ctx.sessionProjections.register<'todos', TodoItem[] | null>({
+  // The event discriminator retains the released per-turn lifecycle while new trees stand across turns.
+  const todosProjection = await ctx.sessionProjections.register<'todos', {
+    mode: 'legacy' | 'standing'
+    todos: TodoItem[] | null
+  }>({
     key: 'todos',
-    stateSchema: todosProjectionSchema,
-    init: () => null,
+    stateSchema: zod.object({ mode: zod.enum(['legacy', 'standing']), todos: todosProjectionSchema }),
+    init: () => ({ mode: 'legacy', todos: null }),
     apply: (state, event) => {
-      if (event.type === 'todo/write') return event.data.todos
+      if (event.type === 'todo/tree-write') return { mode: 'standing', todos: event.data.todos }
+      if (event.type === 'todo/write') return { mode: 'legacy', todos: event.data.todos }
+      if (event.type === 'turn/start' && state.mode === 'legacy' && state.todos !== null) {
+        return { mode: 'legacy', todos: null }
+      }
       return state
     },
-    wire: { viewSchema: todosProjectionSchema, view: state => state, summary: false },
-    stateVersion: 4,
+    wire: { viewSchema: todosProjectionSchema, view: state => state.todos, summary: false },
+    stateVersion: 5,
   })
-  // Standing-plan section: the latest todo/write tree rides every model
+  // Standing-plan section: the latest todo/tree-write tree rides every model
   // request, so "continue" extends the real plan instead of replacing it
   // with whatever survived compaction. It reads the `todos` projection state.
   ctx.inject(['systemPrompt'], (promptCtx) => {
@@ -360,8 +363,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       interpolate: false,
       text: (context) => {
         if (context.agent === undefined) return ''
-        const todos = todosProjection.stateOf(context.agent.session)
-        return todos === null ? '' : standingPlanSection(todos)
+        const state = todosProjection.stateOf(context.agent.session)
+        return state.mode !== 'standing' || state.todos === null ? '' : standingPlanSection(state.todos)
       },
     })
   })
@@ -504,7 +507,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         // session) has nowhere to write it. Reject rather than silently no-op.
         throw new Error('todo_write requires an owning agent session')
       }
-      exec.agent.session.append('todo/write', { todos })
+      exec.agent.session.append('todo/tree-write', { todos })
       const count = (status: TodoItem['status']): number => flat(todos).filter(t => t.status === status).length
       return Promise.resolve({
         todos,

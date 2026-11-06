@@ -4,4 +4,11 @@ profile: headless
 composition: default
 recording: authored
 header:
-  class: default
+  class: subagent-max-tokens-partial
+  pin: true
+  childSystemPrompts: [1]
+  childToolSchemas: [1]
+sessionFormat:
+  version: 4
+  coverage: [retired-events]
+  events: [todo/write]

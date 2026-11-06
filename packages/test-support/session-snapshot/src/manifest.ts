@@ -83,6 +83,7 @@ export type SnapshotSessionFormatCoverage =
   | 'shipped-profile'
   | 'adjacent-migration'
   | 'retired-tools'
+  | 'retired-events'
 
 /** Explicit historical generation retained by an owning scenario. */
 export interface SnapshotSessionFormatManifest {
@@ -90,6 +91,8 @@ export interface SnapshotSessionFormatManifest {
   readonly version: number
   /** Migration or retired-tool behavior that requires this immutable fixture. */
   readonly coverage: readonly SnapshotSessionFormatCoverage[]
+  /** Exact writer-retired discriminators retained as replay input. */
+  readonly events?: readonly 'todo/write'[]
 }
 
 /** Declarative ownership metadata stored beside a recorded session. */
@@ -154,6 +157,7 @@ const SESSION_FORMAT_COVERAGE = new Set<SnapshotSessionFormatCoverage>([
   'shipped-profile',
   'adjacent-migration',
   'retired-tools',
+  'retired-events',
 ])
 const NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
@@ -388,7 +392,7 @@ export function parseSnapshotManifest(source: string, path = 'snapshot.yml'): Sn
     let sessionFormat: SnapshotSessionFormatManifest | undefined
     if (root.sessionFormat !== undefined) {
       const value = record(root.sessionFormat, 'manifest.sessionFormat')
-      exactKeys(value, ['version', 'coverage'], 'manifest.sessionFormat')
+      exactKeys(value, ['version', 'coverage', 'events'], 'manifest.sessionFormat')
       if (!Number.isSafeInteger(value.version) || Number(value.version) < 0 || Object.is(value.version, -0)) {
         throw new Error('manifest.sessionFormat.version must be a non-negative safe integer')
       }
@@ -400,12 +404,18 @@ export function parseSnapshotManifest(source: string, path = 'snapshot.yml'): Sn
           'manifest.sessionFormat.coverage must be a non-empty array of unique supported coverage names',
         )
       }
+      const retiredEvents = value.coverage.length === 1 && value.coverage[0] === 'retired-events'
+      if (retiredEvents ? !Array.isArray(value.events) || value.events.length !== 1 || value.events[0] !== 'todo/write'
+        : value.events !== undefined) {
+        throw new Error('manifest.sessionFormat.events must be [todo/write] exclusively for retired-events coverage')
+      }
       if (session !== undefined) {
         throw new Error('manifest.sessionFormat is only valid when the scenario owns its Session fixtures')
       }
       sessionFormat = {
         version: Number(value.version),
         coverage: [...value.coverage as SnapshotSessionFormatCoverage[]],
+        ...(retiredEvents ? { events: ['todo/write'] as const } : {}),
       }
     }
 

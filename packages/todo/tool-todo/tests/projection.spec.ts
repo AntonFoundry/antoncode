@@ -77,8 +77,8 @@ describe('todos projection provider', () => {
       { content: 'b', status: 'in_progress' },
     ]
     session.append('turn/start', { turn: 1 })
-    session.append('todo/write', { todos: first })
-    session.append('todo/write', { todos: second })
+    session.append('todo/tree-write', { todos: first })
+    session.append('todo/tree-write', { todos: second })
     const projections = await bench.tailProjections()
     // Last-wins: the latest snapshot, whole.
     expect(projections?.values.todos).toEqual(second)
@@ -91,13 +91,35 @@ describe('todos projection provider', () => {
     seedMessage(session)
     const list: TodoItem[] = [{ content: 'done', status: 'completed' }]
     session.append('turn/start', { turn: 1 })
-    session.append('todo/write', { todos: list })
+    session.append('todo/tree-write', { todos: list })
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     expect((await bench.tailProjections())?.values.todos).toEqual(list)
     session.append('turn/start', { turn: 2 })
     // The tree is a standing plan: only the next todo/write replaces it, so
     // the user keeps seeing the plan while follow-up work runs.
     expect((await bench.tailProjections())?.values.todos).toEqual(list)
+  })
+
+  it('clears released flat lists at the next turn and does not promote them to standing plans', async () => {
+    const bench = await harness(true)
+    bench.session.append('turn/start', { turn: 1 })
+    bench.session.append('todo/write', { todos: [{ content: 'legacy task', status: 'pending' }] })
+    expect((await bench.tailProjections())?.values.todos).toEqual([{ content: 'legacy task', status: 'pending' }])
+    const agent = { session: bench.session }
+    const assembly = await bench.ctx.systemPrompt.assemble({ agent, scope: agent } as never)
+    expect(assembly.sections.find(section => section.name === 'todo:standing-plan')?.text).toBe('')
+    bench.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    bench.session.append('turn/start', { turn: 2 })
+    expect((await bench.tailProjections())?.values.todos).toBeNull()
+    const tree: TodoItem[] = [{ content: 'standing parent', status: 'pending', children: [{ content: 'retired child', status: 'cancelled' }] }]
+    bench.session.append('todo/tree-write', { todos: tree })
+    bench.session.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
+    bench.session.append('turn/start', { turn: 3 })
+    expect((await bench.tailProjections())?.values.todos).toEqual(tree)
+    bench.session.append('todo/write', { todos: [{ content: 'later legacy task', status: 'in_progress' }] })
+    bench.session.append('turn/end', { turn: 3, reason: { kind: 'completed' } })
+    bench.session.append('turn/start', { turn: 4 })
+    expect((await bench.tailProjections())?.values.todos).toBeNull()
   })
 
   it('has no todos key when tool-todo is not composed', async () => {
@@ -126,7 +148,7 @@ describe('standing-plan prompt section', () => {
       { content: 'Phase 2: control', status: 'completed', children: [] },
       { content: 'Phase 3: ptys', status: 'pending', children: [] },
     ]
-    bench.session.append('todo/write', { todos: list })
+    bench.session.append('todo/tree-write', { todos: list })
     const agent = { session: bench.session }
     const assembly = await bench.ctx.systemPrompt.assemble({ agent, scope: agent } as never)
     const section = assembly.sections.find(candidate => candidate.name === 'todo:standing-plan')
@@ -147,8 +169,8 @@ describe('standing-plan prompt section', () => {
 
   it('reflects the latest write after a replacement tree', async () => {
     const bench = await harness(true)
-    bench.session.append('todo/write', { todos: [{ content: 'old', status: 'pending', children: [] }] })
-    bench.session.append('todo/write', { todos: [{ content: 'new plan', status: 'in_progress', children: [] }] })
+    bench.session.append('todo/tree-write', { todos: [{ content: 'old', status: 'pending', children: [] }] })
+    bench.session.append('todo/tree-write', { todos: [{ content: 'new plan', status: 'in_progress', children: [] }] })
     const agent = { session: bench.session }
     const assembly = await bench.ctx.systemPrompt.assemble({ agent, scope: agent } as never)
     const text = assembly.sections.find(candidate => candidate.name === 'todo:standing-plan')?.text ?? ''
@@ -158,7 +180,7 @@ describe('standing-plan prompt section', () => {
 
   it('keeps template-looking todo content literal', async () => {
     const bench = await harness(true)
-    bench.session.append('todo/write', { todos: [{ content: 'Preserve {{source}}', status: 'pending', children: [] }] })
+    bench.session.append('todo/tree-write', { todos: [{ content: 'Preserve {{source}}', status: 'pending', children: [] }] })
     const agent = { session: bench.session }
     const assembly = await bench.ctx.systemPrompt.assemble({ agent, scope: agent } as never)
     expect(renderPrompt(assembly)).toContain('Preserve {{source}}')

@@ -11,7 +11,7 @@
 import type { SessionProjectionSummaryExcluded } from '@deepseek-ai/dsh-session-projection/types'
 
 /**
- * One node in an agent's todo tree — the unit of the `todo/write`
+ * One node in an agent's todo tree — the unit of the `todo/tree-write`
  * whole-tree snapshot declared by this package.
  *
  * A node carries a human-readable `content` line, a four-state `status`, an
@@ -37,18 +37,20 @@ export interface TodoItem {
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
-    /** Whole-tree snapshot; latest write wins on replay. Log-only UI state; never derived history. */
-    'todo/write': { todos: TodoItem[] }
+    /** Legacy per-turn flat list; cleared by the next turn/start. */
+    'todo/write': { todos: { content: string; status: 'pending' | 'in_progress' | 'completed' }[] }
+    /** Standing whole-tree snapshot; retained across turns until replaced. */
+    'todo/tree-write': { todos: TodoItem[] }
   }
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionMap {
     /**
-     * The agent's current whole todo tree (the latest `todo/write` snapshot),
-     * or `null` before the first write. Whole-value rule: every `todo/write`
-     * carries the complete replacement tree (up to three levels), so the fold
-     * is last-wins. Excluded from Session summary payloads, with `null` kept
+     * The agent's current whole todo tree (the latest todo snapshot),
+     * or `null` before the first write. Tree writes persist across turns; legacy
+     * flat writes clear at the next turn/start. Every write replaces the whole value.
+     * Excluded from Session summary payloads, with `null` kept
      * outside the exclusion mark so the pre-first-write value stays expressible.
      */
     todos: SessionProjectionSummaryExcluded<TodoItem[]> | null
