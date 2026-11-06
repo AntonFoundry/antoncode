@@ -11,7 +11,7 @@ Desktop product events use the optional [product analytics service](../product-a
 
 ## Summary
 
-`dsh-client-ui-settings-models` is the Models settings page of the dsh web client: users configure API keys (stored write-only under the profile's credential reference), edit each provider's model list, and hand-declare custom pi-ai routes, with provider rows and one editor card at a time. The page joins the provider directory, the settings document, and the credential descriptions into one shared snapshot, so a row's state stays consistent across all three. The OpenCode and Claude subscription login controls use the OAuth controller Remote to start and complete Host-owned flows without sending tokens to the browser. It also walks first-run users through two ordered dialogs — a versioned preview notice and the conditional official-DeepSeek credential step.
+Configure provider credentials, edit model lists, and add custom pi-ai routes from Models settings. API keys remain write-only, and OpenCode or Claude sign-in completes through Host-owned OAuth flows without exposing tokens to the browser. Provider, settings, and credential state share one snapshot. First-run dialogs present a versioned notice and request an official DeepSeek key only when no usable provider is available.
 
 ## Table of Contents
 

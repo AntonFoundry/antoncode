@@ -1,40 +1,71 @@
+---
+description: "Inspect visible Session runs and their task trees from the Orchestrator conversation tab."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-orchestrator
 
-Orchestrator surface tabs over the per-session view ring: [ Orchestrator | Workflows | Chat ] —
-Chat remains the default view. Spec: docs/specs/orchestrator-v2-spec.md
+English
 
-## Wiring
+## Summary
 
-- `apply(ctx)` registers two `conversation.view` entries (ids `orchestrator` order 5,
-  `dagflow` order 6) through `ctx.slots.inject`; plugin unload removes both tabs.
-- Board data comes from the `orchestrator.board` RPC in one round trip (workspaces with their
-  session accounts, the archive set, and the visible `session.list` summaries including the live
-  `running` flag). A refresh-on-inject pull plus a 15s interval poll keeps the snapshot fresh; the
-  interval is disposed with the plugin fiber.
-- `onAct(sessionId, action)` forwards card actions; only `kill` is server-side today
-  (`orchestrator.act`), and it refreshes the board after the host accepts. `approve`, `retry`,
-  `inject note`, and `focus` are client-side placeholders.
+Inspect visible Session runs, their parent-child relationships, and recorded task plans in an Orchestrator board. Running state takes precedence over the recency classification of inactive Sessions, and archived Sessions stay hidden. Stop an active run through its card; other card actions are placeholders. Chat remains the default conversation view.
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Understand the implementation](#understand-the-implementation)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+## Use this package
+
+Select Orchestrator from the conversation header to inspect the board. Cards use human-facing Session titles when available and fall back to Session ids. The separate [Workflows tab](../ui-flowbuilder/README.md) embeds LangFlow.
+
+-----
+
+## Understand the implementation
+
+<details>
+<summary>Implementation internals — click to expand</summary>
+
+The browser registers only the `orchestrator` conversation view. Its inject callback derives cards from the current workspace and Session snapshots, excluding archived Sessions and grouping subagents under their parents. The `running` flag determines activity; non-running Sessions updated within 24 hours classify as queued, and older ones classify as done. Recorded `todos` provide task rows. The kill action calls `remote.session.cancel`; the package owns no board polling timer.
+
+</details>
+
+-----
 
 ## Model Experience
 
-- Adds no tools, prompt sections, tokens, or session events: the plugin is browser-only and
-  pure-consumer, so the model's context and KV cache are untouched.
-- For the human, the session header gains two tabs. Orchestrator triages every visible session
-  into NEEDS YOU / RUNNING / DONE columns with per-run cards; the Workflows tab (ui-flowbuilder) draws the board as a
-  Langflow-style node canvas. Non-running sessions classify by recency (updated within 24h reads
-  queued, else done); the attached agent's live `running` flag always wins.
+### Session board
 
-## Workflows
+#### What the model sees
 
-The workflow canvas moved to [`ui-flowbuilder`](../ui-flowbuilder/README.md), which owns the `dagflow` view id (Workflows / 工作流). This package registers only the Orchestrator board tab.
+The `orchestrator` tab contributes no model tools, prompt sections, or Session messages. Its stop action requests cancellation through the Session controller rather than adding a prompt.
+
+#### Token effect
+
+None; this package adds no model-input tokens.
+
+#### KV Cache effect
+
+None; browser presentation does not change provider requests or their reusable prefixes.
 
 ## Known Limitations and Deferred Work
 
-- No title projection: `session.list` carries no display title on the wire yet, so run cards show
-  session ids; cards switch to titles when the projection ships.
-- Dag Flow is a projection: no drag-to-connect, node creation, or per-workspace group frames yet;
-  an open tab repaints on the 15s board poll, not live.
-- Card actions other than `kill` have no server-side action and log only.
-- The board snapshot is read at inject time; an already-open view refreshes on the next poll
-  interval via remount, not live mid-render.
-- LLM-backed features (mission titles, `/delegate`) are not part of this package.
+- The view reads board data at injection time; it declares no reactive board hook or periodic refresh.
+- Approve, retry, inject-note, and focus actions only log their invocation; only kill calls the Host.
+- Token counts, cost, wall time, and error details are not projected into run cards.
+- The board is not an editable workflow canvas and provides no model-backed delegation command.
+
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

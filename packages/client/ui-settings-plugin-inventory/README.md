@@ -9,7 +9,7 @@ English
 
 ## Summary
 
-The **Plugin list** tab lists agent presets, open by default, then the collapsed global inventory. Session plugin switches save a literal child row into the active profile for future Agents. A Global plugins shortcut above the lists collapses the session list and opens the Host entries with their enable and disable switches; a search opens both groups. Cards show localized titles and descriptions when available, identify instances by stable entry id, and expose enablement, source details, runtime status, disabled conditions, and discovery failures; preset-provided global entries name their presets. Search covers both groups and points to matches in other presets. The tab handles loading, empty, no-match, failure, and retry states without exposing transport details, and still shows the global inventory without a preset roster.
+Inspect agent-preset and global plugin inventories in Settings, search their localized metadata, and expand cards for source and runtime details. Session plugin switches affect future Agents; global switches control Host entries. Search spans both groups and identifies matches in other presets. Loading, discovery failures, retry, and empty states remain visible, including when no preset roster is available.
 
 ## Table of Contents
 
