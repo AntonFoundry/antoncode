@@ -47,7 +47,8 @@ function manifest(url: string): PackageManifest {
 }
 
 /**
- * Resolve and version-check a dsh executable from package manifests.
+ * Resolve and version-check the profile launcher from package manifests.
+ * Named bin maps select `anton`, or `dsh` when `anton` is absent; unrelated executables are rejected.
  * @param dshManifestUrl - resolved URL of the dsh package manifest.
  * @param clientManifestUrl - resolved URL of the SDK client manifest.
  * @returns the absolute dsh executable path.
@@ -58,10 +59,12 @@ export function resolveDshBinFromManifests(dshManifestUrl: string, clientManifes
   if (typeof dshManifest.version !== 'string' || dshManifest.version !== clientManifest.version) {
     throw new Error(`dsh SDK client ${String(clientManifest.version)} requires the same dsh version, got ${String(dshManifest.version)}`)
   }
-  const bin = typeof dshManifest.bin === 'object' && dshManifest.bin !== null
-    ? (dshManifest.bin as Record<string, unknown>).dsh
-    : dshManifest.bin
-  if (typeof bin !== 'string' || bin === '') throw new Error('@deepseek-ai/dsh declares no dsh executable')
+  let bin = dshManifest.bin
+  if (typeof bin === 'object' && bin !== null) {
+    const bins = bin as Record<string, unknown>
+    bin = Object.hasOwn(bins, 'anton') ? bins.anton : bins.dsh
+  }
+  if (typeof bin !== 'string' || bin === '') throw new Error('@deepseek-ai/dsh declares no usable anton or dsh profile executable')
   return resolve(dirname(fileURLToPath(dshManifestUrl)), bin)
 }
 

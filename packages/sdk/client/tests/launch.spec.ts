@@ -1,6 +1,6 @@
 /** Public dsh launch resolution for the TypeScript SDK. */
 
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { readFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -34,6 +34,9 @@ function manifestPair(dsh: object, client: object): { dshUrl: string; clientUrl:
 
 describe('SDK dsh launch resolution', () => {
   it('resolves the same-version installed dsh entry by default', () => {
+    const runtimeManifestUrl = import.meta.resolve('@deepseek-ai/dsh/package.json')
+    const runtimeManifest = JSON.parse(readFileSync(new URL(runtimeManifestUrl), 'utf8')) as { bin: { anton: string } }
+    expect(runtimeManifest.bin.anton).toBe('lib/bin.js')
     const bin = installedDshBin()
     expect(bin.endsWith(join('apps', 'cli', 'lib', 'bin.js'))).toBe(true)
     const launch = resolveDshLaunch()
@@ -83,8 +86,8 @@ describe('SDK dsh launch resolution', () => {
     expect(launch.environment()).toEqual({ PATH: '/bin', DSH_HOME: join(caller, 'home') })
   })
 
-  it('falls back to the same package source entry through an absolute tsx loader', () => {
-    const pair = manifestPair({ version: '1.0.0', bin: 'lib/bin.js' }, { version: '1.0.0' })
+  it.each(['lib/bin.js', { anton: 'lib/bin.js' }, { dsh: 'lib/bin.js' }])('falls back to the same package source entry through an absolute tsx loader (%j)', (bin) => {
+    const pair = manifestPair({ version: '1.0.0', bin }, { version: '1.0.0' })
     const sourceBin = join(pair.root, 'src/bin.ts')
     const sourcePatch = join(pair.root, 'src/sdk-source.cordis.patch.yml')
     const sourceTsconfig = join(pair.root, 'tsconfig.json')
@@ -153,17 +156,26 @@ describe('SDK dsh launch resolution', () => {
     },
   )
 
+  it.each([
+    { anton: './bin.js' },
+    { dsh: './bin.js' },
+    { anton: './bin.js', dsh: './legacy.js' },
+  ])('selects the explicit profile executable from %j', (bin) => {
+    const pair = manifestPair({ version: '1.0.0', bin }, { version: '1.0.0' })
+    expect(resolveDshBinFromManifests(pair.dshUrl, pair.clientUrl)).toBe(join(pair.root, 'bin.js'))
+  })
+
   it('accepts the string npm bin form', () => {
     const pair = manifestPair({ version: '1.0.0', bin: './bin.js' }, { version: '1.0.0' })
     expect(resolveDshBinFromManifests(pair.dshUrl, pair.clientUrl)).toBe(join(pair.root, 'bin.js'))
   })
 
-  it.each([null, {}, ''])(
+  it.each([null, {}, '', { other: './bin.js' }, { anton: '' }, { anton: 1 }, { anton: '', dsh: './legacy.js' }, { dsh: 1 }])(
     'rejects a manifest without a usable dsh executable (%j)',
     (bin) => {
       const pair = manifestPair({ version: '1.0.0', bin }, { version: '1.0.0' })
       expect(() => resolveDshBinFromManifests(pair.dshUrl, pair.clientUrl))
-        .toThrow('declares no dsh executable')
+        .toThrow('declares no usable anton or dsh profile executable')
     },
   )
 })
