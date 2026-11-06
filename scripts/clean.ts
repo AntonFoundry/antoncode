@@ -4,6 +4,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { repositoryConfigHost } from './ts-project.ts'
+import { retainedMigrationSources } from './retained-migration-sources.ts'
 
 const knownOrphanEntries = new Set(['node_modules', 'lib', '.typecheck'])
 
@@ -83,6 +84,12 @@ function parseConfig(configPath: string): ts.ParsedCommandLine {
 /** Plans and removes repository-owned build output without crossing the repository boundary. */
 export class RepositoryCleaner {
   private readonly root: string
+  private retainedPaths: string[] = []
+
+  /** Repository-relative source roots preserved by the last successful plan; empty before planning. */
+  get retainedSources(): readonly string[] {
+    return [...this.retainedPaths]
+  }
 
   constructor(root: string) {
     this.root = resolve(root)
@@ -102,6 +109,7 @@ export class RepositoryCleaner {
   private async plan(): Promise<string[]> {
     const targets = new Set<string>()
     const unsafeOrphans: string[] = []
+    const retainedPaths: string[] = []
     const canonicalRoot = await realpath(this.root)
 
     await this.addIfPresent(targets, join(this.root, '.dsh-build'), canonicalRoot)
@@ -130,6 +138,21 @@ export class RepositoryCleaner {
         // A package.json marks a live package; its output was discovered from the
         // project graph above, and its package-local node_modules must be preserved.
         if (await exists(join(packageDirectory, 'package.json'))) {
+          continue
+        }
+
+        const retained = retainedMigrationSources.find(source => source.packagePath === repositoryPath(this.root, packageDirectory))
+        if (retained !== undefined) {
+          unsafeOrphans.push(...await this.validateRetainedSources(packageDirectory, retained.files))
+          retainedPaths.push(`${retained.packagePath}/src`)
+          for (const entry of await readdir(packageDirectory)) {
+            if (entry === 'src') continue
+            if (knownOrphanEntries.has(entry) || entry.endsWith('.tsbuildinfo')) {
+              await this.addIfPresent(targets, join(packageDirectory, entry), canonicalRoot)
+            } else {
+              unsafeOrphans.push(repositoryPath(this.root, join(packageDirectory, entry)))
+            }
+          }
           continue
         }
 
@@ -166,7 +189,41 @@ export class RepositoryCleaner {
       ].join('\n'))
     }
 
+    for (const target of targets) {
+      for (const source of retainedMigrationSources) {
+        const sourceRoot = join(this.root, source.packagePath, 'src')
+        if (target === sourceRoot || isDescendant(target, sourceRoot) || isDescendant(sourceRoot, target)) {
+          throw new Error(`clean: refusing deletion target overlapping retained migration source: ${repositoryPath(this.root, target)}`)
+        }
+      }
+    }
+    this.retainedPaths = retainedPaths.sort()
     return [...targets].sort()
+  }
+
+  private async validateRetainedSources(packageDirectory: string, files: readonly string[]): Promise<string[]> {
+    const allowedFiles = new Set(files)
+    const allowedDirectories = new Set<string>()
+    for (const file of files) {
+      for (let directory = dirname(file); directory !== '.'; directory = dirname(directory)) {
+        allowedDirectories.add(directory)
+      }
+    }
+    const unknown: string[] = []
+    const pending = ['src']
+    while (pending.length > 0) {
+      const entry = pending.pop()
+      if (entry === undefined) break
+      const path = join(packageDirectory, entry)
+      if (!await exists(path)) continue
+      const stat = await lstat(path)
+      if (stat.isDirectory() && allowedDirectories.has(entry)) {
+        pending.push(...(await readdir(path)).map(name => `${entry}/${name}`))
+      } else if (!stat.isFile() || !allowedFiles.has(entry)) {
+        unknown.push(repositoryPath(this.root, path))
+      }
+    }
+    return unknown
   }
 
   private buildOutputDirectories(): string[] {
@@ -229,7 +286,9 @@ export class RepositoryCleaner {
 const scriptPath = fileURLToPath(import.meta.url)
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === scriptPath) {
   try {
-    const removed = await new RepositoryCleaner(resolve(dirname(scriptPath), '..')).clean()
+    const cleaner = new RepositoryCleaner(resolve(dirname(scriptPath), '..'))
+    const removed = await cleaner.clean()
+    for (const source of cleaner.retainedSources) console.log(`clean: retained migration source ${source}`)
     if (removed.length === 0) {
       console.log('clean: already clean')
     } else {

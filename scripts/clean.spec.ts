@@ -1,9 +1,24 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { RepositoryCleaner } from './clean.ts'
+import { retainedMigrationSources } from './retained-migration-sources.ts'
+
+const repositoryRoot = fileURLToPath(new URL('../', import.meta.url))
+const retainedFiles = retainedMigrationSources.flatMap(source => source.files.map(file => `${source.packagePath}/${file}`))
+
+function addRetainedSources(root: string): Map<string, string> {
+  return new Map(retainedFiles.map((path) => {
+    const content = readFileSync(join(repositoryRoot, path))
+    write(join(root, path), content.toString())
+    return [path, createHash('sha256').update(content).digest('hex')]
+  }))
+}
 
 const roots: string[] = []
 
@@ -37,6 +52,99 @@ afterEach(() => {
 })
 
 describe('RepositoryCleaner', () => {
+  it('declares exactly the 24 tracked migration files in the two authorized packages', () => {
+    expect(retainedMigrationSources.map(source => source.packagePath)).toEqual([
+      'packages/client/runtime', 'packages/host/apiproxy',
+    ])
+    expect(retainedFiles).toHaveLength(24)
+    expect(new Set(retainedFiles).size).toBe(24)
+    const tracked = execFileSync('git', ['ls-files', '-z', '--',
+      'packages/client/runtime', 'packages/host/apiproxy',
+    ], { cwd: repositoryRoot, encoding: 'utf8' }).split('\0').filter(Boolean)
+    expect([...retainedFiles].sort()).toEqual(tracked.sort())
+    for (const source of retainedMigrationSources) {
+      expect(source.rationale.length).toBeGreaterThan(0)
+      expect(existsSync(join(repositoryRoot, source.inventory))).toBe(true)
+    }
+  })
+
+  it('preserves every retained file byte-for-byte and removes only its generated siblings', async () => {
+    const root = fixture()
+    addProject(root, 'products/shell')
+    const hashes = addRetainedSources(root)
+    for (const source of retainedMigrationSources) {
+      write(join(root, source.packagePath, 'lib/index.js'))
+      write(join(root, source.packagePath, 'node_modules/generated'))
+      write(join(root, source.packagePath, '.typecheck/state'))
+      write(join(root, source.packagePath, 'tsconfig.tsbuildinfo'))
+    }
+    const cleaner = new RepositoryCleaner(root)
+    expect(cleaner.retainedSources).toEqual([])
+    const removed = await cleaner.clean()
+    expect(cleaner.retainedSources).toEqual(retainedMigrationSources.map(source => `${source.packagePath}/src`))
+    expect(removed).toHaveLength(8)
+    for (const [path, hash] of hashes) {
+      expect(createHash('sha256').update(readFileSync(join(root, path))).digest('hex')).toBe(hash)
+    }
+    for (const source of retainedMigrationSources) {
+      expect(readdirSync(join(root, source.packagePath))).toEqual(['src'])
+    }
+    expect(await cleaner.clean()).toEqual([])
+  })
+
+  it.each([
+    'packages/host/apiproxy/src/new.ts',
+    'packages/host/apiproxy/src/api/new.ts',
+    'packages/host/apiproxy/notes.txt',
+    'packages/client/unknown/src/index.ts',
+  ])('rejects unexpected content at %s before removing any output', async (path) => {
+    const root = fixture()
+    addProject(root, 'products/shell')
+    addRetainedSources(root)
+    write(join(root, 'products/shell/lib/types/index.js'))
+    write(join(root, path), 'unexpected')
+    const unknownEntry = path.startsWith('packages/client/unknown/') ? 'packages/client/unknown/src' : path
+    await expect(new RepositoryCleaner(root).clean()).rejects.toThrow(unknownEntry)
+    expect(existsSync(join(root, 'products/shell/lib/types/index.js'))).toBe(true)
+    expect(readFileSync(join(root, path), 'utf8')).toBe('unexpected')
+  })
+
+  it('rejects an unexpected empty retained-source directory before deleting outputs', async () => {
+    const root = fixture()
+    addProject(root, 'products/shell')
+    addRetainedSources(root)
+    write(join(root, 'products/shell/lib/types/index.js'))
+    mkdirSync(join(root, 'packages/host/apiproxy/src/unlisted'))
+    await expect(new RepositoryCleaner(root).clean()).rejects.toThrow('src/unlisted')
+    expect(existsSync(join(root, 'products/shell/lib/types/index.js'))).toBe(true)
+  })
+
+  it.each([
+    'packages/host/apiproxy/src',
+    'packages/host/apiproxy/src/api',
+    'packages/host/apiproxy/src/api/flow.ts',
+  ])('rejects a retained-source symlink at %s without touching its external target', async (path) => {
+    const root = fixture()
+    const external = fixture()
+    addProject(root, 'products/shell')
+    write(join(root, 'products/shell/lib/types/index.js'))
+    write(join(external, 'private.ts'), 'external')
+    link(external, join(root, path))
+    await expect(new RepositoryCleaner(root).clean()).rejects.toThrow(path)
+    expect(readFileSync(join(external, 'private.ts'), 'utf8')).toBe('external')
+    expect(existsSync(join(root, 'products/shell/lib/types/index.js'))).toBe(true)
+  })
+
+  it('rejects build output overlapping retained migration sources', async () => {
+    const root = fixture()
+    addProject(root, 'packages/host/apiproxy', 'src/types')
+    write(join(root, 'packages/host/apiproxy/package.json'), '{}')
+    addRetainedSources(root)
+    write(join(root, 'packages/host/apiproxy/src/types/generated.js'))
+    await expect(new RepositoryCleaner(root).clean()).rejects.toThrow('overlapping retained migration source: packages/host/apiproxy/src')
+    expect(existsSync(join(root, 'packages/client/runtime/src/client/sessions/tail.ts'))).toBe(true)
+  })
+
   it('derives live build outputs from project references and removes safe stale package residue', async () => {
     const root = fixture()
     addProject(root, 'products/shell')

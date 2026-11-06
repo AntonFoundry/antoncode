@@ -54,6 +54,10 @@ Setup is complete when `pnpm run typecheck` exits successfully.
 
 ## Contributor reference
 
+### Repository cleanup
+
+The repository cleaner removes generated outputs and manifest-less package residue only after validating the complete removal plan. The [retained migration registry](../scripts/retained-migration-sources.ts) preserves the exact declared source files in `packages/client/runtime` and `packages/host/apiproxy`, with replacement ownership recorded in the [capability inventory](../retained-capability-inventory.md). It reports retained source roots and removes only their generated siblings. Unlisted files, directories, or source symlinks abort cleanup before any removal; the declaration does not make arbitrary manifest-less source safe to delete.
+
 ### TypeScript project layout
 
 The repository uses isolated Host and Client aggregates. An ordinary package is registered in exactly one aggregate: Host packages in `tsconfig.host.json` and Client packages in `tsconfig.client.json`; three packages (`host/webserver`, `compaction/compaction`, `typert/registry`) are referenced by both aggregates as shared leaves so each side type-checks the same source.
