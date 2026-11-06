@@ -97,6 +97,36 @@ describe('maintained repository reference policy', () => {
     expect(scanRepositoryReferences(fixture.root)).toHaveLength(4)
   })
 
+  it('accepts numeric TOML artifact sizes but rejects the same digits in commit references', () => {
+    const commit = '6'.repeat(7)
+    const commits = new Set([commit])
+    const source = [
+      '[[package]]',
+      `wheels = [{ url = "https://example.invalid/package.whl", size = ${commit} }]`,
+      `size = "${commit}"`,
+      `revision = "${commit}"`,
+      `git = "https://example.invalid/project.git#${commit}"`,
+      `description = '''size = ${commit}'''`,
+      `# size = ${commit}`,
+    ].join('\n')
+    expect(findRepositoryReferences('python/sdk/uv.lock', source, commits)).toEqual([
+      { file: 'python/sdk/uv.lock', line: 3, kind: 'commit-hash' },
+      { file: 'python/sdk/uv.lock', line: 4, kind: 'commit-hash' },
+      { file: 'python/sdk/uv.lock', line: 5, kind: 'commit-hash' },
+      { file: 'python/sdk/uv.lock', line: 6, kind: 'commit-hash' },
+      { file: 'python/sdk/uv.lock', line: 7, kind: 'commit-hash' },
+    ])
+    expect(findRepositoryReferences('metadata.toml', `size = ${commit}`, commits)).toEqual([])
+    expect(findRepositoryReferences('notes.md', `size = ${commit}`, commits)).toHaveLength(1)
+    expect(findRepositoryReferences('broken.toml', `size = ${commit}\ninvalid`, commits)).toHaveLength(1)
+    expect(findRepositoryReferences('metadata.toml', `size = ${commit}0`, commits)).toEqual([])
+    expect(findRepositoryReferences('metadata.toml', `wheels = [{ size = ${commit}, git = "#${commit}" }]`, commits))
+      .toEqual([{ file: 'metadata.toml', line: 1, kind: 'commit-hash' }])
+    expect(findRepositoryReferences('metadata.toml', `description = """size = ${commit}"""`, commits)).toHaveLength(1)
+    expect(findRepositoryReferences('metadata.toml', `revision.size = ${commit}`, commits)).toHaveLength(1)
+    expect(findRepositoryReferences('metadata.toml', `size = ${commit} # ${commit}`, commits)).toHaveLength(1)
+  })
+
   it('checks available unreachable commits without requiring a branch or network', (test) => {
     const fixture = repository(test)
     const unreachable = fixture.git(['commit-tree', fixture.tree, '-m', 'unreachable fixture'])

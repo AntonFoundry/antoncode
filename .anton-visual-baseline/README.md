@@ -66,7 +66,7 @@ The token and stylesheet sources that carry the visible identity:
 1.7 MB of redundant diffs would duplicate history. Regenerate when porting the visual layer:
 
 ```sh
-MB=$(git merge-base anton-pre-merge upstream/master)   # 99f6f02fec, the 0.1.0-rc.7 fork point
+MB=$(git merge-base anton-pre-merge upstream/master)   # the 0.1.0-rc.7 fork point
 mkdir -p .anton-visual-baseline/patches
 for P in ui-theme ui-primitives ui-conversation ui-tool ui-layout \
          ui-sidebar ui-workspace ui-settings-general runtime; do

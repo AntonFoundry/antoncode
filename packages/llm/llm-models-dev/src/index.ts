@@ -171,9 +171,9 @@ export const Config: z<Config> = z.object({
 export type ResolvedModelsDevOptions = ModelsDevConnectionOptions
 
 /**
- * Build the Zen client headers for one request, mirroring OpenCode's
- * `packages/opencode/src/session/llm/request.ts` session/request/client
- * headers. Project identity is omitted because the Harness does not expose
+ * Build the Zen client headers for one request, mirroring the session,
+ * request, and client headers in OpenCode's upstream request module.
+ * Project identity is omitted because the Harness does not expose
  * OpenCode's project id to the model adapter.
  * @param provider - the route the request targets; non-`opencode*` routes get no headers.
  * @param sessionId - the conversation session id, or `undefined` for the process fallback.

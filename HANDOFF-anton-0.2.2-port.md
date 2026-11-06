@@ -1,6 +1,6 @@
 # Handoff — Anton on upstream DSH 0.2.2-alpha.2
 
-Written at `cf0003a609` on branch `anton/on-0.2.2`. Working tree clean.
+Historical checkpoint on branch `anton/on-0.2.2`: “WM src compiles clean; remaining work is upstream's test vocabulary.” The working tree was clean when recorded.
 
 This is the operational companion to `implementation_plan.md` (the standing plan).
 Read that for the *why*; read this for *where things are and what to run*.
@@ -12,7 +12,7 @@ Read that for the *why*; read this for *where things are and what to run*.
 | fact | value |
 |---|---|
 | branch | `anton/on-0.2.2` (descends from tag `upstream-dsh-v0.2.2-alpha.2`) |
-| HEAD | `cf0003a609` |
+| checkpoint | WM source compiles clean; upstream test vocabulary remains |
 | commits on the port | 36 |
 | build | **10/10 gates green** (`pnpm run build`) |
 | config gate | **305 files pass** (`npx tsx scripts/verify-cordis-config.ts`) |
@@ -25,8 +25,8 @@ Read that for the *why*; read this for *where things are and what to run*.
 
 | ref | meaning |
 |---|---|
-| `anton-pre-merge` = `8444d4c7e5` | the complete pre-port Anton tree (0.1.x). Every unported file still lives here. |
-| `merge/upstream-0.2` = `60080b9bda` | the abandoned staged-merge attempt, retained for reference |
+| `anton-pre-merge` | the complete pre-port Anton tree (0.1.x). Every unported file still lives here. |
+| `merge/upstream-0.2` | the abandoned staged-merge attempt, retained for reference |
 | `~/Library/Application Support/Anton/dsh/sessions.format0.backup-20261102` | 1.7 GB format-0 session backup |
 
 ### Two hard constraints
@@ -110,7 +110,7 @@ it wholesale (inherited from `main`).
 Full pre-install backup (verified, 4.9 GB, 1,796 session files identical):
 `~/Library/Application Support/Anton.backup-pre-0.2.2-20261102`; the previous app bundle went to the
 Trash. Old sessions migrate lazily on open; each v0 original stays beside its new
-`session.v4.jsonl.zstd`. The fork migration adapter (`0fbd144ba9`) opens 1,643 of 1,748 logs; the rest
+`session.v4.jsonl.zstd`. The Anton-fork migration adapter opens 1,643 of 1,748 logs; the rest
 stay unopened and intact: 63 continuable-child logs whose follow-up messages were spliced between turns,
 28 logs whose pre-step prompt precedes any Anton-fork record, ~14 with empty tool-call ids or names.
 c0ntext was ported in `../c0ntext` (uncommitted there, beside the owner's own uncommitted work; pre-port
@@ -208,7 +208,7 @@ All present in `anton-pre-merge`; re-port with `git checkout anton-pre-merge -- 
 
 ### 3.4 Phase 3 · groups 6–7
 
-- **`apps/anton-bridge`.** Do **not** forward-port `3a1fadfd6c` or `4e845d6bde` verbatim — both describe continuable-subagent behaviour the port does not have (see 5.1).
+- **`apps/anton-bridge`.** Do **not** forward-port the Blueant delegation-policy prompt or unset-child-route guidance verbatim — both describe continuable-subagent behaviour the port does not have (see 5.1).
 - **Preset.** Adopt upstream `preset/agent-preset`. The live Blueant preset needs 3 row fixes; `backgroundMode: continuable` at `agent.cordis.yml:180` is **not a Config field** on the port, so that row will not mount. `deployment:persona` was also renamed `deployment:persona-prefix` — confirm prepend-vs-replace semantics, since the preset relies on a per-child persona.
 
 ### 3.5 Phase 1 + Phase 5 — visual baseline and acceptance
@@ -257,8 +257,7 @@ The port's `tool-subagent` Config accepts **six** fields — `provider`, `toolNa
 
 ### 5.2 BEHAVIOURAL — `core/tools`
 
-Paged presentation gone (debt 4). `tools:working-discipline` was **restored** in `dd2bc24951`,
-and now lives beside its toggle in `client/ui-efficiency-discipline`: the plan-first ordering and
+Paged presentation gone (debt 4). `tools:working-discipline` is **restored** beside its toggle in `client/ui-efficiency-discipline`: the plan-first ordering and
 the plugin-seam rule are always on, and `efficiencyDiscipline` gates only the working-economy
 framing. Upstream had kept the setting and dropped the text.
 

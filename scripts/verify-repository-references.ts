@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { lstatSync, readFileSync, readlinkSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { parse as parseToml } from 'smol-toml'
 import { canonicalReferenceText } from './verify-public-repository-links.ts'
 
 const root = resolve(import.meta.dirname, '..')
@@ -31,12 +32,33 @@ function isMaintained(file: string): boolean {
   return !excludedPrefixes.some(prefix => file.startsWith(prefix))
 }
 
+/** Keep artifact byte counts out of commit matching without hiding TOML strings or comments. */
+function referenceText(file: string, source: string): string {
+  if (!file.endsWith('.toml') && file !== 'uv.lock' && !file.endsWith('/uv.lock')) return source
+  try {
+    parseToml(source)
+  } catch {
+    // Invalid TOML has no trusted numeric metadata; inspect every candidate normally.
+    return source
+  }
+  const nonCode = /'''[\s\S]*?'''|"""(?:\\[\s\S]|(?!""")[^\\])*"""|'[^'\r\n]*'|"(?:\\.|[^"\\\r\n])*"|#[^\r\n]*/g
+  const code = source.replace(nonCode, text => text.replace(/[^\r\n]/g, ' '))
+  const sizes = [...code.matchAll(/(?<![\w.-])size[ \t]*=[ \t]*([0-9](?:_?[0-9])*)(?=[ \t]*(?:[,}\]#\r\n]|$))/g)]
+  let result = source
+  for (const match of sizes.reverse()) {
+    const number = match[0].slice(match[0].indexOf('=') + 1).trim()
+    const start = match.index + match[0].length - number.length
+    result = result.slice(0, start) + ' '.repeat(number.length) + result.slice(start + number.length)
+  }
+  return result
+}
+
 /**
  * Inspect a maintained source file against known commit identifiers.
  * @param file - Repository-relative path used in diagnostics and exclusions.
  * @param source - File text or a symlink's stored target.
  * @param commits - Lowercase, unambiguous full or abbreviated commit identifiers.
- * @returns One finding per line and reference kind; digests and other Git object types are accepted.
+ * @returns One finding per line and reference kind; digests, TOML artifact byte counts, and other Git object types are accepted.
  */
 export function findRepositoryReferences(
   file: string,
@@ -49,11 +71,13 @@ export function findRepositoryReferences(
     if (organizationUrl.test(canonicalReferenceText(line).replace(kitRepositoryUrl, ''))) {
       references.push({ file, line: index + 1, kind: 'organization-url' })
     }
+  }
+  for (const [index, line] of referenceText(file, source).split('\n').entries()) {
     if ([...line.matchAll(commitCandidate)].some(match => commits.has(match[0].toLowerCase()))) {
       references.push({ file, line: index + 1, kind: 'commit-hash' })
     }
   }
-  return references
+  return references.sort((a, b) => a.line - b.line)
 }
 
 function readMaintainedFiles(repoRoot: string): Map<string, string> {

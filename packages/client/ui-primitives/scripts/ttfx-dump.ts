@@ -18,7 +18,7 @@ import type { FrameCell } from '../src/ttfx/scene.ts'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..')
 const MARK = path.join(ROOT, 'apps/web/public/anton-mark.png')
-const OUT_DIR = path.join(ROOT, 'packages/client/ui-primitives/.ttfx-qa')
+const OUT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../.ttfx-qa')
 const COLS = 96
 const CORNER = 0.28
 const SCALE = 4
