@@ -7,6 +7,7 @@ export interface BrowserPoolOptions {
   browserTypes?: string
 }
 
+/** Owns reusable Playwright browsers selected by rotating configured browser kinds. */
 export class BrowserPool {
   private browsers: Map<string, Browser> = new Map()
   private maxBrowsers: number
@@ -27,6 +28,12 @@ export class BrowserPool {
     console.log(`[BrowserPool] Configuration: maxBrowsers=${this.maxBrowsers}, headless=${this.headless}, types=${this.browserTypes.join(',')}`)
   }
 
+  /**
+   * Borrow a connected browser, launching a replacement when its health check fails.
+   * The pool owns returned browsers and may close an older entry when its size limit is exceeded.
+   * @returns Browser selected by the next configured kind; callers own their request contexts, not the browser.
+   * @throws Error when browser launch fails.
+   */
   async getBrowser(): Promise<Browser> {
     // Rotate between browser types for variety
     const browserType = this.browserTypes[this.currentBrowserIndex % this.browserTypes.length] ?? 'chromium'
@@ -119,6 +126,7 @@ export class BrowserPool {
     }
   }
 
+  /** Close tracked browsers and clear the pool; individual close failures are logged and contained. */
   async closeAll(): Promise<void> {
     console.log(`[BrowserPool] Closing ${this.browsers.size} browsers`)
 
@@ -132,6 +140,10 @@ export class BrowserPool {
     this.browsers.clear()
   }
 
+  /**
+   * Read the configured kind selected by the latest acquisition attempt, even if launch failed.
+   * @returns Selected kind, or an empty string before the first acquisition.
+   */
   getLastUsedBrowserType(): string {
     return this.lastUsedBrowserType
   }

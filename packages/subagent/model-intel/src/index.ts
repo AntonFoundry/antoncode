@@ -91,6 +91,7 @@ const NATIVE_PROVIDER_CREDENTIALS: Record<string, string> = {
   'codex': 'CODEX_API_KEY',
 }
 
+/** Optional research schedule and model-route settings; schema defaults produce ResolvedConfig. */
 export interface Config {
   /** Whether the feature mounts at all; false removes the scheduler and the resolver answers nothing. */
   enabled?: boolean

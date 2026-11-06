@@ -12,15 +12,24 @@ export class LangflowRemote extends TypertRemoteService {
     super(ctx, 'langflowRemote', { namespace: 'langflow' })
   }
 
-  /** @returns current sidecar state. */
+  /**
+   * Read the sidecar lifecycle snapshot without starting the child.
+   * @returns Current sidecar state, with its URL or failure details when available.
+   */
   @Remote
   status(): LangflowStatus { return this.ctx.langflow.status() }
 
-  /** @returns sidecar state after startup. */
+  /**
+   * Start the sidecar or join the service's existing startup attempt.
+   * @returns Post-start state; readiness failures return error state, while setup failures may reject.
+   */
   @Remote
   start(): Promise<LangflowStatus> { return this.ctx.langflow.start() }
 
-  /** @returns sidecar state after shutdown. */
+  /**
+   * Stop the sidecar and wait for its child process to exit before reading status.
+   * @returns Sidecar state after shutdown completes; termination failures reject.
+   */
   @Remote
   async stop(): Promise<LangflowStatus> {
     await this.ctx.langflow.stop()

@@ -35,7 +35,14 @@ export const VISION_URL = 'https://api.z.ai/api/paas/v4/chat/completions'
 /** Vision model used by `@z_ai/mcp-server` unless overridden in config. */
 export const VISION_MODEL = 'glm-5.3-flash'
 
-/** Resolve the API key exactly like `llm-deepseek`: seam first, ambient env otherwise. */
+/**
+ * Resolve a nonempty API key through credentials, or the launch environment when that service is absent.
+ * @param ctx - Calling context used to locate credentials and the launch environment.
+ * @param plugin - Plugin identifier included in a missing-key diagnostic.
+ * @param ref - Credential reference to resolve; a composed credentials service owns all lookup behavior.
+ * @returns Resolved API key without exposing it in diagnostics.
+ * @throws Error when the selected lookup returns no nonempty key; lookup failures propagate.
+ */
 export async function resolveApiKey(ctx: Context, plugin: string, ref: CredentialRef): Promise<string> {
   const credentials = ctx.get('credentials')
   if (credentials !== undefined) {
@@ -51,13 +58,19 @@ export async function resolveApiKey(ctx: Context, plugin: string, ref: Credentia
   )
 }
 
-/** Normalize a configured env-name string into a validated credential reference. */
+/**
+ * Normalize a configured environment-variable name into a validated credential reference.
+ * @param configured - Reference name; blank or omitted selects DEFAULT_API_KEY_REF after trimming.
+ * @returns Validated configured reference or the default reference.
+ * @throws Error when the normalized reference fails credential-reference validation.
+ */
 export function apiKeyRefOf(configured: string | undefined): CredentialRef {
   return credentialRef(configured?.trim() || DEFAULT_API_KEY_REF)
 }
 
 /** One JSON-RPC error from the Z.AI MCP endpoints. */
 export class ZaiMcpError extends Error {
+  /** HTTP status, upstream JSON-RPC code, or local E_* failure category. */
   readonly code: number | string
   constructor(code: number | string, message: string) {
     super(`Z.AI MCP error ${code}: ${message}`)
@@ -86,7 +99,15 @@ function firstJsonPayload(body: string): Record<string, unknown> {
 /**
  * One short-lived MCP call: initialize (captures the session id), send the
  * initialized notification, invoke `tools/call`, and return the result blocks.
- * The session is scoped to this call; nothing persists between calls.
+ * The session identifier is reused only within this call; no connection state is retained.
+ * @param endpoint - Remote MCP Streamable HTTP endpoint for initialization and tool invocation.
+ * @param apiKey - Bearer credential sent with each request.
+ * @param toolName - Upstream tool name passed to tools/call.
+ * @param args - Upstream tool arguments serialized as JSON.
+ * @param signal - Cancellation signal shared by all requests and response-body reads.
+ * @returns Upstream content blocks and optional structured content without rendering them.
+ * @throws ZaiMcpError on HTTP, RPC, tool-reported, missing-content, or missing SSE payload failures;
+ * network, cancellation, and plain-JSON parsing errors propagate unchanged.
  */
 export async function mcpCall(
   endpoint: string,
@@ -148,7 +169,12 @@ function valueText(value: unknown): string {
   return JSON.stringify(value)
 }
 
-/** Join MCP text blocks the way the bridge projects them: text runs with newlines. */
+/**
+ * Join MCP content blocks with newline separators.
+ * @param content - Upstream blocks; text is preserved, resource links become name plus URI,
+ * and other blocks are JSON-serialized.
+ * @returns Combined text suitable for the tool result renderer.
+ */
 export function mcpText(content: unknown[]): string {
   return content.map((block) => {
     if (typeof block === 'object' && block !== null) {
@@ -169,6 +195,16 @@ export type VisionPart =
 /**
  * Call the vision chat-completions endpoint exactly as `@z_ai/mcp-server`
  * does (model, thinking block, sampling), returning the message text.
+ * @param apiKey - Bearer credential for the vision endpoint.
+ * @param model - Upstream vision model identifier.
+ * @param systemPrompt - System instructions sent unchanged.
+ * @param userPrompt - User text placed before the media parts.
+ * @param media - Ordered image, video, or text parts appended to the user message.
+ * @param timeoutMs - Deadline in milliseconds before the request controller is aborted.
+ * @param signal - Caller cancellation signal; callers must check an already-aborted signal before calling.
+ * @returns Nonempty first-choice message content from the vision response.
+ * @throws ZaiMcpError with HTTP status, E_SHAPE for missing content, E_TIMEOUT for AbortError,
+ * or E_NETWORK for other transport or parsing failures.
  */
 export async function visionChat(
   apiKey: string,
@@ -236,7 +272,13 @@ function isHttpUrl(source: string): boolean {
   }
 }
 
-/** Mirror `@z_ai/mcp-server` file handling: URLs pass through, local files become data URLs. */
+/**
+ * Preserve HTTP(S) image URLs or synchronously encode a local image file.
+ * @param imageSource - HTTP(S) URL or local JPEG/PNG path; remote content is not fetched or checked.
+ * @param maxSizeMB - Maximum local file size in MiB, default 5.
+ * @returns Unchanged remote URL or base64 data URL with MIME type selected by the file extension.
+ * @throws Error on a missing, oversized, or unsupported local file; filesystem errors propagate.
+ */
 export function encodeImageSource(imageSource: string, maxSizeMB = 5): string {
   if (isHttpUrl(imageSource)) return imageSource
   if (!existsSync(imageSource)) throw new Error(`Image file not found: ${imageSource}`)
@@ -248,7 +290,13 @@ export function encodeImageSource(imageSource: string, maxSizeMB = 5): string {
   return `data:${mime};base64,${readFileSync(imageSource).toString('base64')}`
 }
 
-/** Mirror `@z_ai/mcp-server` video handling: URLs pass through, local files become data URLs. */
+/**
+ * Preserve HTTP(S) video URLs or synchronously encode a local video file.
+ * @param videoSource - HTTP(S) URL or local MP4/MOV/M4V path; remote content is not fetched or checked.
+ * @param maxSizeMB - Maximum local file size in MiB, default 8.
+ * @returns Unchanged remote URL or base64 data URL labelled video/mp4 for every accepted local extension.
+ * @throws Error on a missing, oversized, or unsupported local file; filesystem errors propagate.
+ */
 export function encodeVideoSource(videoSource: string, maxSizeMB = 8): string {
   if (isHttpUrl(videoSource)) return videoSource
   if (!existsSync(videoSource)) throw new Error(`Video file not found: ${videoSource}`)

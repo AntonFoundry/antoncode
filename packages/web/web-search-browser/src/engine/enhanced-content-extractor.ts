@@ -4,6 +4,7 @@ import { ContentExtractionOptions, SearchResult } from './types.ts'
 import { cleanText, getWordCount, getContentPreview, generateTimestamp, isPdfUrl } from './utils.ts'
 import { BrowserPool } from './browser-pool.ts'
 
+/** Extracts readable page text over HTTP with conditional browser fallback and owns its browser pool. */
 export class EnhancedContentExtractor {
   private readonly defaultTimeout: number
   private readonly maxContentLength: number
@@ -29,6 +30,14 @@ export class EnhancedContentExtractor {
     console.log(`[EnhancedContentExtractor] Configuration: timeout=${this.defaultTimeout}, maxContentLength=${this.maxContentLength}, fallbackThreshold=${this.fallbackThreshold}`)
   }
 
+  /**
+   * Extract text using HTTP first, with browser fallback for selected HTTP or content failures.
+   * The HTTP path applies maxContentLength after parsing; browser fallback does not apply that option.
+   * Neither the timeout nor browser cleanup provides caller cancellation.
+   * @param options - Page URL, request timeout in milliseconds, and optional HTTP text character limit.
+   * @returns Parsed page text; direct callers must impose any required browser-output length bound.
+   * @throws Error on HTTP failure without eligible fallback, or when both extraction approaches fail.
+   */
   async extractContent(options: ContentExtractionOptions): Promise<string> {
     const { url } = options
 
@@ -371,6 +380,15 @@ export class EnhancedContentExtractor {
     return timezones[Math.floor(Math.random() * timezones.length)] ?? timezones[0] as NonNullable<typeof timezones[number]>
   }
 
+  /**
+   * Enrich non-PDF results concurrently, trying at most twice the target count and at most ten pages.
+   * An eight-second race marks each timed-out result as an error without cancelling its extraction.
+   * Input entries are not mutated; returned entries replace content fields and timestamps.
+   * @param results - Search results to enrich; PDF URLs are omitted before selecting candidates.
+   * @param targetCount - Desired maximum output count, defaulting to the input count.
+   * @returns At most targetCount entries, successful extractions first and failures filling remaining slots;
+   * content is cleaned and bounded by the extractor limit, and individual failures become error entries.
+   */
   async extractContentForResults(results: SearchResult[], targetCount: number = results.length): Promise<SearchResult[]> {
     console.log(`[EnhancedContentExtractor] Processing up to ${results.length} results to get ${targetCount} non-PDF results`)
 
@@ -558,6 +576,7 @@ export class EnhancedContentExtractor {
     return error instanceof Error ? error.message : 'Unknown error'
   }
 
+  /** Close the extractor's pooled browsers; individual browser close failures are logged and contained. */
   async closeAll(): Promise<void> {
     await this.browserPool.closeAll()
   }

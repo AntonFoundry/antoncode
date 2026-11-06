@@ -34,6 +34,10 @@ export interface LangflowSidecarConfig {
   /** How long `start()` polls `/health` before declaring a startup failure. */
   readyTimeoutMs: number
 }
+/**
+ * Supervise the embedded LangFlow subprocess: start it for the Workflows tab,
+ * report readiness by polling `/health`, and tear it down on dispose.
+ */
 export declare class LangflowSidecar {
   private readonly subprocess
   private readonly config

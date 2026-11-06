@@ -13,6 +13,7 @@ export interface SearchEngineOptions {
   browserTypes?: string
 }
 
+/** Searches Bing, Brave, and DuckDuckGo with fallback selection and per-instance rate accounting. */
 export class SearchEngine {
   private readonly rateLimiter: RateLimiter
   private browserPool: BrowserPool
@@ -24,6 +25,14 @@ export class SearchEngine {
     this.browserPool = new BrowserPool(options)
   }
 
+  /**
+   * Search with a trimmed, length-bounded query and choose results using the configured quality checks.
+   * Each approach receives at most one third of the timeout, capped at four seconds;
+   * retries and other work mean the timeout is not an overall request deadline. No abort signal is accepted.
+   * @param options - Query, requested result count (default five), and per-approach timeout budget input in milliseconds.
+   * @returns Selected engine results, or an empty list with engine None when all approaches fail or find nothing.
+   * @throws Error when rate admission or search orchestration fails; individual approach failures permit fallback.
+   */
   async search(options: SearchOptions): Promise<SearchResultWithMetadata> {
     const { query, numResults = 5, timeout = 10000 } = options
     const sanitizedQuery = sanitizeQuery(query)
@@ -957,6 +966,7 @@ export class SearchEngine {
     }
   }
 
+  /** Close browsers tracked by the shared pool; dedicated per-attempt browsers retain their own cleanup. */
   async closeAll(): Promise<void> {
     await this.browserPool.closeAll()
   }
