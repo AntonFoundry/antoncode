@@ -29,6 +29,7 @@ export type { ZaiSearchProviderOptions } from './provider.ts'
 
 /** Accepted `search_recency_filter` values (Z.AI's `custom` window is deferred). */
 export const SEARCH_RECENCY_FILTERS = ['noLimit', 'oneDay', 'oneWeek', 'oneMonth', 'oneYear'] as const
+/** One supported Z.AI relative recency window, including unrestricted results. */
 export type SearchRecencyFilter = typeof SEARCH_RECENCY_FILTERS[number]
 
 /** Cordis plugin name used by loader diagnostics. */

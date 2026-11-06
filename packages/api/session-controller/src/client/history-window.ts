@@ -35,7 +35,10 @@ export class SessionHistoryWindow {
     })
   }
 
-  /** @returns resume fields for the currently retained immutable Session prefix. */
+  /**
+   * Describe the retained prefix for the next follow opening without changing the window.
+   * @returns Resume identity and cursor, or no resume field when no prefix is retained.
+   */
   resumeRequest(): Pick<SessionFollowRequest, 'resume'> {
     return this.state === undefined ? {} : { resume: {
       afterSeq: this.state.cursor, createdAt: this.state.header.createdAt, version: this.state.header.version,

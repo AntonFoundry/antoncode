@@ -57,6 +57,8 @@ export function isWorkspaceActive(
 /**
  * A job the registry still holds open, mirroring the header jobs indicator's
  * live set: `running` and `stopping` both animate; settled states never do.
+ * @param job - Job status to classify without inspecting activity timestamps.
+ * @returns True only for running or stopping status.
  */
 export function isLiveJob(job: { status: string }): boolean {
   return job.status === 'running' || job.status === 'stopping'

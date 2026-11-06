@@ -156,13 +156,6 @@ function branchFromStatusHeader(headerLine: string): string {
 }
 
 /**
- * The live git projection of one working directory: branch, head, dirty flag,
- * stash count, and upstream divergence. Stash count is repository-global
- * (stashes live in the common dir, shared by every worktree of the repo).
- * @param path - Working directory to query (repository root or subdirectory).
- * @returns the status bundle.
- */
-/**
  * Candidate base refs for a new worktree branch: every remote-tracking branch
  * in short form (`origin/main`), then `HEAD`, capped so a huge monorepo cannot
  * flood the picker. Remote HEAD symrefs are dropped, `origin/main` and
@@ -184,6 +177,13 @@ export async function listBases(repoPath: string): Promise<string[]> {
   return [...remotes.slice(0, 11), 'HEAD']
 }
 
+/**
+ * Read branch, short HEAD, dirty state, repository-global stash count, and upstream divergence.
+ * The commands run sequentially and do not constitute one atomic repository snapshot.
+ * @param path - Repository root, worktree root, or a directory inside that worktree.
+ * @returns Status facts; failed stash reads count as zero and missing upstream reads report zero divergence.
+ * @throws Error when required status or HEAD commands fail.
+ */
 export async function worktreeStatus(path: string): Promise<{
   branch: string
   head: string

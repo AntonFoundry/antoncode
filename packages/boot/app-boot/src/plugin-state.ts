@@ -34,7 +34,10 @@ export interface PluginStateFile {
   entries: Record<string, PluginStateEntry>
 }
 
-/** Absolute path of the durable plugin-state file in the harness home. */
+/**
+ * Locate the durable plugin-state file without creating or reading it.
+ * @returns Absolute plugin-state.json path in the resolved harness home.
+ */
 export function pluginStatePath(): string {
   return join(resolveDshHome(), 'plugin-state.json')
 }
@@ -159,6 +162,8 @@ export function updatePluginEntry(
     }
   }
   if (merged.disabled === undefined && (merged.config === undefined || Object.keys(merged.config).length === 0)) {
+    // Persisted JSON entries use Loader entry ids; clearing an empty override must omit its key.
+    // oxlint-disable-next-line typescript/no-dynamic-delete -- Delete the persisted JSON key, not a Map entry.
     delete state.entries[entryId]
   } else {
     state.entries[entryId] = merged

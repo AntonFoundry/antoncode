@@ -8,7 +8,11 @@
 import type { WorktreeModePrefView } from '@deepseek-ai/dsh-api-workspace-controller/worktree-types'
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 
-/** The worktree directory basename — the name the sidebar prefixes sessions with. */
+/**
+ * Select the worktree directory basename used to prefix Session labels.
+ * @param path - Slash-delimited directory path; trailing separators are ignored.
+ * @returns Last nonempty path segment, or the original path when no segment exists.
+ */
 export function worktreeName(path: string): string {
   return path.split('/').filter(Boolean).at(-1) ?? path
 }
@@ -18,6 +22,10 @@ export function worktreeName(path: string): string {
  * recorded key containing the path as a child (`repo/…`) or in the worktree
  * sibling layout (`repo.…`). Mirrors the runtime's resolution so the control
  * and the New Session flow agree.
+ * @param path - Working directory to match without normalizing separators or case.
+ * @param prefs - Recorded repository paths and their new-session preferences.
+ * @returns Exact repository match first, otherwise the longest slash-child or dot-sibling match;
+ * undefined when no recorded key governs the path.
  */
 export function resolveRepo(
   path: string,

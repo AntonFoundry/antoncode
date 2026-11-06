@@ -209,7 +209,11 @@ export interface DiredHistory {
   readonly index: number
 }
 
-/** The fresh history: one level (the starting directory). */
+/**
+ * Start a directory history with one visited level.
+ * @param path - Starting directory, or undefined for the Host home directory.
+ * @returns Fresh history whose sole entry is selected at index zero.
+ */
 export function freshDiredHistory(path: string | undefined): DiredHistory {
   return { levels: [path], index: 0 }
 }

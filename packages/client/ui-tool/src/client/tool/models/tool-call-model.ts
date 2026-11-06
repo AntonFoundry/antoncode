@@ -21,12 +21,21 @@ export type ToolRowState = 'preparing' | 'running' | 'ok' | 'notice' | 'error' |
 /** A held filesystem edit needs a read in this live session before retrying. */
 export const READ_BEFORE_EDIT_NOTICE = 'Oops — I need to read this file before editing it. Retry after a Read.'
 
-/** True when a settled result is the recoverable filesystem observation guard. */
+/**
+ * Identify the recoverable filesystem observation guard without changing the recorded error.
+ * @param node - Settled result error flag and optional structured error.
+ * @returns True only for an errored result carrying code FS_NOT_OBSERVED.
+ */
 export function isReadBeforeEditNotice(node: Pick<ToolResultNode, 'isError' | 'error'>): boolean {
   return node.isError && node.error?.code === 'FS_NOT_OBSERVED'
 }
 
-/** UI-facing result text; the underlying result remains a real tool error. */
+/**
+ * Format display text, replacing the filesystem observation error with its retry notice.
+ * @param node - Settled tool result; recorded error and content remain unchanged.
+ * @returns Retry notice for the observation guard, otherwise joined text and serialized content blocks;
+ * an error name and code are used when no content exists.
+ */
 export function displayResultText(node: ToolResultNode): string {
   return isReadBeforeEditNotice(node) ? READ_BEFORE_EDIT_NOTICE : resultText(node)
 }

@@ -1,3 +1,4 @@
+/** Chinese browser copy for Agent Mail presentation and actions. */
 export const zh = {
   tab: 'Agent Mail',
   title: 'Agent Mail',
@@ -34,8 +35,10 @@ export const zh = {
   failed: '操作失败',
 } satisfies Record<string, string>
 
+/** Dictionary keys shared by Agent Mail locale implementations. */
 export type AgentMailLocaleKey = keyof typeof zh
 
+/** English browser copy implementing every Agent Mail locale key. */
 export const en = {
   tab: 'Agent Mail',
   title: 'Agent Mail',

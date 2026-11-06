@@ -151,11 +151,20 @@ export class TestWorkspaces implements IWorkspaces {
     return await (stub?.(signal) as Promise<WorkspaceView | undefined> | undefined)
   }
 
+  /**
+   * Record an open-path request and delegate to its optional test stub.
+   * @param path - Host path passed unchanged to the stub; no stub performs no operation.
+   */
   async openPath(path: string): Promise<void> {
     this.calls.push({ method: 'openPath', args: [path] })
     await (this.stubs.get('openPath')?.(path) as Promise<void> | undefined)
   }
 
+  /**
+   * Record a text-file read and delegate to its optional test stub.
+   * @param path - Host path passed unchanged to the stub.
+   * @returns Stubbed content and truncation state, or empty untruncated content without a stub.
+   */
   async readTextFile(path: string): Promise<{ content: string; truncated: boolean }> {
     this.calls.push({ method: 'readTextFile', args: [path] })
     const stub = this.stubs.get('readTextFile') as ((p: string) => Promise<{ content: string; truncated: boolean }>) | undefined

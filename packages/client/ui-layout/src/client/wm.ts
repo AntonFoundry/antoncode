@@ -256,8 +256,11 @@ export type WmNode = WmLeaf | WmSplit
 
 /** Stable leaf ids of the default tree (mirroring their buffer kind). */
 export const WM_LEAF_SIDEBAR = 'sidebar'
+/** Stable conversation window id, distinct from the Session buffer id it displays. */
 export const WM_LEAF_CONVERSATION = 'conversation'
+/** Stable window id used when opening or locating the details pane. */
 export const WM_LEAF_DETAILS = 'details'
+/** Stable window id used when opening or locating the settings pane. */
 export const WM_LEAF_SETTINGS = 'settings'
 
 /**
@@ -284,12 +287,6 @@ export function defaultTree(): WmNode {
 }
 
 /**
- * Find a leaf by id.
- * @param node - tree to search.
- * @param leafId - leaf id to find.
- * @returns the leaf, or undefined when absent.
- */
-/**
  * Pre-order search for the first leaf whose buffer satisfies `predicate`
  * (Chat mode's conversation-focus walk).
  * @param node - subtree root.
@@ -305,6 +302,12 @@ export function findFirstLeaf(node: WmNode, predicate: (bufferId: string) => boo
   return undefined
 }
 
+/**
+ * Find the first leaf with a matching id in depth-first child order.
+ * @param node - Subtree to search without modifying it.
+ * @param leafId - Window identity to find, not a buffer identity.
+ * @returns Matching leaf by reference, or undefined when absent.
+ */
 export function findLeaf(node: WmNode, leafId: string): WmLeaf | undefined {
   if (node.kind === 'leaf') return node.id === leafId ? node : undefined
   for (const child of node.children) {
@@ -1006,6 +1009,12 @@ export function focusDirection(node: WmNode, leafId: string, dir: WmDir): string
   return best?.id
 }
 
+/**
+ * Remove other leaves and normalize split weights without mutating the input tree.
+ * @param node - Tree to reduce; leaf removal always retains at least one window.
+ * @param leafId - Window identity to retain when present.
+ * @returns The selected leaf when found; if absent, the last removable-order survivor remains.
+ */
 export function keepOnlyLeaf(node: WmNode, leafId: string): WmNode {
   return normalizeTree(leafIds(node).filter(id => id !== leafId).reduce(
     (tree, id) => removeLeaf(tree, id),

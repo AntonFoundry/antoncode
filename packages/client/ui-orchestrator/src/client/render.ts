@@ -47,14 +47,6 @@ export function healthStrip(health: HealthMap = {}, counters: { needsYou?: numbe
   return strip
 }
 
-/**
- * One run card: state-machine rendering (blocked actions, failed budget,
- * verifying anchors, stalemate escalation), error chips, nested children.
- * @param run - Run to render.
- * @param onAct - Action callback for card buttons.
- * @param depth - Nesting depth (drives the indent).
- * @returns The card element.
- */
 /** Glyph per plan-row status, mirroring the conversation todo tree's vocabulary. */
 const PLAN_GLYPH: Record<PlanRow['status'], string> = {
   pending: '○',
@@ -85,6 +77,13 @@ function planSection(plan: readonly PlanRow[]): HTMLElement {
   return details
 }
 
+/**
+ * Create one run card with its state, optional plan, errors, and recursively nested children.
+ * @param run - Derived run data rendered without changing it.
+ * @param onAct - Callback invoked with this run's id when a blocked-card action is selected.
+ * @param depth - Child nesting depth controlling indentation; defaults to zero.
+ * @returns Detached DOM card; the caller owns insertion and removal.
+ */
 export function runCard(run: Run, onAct: ActFn, depth = 0): HTMLElement {
   const card = h('div', {
     style: `border:1px solid ${STATE_COLOR[run.state]}44;border-radius:8px;padding:8px;margin:8px 0;background:#111827${depth ? `;margin-left:${16 * depth}px` : ''}`,

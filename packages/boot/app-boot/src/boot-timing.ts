@@ -47,14 +47,16 @@ export class BootTiming {
   }
 
   /**
-   * @returns the phases recorded so far, in mark order.
+   * Read recorded phases without sampling the clock.
+   * @returns Borrowed phase array in mark order; callers must not mutate it.
    */
   phases(): readonly BootPhaseTiming[] {
     return this.recorded
   }
 
   /**
-   * @returns milliseconds from process start to the last mark.
+   * Read elapsed time through the last recorded phase rather than the current clock.
+   * @returns Milliseconds from process start to the last mark, or zero before any mark.
    */
   get totalMs(): number {
     return this.cursorMs

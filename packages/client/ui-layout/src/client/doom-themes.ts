@@ -19,6 +19,7 @@ function doomTheme(id: string, dark: boolean, palette: DoomPalette, syntax?: The
   return syntax === undefined ? definition : { ...definition, syntax }
 }
 
+/** Doom theme definitions with shell color tokens and optional syntax-token overrides. */
 export const DOOM_THEMES: readonly ThemeDefinition[] = [
   doomTheme('doom-1337', true, {
     '--dsw-alias-bg-base': '#191919',
