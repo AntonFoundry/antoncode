@@ -6,7 +6,7 @@
  * attributes, clicks open the session, and the empty state explains itself.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 
 afterEach(cleanup)
 import { AgentGrid, buildAgentBoard, paneStatus, paneActive } from '@deepseek-ai/dsh-client-ui-layout/src/client/AgentGrid.tsx'
@@ -88,11 +88,11 @@ function gridProps(overrides: Partial<Parameters<typeof AgentGrid>[0]> = {}): Pa
     groups: [],
     currentSessionId: undefined,
     onOpen: vi.fn(),
-    onInterrupt: vi.fn(),
+    onInterrupt: vi.fn(async () => {}),
     sort: 'recent' as const,
     paneWidth: 340,
     onPrefsChange: vi.fn(),
-    onPrompt: vi.fn(),
+    onPrompt: vi.fn(async () => {}),
     fetchTail: vi.fn(async () => undefined),
     fetchModel: vi.fn(async () => undefined),
     terminals: [],
@@ -211,7 +211,7 @@ describe('AgentGrid controls', () => {
 
   it('stop appears only on active panes and interrupts without opening', () => {
     const onOpen = vi.fn()
-    const onInterrupt = vi.fn()
+    const onInterrupt = vi.fn(async () => {})
     const { container } = render(<AgentGrid {...gridProps({ groups, onOpen, onInterrupt })} />)
     const stops = [...container.querySelectorAll('[aria-label="Stop"]')]
     expect(stops).toHaveLength(1)
@@ -257,20 +257,20 @@ describe('AgentGrid pane composer', () => {
     },
   )
 
-  it('sends queued prompts from an idle pane and clears the draft', () => {
-    const onPrompt = vi.fn()
+  it('sends queued prompts from an idle pane and clears the draft after acceptance', async () => {
+    const onPrompt = vi.fn(async () => {})
     const onOpen = vi.fn()
     const { container } = render(<AgentGrid {...gridProps({ groups, onPrompt, onOpen })} />)
     const input = container.querySelector('[aria-label="Prompt Idle one"]') as HTMLInputElement
     fireEvent.change(input, { target: { value: 'fix the lint' } })
     fireEvent.keyDown(input, { key: 'Enter' })
     expect(onPrompt).toHaveBeenCalledWith('b', 'fix the lint', 'queue')
-    expect(input.value).toBe('')
+    await vi.waitFor(() => { expect(input.value).toBe('') })
     expect(onOpen).not.toHaveBeenCalled()
   })
 
   it('steers a running pane', () => {
-    const onPrompt = vi.fn()
+    const onPrompt = vi.fn(async () => {})
     const { container } = render(<AgentGrid {...gridProps({ groups, onPrompt })} />)
     const input = container.querySelector('[aria-label="Prompt Builder"]') as HTMLInputElement
     fireEvent.change(input, { target: { value: 'also run the e2e' } })
@@ -312,5 +312,81 @@ describe('AgentGrid activity tails', () => {
     )
     const { container } = render(<AgentGrid {...gridProps({ groups, fetchTail: async () => undefined })} />)
     expect(container.querySelector('[data-testid="tail-a"]')).toBeNull()
+  })
+})
+
+describe('AgentGrid action outcomes', () => {
+  const groups = buildAgentBoard(
+    [{ workspaceId: 'ws', title: 'Alpha', sessionIds: ['a', 'b'] }],
+    {
+      a: session({ id: 'a', displayTitle: 'Running pane', running: true }),
+      b: session({ id: 'b', displayTitle: 'Idle pane' }),
+    },
+  )
+
+  it('keeps a rejected draft in its addressed pane and shows only that action failure', async () => {
+    const onPrompt = vi.fn(async () => { throw new Error('Prompt denied by session policy') })
+    const onOpen = vi.fn()
+    render(<AgentGrid {...gridProps({ groups, currentSessionId: 'a', onPrompt, onOpen })} />)
+    const input = screen.getByRole('textbox', { name: 'Prompt Idle pane' }) as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'keep this draft' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await vi.waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('Prompt denied by session policy') })
+    expect(input.value).toBe('keep this draft')
+    expect(onPrompt).toHaveBeenCalledWith('b', 'keep this draft', 'queue')
+    expect(onOpen).not.toHaveBeenCalled()
+    const running = screen.getByText('Running pane').closest('[data-status]')!
+    expect(within(running as HTMLElement).queryByRole('alert')).toBeNull()
+  })
+
+  it('suppresses duplicate admissions and preserves edits made while awaiting acceptance', async () => {
+    const pending = Promise.withResolvers<undefined>()
+    const onPrompt = vi.fn(() => pending.promise)
+    render(<AgentGrid {...gridProps({ groups, onPrompt })} />)
+    const input = screen.getByRole('textbox', { name: 'Prompt Idle pane' }) as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'first draft' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(onPrompt).toHaveBeenCalledTimes(1)
+    expect(input.value).toBe('first draft')
+    fireEvent.change(input, { target: { value: 'next draft' } })
+    await act(async () => { pending.resolve(undefined); await pending.promise })
+    expect(input.value).toBe('next draft')
+  })
+
+  it('reports stop failure beside its pane, without opening it or duplicating an outstanding stop', async () => {
+    const pending = Promise.withResolvers<undefined>()
+    const onInterrupt = vi.fn(() => pending.promise)
+    const onOpen = vi.fn()
+    render(<AgentGrid {...gridProps({ groups, currentSessionId: 'b', onInterrupt, onOpen })} />)
+    const stop = screen.getByRole('button', { name: 'Stop' })
+    fireEvent.click(stop)
+    fireEvent.keyDown(stop, { key: 'Enter' })
+    expect(onInterrupt).toHaveBeenCalledOnce()
+    expect(onInterrupt).toHaveBeenCalledWith('a')
+    await act(async () => { pending.reject(new Error('Stop denied by session policy')); await pending.promise.catch(() => {}) })
+    expect(screen.getByRole('alert').textContent).toBe('Stop denied by session policy')
+    expect(onOpen).not.toHaveBeenCalled()
+  })
+
+  it('reads the model route for an addressed nested child pane', async () => {
+    const nested = buildAgentBoard(
+      [{ workspaceId: 'ws', title: 'Alpha', sessionIds: ['root'] }],
+      { root: session({ id: 'root' }), child: session({ id: 'child', origin: 'subagent', parent: 'root' }) },
+    )
+    const fetchModel = vi.fn(async (id: string) => `provider/${id}`)
+    render(<AgentGrid {...gridProps({ groups: nested, fetchModel })} />)
+    await vi.waitFor(() => { expect(fetchModel).toHaveBeenCalledWith('child') })
+    expect(fetchModel).toHaveBeenCalledWith('root')
+  })
+
+  it('reports a rejected model read in its pane instead of leaving an unhandled rejection', async () => {
+    const fetchModel = vi.fn(async (id: string) => {
+      if (id === 'b') throw new Error('Model projection unavailable')
+      return 'provider/model'
+    })
+    render(<AgentGrid {...gridProps({ groups, fetchModel })} />)
+    await vi.waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('Model projection unavailable') })
+    expect(screen.getByText('model')).toBeTruthy()
   })
 })

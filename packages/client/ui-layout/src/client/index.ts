@@ -13,6 +13,8 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { DirectoryListing } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionTarget } from '@deepseek-ai/dsh-api-session-controller/client'
+import { createBoardSessionActions } from './board-session-actions.ts'
+import { createTerminalSessionDisposer } from './terminal-session-disposal.ts'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 
 /**
@@ -285,9 +287,6 @@ export interface FileViewOwnerProps {
   openWithOs: (path: string) => void
 }
 
-/** Failure for agent-board Session actions the 0.2 sessions controller does not expose yet. */
-const MISSING_SESSIONS_RPC = 'ui-layout: the agent board cannot interrupt or prompt a Session until the sessions RPC is ported'
-
 /** Required services (cordis fiber inject — the loader passes all module exports as an object plugin). */
 export const inject = ['slots', 'theme', 'locale', 'shortcuts', 'workspaces', 'sessions']
 
@@ -335,6 +334,16 @@ export function apply(ctx: ClientContext): void {
   )
   ctx.effect(() => ctx.locale.register('shortcuts.layout', { zh, en, ja, es, fr, de, ru, pt }), 'layout: command labels')
   const t = ctx.locale.bind('shortcuts.layout')
+  const boardLifetime = new AbortController()
+  ctx.effect(() => () => { boardLifetime.abort() }, 'ui-layout: board operations')
+  const boardActions = createBoardSessionActions(ctx.sessions, boardLifetime.signal)
+  const disposeTerminalSession = createTerminalSessionDisposer({
+    dispose: (request) => {
+      const remote = ctx.get('remote')
+      if (remote === undefined) throw new Error('ui-layout: terminal Remote is not mounted')
+      return remote.guiTerminal.dispose(request)
+    },
+  })
   /**
    * The registrant-private share the frame renders from.
    *
@@ -406,10 +415,7 @@ export function apply(ctx: ClientContext): void {
         surface.toggleExpanded()
       },
       openSession: (sessionId: string) => { workspaceUiOf(ctx)?.openSession(sessionId as SessionId) },
-      // The agent board's Session actions and reads have no counterpart on
-      // the 0.2 sessions controller yet (handoff 3.2): actions fail loudly,
-      // reads report no data.
-      interruptSession: () => { throw new Error(MISSING_SESSIONS_RPC) },
+      interruptSession: boardActions.interruptSession,
       // Text reads go through the workspace-files Remote namespace, the same
       // call the document preview makes. The viewer needs the truncation
       // flag as well as the text, so both ride the result.
@@ -430,8 +436,8 @@ export function apply(ctx: ClientContext): void {
         return { content: result.value.content ?? '', truncated: result.value.truncated ?? false }
       },
       fetchSessionTail: () => Promise.resolve(undefined),
-      fetchSessionModel: () => Promise.resolve(undefined),
-      promptSession: () => { throw new Error(MISSING_SESSIONS_RPC) },
+      fetchSessionModel: boardActions.fetchSessionModel,
+      promptSession: boardActions.promptSession,
       openWorkspace: (workspaceId: string) => {
         const view = ctx.workspaces.list.getSnapshot().items.find(w => w.workspaceId === workspaceId)
         const list = ctx.sessions.list.getSnapshot()
@@ -466,12 +472,7 @@ export function apply(ctx: ClientContext): void {
       // The inline viewers' binary-media face: the trust-fenced streaming
       // endpoint URL for one path (images and video render from it).
       mediaUrl: (path: string) => `/api/host/media?path=${encodeURIComponent(path)}`,
-      disposeTerminalSession: async (sessionId: string): Promise<void> => {
-        const conn = ctx.get('connection') as unknown as { api?: { term?: { dispose(req: { sessionId: string }): Promise<unknown> } } } | undefined
-        if (conn?.api?.term?.dispose) {
-          await conn.api.term.dispose({ sessionId }).catch(() => {})
-        }
-      },
+      disposeTerminalSession,
       // The api client returns the RpcResponse envelope: the business
       // result sits under `result` ({ ok: true, value } | { ok: false }).
     }

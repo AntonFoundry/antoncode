@@ -221,13 +221,14 @@ function WorkspaceSection(props: {
   onToggleCli: (sessionId: string) => void
   onZoom: (sessionId: string | undefined) => void
   onOpen: (sessionId: string) => void
-  onInterrupt: (sessionId: string) => void
-  onPrompt: (sessionId: string, text: string, mode: 'queue' | 'steer') => void
+  onInterrupt: (sessionId: string) => Promise<void>
+  onPrompt: (sessionId: string, text: string, mode: 'queue' | 'steer') => Promise<void>
   fetchTail: (sessionId: string, depth?: 'brief' | 'cli') => Promise<readonly AgentTailLine[] | undefined>
   /** Tail lines by session id, fetched at the board level. */
   tails: Readonly<Record<string, readonly AgentTailLine[]>>
   /** Current model route by session id (the pane strip's swarm fact). */
   models: Readonly<Record<string, string>>
+  modelErrors: Readonly<Record<string, string>>
 }) {
   return (
     <>
@@ -263,11 +264,38 @@ function WorkspaceSection(props: {
             fetchTail={props.fetchTail}
             tail={props.tails[pane.id]}
             model={props.models[pane.id]}
+            modelError={props.modelErrors[pane.id]}
           />
         ))
       })}
     </>
   )
+}
+
+/** Local interaction state only; one outstanding invocation per pane action. */
+function usePaneAction() {
+  const inFlight = useRef(false)
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string>()
+  const run = async (operation: () => Promise<void>): Promise<void> => {
+    if (inFlight.current) return
+    inFlight.current = true
+    setPending(true)
+    setError(undefined)
+    try {
+      await operation()
+    } catch (failure: unknown) {
+      setError(failure instanceof Error ? failure.message : String(failure))
+    } finally {
+      inFlight.current = false
+      setPending(false)
+    }
+  }
+  return { pending, error, run }
+}
+
+function ActionFailure({ action, message }: { action: 'prompt' | 'interrupt' | 'model'; message: string | undefined }) {
+  return message === undefined ? null : <span role="alert" data-action={action} className={css.agentTailLine} data-kind="error">{message}</span>
 }
 
 /** One session pane: status header, zoom, stop, updated line, steer composer. */
@@ -283,14 +311,15 @@ function SessionPane(props: {
   onToggleCli: (sessionId: string) => void
   onZoom: (sessionId: string | undefined) => void
   onOpen: (sessionId: string) => void
-  onInterrupt: (sessionId: string) => void
-  onPrompt: (sessionId: string, text: string, mode: 'queue' | 'steer') => void
+  onInterrupt: (sessionId: string) => Promise<void>
+  onPrompt: (sessionId: string, text: string, mode: 'queue' | 'steer') => Promise<void>
   /** Fetch this pane's activity tail (undefined = unavailable this round). */
   fetchTail: (sessionId: string, depth?: 'brief' | 'cli') => Promise<readonly AgentTailLine[] | undefined>
   /** This pane's current tail lines (fetched at the board level). */
   tail: readonly AgentTailLine[] | undefined
   /** The pane's current model route (`provider/model`); undefined = unknown. */
   model?: string | undefined
+  modelError?: string | undefined
 }) {
   const status = paneStatus(props.pane)
   const active = status === 'running' || status === 'pending'
@@ -304,11 +333,18 @@ function SessionPane(props: {
   // Pane-local composer draft. The pane is a div (it hosts an input), so
   // click-to-open lives on the header only; typing here must not navigate.
   const [draft, setDraft] = useState('')
+  const promptAction = usePaneAction()
+  const interruptAction = usePaneAction()
   const send = (): void => {
     const text = draft.trim()
     if (text.length === 0) return
-    props.onPrompt(props.pane.id, text, active ? 'steer' : 'queue')
-    setDraft('')
+    void promptAction.run(async () => {
+      await props.onPrompt(props.pane.id, text, active ? 'steer' : 'queue')
+      setDraft(current => current === draft ? '' : current)
+    })
+  }
+  const interrupt = (): void => {
+    void interruptAction.run(() => props.onInterrupt(props.pane.id))
   }
   return (
     <div
@@ -404,15 +440,17 @@ function SessionPane(props: {
               tabIndex={0}
               className={css.agentPaneStop}
               aria-label="Stop"
+              aria-disabled={interruptAction.pending}
+              aria-busy={interruptAction.pending}
               title="Interrupt the active turn"
               onClick={(event) => {
                 event.stopPropagation()
-                props.onInterrupt(props.pane.id)
+                interrupt()
               }}
               onKeyDown={(event) => {
                 if (event.key !== 'Enter' && event.key !== ' ') return
                 event.stopPropagation()
-                props.onInterrupt(props.pane.id)
+                interrupt()
               }}
             >
               Stop
@@ -425,6 +463,7 @@ function SessionPane(props: {
         type="text"
         className={css.agentPaneInput}
         value={draft}
+        aria-busy={promptAction.pending}
         placeholder={active ? 'Steer the running turn…' : 'Ask anything…'}
         aria-label={`Prompt ${props.pane.displayTitle || props.pane.id}`}
         onClick={(event) => { event.stopPropagation() }}
@@ -437,6 +476,9 @@ function SessionPane(props: {
         }}
         onChange={(event) => { setDraft(event.target.value) }}
       />
+      <ActionFailure action="prompt" message={promptAction.error} />
+      <ActionFailure action="interrupt" message={interruptAction.error} />
+      <ActionFailure action="model" message={props.modelError} />
       <span className={css.agentPaneStrip} title={props.pane.cwd ?? undefined}>
         <span className={css.agentPaneStripModel}>{props.pane.agentPreset ?? 'default'}</span>
         {props.pane.cwd === undefined ? null : <span className={css.agentPaneStripCwd}>{`· ${props.pane.cwd}`}</span>}
@@ -467,7 +509,7 @@ export function AgentGrid(props: {
   currentSessionId: string | undefined
   onOpen: (sessionId: string) => void
   /** Interrupt one session's active turn (the pane stop control). */
-  onInterrupt: (sessionId: string) => void
+  onInterrupt: (sessionId: string) => Promise<void>
   /** Pane order within each section. */
   sort: 'recent' | 'status'
   /** Minimum pane width driving the auto-fit column count. */
@@ -483,7 +525,7 @@ export function AgentGrid(props: {
   /** Viewing-preference writes (persisted with the owning workspace's stash). */
   onPrefsChange: (next: { sort?: 'recent' | 'status'; paneWidth?: number; zoomed?: string | undefined; workspace?: string | undefined }) => void
   /** Prompt one session by id (the pane composer); steer while running. */
-  onPrompt: (sessionId: string, text: string, mode: 'queue' | 'steer') => void
+  onPrompt: (sessionId: string, text: string, mode: 'queue' | 'steer') => Promise<void>
   /** Fetch one pane's activity tail (undefined = unavailable this round). */
   fetchTail: (sessionId: string, depth?: 'brief' | 'cli') => Promise<readonly AgentTailLine[] | undefined>
   /** Fetch one pane's current model route (`provider/model`; undefined = unknown). */
@@ -606,17 +648,36 @@ export function AgentGrid(props: {
   // changes) — the swarm visibility fact in each pane's strip. No interval:
   // a route changes only through an explicit selection, and the board
   // remounts the pane set long before a stale label matters.
+  const modelIds = useMemo(
+    () => props.groups.flatMap(group => group.sessions.flatMap(session => [session.id, ...session.subagents.map(child => child.id)])),
+    [props.groups],
+  )
+  const modelIdsKey = modelIds.join(',')
   const [models, setModels] = useState<Record<string, string>>({})
+  const [modelErrors, setModelErrors] = useState<Record<string, string>>({})
   useEffect(() => {
     let cancelled = false
-    for (const id of paneIds) {
+    for (const id of modelIds) {
       void props.fetchModel(id).then((model) => {
-        if (cancelled || model === undefined) return
-        setModels(current => ({ ...current, [id]: model }))
+        if (cancelled) return
+        setModelErrors((current) => {
+          const next = { ...current }
+          Reflect.deleteProperty(next, id)
+          return next
+        })
+        setModels((current) => {
+          const next = { ...current }
+          if (model === undefined) Reflect.deleteProperty(next, id)
+          else next[id] = model
+          return next
+        })
+      }).catch((error: unknown) => {
+        if (cancelled) return
+        setModelErrors(current => ({ ...current, [id]: error instanceof Error ? error.message : String(error) }))
       })
     }
     return () => { cancelled = true }
-  }, [idsKey])
+  }, [modelIdsKey])
   const empty = props.groups.every(group => group.sessions.length === 0)
   if (empty) {
     return <div className={css.codeEmpty}><p>No sessions in this workspace yet.</p></div>
@@ -695,6 +756,7 @@ export function AgentGrid(props: {
             fetchTail={props.fetchTail}
             tails={tails}
             models={models}
+            modelErrors={modelErrors}
           />
         </section>
       ) : (

@@ -130,10 +130,10 @@ export interface WmFrameInjected {
    */
   openWorkspace: (workspaceId: string) => void
   openSession: (sessionId: string) => void
-  /** Interrupt one session's active turn by id (the board pane stop button). */
-  interruptSession: (sessionId: string) => void
-  /** Prompt one session by id (the board pane composer); steer while running. */
-  promptSession: (sessionId: string, text: string, mode: 'queue' | 'steer') => void
+  /** Interrupt one session's active turn; reject on failure for the board to report. */
+  interruptSession: (sessionId: string) => Promise<void>
+  /** Await prompt admission for one session; reject without clearing the board draft. */
+  promptSession: (sessionId: string, text: string, mode: 'queue' | 'steer') => Promise<void>
   /** Fetch one session's activity tail lines (undefined when unavailable).
    *  `depth: 'cli'` asks for the taller raw-style transcript. */
   fetchSessionTail: (sessionId: string, depth?: 'brief' | 'cli') => Promise<readonly { kind: 'user' | 'tool' | 'assistant' | 'error'; label: string }[] | undefined>
@@ -156,8 +156,8 @@ export interface WmFrameInjected {
   openPath: (path: string) => Promise<void>
   /** Expand the right panel's surface when a window shows its buffer (no-op while expanded or without a Session). */
   expandRightPanel: () => void
-  /** Dispose one background terminal PTY session when its buffer is killed. */
-  disposeTerminalSession?: (sessionId: string) => Promise<void>
+  /** Await terminal disposal before removing its buffer; rejection retains the view. */
+  disposeTerminalSession: (sessionId: string) => Promise<void>
 }
 
 /** Full composed props: runtime share + child-slot render share + store share + injected wm face. */
@@ -1136,17 +1136,39 @@ export function WmFrame({
     }))
   }, [buffers, setBuffers])
 
-  /** Kill a buffer through the registry op and publish both halves. */
-  const killBufferById = useCallback((bufferId: string) => {
-    const buf = findBuffer(buffers, bufferId)
-    if (buf?.kind === 'terminal' && buf.sessionId !== undefined) {
-      void disposeTerminalSession?.(buf.sessionId)
+  // Pane close and global kill share the same in-flight terminal ownership.
+  const pendingTerminalDisposals = useRef(new Set<string>())
+  const disposeBeforeRemoving = useCallback(async (sessionId: string, commit: () => void): Promise<void> => {
+    if (pendingTerminalDisposals.current.has(sessionId)) return
+    pendingTerminalDisposals.current.add(sessionId)
+    try {
+      await disposeTerminalSession(sessionId)
+    } catch (error) {
+      notify(error instanceof Error ? error.message : String(error))
+      return
+    } finally {
+      pendingTerminalDisposals.current.delete(sessionId)
     }
-    const result = killBuffer({ buffers, tree: treeRef.current }, bufferId)
-    setBuffers(result.buffers)
-    setTree(result.tree)
-    notify(`Killed ${bufferId}`)
-  }, [buffers, disposeTerminalSession, notify, setBuffers, setTree])
+    commit()
+  }, [disposeTerminalSession, notify])
+
+  /** Kill every view of a buffer only after its terminal disposal succeeds. */
+  const killBufferById = useCallback((bufferId: string) => {
+    const buf = findBuffer(buffersRef.current, bufferId)
+    const commit = (): void => {
+      const result = killBuffer({ buffers: buffersRef.current, tree: treeRef.current }, bufferId)
+      buffersRef.current = result.buffers
+      treeRef.current = result.tree
+      setBuffers(result.buffers)
+      setTree(result.tree)
+      notify(`Killed ${bufferId}`)
+    }
+    if (buf?.kind === 'terminal' && buf.sessionId !== undefined) {
+      void disposeBeforeRemoving(buf.sessionId, commit)
+      return
+    }
+    commit()
+  }, [disposeBeforeRemoving, notify, setBuffers, setTree])
 
   /** Open a files buffer beside the focused leaf (one listing per buffer). */
   const openFilesBuffer = useCallback((target: string | undefined) => {
@@ -1184,13 +1206,41 @@ export function WmFrame({
 
   const onClose = useCallback((leafId: string) => {
     const t = treeRef.current
-    if (canClose(t, leafId)) {
-      writeTree(removeLeaf(t, leafId))
-      notify('Closed window')
-    } else {
+    if (!canClose(t, leafId)) {
       notify('The last window stands')
+      return
     }
-  }, [notify, writeTree])
+    const leaf = findLeaf(t, leafId)
+    if (leaf === undefined) return
+    const buffer = findBuffer(buffersRef.current, leaf.buffer)
+    if (buffer?.kind === 'terminal' && buffer.sessionId !== undefined) {
+      if (pendingTerminalDisposals.current.has(buffer.sessionId)) return
+      const shared = leafIds(t).some((id) => {
+        if (id === leafId) return false
+        const other = findLeaf(t, id)
+        const otherBuffer = other === undefined ? undefined : findBuffer(buffersRef.current, other.buffer)
+        return otherBuffer?.kind === 'terminal' && otherBuffer.sessionId === buffer.sessionId
+      })
+      if (!shared) {
+        void disposeBeforeRemoving(buffer.sessionId, () => {
+          const current = treeRef.current
+          const result = killBuffer({ buffers: buffersRef.current, tree: current }, buffer.id)
+          buffersRef.current = result.buffers
+          setBuffers(result.buffers)
+          const next = findLeaf(current, leafId)?.buffer === buffer.id
+            ? removeLeaf(result.tree, leafId) : result.tree
+          writeTree(next)
+          treeRef.current = next
+          notify('Closed window')
+        })
+        return
+      }
+    }
+    const next = removeLeaf(t, leafId)
+    writeTree(next)
+    treeRef.current = next
+    notify('Closed window')
+  }, [disposeBeforeRemoving, notify, setBuffers, writeTree])
 
   const onFlip = useCallback((leafId: string) => {
     writeTree(flipWithSibling(treeRef.current, leafId))
@@ -2224,8 +2274,8 @@ export function WmFrame({
               onClearPin={() => { history.replaceState(null, '', location.pathname + location.search) ; setPinnedWorkspace(undefined) }}
               currentSessionId={currentSessionId}
               onOpen={(sessionId) => { openSession(sessionId) }}
-              onInterrupt={(sessionId) => { interruptSession(sessionId) }}
-              onPrompt={(sessionId, text, mode) => { promptSession(sessionId, text, mode) }}
+              onInterrupt={sessionId => interruptSession(sessionId)}
+              onPrompt={(sessionId, text, mode) => promptSession(sessionId, text, mode)}
               fetchTail={fetchSessionTail}
               fetchModel={fetchSessionModel}
             />

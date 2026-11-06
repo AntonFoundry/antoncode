@@ -7,7 +7,7 @@
  * selector hooks. jsdom has no layout engine: split sizes come from stubbed
  * clientWidth, so sash drags are driven numerically through the stub.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import {
@@ -473,7 +473,11 @@ const openPathLog: string[] = []
 /** Records theme loads (M-x load-theme path). */
 const loadedThemes: string[] = []
 
-function mountFrame(initialTree?: WmNode, workspaces?: { id: string; title: string; sessionIds?: string[] }[]) {
+function mountFrame(
+  initialTree?: WmNode,
+  workspaces?: { id: string; title: string; sessionIds?: string[] }[],
+  disposeTerminalSession: WmFrameProps['disposeTerminalSession'] = vi.fn(async () => {}),
+) {
   window.innerWidth = frameWidth
   const layout = createLayoutStore().create()
   const wm = createWmStore().create()
@@ -542,8 +546,9 @@ function mountFrame(initialTree?: WmNode, workspaces?: { id: string; title: stri
       readTextFile={path => Promise.resolve({ content: `text of ${path}`, truncated: false })}
       openWorkspace={openWorkspaceStub}
       openSession={vi.fn()}
-      interruptSession={vi.fn()}
-      promptSession={vi.fn()}
+      interruptSession={vi.fn(async () => {})}
+      promptSession={vi.fn(async () => {})}
+      disposeTerminalSession={disposeTerminalSession}
       fetchSessionTail={vi.fn(async () => undefined)}
       fetchSessionModel={vi.fn(async () => undefined)}
       previewTheme={vi.fn()}
@@ -945,6 +950,166 @@ describe('WmFrame render', () => {
     selectedSessionBlank.current = true
     act(() => { rerenderFrame() })
     expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION, WM_LEAF_DETAILS])
+  })
+})
+
+describe('WmFrame terminal disposal', () => {
+  const terminalId = 'buffer:terminal:test'
+  const terminalLeafId = 'leaf:terminal:test'
+  const terminalSessionId = 'terminal-session-test'
+
+  function terminalFrame(dispose: WmFrameProps['disposeTerminalSession']) {
+    const frame = mountFrame(undefined, undefined, dispose)
+    act(() => {
+      frame.wm.actions.setBuffers([
+        ...frame.wm.getSnapshot().buffers,
+        { id: terminalId, kind: 'terminal', sessionId: terminalSessionId },
+      ])
+      frame.wm.actions.setTree(splitLeaf(
+        frame.wm.getSnapshot().tree, WM_LEAF_CONVERSATION, 'row', terminalId, terminalLeafId,
+      ))
+      frame.wm.actions.setFocus(terminalLeafId)
+    })
+    return frame
+  }
+
+  function countTerminalViews(tree: WmNode): number {
+    return leafIds(tree).filter(id => findLeaf(tree, id)?.buffer === terminalId).length
+  }
+
+  function terminalButton(container: HTMLElement, label: string): HTMLButtonElement {
+    const button = container.querySelector(`[data-buffer="terminal"] button[aria-label="${label}"]`)
+    if (!(button instanceof HTMLButtonElement)) throw new Error(`Missing terminal ${label} button`)
+    return button
+  }
+
+  function killFocused(getByLabelText: (label: string) => HTMLElement): void {
+    press('x', { ctrlKey: true })
+    press('k')
+    fireEvent.keyDown(getByLabelText('Kill buffer'), { key: 'Enter' })
+  }
+
+  it('closes one shared terminal view without disposing or removing its buffer', () => {
+    const dispose = vi.fn<WmFrameProps['disposeTerminalSession']>(async () => {})
+    const { wm, container } = terminalFrame(dispose)
+    fireEvent.click(terminalButton(container, 'Split right'))
+    expect(countTerminalViews(wm.getSnapshot().tree)).toBe(2)
+    const buffers = wm.getSnapshot().buffers
+
+    fireEvent.click(terminalButton(container, 'Close'))
+
+    expect(countTerminalViews(wm.getSnapshot().tree)).toBe(1)
+    expect(wm.getSnapshot().buffers).toBe(buffers)
+    expect(wm.getSnapshot().buffers.find(buffer => buffer.id === terminalId)).toMatchObject({ sessionId: terminalSessionId })
+    expect(dispose).not.toHaveBeenCalled()
+  })
+
+  it('retains the last terminal view until disposal acknowledges, then removes its buffer and leaf', async () => {
+    const acknowledgement = Promise.withResolvers<undefined>()
+    onTestFinished(() => { acknowledgement.resolve(undefined) })
+    const dispose = vi.fn<WmFrameProps['disposeTerminalSession']>(() => acknowledgement.promise)
+    const { wm, container } = terminalFrame(dispose)
+    const { tree, buffers } = wm.getSnapshot()
+
+    fireEvent.click(terminalButton(container, 'Close'))
+
+    expect(dispose).toHaveBeenCalledExactlyOnceWith(terminalSessionId)
+    expect(wm.getSnapshot().tree).toBe(tree)
+    expect(wm.getSnapshot().buffers).toBe(buffers)
+    await act(async () => { acknowledgement.resolve(undefined); await acknowledgement.promise })
+    expect(findLeaf(wm.getSnapshot().tree, terminalLeafId)).toBeUndefined()
+    expect(wm.getSnapshot().buffers.some(buffer => buffer.id === terminalId)).toBe(false)
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
+  })
+
+  it('keeps the exact tree and buffer registry and displays a disposal failure', async () => {
+    const failure = new Error('Terminal disposal was refused')
+    const dispose = vi.fn<WmFrameProps['disposeTerminalSession']>()
+      .mockRejectedValueOnce(failure)
+      .mockResolvedValueOnce(undefined)
+    const { wm, container, getByText } = terminalFrame(dispose)
+    const { tree, buffers } = wm.getSnapshot()
+
+    await act(async () => { fireEvent.click(terminalButton(container, 'Close')) })
+
+    expect(dispose).toHaveBeenCalledExactlyOnceWith(terminalSessionId)
+    expect(wm.getSnapshot().tree).toBe(tree)
+    expect(wm.getSnapshot().buffers).toBe(buffers)
+    expect(getByText(failure.message)).toBeTruthy()
+
+    await act(async () => { fireEvent.click(terminalButton(container, 'Close')) })
+    expect(dispose).toHaveBeenCalledTimes(2)
+    expect(findLeaf(wm.getSnapshot().tree, terminalLeafId)).toBeUndefined()
+    expect(wm.getSnapshot().buffers.some(buffer => buffer.id === terminalId)).toBe(false)
+  })
+
+  it('C-x k retains both shared terminal views until one disposal acknowledges', async () => {
+    const acknowledgement = Promise.withResolvers<undefined>()
+    onTestFinished(() => { acknowledgement.resolve(undefined) })
+    const dispose = vi.fn<WmFrameProps['disposeTerminalSession']>(() => acknowledgement.promise)
+    const { wm, container, getByLabelText } = terminalFrame(dispose)
+    fireEvent.click(terminalButton(container, 'Split right'))
+    const { tree, buffers } = wm.getSnapshot()
+    expect(countTerminalViews(tree)).toBe(2)
+
+    killFocused(getByLabelText)
+    killFocused(getByLabelText)
+
+    expect(dispose).toHaveBeenCalledExactlyOnceWith(terminalSessionId)
+    expect(wm.getSnapshot().tree).toBe(tree)
+    expect(wm.getSnapshot().buffers).toBe(buffers)
+    expect(container.querySelectorAll('[data-buffer="terminal"]')).toHaveLength(2)
+    await act(async () => { acknowledgement.resolve(undefined); await acknowledgement.promise })
+    expect(countTerminalViews(wm.getSnapshot().tree)).toBe(0)
+    expect(wm.getSnapshot().buffers.some(buffer => buffer.id === terminalId)).toBe(false)
+    expect(container.querySelector('[data-buffer="terminal"]')).toBeNull()
+  })
+
+  it('preserves an unrelated buffer and leaf inserted while terminal disposal is pending', async () => {
+    const acknowledgement = Promise.withResolvers<undefined>()
+    onTestFinished(() => { acknowledgement.resolve(undefined) })
+    const dispose = vi.fn<WmFrameProps['disposeTerminalSession']>(() => acknowledgement.promise)
+    const { wm, container } = terminalFrame(dispose)
+
+    fireEvent.click(terminalButton(container, 'Close'))
+    act(() => {
+      wm.actions.setBuffers([
+        ...wm.getSnapshot().buffers,
+        { id: 'buffer:file:other', kind: 'file', path: '/proj/wm/other.txt' },
+      ])
+      wm.actions.setTree(splitLeaf(
+        wm.getSnapshot().tree, WM_LEAF_CONVERSATION, 'column', 'buffer:file:other', 'leaf:file:other',
+      ))
+    })
+
+    await act(async () => { acknowledgement.resolve(undefined); await acknowledgement.promise })
+
+    expect(dispose).toHaveBeenCalledExactlyOnceWith(terminalSessionId)
+    expect(findLeaf(wm.getSnapshot().tree, terminalLeafId)).toBeUndefined()
+    expect(wm.getSnapshot().buffers.some(buffer => buffer.id === terminalId)).toBe(false)
+    expect(findLeaf(wm.getSnapshot().tree, 'leaf:file:other')?.buffer).toBe('buffer:file:other')
+    expect(wm.getSnapshot().buffers.find(buffer => buffer.id === 'buffer:file:other')).toEqual({
+      id: 'buffer:file:other', kind: 'file', path: '/proj/wm/other.txt',
+    })
+  })
+
+  it('coalesces repeated close and global kill while terminal disposal is pending', async () => {
+    const acknowledgement = Promise.withResolvers<undefined>()
+    onTestFinished(() => { acknowledgement.resolve(undefined) })
+    const dispose = vi.fn<WmFrameProps['disposeTerminalSession']>(() => acknowledgement.promise)
+    const { wm, container, getByLabelText } = terminalFrame(dispose)
+    const { tree, buffers } = wm.getSnapshot()
+
+    fireEvent.click(terminalButton(container, 'Close'))
+    fireEvent.click(terminalButton(container, 'Close'))
+    killFocused(getByLabelText)
+
+    expect(dispose).toHaveBeenCalledExactlyOnceWith(terminalSessionId)
+    expect(wm.getSnapshot().tree).toBe(tree)
+    expect(wm.getSnapshot().buffers).toBe(buffers)
+    await act(async () => { acknowledgement.resolve(undefined); await acknowledgement.promise })
+    expect(findLeaf(wm.getSnapshot().tree, terminalLeafId)).toBeUndefined()
+    expect(wm.getSnapshot().buffers.some(buffer => buffer.id === terminalId)).toBe(false)
   })
 })
 
