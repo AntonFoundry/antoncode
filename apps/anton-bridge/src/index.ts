@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { dirname, basename, join, resolve } from 'node:path'
 import { getChromeManager } from './chrome.ts'
 import { readNativeConsentKey } from './consent-key.ts'
+import { credentialRef } from './context-credentials.ts'
 import { removeObsoleteToolsRow, upsertDesktopToolsRow } from './profile-migration.ts'
 import { NativeChallengeInbox } from './consent-challenges.ts'
 import { signForwardedMailRequest } from './consent-forward.ts'
@@ -140,19 +141,15 @@ const bundledContextPluginRoot = defaultContextPluginRoot() ?? resolve(harnessRo
 const dshHome = process.env.ANTON_DSH_HOME ?? join(homedir(), '.anton', 'dsh')
 
 /**
- * Resolve the memory-service API key for the harness process. The credentials
- * file is flat `KEY: value` YAML written by the app; only this exact key name
- * is read and it is never logged.
+ * Resolve the memory-service API key for the harness process. The launching
+ * environment wins; otherwise the key comes from the credentials document's
+ * `refs` map (see {@link credentialRef}). The key is never logged.
  */
 function resolveContextApiKey(): string {
   const existing = process.env.ANTON_CONTEXT_API_KEY?.trim()
-  if (existing) return existing
+  if (existing !== undefined && existing !== '') return existing
   try {
-    for (const line of readFileSync(join(dshHome, '.credentials.yaml'), 'utf8').split('\n')) {
-      if (line.startsWith('ANTON_CONTEXT_API_KEY:')) {
-        return line.slice('ANTON_CONTEXT_API_KEY:'.length).trim()
-      }
-    }
+    return credentialRef(readFileSync(join(dshHome, '.credentials.yaml'), 'utf8'), 'ANTON_CONTEXT_API_KEY')
   } catch {
     // Absent or unreadable credentials file — the caller still launches the
     // harness; the service per-request rejection will surface the gap.
