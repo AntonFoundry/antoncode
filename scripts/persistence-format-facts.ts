@@ -55,9 +55,9 @@ function formatIndex(formats: PersistenceFormats, language: Language): string {
 
 /**
  * Refresh bounded schema regions and the format index, preserving authored evidence.
- * @param root - repository with both document languages and factual markers.
+ * @param root - repository with English documents and factual markers.
  * @param formats - complete validated versions through the current writer.
- * @returns paired references and consistency records without modifying files.
+ * @returns English references without modifying files.
  */
 export function persistenceFormatFactArtifacts(root: string, formats: PersistenceFormats): PersistenceArtifact[] {
   const artifacts: PersistenceArtifact[] = []
@@ -66,13 +66,13 @@ export function persistenceFormatFactArtifacts(root: string, formats: Persistenc
       const path = language === 'en' ? entry.document : entry.document.replace(/\.md$/u, '.zh.md')
       return replaceRegion(readFileSync(join(root, path), 'utf8'), 'schema', historicalSchema(entry, language), path)
     }
-    artifacts.push(...renderPersistencePair(root, entry.document, render('en'), render('zh')))
+    artifacts.push(...renderPersistencePair(root, entry.document, render('en'), ''))
   }
   const index = 'docs/persistence-changes/historical-formats/README.md'
   const renderIndex = (language: Language): string => {
     const path = language === 'en' ? index : index.replace(/\.md$/u, '.zh.md')
     return replaceRegion(readFileSync(join(root, path), 'utf8'), 'index', formatIndex(formats, language), path)
   }
-  artifacts.push(...renderPersistencePair(root, index, renderIndex('en'), renderIndex('zh')))
+  artifacts.push(...renderPersistencePair(root, index, renderIndex('en'), ''))
   return artifacts
 }

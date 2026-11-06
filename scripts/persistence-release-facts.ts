@@ -45,10 +45,10 @@ function structuralChanges(entry: PersistenceReleaseEntry, language: Language): 
   return [summary, '', heading, '|---|---|---|', ...rows].join('\n')
 }
 
-/** Compute paired factual updates without writing or changing machine declarations.
+/** Compute English factual updates without writing or changing machine declarations.
  * @param root - checkout containing existing documents with bounded factual markers.
  * @param archive - fully validated release records and reconstructed roots.
- * @returns complete bilingual documents and sidecars, validated together before any caller writes.
+ * @returns complete English documents, validated together before any caller writes.
  */
 export function persistenceReleaseFactArtifacts(root: string, archive: PersistenceReleases): PersistenceArtifact[] {
   const directory = 'docs/persistence-changes/releases'
@@ -79,7 +79,7 @@ export function persistenceReleaseFactArtifacts(root: string, archive: Persisten
   }
   const artifacts = renderPersistencePair(root, `${directory}/README.md`,
     replaceFacts(read('README.md'), 'index', index('en'), 'README.md'),
-    replaceFacts(read('README.zh.md'), 'index', index('zh'), 'README.zh.md'))
+    '')
   for (const [index, entry] of archive.entries.entries()) {
     const document = (language: Language): string => {
       const path = `${entry.release.tag}${language === 'zh' ? '.zh' : ''}.md`
@@ -89,7 +89,7 @@ export function persistenceReleaseFactArtifacts(root: string, archive: Persisten
       return replaceFacts(replaceFacts(read(path), 'inventory', inventory, path),
         'changes', '\n\n' + structuralChanges(entry, language) + '\n\n', path)
     }
-    artifacts.push(...renderPersistencePair(root, `${directory}/${entry.release.tag}.md`, document('en'), document('zh')))
+    artifacts.push(...renderPersistencePair(root, `${directory}/${entry.release.tag}.md`, document('en'), ''))
   }
   return artifacts
 }

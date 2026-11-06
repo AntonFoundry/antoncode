@@ -3,7 +3,7 @@
  * stays valid, the consolidated `dsh-doc` skill carries no stale copied
  * website values or prototype-era language, and the kind system maps each
  * label to exactly one skill template. Session release records match the
- * writer bound, bilingual counterpart, and evidence links. These run in `pnpm run test` and
+ * writer bound and evidence links. These run in `pnpm run test` and
  * `pnpm run test:docs` to guard the standard between heavier corpus gates.
  * @module scripts/doc-standard.spec
  */
@@ -17,11 +17,8 @@ import { readCurrentSessionFormatVersion } from './gen-session-format-catalog.ts
 const root = resolve(import.meta.dirname, '..')
 const PACKAGE_README_GLOBS = [
   'packages/README.md',
-  'packages/README.zh.md',
   'packages/*/README.md',
-  'packages/*/README.zh.md',
   'packages/*/*/README.md',
-  'packages/*/*/README.zh.md',
 ] as const
 
 function packageReadmes(): string[] {
@@ -216,11 +213,8 @@ function releaseDocument(body: string, evidence: string): string {
 }
 
 describe('Session format release authority', () => {
-  it('keeps bilingual release metadata consistent with the writer and tagged evidence', () => {
-    const records = ['docs/session-format-status.md', 'docs/session-format-status.zh.md'].map(file =>
-      validateSessionFormatRelease(readFileSync(resolve(root, file), 'utf8'), readCurrentSessionFormatVersion(root)),
-    )
-    expect(records[0]).toEqual(records[1])
+  it('keeps English release metadata consistent with the writer and tagged evidence', () => {
+    expect(sessionFormatReleaseFixture().record.latestReleasedVersion).toBeLessThanOrEqual(readCurrentSessionFormatVersion(root))
   })
 
   it('accepts a released writer and a newer development writer, including format zero', () => {
@@ -328,7 +322,7 @@ describe('dsh-doc skill consolidation', () => {
   it('keeps the reference example linked from the skill', () => {
     const skill = readFileSync(resolve(root, '.agents/skills/dsh-doc/SKILL.md'), 'utf8')
     expect(skill).toContain('session-persistence-jsonl/README.md')
-    expect(skill).toContain('session-persistence-jsonl/README.zh.md')
+    expect(skill).not.toContain('session-persistence-jsonl/README.zh.md')
   })
 
   it('defines controlled English as a precision-preserving review discipline', () => {
@@ -382,7 +376,7 @@ describe('dsh-doc skill consolidation', () => {
 
   it('maps historical Session format references to their dedicated document kind', () => {
     const files = globSync('docs/persistence-changes/historical-formats/v*.md', { cwd: root })
-    expect(files.length).toBe(readCurrentSessionFormatVersion(root) * 2)
+    expect(files.length).toBe(readCurrentSessionFormatVersion(root))
     for (const file of files) {
       const metadata = readFrontmatter(file)
       expect(metadata.kind, file).toBe('persistence-format')
@@ -444,17 +438,15 @@ describe('dsh-doc skill consolidation', () => {
   })
 })
 
-describe('reference-example README pair', () => {
-  const dir = 'packages/session/session-persistence-jsonl'
-
-  it('keeps exact English/Chinese physical line alignment', () => {
-    const sourceLines = readFileSync(resolve(root, dir, 'README.md'), 'utf8').split('\n').length
-    const zhLines = readFileSync(resolve(root, dir, 'README.zh.md'), 'utf8').split('\n').length
-    expect(sourceLines).toBe(zhLines)
+describe('English-exclusive documentation', () => {
+  it('keeps the reference example on the package README skeleton', () => {
+    const file = 'packages/session/session-persistence-jsonl/README.md'
+    expect(packageReadmeStructureErrors(file, readFileSync(resolve(root, file), 'utf8'))).toEqual([])
   })
 
-  it('keeps the sidecar consistency record present', () => {
-    const sidecar = readFileSync(resolve(root, dir, 'README.i18n.yaml'), 'utf8')
-    expect(sidecar).toMatch(/^\/[^\s:]*:\n {2}en: [0-9a-f]{16}\n {2}zh: [0-9a-f]{16}$/m)
+  it('has no Chinese counterparts or translation sidecars in maintained document trees', () => {
+    for (const pattern of ['docs/**/*.zh.md', 'docs/**/*.i18n.yaml', 'packages/**/*.zh.md', 'packages/**/*.i18n.yaml']) {
+      expect(globSync(pattern, { cwd: root, exclude: ['**/node_modules/**'] }), pattern).toEqual([])
+    }
   })
 })
