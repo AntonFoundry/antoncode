@@ -1,3 +1,4 @@
+/** One-shot bounded native seed ingestion that closes the inherited descriptor after reading. */
 import { closeSync, openSync, readSync } from 'node:fs'
 
 const MAX_RECORD_BYTES = 48
@@ -5,8 +6,12 @@ const WAIT_NS = 10_000_000n
 /**
  * Host's one-shot end of the Swift → bridge → harness anonymous stdin pipe.
  * Reads no process.env value as a secret and never prints, persists or exports
- * the key. The fd is immediately replaced with /dev/null before tools spawn.
+ * the key. The descriptor is closed on completion; descriptor zero is then
+ * best-effort replaced with /dev/null before tools spawn.
  * An ordinary standalone harness receives no seed and must fail closed.
+ * @param fd - inherited readable descriptor; defaults to stdin and is always closed after the read attempt.
+ * @param deadlineMs - polling deadline in milliseconds; the caller must provide a nonblocking descriptor for bounded waits.
+ * @returns decoded 32-byte seed, or undefined for EOF, read failure, invalid record, or an exceeded bound.
  */
 export function readNativeConsentSeed(fd = 0, deadlineMs = 2_000): Uint8Array | undefined {
   const bytes: number[] = []

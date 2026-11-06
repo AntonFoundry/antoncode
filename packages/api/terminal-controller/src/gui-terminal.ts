@@ -43,7 +43,11 @@ export class GuiTerminalController extends TypertRemoteService {
     }, 'gui-terminal.processes')
   }
 
-  /** @param request - initial size and directory. @returns allocated terminal identity. */
+  /**
+   * Start an independent login shell, falling back to the process directory or home when needed.
+   * @param request - initial grid size and optional existing working directory.
+   * @returns allocated terminal identity; output remains buffered until disposal or controller unload.
+   */
   @Remote
   async spawn(request: { cols: number; rows: number; cwd?: string }): Promise<{ sessionId: string }> {
     const { spawn } = await import('node-pty')
@@ -68,7 +72,12 @@ export class GuiTerminalController extends TypertRemoteService {
     return { sessionId: id }
   }
 
-  /** @param request - terminal identity and consumed cursor. @returns retained output tail. */
+  /**
+   * Read retained output, skipping any prefix already evicted by the buffer limit.
+   * Throws when the terminal is unknown or disposed.
+   * @param request - terminal identity and consumed character cursor.
+   * @returns retained output tail, next cursor, and whether the PTY exit callback has run.
+   */
   @Remote
   read(request: { sessionId: string; since: number }): { data: string; next: number; exited: boolean } {
     const session = this.expect(request.sessionId)
@@ -77,21 +86,33 @@ export class GuiTerminalController extends TypertRemoteService {
     return { data, next: since + data.length, exited: session.exited }
   }
 
-  /** @param request - terminal identity and raw input. @returns write receipt. */
+  /**
+   * Write raw input to a known terminal; throws when the terminal is unknown or disposed.
+   * @param request - terminal identity and raw input.
+   * @returns receipt that the PTY write call returned, not that the shell consumed the input.
+   */
   @Remote
   input(request: { sessionId: string; data: string }): { wrote: true } {
     this.expect(request.sessionId).pty.write(request.data)
     return { wrote: true }
   }
 
-  /** @param request - terminal identity and new grid. @returns resize receipt. */
+  /**
+   * Resize a known terminal; throws when the terminal is unknown or disposed.
+   * @param request - terminal identity and new grid dimensions.
+   * @returns receipt that the PTY resize call returned.
+   */
   @Remote
   resize(request: { sessionId: string; cols: number; rows: number }): { resized: true } {
     this.expect(request.sessionId).pty.resize(request.cols, request.rows)
     return { resized: true }
   }
 
-  /** @param request - terminal identity. @returns disposal receipt. */
+  /**
+   * Forget a terminal and request its PTY termination; unknown identities are a no-op.
+   * @param request - terminal identity.
+   * @returns disposal receipt without waiting for child exit.
+   */
   @Remote
   dispose(request: { sessionId: string }): { disposed: true } {
     const session = this.sessions.get(request.sessionId)

@@ -1,5 +1,7 @@
+/** Authenticated native-display handoff for Agent mail consent challenges. */
 import { createHmac } from 'node:crypto'
 
+/** Challenge facts and human-readable summary authenticated for the native bridge display. */
 export interface NativeDisplayChallenge {
   readonly requestId: string
   readonly binding: string
@@ -7,7 +9,12 @@ export interface NativeDisplayChallenge {
   readonly summary: string
 }
 
-/** Native bridge MAC contract: length-prefixed UTF-8 fields, SHA-256 hex. */
+/**
+ * Authenticate length-prefixed UTF-8 challenge fields for the native bridge.
+ * @param key - 32-byte native consent seed; any other length throws RangeError.
+ * @param challenge - exact challenge and summary to display.
+ * @returns SHA-256 HMAC as lowercase hexadecimal text.
+ */
 export function nativeDisplayMac(key: Uint8Array, challenge: NativeDisplayChallenge): string {
   if (key.length !== 32) throw new RangeError('native consent seed must have 32 bytes')
   const hmac = createHmac('sha256', key)
@@ -21,7 +28,13 @@ export function nativeDisplayMac(key: Uint8Array, challenge: NativeDisplayChalle
   return hmac.digest('hex')
 }
 
-/** Authenticated localhost handoff; a rejected/unreachable native display denies pairing. */
+/**
+ * Send an authenticated challenge to the localhost native bridge with a two-second request timeout.
+ * @param key - native consent seed used to authenticate the challenge.
+ * @param challenge - challenge with a nonblank summary of at most 512 UTF-8 bytes.
+ * @param transport - HTTP transport; defaults to fetch.
+ * @returns whether the bridge returned a successful HTTP status; false for invalid summary or any handoff error.
+ */
 export async function deliverNativeChallenge(
   key: Uint8Array,
   challenge: NativeDisplayChallenge,

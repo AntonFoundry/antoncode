@@ -29,6 +29,7 @@ const loginWireSchema = z.object({
 
 /** opencodeOAuth.start request payload (empty) and login view value. */
 export const opencodeOAuthStartRequestSchema = z.object({}) satisfies z.ZodType<Wire<RequestPayload<'opencodeOAuth.start'>>>
+/** OpenCode login view returned after starting authorization; excludes token material. */
 export const opencodeOAuthStartValueSchema = z.object({
   login: loginWireSchema,
 }) satisfies z.ZodType<Wire<ResponseValue<'opencodeOAuth.start'>>>
@@ -37,6 +38,7 @@ export const opencodeOAuthStartValueSchema = z.object({
 export const opencodeOAuthStatusRequestSchema = z.object({
   loginId: z.string().min(1),
 }) satisfies z.ZodType<Wire<RequestPayload<'opencodeOAuth.status'>>>
+/** Current OpenCode login view returned by status polling; excludes token material. */
 export const opencodeOAuthStatusValueSchema = z.object({
   login: loginWireSchema,
 }) satisfies z.ZodType<Wire<ResponseValue<'opencodeOAuth.status'>>>
@@ -46,6 +48,7 @@ export const opencodeOAuthSelectRequestSchema = z.object({
   loginId: z.string().min(1),
   orgID: z.string().min(1).optional(),
 }) satisfies z.ZodType<Wire<RequestPayload<'opencodeOAuth.select'>>>
+/** OpenCode login view returned after workspace selection; excludes token material. */
 export const opencodeOAuthSelectValueSchema = z.object({
   login: loginWireSchema,
 }) satisfies z.ZodType<Wire<ResponseValue<'opencodeOAuth.select'>>>
@@ -54,6 +57,7 @@ export const opencodeOAuthSelectValueSchema = z.object({
 export const opencodeOAuthCancelRequestSchema = z.object({
   loginId: z.string().min(1),
 }) satisfies z.ZodType<Wire<RequestPayload<'opencodeOAuth.cancel'>>>
+/** OpenCode login view returned after cancellation; excludes token material. */
 export const opencodeOAuthCancelValueSchema = z.object({
   login: loginWireSchema,
 }) satisfies z.ZodType<Wire<ResponseValue<'opencodeOAuth.cancel'>>>

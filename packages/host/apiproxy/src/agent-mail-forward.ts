@@ -1,3 +1,4 @@
+/** Verify authenticated, replay-limited bridge assertions for Agent mail HTTP requests. */
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import type { ApiProxy } from './api/index.ts'
 
@@ -12,10 +13,17 @@ export interface AgentMailVerifiedApi extends ApiProxy {
   verifyAgentMailOrigin(request: Request): string | undefined
 }
 
+/** Process-local bridge MAC verifier retaining accepted nonces for 30 seconds to reject replay. */
 export class AgentMailForwardVerifier {
   private readonly seen = new Map<string, number>()
   constructor(private readonly key: Uint8Array | undefined, private readonly now = Date.now) {}
 
+  /**
+   * Verify the bridge signature, request target, accepted origin, timestamp, and unused nonce.
+   * Accepted nonces are consumed; a full 128-entry replay ledger refuses additional requests.
+   * @param request - carrier request using the synthetic dsh.internal authority.
+   * @returns authenticated browser origin, or undefined when verification fails or no valid key is configured.
+   */
   verify(request: Request): string | undefined {
     const target = new URL(request.url)
     if (!this.key || this.key.length !== 32 || request.method !== 'POST'

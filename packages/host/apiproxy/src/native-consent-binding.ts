@@ -1,3 +1,4 @@
+/** Deterministic digest binding native mail consent to exact Host-resolved action facts. */
 import { createHash } from 'node:crypto'
 
 /** Immutable action facts resolved by the Host, never accepted as a client-provided digest. */
@@ -17,6 +18,8 @@ export interface MailConsentAction {
  * Bind a challenge to exact live identity and action contents. Length-prefix
  * every UTF-8 field so distinct variable-length tuples cannot collide; sort
  * recipients because queue delivery treats recipient order as immaterial.
+ * @param action - Host-resolved live identity and action contents.
+ * @returns SHA-256 binding as lowercase hexadecimal text.
  */
 export function mailConsentBinding(action: MailConsentAction): string {
   const digest = createHash('sha256')

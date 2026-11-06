@@ -29,40 +29,65 @@ export class WorktreeController extends TypertRemoteService {
     super(ctx, 'worktreeController', { namespace: 'worktree' })
   }
 
-  /** @param request - optional repository filter. @returns worktrees and saved mode preferences. */
+  /**
+   * Read registered worktrees and saved mode preferences.
+   * @param request - optional repository filter for the worktree rows.
+   * @returns matching worktrees and the complete saved mode preference map.
+   */
   @Remote
   async list(request: { repoPath?: string }): Promise<WorktreeListValue> {
     return { items: (await this.ctx.worktreeRegistry.list(request.repoPath)).map(view), prefs: this.ctx.worktreeRegistry.prefs() }
   }
 
-  /** @param request - repository, name, and base. @returns created worktree. */
+  /**
+   * Create a worktree through the registry, propagating creation failures.
+   * @param request - repository and optional name and base.
+   * @returns created worktree without its internal alias owner.
+   */
   @Remote
   async create(request: { repoPath: string; name?: string; base?: string }): Promise<{ worktree: WorktreeView }> {
     const record = await this.ctx.worktreeRegistry.create(request.repoPath, request)
     return { worktree: view(record) }
   }
 
-  /** @param request - working directory. @returns live git status. */
+  /**
+   * Read Git status through the registry, propagating status failures.
+   * @param request - working directory to inspect.
+   * @param signal - invocation lifetime; ignored by this operation, so it does not cancel the registry read.
+   * @returns current worktree status.
+   */
   @Remote
   status(request: { path: string }, signal: AbortSignal): Promise<WorktreeStatus> {
     void signal
     return this.ctx.worktreeRegistry.status(request.path)
   }
 
-  /** @param request - repository path. @returns saved preference or null. */
+  /**
+   * Read the repository's saved worktree mode preference.
+   * @param request - repository path.
+   * @returns saved preference, or null when none is stored.
+   */
   @Remote
   async pref(request: { repoPath: string }): Promise<{ pref: WorktreeModePrefView | null }> {
     return { pref: await this.ctx.worktreeRegistry.pref(request.repoPath) ?? null }
   }
 
-  /** @param request - repository and preference. @returns durable save receipt. */
+  /**
+   * Save a repository's worktree mode preference, propagating registry failures.
+   * @param request - repository and preference.
+   * @returns save receipt after the registry operation resolves.
+   */
   @Remote
   async setPref(request: { repoPath: string; pref: WorktreeModePrefView }): Promise<{ saved: true }> {
     await this.ctx.worktreeRegistry.setPref(request.repoPath, request.pref)
     return { saved: true }
   }
 
-  /** @param request - worktree id and force choice. @returns deletion receipt. */
+  /**
+   * Remove a worktree through the registry, propagating removal failures.
+   * @param request - worktree id and optional force choice.
+   * @returns removal receipt after the registry operation resolves.
+   */
   @Remote
   async remove(request: { worktreeId: WorktreeId; force?: boolean }): Promise<{ removed: true }> {
     await this.ctx.worktreeRegistry.remove(request.worktreeId, request)

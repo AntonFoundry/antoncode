@@ -1,10 +1,13 @@
+/** RPC types for Agent mail authorization and local or direct queue access. */
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RpcRequest, RpcResponse } from './rpc.ts'
 import type { WorkspaceId } from './workspace.ts'
 
+/** Named queue capability requested during authorization or native pairing. */
 export type AgentMailOperation =
   | 'address' | 'local-read' | 'local-send' | 'local-ack'
   | 'direct-read' | 'direct-send' | 'direct-ack'
+/** Agent address and inbox counters with a paginated list of reachable peers and their transports. */
 export interface AgentMailAddress {
   sessionId: SessionId
   workspaceId: WorkspaceId
@@ -14,6 +17,7 @@ export interface AgentMailAddress {
   hasMorePeers: boolean
   nextPeerCursor?: string
 }
+/** Queue message carrying its sequence, sending Session and workspace, body, and creation timestamp. */
 export interface AgentMailMessage {
   seq: number
   sender: SessionId
@@ -22,6 +26,7 @@ export interface AgentMailMessage {
   createdAt: number
 }
 
+/** Agent mail RPC operations using origin-scoped authorization and bearer grants for queue access. */
 export interface AgentMailApi {
   /**
    * Authorizes the loopback harness UI for this exact live Agent without a

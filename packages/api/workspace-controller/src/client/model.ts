@@ -115,7 +115,11 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
     return pull
   }
 
-  /** @param repoPath - repository path. @param pref - new default. */
+  /**
+   * Save the Host preference before updating the local projection; rejects on unavailable Remote or failure.
+   * @param repoPath - repository path.
+   * @param pref - new worktree mode default.
+   */
   async setWorktreePref(repoPath: string, pref: WorktreeModePrefView): Promise<void> {
     if (this.worktreeRemote === undefined) throw new Error('worktree Remote is unavailable')
     const result = await this.worktreeRemote.setPref({ repoPath, pref })
@@ -124,7 +128,12 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
     this.invalidate()
   }
 
-  /** @param input - repository, optional name and base. @returns registered worktree. */
+  /**
+   * Create a Host worktree and refresh the local registry projection before returning.
+   * Rejects on unavailable Remote, creation failure, or refresh failure; a failed refresh does not undo creation.
+   * @param input - repository, optional name and base.
+   * @returns created worktree after the registry refresh succeeds.
+   */
   async createWorktree(input: { repoPath: string; name?: string; base?: string }): Promise<WorktreeView> {
     if (this.worktreeRemote === undefined) throw new Error('worktree Remote is unavailable')
     const result = await this.worktreeRemote.create(input)
@@ -133,7 +142,12 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
     return result.value.worktree
   }
 
-  /** @param path - working directory. @param signal - caller lifetime. @returns live git status. */
+  /**
+   * Read Git status from the Host; rejects on unavailable Remote or a failed result.
+   * @param path - working directory.
+   * @param signal - caller lifetime passed to the Remote transport; the Host status operation ignores it.
+   * @returns current worktree status reported by the Host.
+   */
   async worktreeStatus(path: string, signal?: AbortSignal): Promise<WorktreeStatus> {
     if (this.worktreeRemote === undefined) throw new Error('worktree Remote is unavailable')
     const result = await this.worktreeRemote.status({ path }, signal)

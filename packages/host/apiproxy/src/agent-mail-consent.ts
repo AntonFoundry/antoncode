@@ -1,3 +1,4 @@
+/** Process-local Agent mail grants and native pairing challenges, bound to exact live Agent identities. */
 import { randomUUID } from 'node:crypto'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { mailConsentBinding, type MailConsentAction } from './native-consent-binding.ts'
@@ -7,8 +8,10 @@ import { NativeConsentVerifier } from './native-consent-code.ts'
 export const MAIL_OPERATIONS = [
   'address', 'local-read', 'local-send', 'local-ack', 'direct-read', 'direct-send', 'direct-ack',
 ] as const
+/** Queue operation that a mail grant may authorize. */
 export type MailOperation = typeof MAIL_OPERATIONS[number]
 
+/** Exact live Agent, browser origin, workspace, and operation set authorized together. */
 export interface MailScope {
   readonly agent: Agent
   readonly origin: string
@@ -66,6 +69,11 @@ export class AgentMailConsent {
     return token
   }
 
+  /**
+   * Issue a 90-second native challenge without exposing its code.
+   * @param scope - exact live Agent, origin, workspace, and requested operations.
+   * @returns challenge identity, binding, and expiry; undefined for invalid operations, capacity, or unavailable verification.
+   */
   begin(scope: MailScope): { requestId: string; binding: string; expiresAt: number } | undefined {
     if (!this.validOperations(scope.operations)) return undefined
     this.prune()
@@ -82,6 +90,15 @@ export class AgentMailConsent {
     return { requestId, binding, expiresAt }
   }
 
+  /**
+   * Exchange a matching one-use challenge code for a 30-minute bearer grant.
+   * @param requestId - pending challenge identity.
+   * @param code - code submitted from the native display.
+   * @param agent - exact live Agent that began pairing.
+   * @param origin - origin recorded at challenge creation.
+   * @param workspaceId - workspace recorded at challenge creation.
+   * @returns bearer grant, or undefined for an expired, mismatched, or failed challenge.
+   */
   redeem(requestId: string, code: string, agent: Agent, origin: string, workspaceId: string): string | undefined {
     const entry = this.pending.get(requestId)
     if (!entry || entry.expiresAt <= this.now()) { this.revokePending(requestId); return undefined }
@@ -93,6 +110,15 @@ export class AgentMailConsent {
     return token
   }
 
+  /**
+   * Check grant scope, deleting an expired grant or one presented with mismatched identity.
+   * @param token - bearer grant to check.
+   * @param agent - exact live Agent using the grant.
+   * @param origin - requesting browser origin.
+   * @param workspaceId - requesting workspace.
+   * @param operation - required queue operation.
+   * @returns whether the unexpired grant matches all identities and includes the operation.
+   */
   allows(token: string, agent: Agent, origin: string, workspaceId: string, operation: MailOperation): boolean {
     const entry = this.grants.get(token)
     if (!entry) return false
@@ -104,11 +130,20 @@ export class AgentMailConsent {
     return entry.scope.operations.includes(operation)
   }
 
+  /**
+   * Remove a bearer grant; an unknown token is a no-op.
+   * @param token - grant to revoke.
+   */
   revokeToken(token: string): void { this.grants.delete(token) }
+  /**
+   * Revoke all pending challenges and grants owned by this exact live Agent.
+   * @param agent - live Agent identity to revoke.
+   */
   revokeAgent(agent: Agent): void {
     for (const [id, pending] of this.pending) if (pending.scope.agent === agent) this.revokePending(id)
     for (const [id, grant] of this.grants) if (grant.scope.agent === agent) this.grants.delete(id)
   }
+  /** Clear all pending verification attempts, challenges, and grants held by this ledger. */
   dispose(): void { this.verifier.revokeAll(); this.pending.clear(); this.grants.clear() }
 
   private revokePending(id: string): void { this.verifier.revoke(id); this.pending.delete(id) }

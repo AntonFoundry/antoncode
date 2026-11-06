@@ -70,7 +70,11 @@ function configScalars(config: unknown): Record<string, ConfigScalar> | undefine
   return Object.keys(scalars).length === 0 ? undefined : scalars
 }
 
-/** Check whether a plugin is part of the core application runtime infrastructure. */
+/**
+ * Check whether a plugin is part of the protected application runtime infrastructure.
+ * @param moduleName - exact Loader module name.
+ * @returns whether inventory mutations must refuse this plugin.
+ */
 export function isProtectedPlugin(moduleName: string): boolean {
   return PROTECTED_PLUGINS.has(moduleName)
 }
@@ -100,6 +104,12 @@ export class PluginInventoryGateway extends TypertRemoteService {
     return readPluginInventory(this.ctx)
   }
 
+  /**
+   * Update live enablement, then persist it for subsequent profile boots.
+   * Rejects protected entries; a persistence failure does not undo the live update.
+   * @param entryId - Loader entry to enable or disable.
+   * @param enabled - whether the entry should be active.
+   */
   @Remote('toggle')
   async toggle(entryId: PluginEntryId, enabled: boolean): Promise<void> {
     const entry = this.ctx.loader.resolve(entryId)

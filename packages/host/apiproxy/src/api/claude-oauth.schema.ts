@@ -18,6 +18,7 @@ const loginWireSchema = z.object({
 
 /** claudeOAuth.start request payload (empty) and login view value. */
 export const claudeOAuthStartRequestSchema = z.object({}) satisfies z.ZodType<Wire<RequestPayload<'claudeOAuth.start'>>>
+/** Claude login view returned after starting authorization; excludes token material. */
 export const claudeOAuthStartValueSchema = z.object({
   login: loginWireSchema,
 }) satisfies z.ZodType<Wire<ResponseValue<'claudeOAuth.start'>>>
@@ -27,6 +28,7 @@ export const claudeOAuthSubmitRequestSchema = z.object({
   loginId: z.string().min(1),
   pasted: z.string().min(1).max(4096),
 }) satisfies z.ZodType<Wire<RequestPayload<'claudeOAuth.submit'>>>
+/** Claude login view returned after submitting a pasted authorization code; excludes token material. */
 export const claudeOAuthSubmitValueSchema = z.object({
   login: loginWireSchema,
 }) satisfies z.ZodType<Wire<ResponseValue<'claudeOAuth.submit'>>>
@@ -35,6 +37,7 @@ export const claudeOAuthSubmitValueSchema = z.object({
 export const claudeOAuthCancelRequestSchema = z.object({
   loginId: z.string().min(1),
 }) satisfies z.ZodType<Wire<RequestPayload<'claudeOAuth.cancel'>>>
+/** Claude login view returned after cancellation; excludes token material. */
 export const claudeOAuthCancelValueSchema = z.object({
   login: loginWireSchema,
 }) satisfies z.ZodType<Wire<ResponseValue<'claudeOAuth.cancel'>>>
