@@ -20,6 +20,7 @@ const OAUTH_ISSUER = 'https://auth.openai.com'
 /** The token store's own live value for a ChatGPT-mode login. */
 const CHATGPT_AUTH_MODE = 'chatgpt'
 
+/** Access and refresh credentials plus optional account and residency routing metadata. */
 export interface CodexTokenSet {
   access_token: string
   refresh_token: string
@@ -28,6 +29,7 @@ export interface CodexTokenSet {
   residency?: string
 }
 
+/** Shared Codex login fields read from auth.json without modifying the file. */
 export interface CodexAuthSnapshot {
   access_token: string
   refresh_token: string
@@ -85,6 +87,8 @@ export function codexHomeOf(codexHome: string | undefined): string {
 /**
  * Read the current auth snapshot without mutating anything. Throws
  * `MISSING_CREDENTIAL` when no ChatGPT-mode login exists.
+ * @param codexHome - directory containing the shared auth.json file.
+ * @returns the stored ChatGPT-mode credentials and optional refresh timestamp; invalid login files reject.
  */
 export async function readAuth(codexHome: string): Promise<CodexAuthSnapshot> {
   const authPath = join(codexHome, 'auth.json')
@@ -131,6 +135,8 @@ export async function readAuth(codexHome: string): Promise<CodexAuthSnapshot> {
  * Refresh the access token through the OpenAI OAuth endpoint. The refresh
  * token was issued to the Codex CLI client id, so that client id is named on
  * the grant; the stored refresh token survives until OpenAI revokes it.
+ * @param refreshToken - stored refresh credential issued to the Codex OAuth client.
+ * @returns a renewed token set, retaining the old refresh token when the response does not rotate it.
  */
 export async function refreshToken(refreshToken: string): Promise<CodexTokenSet> {
   const response = await fetch(`${OAUTH_ISSUER}/oauth/token`, {

@@ -56,6 +56,7 @@ export interface WireOutputTextPart {
   text: string
 }
 
+/** Text or image part carried by a Responses history message. */
 export type WireContentPart = WireInputTextPart | WireInputImagePart | WireOutputTextPart
 
 /** A completed tool call replayed on assistant history. */
@@ -97,6 +98,7 @@ export interface WireOutputItemAdded {
   item: WireItemSummary
 }
 
+/** Identity and optional role/name supplied when a response output item opens. */
 export interface WireItemSummary {
   type: 'message' | 'function_call'
   id: string

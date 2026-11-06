@@ -30,9 +30,9 @@ export const ZEN_CATALOG_PROVIDER = 'opencode'
 const fallbackSessionId = randomUUID()
 
 /**
- * Build the Zen client-identity headers for one request, mirroring OpenCode's
- * `packages/opencode/src/session/llm/request.ts` session/request/client
- * headers with real Harness identifiers — never fixed ids. The User-Agent
+ * Build the Zen client-identity headers for one request, mirroring the session,
+ * request, and client headers in OpenCode's upstream request module
+ * with real Harness identifiers — never fixed ids. The User-Agent
  * stays Harness-honest (`opencode/harness`); the transport prefixes the
  * mandatory Harness attribution after these extras.
  * @param sessionId - the conversation session id, or `undefined` for the process fallback.
@@ -66,6 +66,9 @@ export interface ZenCredentialSource {
  * anywhere. Never returns the anonymous key — the caller decides whether
  * anonymous direct (the gateway's verdict, currently a free-tier rejection
  * for non-OpenCode TLS stacks) or the local-service fallback serves.
+ * @param ref - credential reference to resolve.
+ * @param credentials - optional credential source; omission permits environment lookup, while a supplied source is authoritative.
+ * @returns a validated stored or ambient bearer, or undefined when the selected source has no value.
  */
 export async function resolveRealKey(
   ref: CredentialRef,
@@ -86,6 +89,9 @@ export async function resolveRealKey(
 /**
  * Resolve the direct transport's bearer key: the stored credential, or the
  * anonymous literal when none is stored.
+ * @param ref - credential reference to resolve.
+ * @param credentials - optional credential source; omission permits environment lookup.
+ * @returns the real bearer when resolved, otherwise the anonymous direct-transport key.
  */
 export async function resolveZenApiKey(
   ref: CredentialRef,

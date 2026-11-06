@@ -99,7 +99,11 @@ export class ClaudeOAuthError extends Error {
   }
 }
 
-/** Parse durable OAuth state; `undefined` for anything absent or malformed. */
+/**
+ * Parse durable OAuth state; `undefined` for anything absent or malformed.
+ * @param raw - stored JSON credential value, or undefined when absent.
+ * @returns validated OAuth state, or undefined for absent or malformed data.
+ */
 export function parseOAuthState(raw: string | undefined): ClaudeOAuthState | undefined {
   if (raw === undefined || raw.length === 0) return undefined
   let parsed: unknown
@@ -117,7 +121,12 @@ export function parseOAuthState(raw: string | undefined): ClaudeOAuthState | und
   return state
 }
 
-/** Whether the access token is still usable (with refresh skew applied). */
+/**
+ * Whether the access token is still usable (with refresh skew applied).
+ * @param state - parsed OAuth state with its absolute expiry timestamp.
+ * @param now - comparison time in milliseconds; omission uses the current clock.
+ * @returns whether expiry remains beyond the refresh skew.
+ */
 export function isAccessValid(state: ClaudeOAuthState, now: number = Date.now()): boolean {
   return state.expiresAt - EXPIRY_SKEW_MS > now
 }
@@ -126,7 +135,10 @@ function base64Url(bytes: Buffer): string {
   return bytes.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-/** Fresh PKCE pair: high-entropy verifier plus its S256 challenge. */
+/**
+ * Fresh PKCE pair: high-entropy verifier plus its S256 challenge.
+ * @returns a fresh private verifier and its SHA-256 challenge.
+ */
 export function createPkcePair(): { verifier: string; challenge: string } {
   const verifier = base64Url(randomBytes(64))
   const challenge = base64Url(createHash('sha256').update(verifier).digest())
@@ -146,6 +158,9 @@ export interface ClaudeAuthorizeFlow {
 /**
  * Build the browser approval URL and the secrets that redeem it. Pure over
  * injectable randomness so tests pin the exact URL.
+ * @param options - optional authorization endpoint, client, scope, state, and PKCE overrides; omission uses provider defaults and
+ *   fresh random values.
+ * @returns the approval URL and private verifier/state needed for its code exchange.
  */
 export function createAuthorizeFlow(options?: {
   authorizeUrl?: string
@@ -188,7 +203,14 @@ function requiredString(record: Record<string, unknown>, field: string): string 
   return value
 }
 
-/** Redeem one pasted browser code for tokens. */
+/**
+ * Redeem one pasted browser code for tokens.
+ * @param code - code pasted after browser approval.
+ * @param verifier - private PKCE verifier paired with the approval request.
+ * @param options - optional cancellation, token endpoint, client, and state overrides; omission uses provider defaults without caller
+ *   cancellation.
+ * @returns access credentials and skew-adjusted expiry; the refresh credential is present only when supplied by the endpoint.
+ */
 export async function exchangeCode(
   code: string,
   verifier: string,
@@ -232,7 +254,12 @@ export async function exchangeCode(
   return tokens
 }
 
-/** Renew an access token from its refresh token. */
+/**
+ * Renew an access token from its refresh token.
+ * @param state - stored state containing a refresh credential; absence rejects with login guidance.
+ * @param options - optional cancellation, token endpoint, client, and scope overrides; omission uses provider defaults.
+ * @returns refreshed state retaining the prior refresh credential unless the endpoint rotates it.
+ */
 export async function refreshAccessToken(state: ClaudeOAuthState, options?: {
   signal?: AbortSignal | undefined
   consoleBase?: string | undefined
@@ -281,6 +308,9 @@ export async function refreshAccessToken(state: ClaudeOAuthState, options?: {
  * Run the one-time interactive login: show the browser link, read the pasted
  * code, exchange it, and return the state to store. The caller persists the
  * result (credentials seam); this function never prints token material.
+ * @param interaction - operator notifications, pasted-code input, and optional cancellation.
+ * @param options - optional authorization and token endpoint, client, and scope overrides; omission uses provider defaults.
+ * @returns credentials for the caller to persist after approval and code exchange.
  */
 export async function runClaudeLogin(interaction: ClaudeLoginInteraction, options?: {
   consoleBase?: string

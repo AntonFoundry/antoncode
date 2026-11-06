@@ -127,6 +127,7 @@ export class ZenLoginFlow {
   /**
    * Start one login: issue the device code and poll for approval in the
    * background. Returns the operator-facing code and link immediately.
+   * @returns the pending token-free snapshot after device-code allocation; approval continues in the background.
    */
   async start(): Promise<ZenLoginSnapshot> {
     this.prune()
@@ -149,7 +150,11 @@ export class ZenLoginFlow {
     return this.snapshotOrThrow(record.id)
   }
 
-  /** UI-safe view of one login; `undefined` for unknown ids. */
+  /**
+   * UI-safe view of one login; `undefined` for unknown ids.
+   * @param loginId - identity returned by start.
+   * @returns the current token-free view, or undefined for an unknown login.
+   */
   snapshot(loginId: string): ZenLoginSnapshot | undefined {
     const record = this.#records.get(loginId)
     if (record === undefined) return undefined
@@ -179,6 +184,9 @@ export class ZenLoginFlow {
    * awaiting the pick; an omitted org keeps the session unbilled (manual
    * workspaces). Single and empty workspace lists never reach this state —
    * the driver completes them directly, mirroring the CLI.
+   * @param loginId - login currently awaiting a workspace choice.
+   * @param orgID - offered workspace identity; omission stores an unbilled session.
+   * @returns the completed token-free snapshot after credential storage; invalid selections and storage failures reject.
    */
   async select(loginId: string, orgID?: string): Promise<ZenLoginSnapshot> {
     const record = this.#records.get(loginId)
@@ -196,6 +204,8 @@ export class ZenLoginFlow {
   /**
    * Abort one login. Unknown ids and terminal logins are no-ops returning
    * the current view (`undefined` only for unknown ids).
+   * @param loginId - login whose pending driver should be aborted.
+   * @returns its current token-free view, or undefined for an unknown login.
    */
   cancel(loginId: string): ZenLoginSnapshot | undefined {
     const record = this.#records.get(loginId)
@@ -222,6 +232,7 @@ export class ZenLoginFlow {
   /**
    * Whether a usable session exists right now (valid stored token). Lets a
    * UI show state without starting a flow; never exposes the token.
+   * @returns whether stored state parses and its access token remains valid; absent or unreadable credentials return false.
    */
   async hasSession(): Promise<boolean> {
     const source = this.#options.credentialsOf()

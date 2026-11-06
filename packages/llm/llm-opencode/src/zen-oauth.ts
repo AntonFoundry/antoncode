@@ -102,7 +102,11 @@ export class LlmOAuthError extends Error {
   }
 }
 
-/** Parse durable OAuth state; `undefined` for anything absent or malformed. */
+/**
+ * Parse durable OAuth state; `undefined` for anything absent or malformed.
+ * @param raw - stored JSON credential value, or undefined when absent.
+ * @returns validated access/refresh state with optional workspace metadata, or undefined for invalid input.
+ */
 export function parseOAuthState(raw: string | undefined): ZenOAuthState | undefined {
   if (raw === undefined || raw.length === 0) return undefined
   let parsed: unknown
@@ -128,7 +132,12 @@ export function parseOAuthState(raw: string | undefined): ZenOAuthState | undefi
   return state
 }
 
-/** Whether the access token is still usable (with refresh skew applied). */
+/**
+ * Whether the access token is still usable (with refresh skew applied).
+ * @param state - parsed OAuth state with an absolute expiry timestamp.
+ * @param now - comparison time in milliseconds; omission uses the current clock.
+ * @returns whether expiry remains beyond the refresh skew.
+ */
 export function isAccessValid(state: ZenOAuthState, now: number = Date.now()): boolean {
   return state.expiresAt - EXPIRY_SKEW_MS > now
 }
@@ -187,7 +196,11 @@ async function getConsole(path: string, init: {
   return response.json() as Promise<unknown>
 }
 
-/** Start the device flow: returns the code the operator approves in the browser. */
+/**
+ * Start the device flow: returns the code the operator approves in the browser.
+ * @param options - optional cancellation, console endpoint, and client overrides; omission uses provider defaults.
+ * @returns the private device credential plus operator approval link, code, and polling timings.
+ */
 export async function requestDeviceCode(options?: {
   signal?: AbortSignal | undefined
   consoleBase?: string | undefined
@@ -217,7 +230,13 @@ function credentialFrom(token: Record<string, unknown>): { access: string; refre
   return { access, refresh, expiresAt: Date.now() + lifetime * 1000 - EXPIRY_SKEW_MS }
 }
 
-/** Poll the device token endpoint until approval, denial, or expiry. */
+/**
+ * Poll the device token endpoint until approval, denial, or expiry.
+ * @param code - allocated device code with polling interval and expiry lifetime.
+ * @param options - optional cancellation, console/client overrides, and wait implementation; omission uses provider defaults and timer
+ *   waits.
+ * @returns granted credentials and skew-adjusted expiry; denial, expiry, and cancellation reject.
+ */
 export async function pollDeviceToken(code: ZenDeviceCode, options?: {
   signal?: AbortSignal | undefined
   consoleBase?: string | undefined
@@ -274,7 +293,12 @@ export interface ZenOrg {
   name: string
 }
 
-/** List billable workspaces for an access token. */
+/**
+ * List billable workspaces for an access token.
+ * @param access - account access token used to list workspaces.
+ * @param options - optional cancellation and console endpoint; omission uses the provider endpoint.
+ * @returns workspace ids and labels, or an empty list when the response contains no workspace array.
+ */
 export async function fetchOrgs(access: string, options?: {
   signal?: AbortSignal | undefined
   consoleBase?: string | undefined
@@ -286,7 +310,12 @@ export async function fetchOrgs(access: string, options?: {
     .map(entry => ({ id: entry.id as string, name: typeof entry.name === 'string' ? entry.name : entry.id as string }))
 }
 
-/** Renew an access token from its refresh token, keeping the workspace. */
+/**
+ * Renew an access token from its refresh token, keeping the workspace.
+ * @param state - stored refresh state and optional billed workspace/model metadata.
+ * @param options - optional cancellation, console endpoint, and client overrides; omission uses provider defaults.
+ * @returns renewed credentials with workspace retained; failed model refresh retains the old allowed-model list when present.
+ */
 export async function refreshAccessToken(state: ZenOAuthState, options?: {
   signal?: AbortSignal | undefined
   consoleBase?: string | undefined
@@ -326,6 +355,10 @@ export async function refreshAccessToken(state: ZenOAuthState, options?: {
  * Model ids the workspace allows: not disabled, honoring whitelist/blacklist,
  * skipping console smoke-test and non-chat entries. Mirrors the workspace
  * catalog semantics (opencode itself drops deprecated entries here).
+ * @param access - account access token used for console configuration.
+ * @param orgID - billed workspace whose model policy is queried.
+ * @param options - optional cancellation and console endpoint; omission uses the provider endpoint.
+ * @returns deduplicated admitted model ids, or an empty list when no provider model entries qualify.
  */
 export async function fetchAllowedModels(access: string, orgID: string, options?: {
   signal?: AbortSignal | undefined
@@ -364,6 +397,9 @@ export async function fetchAllowedModels(access: string, orgID: string, options?
  * browser approval, resolve the workspace, and return the state to store.
  * The caller persists the result (credentials seam) and reports progress;
  * this function never prints or logs token material.
+ * @param interaction - operator progress, workspace selection, and optional cancellation callbacks.
+ * @param options - optional console/client overrides and polling wait implementation; omission uses provider defaults.
+ * @returns credentials for the caller to persist, with a workspace and allowed-model snapshot when resolved.
  */
 export async function runZenLogin(interaction: ZenLoginInteraction, options?: {
   consoleBase?: string

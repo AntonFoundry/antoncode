@@ -29,6 +29,9 @@ const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
 /**
  * Fresh session id per free-tier request, in the shape the gate accepts:
  * `ses_` plus time-derived hex and random suffix.
+ * @param now - timestamp used by the id prefix; omission reads the current clock.
+ * @param random - suffix bytes; omission allocates fresh cryptographic random bytes.
+ * @returns the gate-formatted session identifier.
  */
 export function freeTierSessionId(now: number = Date.now(), random: Uint8Array = crypto.getRandomValues(new Uint8Array(14))): string {
   const current = BigInt(now) * 0x1000n + 1n
@@ -37,7 +40,11 @@ export function freeTierSessionId(now: number = Date.now(), random: Uint8Array =
   return `ses_${time}${Array.from(random, byte => BASE62[byte % 62]).join('')}`
 }
 
-/** Per-request gate identity headers for a zero-cost model turn. */
+/**
+ * Per-request gate identity headers for a zero-cost model turn.
+ * @param session - session identity; omission mints a fresh gate session id.
+ * @returns the expected client identity headers for this request.
+ */
 export function freeTierHeaders(session: string = freeTierSessionId()): Record<string, string> {
   return {
     'user-agent': GATE_UA,
@@ -133,6 +140,8 @@ function cappedOutput(output: unknown): string {
 /**
  * Prepend the gate marker unless already first. Idempotent: a body that
  * opens with the exact marker passes through untouched.
+ * @param input - serialized history items.
+ * @returns a new array with exactly the existing first marker retained, or a marker prepended.
  */
 export function injectMarker(input: readonly FreeTierInputItem[]): FreeTierInputItem[] {
   const [first, ...rest] = input
@@ -151,6 +160,8 @@ export function injectMarker(input: readonly FreeTierInputItem[]): FreeTierInput
  * Tool traffic becomes quoted transcript lines (past calls stay visible but
  * never re-execute), reasoning items drop, and a closing reminder keeps the
  * model answering the newest request instead of titling.
+ * @param input - serialized history, with or without an existing first marker.
+ * @returns the marker and one user transcript with capped tool outputs and no native function items.
  */
 export function flattenResponsesInput(input: readonly FreeTierInputItem[]): FreeTierInputItem[] {
   const marked = injectMarker(input)
@@ -195,6 +206,8 @@ export function flattenResponsesInput(input: readonly FreeTierInputItem[]): Free
  * protocol in the system prompt carries tool calling instead). Reasoning
  * effort fields pass through untouched. System text travels separately in
  * `instructions`, so the preamble prefixes it there when present.
+ * @param body - serialized Responses request before free-tier shaping.
+ * @returns a new request with flattened input, no native tools, and a prefixed instruction field when present.
  */
 export function shapeFreeTierBody(body: ResponsesRequest): ResponsesRequest {
   const { tools: _dropped, ...known } = body as ResponsesRequest & { tools?: unknown }
@@ -212,6 +225,8 @@ export function shapeFreeTierBody(body: ResponsesRequest): ResponsesRequest {
  * fenced ```tool JSON object per call, then stop. The fence marker is the
  * load-bearing contract with {@link extractToolBlocks}; prose around it is
  * not rephrased so tuned behavior stays identical.
+ * @param tools - offered tool names, descriptions, and parameter definitions.
+ * @returns the fenced-call protocol and serialized tool definitions for the model prompt.
  */
 export function buildTextToolProtocol(tools: ReadonlyArray<{
   name: string
@@ -237,6 +252,8 @@ export interface ParsedTextToolCall {
  * Append the text tool protocol to a turn's system prompt for zero-cost
  * turns that offer tools. Skipped when the turn carries no tools or is a
  * machine-purposed call (title, compaction), which must stay clean.
+ * @param options - turn request including optional purpose and tools.
+ * @returns the original request for machine-purpose or toolless calls, otherwise a copy with text protocol appended to system text.
  */
 export function augmentSystemWithTextProtocol(options: GenerateOptions): GenerateOptions {
   if (options.purpose !== undefined || options.tools === undefined || options.tools.length === 0) {
@@ -305,6 +322,8 @@ export async function* parseFreeTextTools(
 /**
  * Split assistant text into remaining prose plus fenced tool calls.
  * Malformed fences stay visible in the prose for model self-correction.
+ * @param text - complete assistant text containing optional fenced tool JSON.
+ * @returns trimmed remaining prose and parsed calls; malformed blocks remain visible.
  */
 export function extractToolBlocks(text: string): { text: string; toolCalls: ParsedTextToolCall[] } {
   const toolCalls: ParsedTextToolCall[] = []

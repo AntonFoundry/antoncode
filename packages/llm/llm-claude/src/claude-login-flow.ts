@@ -101,6 +101,7 @@ export class ClaudeLoginFlow {
    * Start one login: build the browser approval link immediately. The
    * operator approves out of band and pastes the shown code back through
    * {@link submit}.
+   * @returns a token-free pending snapshot; rejects synchronously when the pending-login limit is reached.
    */
   start(): ClaudeLoginSnapshot {
     this.prune()
@@ -121,7 +122,11 @@ export class ClaudeLoginFlow {
     return this.snapshotOrThrow(record.id)
   }
 
-  /** UI-safe view of one login; `undefined` for unknown ids. */
+  /**
+   * UI-safe view of one login; `undefined` for unknown ids.
+   * @param loginId - identity returned by start.
+   * @returns the current token-free view, or undefined for an unknown login.
+   */
   snapshot(loginId: string): ClaudeLoginSnapshot | undefined {
     const record = this.#records.get(loginId)
     if (record === undefined) return undefined
@@ -142,6 +147,9 @@ export class ClaudeLoginFlow {
    * Redeem one pasted `{code}#{state}` (or bare code) and persist the
    * session. Only valid while pending; the state half must match this
    * login's minted state when present.
+   * @param loginId - pending login whose PKCE state must match.
+   * @param pasted - authorization code, optionally followed by the returned state after `#`.
+   * @returns the completed token-free snapshot after credential storage; exchange and storage failures reject.
    */
   async submit(loginId: string, pasted: string): Promise<ClaudeLoginSnapshot> {
     const record = this.#records.get(loginId)
@@ -180,6 +188,8 @@ export class ClaudeLoginFlow {
   /**
    * Abandon one login. Unknown ids yield `undefined`; terminal logins report
    * their current view.
+   * @param loginId - login to mark cancelled if it is not already terminal.
+   * @returns the current token-free view, or undefined for an unknown login.
    */
   cancel(loginId: string): ClaudeLoginSnapshot | undefined {
     const record = this.#records.get(loginId)
@@ -204,6 +214,7 @@ export class ClaudeLoginFlow {
   /**
    * Whether a usable session exists right now (valid stored token). Lets a
    * UI show state without starting a flow; never exposes the token.
+   * @returns whether stored state parses and its access token remains valid; absent or unreadable credentials return false.
    */
   async hasSession(): Promise<boolean> {
     const source = this.#options.credentialsOf()

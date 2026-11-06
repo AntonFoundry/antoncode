@@ -27,10 +27,13 @@ import { dirname, join, resolve } from 'node:path'
 
 // Public OAuth client issued for the Antigravity application. These are the
 // same identifiers the reference Antigravity proxy and the opencode plugin use.
+/** Public Google OAuth client identifier used by the Antigravity login flow. */
 export const ANTIGRAVITY_CLIENT_ID =
   '1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com'
+/** Distributed OAuth client secret sent during token exchange and refresh; not an account credential. */
 export const ANTIGRAVITY_CLIENT_SECRET = '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'
 
+/** Google OAuth scopes requested for account identity and Antigravity access. */
 export const ANTIGRAVITY_SCOPES: readonly string[] = [
   'https://www.googleapis.com/auth/cloud-platform',
   'https://www.googleapis.com/auth/userinfo.email',
@@ -44,8 +47,11 @@ export const ANTIGRAVITY_REDIRECT_URI = 'http://localhost:51121/oauth-callback'
 
 /** Antigravity gateway endpoints, in primary/fallback order (prod → daily). */
 export const ANTIGRAVITY_ENDPOINT_DAILY = 'https://daily-cloudcode-pa.sandbox.googleapis.com'
+/** Production endpoint used for Antigravity project discovery and inference. */
 export const ANTIGRAVITY_ENDPOINT_PROD = 'https://cloudcode-pa.googleapis.com'
+/** Ordered production and daily endpoints available to fallback consumers. */
 export const ANTIGRAVITY_ENDPOINT_FALLBACKS = [ANTIGRAVITY_ENDPOINT_PROD, ANTIGRAVITY_ENDPOINT_DAILY] as const
+/** Default Antigravity endpoint, selecting production. */
 export const ANTIGRAVITY_ENDPOINT = ANTIGRAVITY_ENDPOINT_PROD
 
 /** Hardcoded project used when the gateway returns none (business/workspace accounts). */
@@ -95,12 +101,20 @@ function accountsFileDefault(): string {
   return join(homedir(), '.config', 'opencode', 'antigravity-accounts.json')
 }
 
-/** Resolve the accounts file path from config (empty means the shared default). */
+/**
+ * Resolve the accounts file path from config; omission uses the shared default.
+ * @param path - configured path; undefined selects the shared default, while an empty string resolves the current directory.
+ * @returns the absolute accounts-file path.
+ */
 export function accountsPathOf(path: string | undefined): string {
   return resolve(path ?? accountsFileDefault())
 }
 
-/** Read accounts; a missing or corrupt file yields an empty list. */
+/**
+ * Read accounts; a missing or corrupt file yields an empty list.
+ * @param path - configured accounts path, or undefined for the shared default.
+ * @returns the stored array, or an empty array for an absent, unreadable, or malformed file.
+ */
 export function readAccounts(path: string | undefined): AntigravityAccount[] {
   const file = accountsPathOf(path)
   try {
@@ -113,7 +127,11 @@ export function readAccounts(path: string | undefined): AntigravityAccount[] {
   }
 }
 
-/** Persist the account list atomically, creating the directory as needed. */
+/**
+ * Write the account list and a staging copy, creating directories and scheduling best-effort staging cleanup.
+ * @param path - configured accounts path, or undefined for the shared default.
+ * @param accounts - complete account list to write; filesystem write failures propagate.
+ */
 export function writeAccounts(path: string | undefined, accounts: AntigravityAccount[]): void {
   const file = accountsPathOf(path)
   mkdirSync(dirname(file), { recursive: true })
@@ -128,7 +146,10 @@ export function writeAccounts(path: string | undefined, accounts: AntigravityAcc
   }
 }
 
-/** Generate an S256 PKCE challenge/verifier pair. */
+/**
+ * Generate an S256 PKCE challenge/verifier pair.
+ * @returns a fresh verifier and its base64url-encoded SHA-256 challenge.
+ */
 export function generatePkce(): { challenge: string; verifier: string } {
   const verifier = randomBytes(48).toString('base64url')
   const challenge = createHash('sha256').update(verifier).digest('base64url')
@@ -140,7 +161,12 @@ function encodeState(verifier: string, projectId: string): string {
   return Buffer.from(JSON.stringify({ verifier, projectId }), 'utf8').toString('base64url')
 }
 
-/** Decode the OAuth `state` parameter back into its verifier + project. */
+/**
+ * Decode the OAuth `state` parameter back into its verifier + project.
+ * @param state - base64url OAuth state carrying the verifier and optional project id.
+ * @returns the required verifier and project id, defaulting an absent project id to an empty string.
+ * @throws when JSON decoding fails or the verifier is missing.
+ */
 export function decodeState(state: string): { verifier: string; projectId: string } {
   const padded = state.padEnd(state.length + ((4 - (state.length % 4)) % 4), '=')
   const json = Buffer.from(padded.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')
@@ -159,6 +185,8 @@ export function decodeState(state: string): { verifier: string; projectId: strin
  * Build the Google authorization URL for the Antigravity OAuth flow (PKCE S256,
  * offline access, consent prompt). The verifier must be passed back to
  * {@link exchangeAntigravity} with the returned code.
+ * @param projectId - optional project preserved through authorization; omission permits discovery after exchange.
+ * @returns the approval URL, private verifier, and requested project id.
  */
 export function authorizeAntigravity(projectId = ''): AntigravityAuthorization {
   const { challenge, verifier } = generatePkce()
@@ -185,7 +213,11 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = F
   }
 }
 
-/** Discover the account's Antigravity project id via `loadCodeAssist`. */
+/**
+ * Discover the account's Antigravity project id via `loadCodeAssist`.
+ * @param accessToken - bearer token used for project discovery.
+ * @returns the discovered project id, or an empty string when discovery attempts fail.
+ */
 export async function fetchProjectId(accessToken: string): Promise<string> {
   // Discovery speaks the Gemini CLI header dialect (reference-verified);
   // the Antigravity Chrome agent applies only to generation calls.
@@ -225,6 +257,9 @@ export async function fetchProjectId(accessToken: string): Promise<string> {
 /**
  * Exchange an authorization code for access + refresh tokens, reading the
  * user's email and discovering the project id.
+ * @param code - authorization code returned by Google.
+ * @param state - returned OAuth state containing the original PKCE verifier and requested project.
+ * @returns access credentials, packed refresh credential, expiry, and available account metadata.
  */
 export async function exchangeAntigravity(code: string, state: string): Promise<AntigravityAuth> {
   const { verifier, projectId } = decodeState(state)
@@ -272,7 +307,11 @@ export async function exchangeAntigravity(code: string, state: string): Promise<
   }
 }
 
-/** Refresh an access token with a stored refresh token. */
+/**
+ * Refresh an access token with a stored refresh token.
+ * @param refreshToken - unpacked Google refresh credential.
+ * @returns the refreshed access token and absolute expiry time in milliseconds.
+ */
 export async function refreshAccessToken(refreshToken: string): Promise<{ accessToken: string; expires: number }> {
   const response = await fetchWithTimeout(TOKEN_URL, {
     method: 'POST',
@@ -295,14 +334,23 @@ export async function refreshAccessToken(refreshToken: string): Promise<{ access
   }
 }
 
-/** Calculate the absolute expiry (ms) for a token issued at `requestTimeMs`. */
+/**
+ * Calculate the absolute expiry (ms) for a token issued at `requestTimeMs`.
+ * @param requestTimeMs - request timestamp in milliseconds.
+ * @param expiresInSeconds - provider lifetime; nonnumeric values use one hour, while nonpositive or nonfinite numbers expire immediately.
+ * @returns the absolute expiry time in milliseconds.
+ */
 export function calculateTokenExpiry(requestTimeMs: number, expiresInSeconds: unknown): number {
   const seconds = typeof expiresInSeconds === 'number' ? expiresInSeconds : 3600
   if (!Number.isFinite(seconds) || seconds <= 0) return requestTimeMs
   return requestTimeMs + seconds * 1000
 }
 
-/** True when an access token is expired or absent (with a clock-skew buffer). */
+/**
+ * True when an access token is expired or absent (with a clock-skew buffer).
+ * @param auth - candidate access token and absolute expiry timestamp.
+ * @returns whether the token is missing or expires within the refresh buffer.
+ */
 export function accessTokenExpired(auth: { accessToken?: string; expires?: number }): boolean {
   if (!auth.accessToken || typeof auth.expires !== 'number') return true
   return auth.expires <= Date.now() + ACCESS_TOKEN_EXPIRY_BUFFER_MS
@@ -314,6 +362,7 @@ export function accessTokenExpired(auth: { accessToken?: string; expires?: numbe
  * or every refresh fails.
  * @param path - accounts file path (empty means the shared default).
  * @param onRefresh - optional hook to persist a refreshed token.
+ * @returns credentials from the first account whose refresh succeeds; rejects when no usable account remains.
  */
 export async function resolveAccessToken(
   path: string | undefined,

@@ -12,6 +12,7 @@ import { createServer } from 'node:http'
 import { authorizeAntigravity, exchangeAntigravity, readAccounts, writeAccounts } from './auth.ts'
 import type { AntigravityAccount } from './auth.ts'
 
+/** Browser-opening and shared-account persistence choices for interactive login. */
 export interface LoginOptions {
   /** Accounts file to append to; empty means the shared default. */
   accountsPath?: string
@@ -21,6 +22,7 @@ export interface LoginOptions {
 
 /**
  * Run the interactive login flow; resolves after the account is stored.
+ * @param options - optional browser-opening and account-file overrides; omission uses the shared account file and opens the browser.
  * @returns the stored account (email, packed refresh credential, project).
  */
 export async function runLogin(options: LoginOptions = {}): Promise<AntigravityAccount> {

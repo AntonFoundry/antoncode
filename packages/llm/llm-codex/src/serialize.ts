@@ -102,6 +102,8 @@ async function userContent(
  * user-role message, so a mixed user message contributes its text first and
  * its tool results as separate items after.
  * @param messages - the harness conversation, in order.
+ * @param attachments - optional durable image reader; omission projects user and tool-result images as omitted-image text, while read
+ *   failures reject.
  * @returns the Responses input items; order preserved.
  */
 export async function serializeInput(
@@ -174,6 +176,8 @@ export async function serializeInput(
  * are omitted rather than sent as null, so provider defaults apply.
  * @param options - the harness request (model, history, system, tools, sampling).
  * @param defaults - adapter-level reasoning defaults; undefined fields put nothing on the wire.
+ * @param attachments - optional durable image reader; omission projects user and tool-result images as omitted-image text, while read
+ *   failures reject.
  * @returns the Responses request body.
  */
 export async function serializeRequest(

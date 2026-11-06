@@ -93,6 +93,8 @@ export interface AntigravitySseEvent {
  * Antigravity validates function names: first char a letter or underscore,
  * then letters/digits/underscore/dash/dot/colon, max 64 chars. Anything else
  * is replaced with an underscore and prefixed when needed.
+ * @param name - original Harness tool name.
+ * @returns a gateway-compatible name truncated to 64 characters.
  */
 export function sanitizeToolName(name: string): string {
   let cleaned = name.replace(/[^a-zA-Z0-9_.:-]/g, '_')
@@ -109,6 +111,8 @@ const SCHEMA_KEEP: readonly string[] = [
 /**
  * Return an Antigravity-safe JSON Schema: keep the allowlist, convert `const`
  * to `enum`, and recurse into `properties`/`items`.
+ * @param schema - candidate JSON Schema value.
+ * @returns the recursively cleaned schema, or undefined for a non-object or array input.
  */
 export function cleanSchema(schema: unknown): Record<string, unknown> | undefined {
   if (typeof schema !== 'object' || schema === null || Array.isArray(schema)) return undefined
@@ -143,7 +147,11 @@ export function cleanSchema(schema: unknown): Record<string, unknown> | undefine
 
 /* ── Request translation ────────────────────────────────────────────────── */
 
-/** Parse a tool-call arguments JSON string, tolerating malformed input. */
+/**
+ * Parse a tool-call arguments JSON string, tolerating malformed input.
+ * @param raw - raw tool-call JSON arguments.
+ * @returns the decoded object, an empty object for empty or non-object JSON, or malformed JSON retained under `_raw`.
+ */
 export function safeParseArgs(raw: string): Record<string, unknown> {
   if (!raw) return {}
   try {
@@ -156,7 +164,12 @@ export function safeParseArgs(raw: string): Record<string, unknown> {
   }
 }
 
-/** Translate one Harness message into a Gemini content turn. */
+/**
+ * Translate one Harness message into a Gemini content turn.
+ * @param message - Harness history message; unsupported block kinds and historical reasoning are omitted.
+ * @param callNameById - optional call-name lookup; omission names unresolved tool responses `tool`.
+ * @returns the supported turn, or null for system messages and messages with no supported parts.
+ */
 export function translateMessage(
   message: RequestMessage,
   callNameById?: ReadonlyMap<string, string>,
@@ -241,7 +254,14 @@ export function wireModelOf(modelId: string, effort?: string): string {
   return `${stripped}-${tier}`
 }
 
-/** Translate the full assembled request into an Antigravity body. */
+/**
+ * Translate the full assembled request into an Antigravity body.
+ * @param options - Harness history, system text, offered tools, and generation settings.
+ * @param projectId - account project used by the gateway.
+ * @param requestId - request identity included in the gateway request id.
+ * @param modelId - selected model before reasoning-specific wire mapping.
+ * @returns the translated gateway request with cleaned tool declarations.
+ */
 export function translateRequest(
   options: GenerateOptions,
   projectId: string,
@@ -319,6 +339,10 @@ export interface SnapshotState {
   parts: PartState[]
 }
 
+/**
+ * Create request-local state for cumulative SSE snapshots.
+ * @returns a fresh mutable state with no observed parts.
+ */
 export function initialSnapshotState(): SnapshotState {
   return { parts: [] }
 }
@@ -334,6 +358,7 @@ function renderPartText(part: GeminiPart): string {
  * @param parts - the cumulative parts from this SSE event.
  * @param state - the running snapshot state (mutated).
  * @param baseIndex - the block index stamped on emitted chunks.
+ * @returns newly observed text, reasoning, and completed tool-call chunks; absent parts produce no chunks.
  */
 export function translateSnapshot(
   parts: GeminiPart[] | undefined,
@@ -385,7 +410,11 @@ export function translateSnapshot(
   return chunks
 }
 
-/** Translate an SSE event's usageMetadata into a usage chunk. */
+/**
+ * Translate an SSE event's usageMetadata into a usage chunk.
+ * @param event - gateway snapshot that may include usage metadata.
+ * @returns a usage chunk, or undefined when metadata is absent.
+ */
 export function translateUsage(event: AntigravitySseEvent): StreamChunk | undefined {
   const metadata = event.response?.usageMetadata
   if (metadata === undefined) return undefined
@@ -402,7 +431,12 @@ export function translateUsage(event: AntigravitySseEvent): StreamChunk | undefi
   }
 }
 
-/** Map a Gemini finishReason onto a harness finish reason. */
+/**
+ * Map a Gemini finishReason onto a harness finish reason.
+ * @param reason - gateway finish-reason string.
+ * @param hasToolCall - whether this response emitted a tool call.
+ * @returns a terminal chunk; unrecognized reasons become response failures.
+ */
 export function mapFinishReason(reason: string, hasToolCall: boolean): StreamChunk {
   if (reason === 'STOP' || reason === 'stop') {
     return { type: 'finish', reason: hasToolCall ? { kind: 'tool-calls' } : { kind: 'stop' } }
@@ -417,7 +451,13 @@ export function mapFinishReason(reason: string, hasToolCall: boolean): StreamChu
   }
 }
 
-/** Map a non-2xx HTTP status onto an {@link LlmError} with Antigravity semantics. */
+/**
+ * Map a non-2xx HTTP status onto an {@link LlmError} with Antigravity semantics.
+ * @param status - non-success HTTP status.
+ * @param detail - provider failure detail retained as the error message.
+ * @param retryAfterMs - optional provider delay; omission or nonfinite values add no retry hint.
+ * @returns a classified LLM error retaining status and usable delay hints.
+ */
 export function mapHttpError(status: number, detail: string, retryAfterMs?: number): LlmError {
   const code = status === 401 || status === 403 ? 'AUTH'
     : status === 429 ? 'RATE_LIMITED'
@@ -429,14 +469,22 @@ export function mapHttpError(status: number, detail: string, retryAfterMs?: numb
   })
 }
 
-/** Extract the provider `Retry-After` header (seconds) when present. */
+/**
+ * Extract the provider `Retry-After` header (seconds) when present.
+ * @param value - optional Retry-After header represented as seconds.
+ * @returns a nonnegative numeric delay in milliseconds, or undefined for absent or invalid input.
+ */
 export function retryAfterSeconds(value: string | null | undefined): number | undefined {
   if (value === null || value === undefined) return undefined
   const seconds = Number(value)
   return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : undefined
 }
 
-/** Parse a Google `RetryInfo.retryDelay` ("3.95s") from error details. */
+/**
+ * Parse a Google `RetryInfo.retryDelay` ("3.95s") from error details.
+ * @param details - optional Google error-detail entries.
+ * @returns the first positive RetryInfo delay in milliseconds, or undefined when none can be parsed.
+ */
 export function retryDelayMs(details: readonly unknown[] | undefined): number | undefined {
   if (!Array.isArray(details)) return undefined
   for (const entry of details) {
