@@ -68,11 +68,6 @@ interface PromptSection {
    * More than one effective complete section makes assembly fail.
    */
   readonly complete?: boolean
-  /**
-   * Interpolate registered `{{variable}}` references in this section. Set false
-   * when text contains model- or user-authored content that must remain literal.
-   */
-  readonly interpolate?: boolean
 }
 ```
 

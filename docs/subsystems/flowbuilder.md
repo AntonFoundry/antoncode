@@ -14,7 +14,7 @@ Graph well-formedness (unique ids, resolvable edges, one edge per input port, ac
 
 ## Cordis API
 
-Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — this section is byte-identical in both language sides of the page. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
 <a id="ctxflowbuilder--flowbuilderservice"></a>
 
@@ -113,7 +113,7 @@ getRun(runId: string): FlowRunRecordRecord | undefined
 listRuns(flowId?: string): FlowRunRecordRecord[]
 ```
 
-Source: [`packages/flowbuilder/flowbuilder-service/src/service.ts:121`](../../packages/flowbuilder/flowbuilder-service/src/service.ts)
+Source: [`packages/flowbuilder/flowbuilder-service/src/service.ts`](../../packages/flowbuilder/flowbuilder-service/src/service.ts)
 
 <a id="ctxlangflow--langflowsidecar"></a>
 
@@ -144,7 +144,7 @@ start(): Promise<LangflowStatus>
 async stop(): Promise<void>
 ```
 
-Source: [`packages/flowbuilder/langflow-sidecar/src/sidecar.ts:56`](../../packages/flowbuilder/langflow-sidecar/src/sidecar.ts)
+Source: [`packages/flowbuilder/langflow-sidecar/src/sidecar.ts`](../../packages/flowbuilder/langflow-sidecar/src/sidecar.ts)
 
 <a id="flowbuilder-events"></a>
 
@@ -168,7 +168,7 @@ A workflow definition was saved or deleted. Paired per write; `flow` is the exac
 'flowbuilder/flow-changed'(action: 'saved' | 'deleted', flow: FlowDefinitionRecord): void
 ```
 
-Source: [`packages/flowbuilder/flowbuilder-service/src/service.ts:50`](../../packages/flowbuilder/flowbuilder-service/src/service.ts)
+Source: [`packages/flowbuilder/flowbuilder-service/src/service.ts`](../../packages/flowbuilder/flowbuilder-service/src/service.ts)
 
 <a id="flowbuilderlibrary-changed--emit"></a>
 
@@ -188,7 +188,7 @@ A block library entry was saved or deleted. Paired per write; `block` is the exa
 'flowbuilder/library-changed'(action: 'saved' | 'deleted', block: BlockLibraryEntryRecord): void
 ```
 
-Source: [`packages/flowbuilder/flowbuilder-service/src/service.ts:59`](../../packages/flowbuilder/flowbuilder-service/src/service.ts)
+Source: [`packages/flowbuilder/flowbuilder-service/src/service.ts`](../../packages/flowbuilder/flowbuilder-service/src/service.ts)
 
 <a id="flowbuilderrun-end--emit"></a>
 
@@ -205,7 +205,7 @@ A run reached its terminal record (emitted exactly once per run).
 'flowbuilder/run-end'(record: FlowRunRecordRecord): void
 ```
 
-Source: [`packages/flowbuilder/flowbuilder-service/src/service.ts:79`](../../packages/flowbuilder/flowbuilder-service/src/service.ts)
+Source: [`packages/flowbuilder/flowbuilder-service/src/service.ts`](../../packages/flowbuilder/flowbuilder-service/src/service.ts)
 
 <a id="flowbuilderrun-node--emit"></a>
 
@@ -224,7 +224,7 @@ One node settled into a new state, after that state is durable.
 'flowbuilder/run-node'(runId: FlowRunId, nodeId: string, state: FlowNodeRunState): void
 ```
 
-Source: [`packages/flowbuilder/flowbuilder-service/src/service.ts:73`](../../packages/flowbuilder/flowbuilder-service/src/service.ts)
+Source: [`packages/flowbuilder/flowbuilder-service/src/service.ts`](../../packages/flowbuilder/flowbuilder-service/src/service.ts)
 
 <a id="flowbuilderrun-start--emit"></a>
 
@@ -241,5 +241,5 @@ A run started: the durable `running` record as stored.
 'flowbuilder/run-start'(record: FlowRunRecordRecord): void
 ```
 
-Source: [`packages/flowbuilder/flowbuilder-service/src/service.ts:65`](../../packages/flowbuilder/flowbuilder-service/src/service.ts)
+Source: [`packages/flowbuilder/flowbuilder-service/src/service.ts`](../../packages/flowbuilder/flowbuilder-service/src/service.ts)
 <!-- END GENERATED cordis-surface -->

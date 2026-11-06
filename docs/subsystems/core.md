@@ -209,12 +209,6 @@ interface AgentOptions {
   reasoningEffort?: ReasoningEffortId | undefined
   /** Maximum output tokens for each conversation-model request. */
   maxTokens?: number
-  /**
-   * Reasoning effort this agent's model requests run at. The selected
-   * provider validates the id per model; an unserviceable effort fails at
-   * request time. Absent means the route's own default.
-   */
-  reasoningEffort?: string
 }
 ```
 
@@ -595,6 +589,13 @@ presetForSession(session: Session): string | null
  * @returns Definition disposer after activation or its diagnostic settles; the declaring plugin owns it.
  */
 async register(definition: PresetDefinition): Promise<() => Promise<void>>
+
+/** Persist a preset child plugin's enablement for subsequently created Agents.
+ * @param presetId - registered preset whose declaration owns the child.
+ * @param entryId - child entry id shown by the composition inventory.
+ * @param enabled - whether the child should be mounted.
+ */
+async setPluginEnabled(presetId: string, entryId: string, enabled: boolean): Promise<void>
 
 /** Inspect retained revisions, or the exact revision an Agent joined.
  * @param ctx - optional Agent context; omission includes all retained revisions.
@@ -1058,32 +1059,6 @@ Reject a proposed step or replace the messages that enter it. Calling `next()` p
 ```
 
 Types: [Scoped](scope.md) · [UserMessage](session.md)
-
-Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
-
-<a id="agentrequest--waterfall"></a>
-
-#### `agent/request` — waterfall
-
-Replace the frozen call configuration. `await next()` yields the config the machine would use (agent options on the first request, the logged header afterwards); return a replacement to switch. Model-visible content must use logged channels; this waterfall cannot mutate messages.
-
-```ts cordis-catalog
-/**
- * Replace the frozen call configuration. `await next()` yields the config
- * the machine would use (agent options on the first request, the logged
- * header afterwards); return a replacement to switch. Model-visible
- * content must use logged channels; this waterfall cannot mutate messages.
- * @param payload.agent - the agent making the model call.
- * @param payload.turn - the open turn number.
- * @param payload.step - the step whose request this is.
- * @param payload.signal - the current turn's explicit abort signal.
- * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
- * @mode waterfall
-*/
-'agent/request'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; signal: AbortSignal }, next: () => Promise<LlmCallConfig>): Promise<LlmCallConfig>
-```
-
-Types: [LlmCallConfig](llm-streaming.md) · [Scoped](scope.md)
 
 Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
 

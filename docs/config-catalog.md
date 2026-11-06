@@ -243,15 +243,26 @@ export interface Config {
 ## `@deepseek-ai/dsh-api-session-controller`
 
 - `inject`: `agentDefaultModel` · `agents` · `attachments` · `fileUploads` · `fs` · `llm` · `remoteAccess` · `sessions` · `sessionProjections` · `sessionQuery` · `typert` · `typertGateway` · `workspaceRegistry`
-- `source`: [`packages/api/session-controller/src/index.ts:110`](../packages/api/session-controller/src/index.ts)
+- `refs`: `Volatile` (`@deepseek-ai/cordis`)
+- `source`: [`packages/api/session-controller/src/index.ts:120`](../packages/api/session-controller/src/index.ts)
 
 ```ts config-catalog
+/** Deployment policy after schema defaults have been applied. */
+type ResolvedConfig = Omit<Config, 'disabledProviders'> & {
+  /** Positive integral milliseconds of list work before yielding between complete rows; defaults to 16. */
+  readonly listWorkSliceMs: number
+  /** Live provider-route exclusion list for browser model choices; defaults to no exclusions. */
+  readonly disabledProviders: Volatile<string[]>
+}
+
 /** Session Controller deployment policy. */
 export interface Config {
   /** Override platform desktop-opener detection. */
   readonly nativeOpen?: boolean
   /** Positive integral milliseconds of list work before yielding between complete rows. */
   readonly listWorkSliceMs?: number
+  /** Provider routes omitted from the browser model catalog while retaining their profiles and credentials. */
+  readonly disabledProviders?: string[]
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-session-controller -->
@@ -2086,7 +2097,7 @@ export interface LangflowSidecarConfig {
 
 - `inject`: `llm`
 - `refs`: [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
-- `source`: [`packages/llm/llm-antigravity/src/index.ts:81`](../packages/llm/llm-antigravity/src/index.ts)
+- `source`: [`packages/llm/llm-antigravity/src/index.ts:82`](../packages/llm/llm-antigravity/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config, doubling as the `llm-antigravity` settings-section shape. */
@@ -2142,7 +2153,7 @@ export interface AntigravityProviderProfile {
 
 - `inject`: `llm`
 - `refs`: [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
-- `source`: [`packages/llm/llm-claude/src/index.ts:109`](../packages/llm/llm-claude/src/index.ts)
+- `source`: [`packages/llm/llm-claude/src/index.ts:110`](../packages/llm/llm-claude/src/index.ts)
 
 ```ts config-catalog
 /**
@@ -2179,7 +2190,7 @@ export interface Config {
 
 - `inject`: `llm`
 - `refs`: [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
-- `source`: [`packages/llm/llm-codex/src/index.ts:128`](../packages/llm/llm-codex/src/index.ts)
+- `source`: [`packages/llm/llm-codex/src/index.ts:129`](../packages/llm/llm-codex/src/index.ts)
 
 ```ts config-catalog
 /**
@@ -2301,7 +2312,7 @@ export interface Config extends ProtocolConfig, ModelListingConfig {
 
 - `inject`: `llm`
 - `refs`: [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
-- `source`: [`packages/llm/llm-models-dev/src/index.ts:130`](../packages/llm/llm-models-dev/src/index.ts)
+- `source`: [`packages/llm/llm-models-dev/src/index.ts:131`](../packages/llm/llm-models-dev/src/index.ts)
 
 ```ts config-catalog
 /**
@@ -2358,7 +2369,7 @@ export interface ModelDevProviderProfile {
 
 - `inject`: `llm`
 - `refs`: [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
-- `source`: [`packages/llm/llm-openai/src/index.ts:120`](../packages/llm/llm-openai/src/index.ts)
+- `source`: [`packages/llm/llm-openai/src/index.ts:121`](../packages/llm/llm-openai/src/index.ts)
 
 ```ts config-catalog
 /**
@@ -2449,7 +2460,7 @@ export interface OpenAIProviderProfile {
 
 - `inject`: `llm`
 - `refs`: [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
-- `source`: [`packages/llm/llm-opencode/src/index.ts:140`](../packages/llm/llm-opencode/src/index.ts)
+- `source`: [`packages/llm/llm-opencode/src/index.ts:141`](../packages/llm/llm-opencode/src/index.ts)
 
 ```ts config-catalog
 /**
@@ -2461,6 +2472,10 @@ export interface OpenAIProviderProfile {
  * downstream verdict, not at plugin load.
  */
 export interface Config {
+  /** Use the registered OpenCode service explicitly, or select by stored credentials. */
+  transport?: 'auto' | 'service'
+  /** OpenCode agent used by service sessions; configure its system prompt for Harness delegation. */
+  agent?: string
   /** Explicit server base URL; skips file and CLI discovery. */
   serverURL?: string
   /** Basic-auth username; defaults to `opencode`. */
@@ -2512,7 +2527,7 @@ export interface Config {
 
 - `inject`: `llm`
 - `refs`: [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
-- `source`: [`packages/llm/llm-opengateway/src/index.ts:91`](../packages/llm/llm-opengateway/src/index.ts)
+- `source`: [`packages/llm/llm-opengateway/src/index.ts:92`](../packages/llm/llm-opengateway/src/index.ts)
 
 ```ts config-catalog
 /**
@@ -3150,7 +3165,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-model-intel`
 
-- `source`: [`packages/subagent/model-intel/src/index.ts:110`](../packages/subagent/model-intel/src/index.ts)
+- `source`: [`packages/subagent/model-intel/src/index.ts:111`](../packages/subagent/model-intel/src/index.ts)
 
 ```ts config-catalog
 /**
@@ -5576,7 +5591,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-web-search-zai`
 
 - `inject`: `web`
-- `source`: [`packages/web/web-search-zai/src/index.ts:41`](../packages/web/web-search-zai/src/index.ts)
+- `source`: [`packages/web/web-search-zai/src/index.ts:42`](../packages/web/web-search-zai/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config (all optional — `apply` fills env-var and constant defaults). */
@@ -5595,6 +5610,7 @@ export interface Config {
   count?: number
 }
 
+/** One supported Z.AI relative recency window, including unrestricted results. */
 export type SearchRecencyFilter = typeof SEARCH_RECENCY_FILTERS[number]
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-web-search-zai -->
@@ -5722,6 +5738,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-agent` | `sessionProjections` | [`packages/core/agent/src/index.ts`](../packages/core/agent/src/index.ts) |
 | `@deepseek-ai/dsh-agent-queue` | `storageDomain` · `workspaceRegistry` · `agents` | [`packages/interaction/agent-queue/src/index.ts`](../packages/interaction/agent-queue/src/index.ts) |
 | `@deepseek-ai/dsh-api-account-controller` | `deepseekAccount` · `agents` | [`packages/api/account-controller/src/index.ts`](../packages/api/account-controller/src/index.ts) |
+| `@deepseek-ai/dsh-api-oauth-controller` | — | [`packages/api/oauth-controller/src/index.ts`](../packages/api/oauth-controller/src/index.ts) |
 | `@deepseek-ai/dsh-api-remote-access` | — | [`packages/api/remote-access/src/index.ts`](../packages/api/remote-access/src/index.ts) |
 | `@deepseek-ai/dsh-api-remotes` | `typertGateway` | [`packages/api/remotes/src/index.ts`](../packages/api/remotes/src/index.ts) |
 | `@deepseek-ai/dsh-authorization` | `credentials` | [`packages/credentials/authorization/src/index.ts`](../packages/credentials/authorization/src/index.ts) |

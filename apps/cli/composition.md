@@ -58,6 +58,16 @@ flowchart LR
   cfg --> plugin_dsh_base_deepseek_account
   plugin_dsh_base_credentials["credentials<br/>@deepseek-ai/dsh-credentials-local"]
   cfg --> plugin_dsh_base_credentials
+  plugin_dsh_base_storage["storage<br/>@deepseek-ai/dsh-storage"]
+  cfg --> plugin_dsh_base_storage
+  plugin_dsh_base_storage_json["storage-json<br/>@deepseek-ai/dsh-storage-json"]
+  cfg --> plugin_dsh_base_storage_json
+  plugin_dsh_base_storage_domain["storage-domain<br/>@deepseek-ai/dsh-storage-domain"]
+  cfg --> plugin_dsh_base_storage_domain
+  plugin_dsh_base_flowbuilder_service["flowbuilder-service<br/>@deepseek-ai/dsh-flowbuilder-service"]
+  cfg --> plugin_dsh_base_flowbuilder_service
+  plugin_dsh_base_langflow_sidecar["langflow-sidecar<br/>@deepseek-ai/dsh-langflow-sidecar"]
+  cfg --> plugin_dsh_base_langflow_sidecar
   plugin_dsh_base_llm_pi_ai["llm-pi-ai<br/>@deepseek-ai/dsh-llm-pi-ai"]
   cfg --> plugin_dsh_base_llm_pi_ai
   plugin_dsh_base_session_persistence_jsonl["session-persistence-jsonl<br/>@deepseek-ai/dsh-session-persistence-jsonl"]
@@ -156,6 +166,8 @@ flowchart LR
   cfg --> plugin_dsh_base_workflow_ptc
   plugin_dsh_base_tool_workflow["tool-workflow<br/>@deepseek-ai/dsh-tool-workflow"]
   cfg --> plugin_dsh_base_tool_workflow
+  plugin_dsh_base_tool_flowbuilder["tool-flowbuilder<br/>@deepseek-ai/dsh-tool-flowbuilder"]
+  cfg --> plugin_dsh_base_tool_flowbuilder
   plugin_dsh_base_timeout_policy["timeout-policy<br/>@deepseek-ai/dsh-tool-call-timeout-policy"]
   cfg --> plugin_dsh_base_timeout_policy
   plugin_dsh_base_spill_local["spill-local<br/>@deepseek-ai/dsh-spill-local"]
@@ -172,6 +184,12 @@ flowchart LR
   cfg --> plugin_dsh_base_tool_todo
   plugin_dsh_base_tool_goal["tool-goal<br/>@deepseek-ai/dsh-tool-goal"]
   cfg --> plugin_dsh_base_tool_goal
+  plugin_dsh_base_gate_policy["gate-policy<br/>@deepseek-ai/dsh-gate-policy"]
+  cfg --> plugin_dsh_base_gate_policy
+  plugin_dsh_base_tool_anton_lifecycle["tool-anton-lifecycle<br/>@deepseek-ai/dsh-tool-anton-lifecycle"]
+  cfg --> plugin_dsh_base_tool_anton_lifecycle
+  plugin_dsh_base_gate_policy["gate-policy<br/>@deepseek-ai/dsh-gate-policy"]
+  cfg --> plugin_dsh_base_gate_policy
   plugin_dsh_base_repeat_tool_reminder["repeat-tool-reminder<br/>@deepseek-ai/dsh-repeat-tool-reminder"]
   cfg --> plugin_dsh_base_repeat_tool_reminder
   plugin_dsh_base_web["web<br/>@deepseek-ai/dsh-web"]
@@ -182,6 +200,8 @@ flowchart LR
   cfg --> plugin_dsh_base_web_deepseek_api
   plugin_dsh_base_web_fetch_http["web-fetch-http<br/>@deepseek-ai/dsh-web-fetch-http"]
   cfg --> plugin_dsh_base_web_fetch_http
+  plugin_dsh_base_web_search_zai["web-search-zai<br/>@deepseek-ai/dsh-web-search-zai"]
+  cfg --> plugin_dsh_base_web_search_zai
   plugin_dsh_base_tool_web["tool-web<br/>@deepseek-ai/dsh-tool-web"]
   cfg --> plugin_dsh_base_tool_web
   plugin_dsh_base_mcp_resources["mcp-resources<br/>@deepseek-ai/dsh-mcp-resources"]
@@ -202,6 +222,32 @@ flowchart LR
   cfg --> plugin_dsh_base_llm_deepseek
   plugin_dsh_base_llm_deepseek_account["llm-deepseek-account<br/>@deepseek-ai/dsh-llm-deepseek-account"]
   cfg --> plugin_dsh_base_llm_deepseek_account
+  plugin_dsh_base_tool_anton_lifecycle["tool-anton-lifecycle<br/>@deepseek-ai/dsh-tool-anton-lifecycle"]
+  cfg --> plugin_dsh_base_tool_anton_lifecycle
+  plugin_dsh_base_model_intel["model-intel<br/>@deepseek-ai/dsh-model-intel"]
+  cfg --> plugin_dsh_base_model_intel
+  plugin_dsh_base_llm_openai["llm-openai<br/>@deepseek-ai/dsh-llm-openai"]
+  cfg --> plugin_dsh_base_llm_openai
+  plugin_dsh_base_llm_models_dev["llm-models-dev<br/>@deepseek-ai/dsh-llm-models-dev"]
+  cfg --> plugin_dsh_base_llm_models_dev
+  plugin_dsh_base_llm_opencode["llm-opencode<br/>@deepseek-ai/dsh-llm-opencode"]
+  cfg --> plugin_dsh_base_llm_opencode
+  plugin_dsh_base_llm_opengateway["llm-opengateway<br/>@deepseek-ai/dsh-llm-opengateway"]
+  cfg --> plugin_dsh_base_llm_opengateway
+  plugin_dsh_base_llm_vazhi["llm-vazhi<br/>@deepseek-ai/dsh-llm-vazhi"]
+  cfg --> plugin_dsh_base_llm_vazhi
+  plugin_dsh_base_llm_codex["llm-codex<br/>@deepseek-ai/dsh-llm-codex"]
+  cfg --> plugin_dsh_base_llm_codex
+  plugin_dsh_base_llm_antigravity["llm-antigravity<br/>@deepseek-ai/dsh-llm-antigravity"]
+  cfg --> plugin_dsh_base_llm_antigravity
+  plugin_dsh_base_llm_claude["llm-claude<br/>@deepseek-ai/dsh-llm-claude"]
+  cfg --> plugin_dsh_base_llm_claude
+  plugin_dsh_base_flowbuilder_service["flowbuilder-service<br/>@deepseek-ai/dsh-flowbuilder-service"]
+  cfg --> plugin_dsh_base_flowbuilder_service
+  plugin_dsh_base_langflow_sidecar["langflow-sidecar<br/>@deepseek-ai/dsh-langflow-sidecar"]
+  cfg --> plugin_dsh_base_langflow_sidecar
+  plugin_dsh_base_tool_flowbuilder["tool-flowbuilder<br/>@deepseek-ai/dsh-tool-flowbuilder"]
+  cfg --> plugin_dsh_base_tool_flowbuilder
 ```
 
 | Plugin id | Package / module |
@@ -231,6 +277,11 @@ flowchart LR
 | `authorization` | `@deepseek-ai/dsh-authorization` |
 | `deepseek-account` | `@deepseek-ai/dsh-deepseek-account-platform` |
 | `credentials` | `@deepseek-ai/dsh-credentials-local` |
+| `storage` | `@deepseek-ai/dsh-storage` |
+| `storage-json` | `@deepseek-ai/dsh-storage-json` |
+| `storage-domain` | `@deepseek-ai/dsh-storage-domain` |
+| `flowbuilder-service` | `@deepseek-ai/dsh-flowbuilder-service` |
+| `langflow-sidecar` | `@deepseek-ai/dsh-langflow-sidecar` |
 | `llm-pi-ai` | `@deepseek-ai/dsh-llm-pi-ai` |
 | `session-persistence-jsonl` | `@deepseek-ai/dsh-session-persistence-jsonl` |
 | `attachment-local` | `@deepseek-ai/dsh-attachment-local` |
@@ -280,6 +331,7 @@ flowchart LR
 | `ptc-runtime` | `@deepseek-ai/dsh-ptc-runtime-node` |
 | `workflow-ptc` | `@deepseek-ai/dsh-workflow-ptc` |
 | `tool-workflow` | `@deepseek-ai/dsh-tool-workflow` |
+| `tool-flowbuilder` | `@deepseek-ai/dsh-tool-flowbuilder` |
 | `timeout-policy` | `@deepseek-ai/dsh-tool-call-timeout-policy` |
 | `spill-local` | `@deepseek-ai/dsh-spill-local` |
 | `spill-policy` | `@deepseek-ai/dsh-spill-policy` |
@@ -288,11 +340,15 @@ flowchart LR
 | `image-offload` | `@deepseek-ai/dsh-compaction-image-offload` |
 | `tool-todo` | `@deepseek-ai/dsh-tool-todo` |
 | `tool-goal` | `@deepseek-ai/dsh-tool-goal` |
+| `gate-policy` | `@deepseek-ai/dsh-gate-policy` |
+| `tool-anton-lifecycle` | `@deepseek-ai/dsh-tool-anton-lifecycle` |
+| `gate-policy` | `@deepseek-ai/dsh-gate-policy` |
 | `repeat-tool-reminder` | `@deepseek-ai/dsh-repeat-tool-reminder` |
 | `web` | `@deepseek-ai/dsh-web` |
 | `web-search-deepseek` | `@deepseek-ai/dsh-web-search-deepseek` |
 | `web-deepseek-api` | `@deepseek-ai/dsh-web-deepseek-api` |
 | `web-fetch-http` | `@deepseek-ai/dsh-web-fetch-http` |
+| `web-search-zai` | `@deepseek-ai/dsh-web-search-zai` |
 | `tool-web` | `@deepseek-ai/dsh-tool-web` |
 | `mcp-resources` | `@deepseek-ai/dsh-mcp-resources` |
 | `tools` | `@deepseek-ai/dsh-tools` |
@@ -303,6 +359,19 @@ flowchart LR
 | `fs-sandbox` | `@deepseek-ai/dsh-fs-sandbox` |
 | `llm-deepseek` | `@deepseek-ai/dsh-llm-deepseek-api-key` |
 | `llm-deepseek-account` | `@deepseek-ai/dsh-llm-deepseek-account` |
+| `tool-anton-lifecycle` | `@deepseek-ai/dsh-tool-anton-lifecycle` |
+| `model-intel` | `@deepseek-ai/dsh-model-intel` |
+| `llm-openai` | `@deepseek-ai/dsh-llm-openai` |
+| `llm-models-dev` | `@deepseek-ai/dsh-llm-models-dev` |
+| `llm-opencode` | `@deepseek-ai/dsh-llm-opencode` |
+| `llm-opengateway` | `@deepseek-ai/dsh-llm-opengateway` |
+| `llm-vazhi` | `@deepseek-ai/dsh-llm-vazhi` |
+| `llm-codex` | `@deepseek-ai/dsh-llm-codex` |
+| `llm-antigravity` | `@deepseek-ai/dsh-llm-antigravity` |
+| `llm-claude` | `@deepseek-ai/dsh-llm-claude` |
+| `flowbuilder-service` | `@deepseek-ai/dsh-flowbuilder-service` |
+| `langflow-sidecar` | `@deepseek-ai/dsh-langflow-sidecar` |
+| `tool-flowbuilder` | `@deepseek-ai/dsh-tool-flowbuilder` |
 
 Source config: [`packages/bundle/base/cordis.patch.yml`](../../packages/bundle/base/cordis.patch.yml).
 

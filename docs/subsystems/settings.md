@@ -29,13 +29,13 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 Project Config schemas into forms and own optional instance-level UI policy.
 
 ```ts cordis-catalog
-/** Register the calling plugin instance's page policy without changing its Config.
- * @param presentation Automatic-page policy for this instance; `auto` defaults to true.
+/** Register the calling plugin instance's form and page policy without changing its Config.
+ * @param presentation `auto` controls generated pages; `editableConfig` exposes ordinary fields through the profile editor.
  * @param owner Plugin instance the policy belongs to; defaults to the calling fiber.
  * @returns Disposer; register it with the calling plugin's effects.
  * @throws If this instance already has a registered policy.
  */
-configure(presentation: { auto?: boolean }, owner: Fiber = this.ctx.fiber): () => void
+configure(presentation: { auto?: boolean; editableConfig?: boolean }, owner: Fiber = this.ctx.fiber): () => void
 
 /** Locate the profile patch for native editing.
  * @returns The existing profile patch path.
@@ -55,7 +55,7 @@ describe(options?: SettingsDescribeOptions): SettingsDescriptor[]
  */
 async update(ns: string, patch: object, expectedRevision?: number): Promise<void>
 
-/** Reset all live fields, then set the supplied fields; ordinary config is preserved.
+/** Reset editable fields, then set the supplied fields; hidden config is preserved.
  * @param ns Profile entry id.
  * @param section Complete form values.
  * @param expectedRevision Revision returned by describe.

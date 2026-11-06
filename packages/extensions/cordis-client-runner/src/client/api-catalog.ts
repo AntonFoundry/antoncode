@@ -83,8 +83,8 @@ export interface TypeApiEntry {
 export const SERVICE_API: readonly ServiceApiEntry[] = [
   {
     key: 'layout',
-    summary: 'Panel navigation and geometry actions exposed through ctx.layout.',
-    description: 'Panel navigation and geometry actions exposed through ctx.layout.',
+    summary: 'The outward layout face (`ctx.layout`): the panel transitions other plugins may trigger — and exactly what a test fake must supply.',
+    description: 'The outward layout face (`ctx.layout`): the panel transitions other plugins may trigger — and exactly what a test fake must supply. The attachPanels/attachWm wiring hooks stay on the concrete class (root-entry assembly only).',
     methods: [
       {
         signature: 'selectPanel(panelId: MainPanelId | null): void',
@@ -99,18 +99,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'a signal aborted by the next navigation or layout disposal; check it before committing UI state.',
       },
       {
-        signature: 'toggleSidebar(): void',
-        description: 'Toggle the sidebar panel (closed ⟷ contract default width).',
-        parameters: [],
-      },
-      {
         signature: 'openRightbar(track: boolean, fullscreen: boolean): void',
-        description: 'Report the right panel\'s presentation without changing its expanded state.',
-        parameters: [{ name: 'track', description: 'whether the normal panel width reserves a grid track, including beneath a fullscreen overlay.' }, { name: 'fullscreen', description: 'whether the panel covers the frame and hides its outer resize handle; independent of the underlying grid track.' }],
+        description: 'Report the right panel\'s presentation without changing its expanded state. A hidden-to-shown report shows the right panel\'s buffer in a window.',
+        parameters: [{ name: 'track', description: 'whether the normal panel width reserves space beside the centre.' }, { name: 'fullscreen', description: 'whether the panel covers the frame.' }],
       },
       {
         signature: 'closeRightbar(): void',
-        description: 'Report the right panel as hidden: no track, no handle.',
+        description: 'Report the right panel as hidden; a shown-to-hidden report quits its window.',
+        parameters: [],
+      },
+      {
+        signature: 'toggleSidebar(): void',
+        description: 'Toggle the sidebar panel (closed ⟷ contract default width).',
         parameters: [],
       },
     ],
@@ -271,7 +271,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'setTheme(id: string): void',
-        description: 'Switch the theme preference — the only user preference write entry. Built-in preferences are written through the settings scope and every accepted value emits `theme/change`.',
+        description: 'Switch the theme preference — the only user preference write entry. Built-in preferences are written through the settings scope and every accepted value emits `theme/change`. Clears the boot-default marker: an explicit choice is a user palette, protected from scope adoption.',
         parameters: [{ name: 'id', description: 'a registered theme id or `system`; unknown ids throw.' }],
       },
       {
@@ -362,7 +362,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: 'startSession(workspaceId?: WorkspaceId, options?: StartSessionOptions): void',
         description: 'Open the Workspace blank `connectWorkspace` resolves, so New Session returns to that blank\'s unsent draft. A creation the Host refuses is shown through the Workspace notice and leaves the selection as it was.',
-        parameters: [{ name: 'workspaceId', description: 'explicit target; absent inherits the current or most recent Workspace.' }, { name: 'options', description: 'initial content, the blank\'s preset, and `whenDraftExists`, which decides whether existing text or attachments are kept, replaced, or followed by the prompt.' }],
+        parameters: [{ name: 'workspaceId', description: 'explicit target, preserved regardless of worktree preferences; absent inherits the current or most recent Workspace and applies its worktree preference.' }, { name: 'options', description: 'initial content, the blank\'s preset, and `whenDraftExists`, which decides whether existing text or attachments are kept, replaced, or followed by the prompt.' }],
       },
       {
         signature: 'archiveSession(sessionId: SessionId, options?: { readonly stopActivity?: boolean }): Promise<void>',
@@ -1065,7 +1065,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ThemeDefinition',
-    declaration: 'export interface ThemeDefinition {\n    id: string;\n    colorScheme: \'light\' | \'dark\';\n    tokens: ThemeTokens;\n    icons?: IconReplacements | undefined;\n}',
+    declaration: 'export interface ThemeDefinition {\n    id: string;\n    colorScheme: \'light\' | \'dark\';\n    tokens: ThemeTokens;\n    syntax?: ThemeSyntaxPalette;\n    icons?: IconReplacements | undefined;\n}',
   },
   {
     name: 'ThemePreference',
@@ -1074,6 +1074,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ThemeSnapshot',
     declaration: 'export interface ThemeSnapshot {\n    preference: ThemePreference;\n    fontSizes: FontSizes;\n    fontFamilies: FontFamilies;\n    active: ThemeDefinition;\n    themes: readonly ThemeDefinition[];\n    revision: number;\n}',
+  },
+  {
+    name: 'ThemeSyntaxPalette',
+    declaration: 'export type ThemeSyntaxPalette = Record<string, string>;',
   },
   {
     name: 'ThemeTokenModes',

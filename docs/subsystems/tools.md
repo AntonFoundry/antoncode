@@ -634,25 +634,6 @@ The full presentation field docs live in [`packages/core/tools/src/presentation.
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
-<a id="ctxtoolmatcher--toolmatcher"></a>
-
-### `ctx.toolMatcher` — `ToolMatcher`
-
-The intent-to-tools matcher a deployment may mount as the `toolMatcher` service. Consumed opportunistically (`ctx.get('toolMatcher')`, no static inject — the same idiom as the approval seam): a deployment without one falls back to defaultToolMatcher, and the registry stays active either way. Implementations must be deterministic for a stable catalog — the returned names ride the prefix-cached prompt the next turn.
-
-```ts cordis-catalog
-/**
- * Rank the catalog against one intent.
- * @param intent - the model's free-text need, exactly as passed to `tool_search`.
- * @param candidates - the calling scope's full pre-paging catalog (restrictions applied, transports excluded).
- * @param limit - the clamped maximum number of names to return.
- * @returns the matched tool names, best first; unknown names are dropped by the transport.
- */
-match(intent: string, candidates: readonly ToolSchema[], limit: number): string[] | Promise<string[]>
-```
-
-Source: [`packages/core/tools/src/paged-mode.ts`](../../packages/core/tools/src/paged-mode.ts)
-
 <a id="ctxtools--toolsservice"></a>
 
 ### `ctx.tools` — `ToolsService`
@@ -716,19 +697,6 @@ async resolve(context: ToolActivationContext): Promise<ResolvedToolSet>
  * @returns definitions after scoped shadowing and restrictions, limited to the step's admission when given.
  */
 definitions(scope?: ScopeKey, toolSet?: ResolvedToolSet): readonly ToolDefinition[]
-
-/**
- * Look up a tool for PRESENTATION only (event render intent, transcript
- * replay): the pre-paging capability view. A `paged` grant is one agent's
- * session-lifetime state, so the model-facing {@link get} hides a granted
- * tool from every cold reader — a history page or replayed session would
- * lose its presenter views for exactly the calls it records. Restrictions
- * and scoped shadowing still apply; only the grant filter does not.
- * @param name - the tool name as registered.
- * @param scope - the viewing scope (the agent); omitted = the global view.
- * @returns the definition the scope resolves for rendering, or undefined when none exists.
- */
-getPresentable(name: string, scope?: ScopeKey): ToolDefinition | undefined
 
 /**
  * Project visible definitions onto the allowlisted model-facing schema fields,
@@ -824,18 +792,19 @@ Source: [`packages/core/tools/src/events.ts`](../../packages/core/tools/src/even
 
 #### `tools/post-execute` — waterfall
 
-Accept, replace, enrich, or block a normalized dispatch result. `next()` accepts it unchanged; thrown tools still reach this waterfall as errors. Async listeners must observe `exec.signal`; after they settle, caller cancellation replaces only a successful accepted outcome with the code selected by whether the tool body was invoked. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent's calls.
+Accept, replace, enrich, or block a normalized call result. `next()` accepts it unchanged; thrown tools and calls rejected for invalid arguments reach this waterfall as errors, even when the tool body was not invoked. Async listeners must observe `exec.signal`; after they settle, caller cancellation replaces only a successful accepted outcome with the code selected by whether the tool body was invoked. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent's calls.
 
 ```ts cordis-catalog
 /**
- * Accept, replace, enrich, or block a normalized dispatch result. `next()`
- * accepts it unchanged; thrown tools still reach this waterfall as errors. Async
+ * Accept, replace, enrich, or block a normalized call result. `next()` accepts
+ * it unchanged; thrown tools and calls rejected for invalid arguments reach
+ * this waterfall as errors, even when the tool body was not invoked. Async
  * listeners must observe `exec.signal`; after they settle, caller
  * cancellation replaces only a successful accepted outcome with the code
  * selected by whether the tool body was invoked.
  * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent's calls.
- * @param exec - the call that just ran (name, parsed arguments, caller agent).
- * @param result - the dispatch outcome a listener may accept, replace, or block.
+ * @param exec - the completed or rejected call (name, parsed arguments, caller agent).
+ * @param result - the call outcome a listener may accept, replace, or block.
  * @mode waterfall
  */
 'tools/post-execute'(this: Scoped<ToolsService>, exec: ToolExecution, result: Readonly<ToolExecutionResult>, next: () => Promise<PostToolDecision>): Promise<PostToolDecision>

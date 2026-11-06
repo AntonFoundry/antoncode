@@ -2861,6 +2861,61 @@
       "doc": "docs/subsystems/forge.md",
       "symbol": "ForgeLocalChanges",
       "source": "packages/experimental/client-ui-forge/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/agent-queue.md",
+      "symbol": "PublishRequest",
+      "source": "packages/interaction/agent-queue/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/agent-queue.md",
+      "symbol": "ReadPage",
+      "source": "packages/interaction/agent-queue/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/agent-queue.md",
+      "symbol": "QueueNotice",
+      "source": "packages/interaction/agent-queue/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/agent-queue.md",
+      "symbol": "QueueListener",
+      "source": "packages/interaction/agent-queue/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/agent-queue.md",
+      "symbol": "DirectSendRequest",
+      "source": "packages/interaction/agent-queue/src/direct.ts"
+    },
+    {
+      "doc": "docs/subsystems/agent-queue.md",
+      "symbol": "DirectInboxPage",
+      "source": "packages/interaction/agent-queue/src/direct.ts"
+    },
+    {
+      "doc": "docs/subsystems/agent-queue.md",
+      "symbol": "DirectPeer",
+      "source": "packages/interaction/agent-queue/src/direct.ts"
+    },
+    {
+      "doc": "docs/subsystems/agent-queue.md",
+      "symbol": "DirectIdentity",
+      "source": "packages/interaction/agent-queue/src/direct.ts"
+    },
+    {
+      "doc": "docs/subsystems/agent-queue.md",
+      "symbol": "DirectAddressOptions",
+      "source": "packages/interaction/agent-queue/src/direct.ts"
+    },
+    {
+      "doc": "docs/subsystems/agent-queue.md",
+      "symbol": "QueueMessage",
+      "source": "packages/interaction/agent-queue/src/spec.ts"
+    },
+    {
+      "doc": "docs/subsystems/agent-queue.md",
+      "symbol": "DirectMessage",
+      "source": "packages/interaction/agent-queue/src/direct-spec.ts"
     }
   ]
 }

@@ -593,58 +593,6 @@ Types: [SessionId](core.md)
 
 Source: [`packages/workspace/workspace/src/index.ts`](../../packages/workspace/workspace/src/index.ts)
 
-<a id="workspace-events"></a>
-
-### `workspace/*` events
-
-<a id="workspacesession-activity--waterfall"></a>
-
-#### `workspace/session-activity` — waterfall
-
-Ask the composed providers what still runs for a session before it is archived. A listener prepends its own SessionActivity entries to the result of `next()`; the registry's innermost callback returns an empty list, so a composition without providers archives freely. Any non-empty result refuses the archive without a write.
-
-```ts cordis-catalog
-/**
- * Ask the composed providers what still runs for a session before it is
- * archived. A listener prepends its own {@link SessionActivity} entries to
- * the result of `next()`; the registry's innermost callback returns an
- * empty list, so a composition without providers archives freely. Any
- * non-empty result refuses the archive without a write.
- * @param request - the session about to be archived.
- * @param next - delegate to the remaining providers.
- * @mode waterfall
- */
-'workspace/session-activity'( request: SessionActivityRequest, next: () => Promise<readonly SessionActivity[]>, ): Promise<readonly SessionActivity[]>
-```
-
-Source: [`packages/workspace/workspace/src/index.ts`](../../packages/workspace/workspace/src/index.ts)
-
-<a id="workspacesession-stop--parallel"></a>
-
-#### `workspace/session-stop` — parallel
-
-Stop a session's running work because the caller archived it with `stopActivity`; the archive set is durable when this dispatches. Each provider stops its own families — cancelling a turn, its subagent descendants, owned jobs, or active schedules — through the same cancel paths the user's own stop actions use, so the session log ends every open turn regularly and a later unarchive can continue the conversation. Listeners issue their stop requests without waiting for running work to settle; a listener may await its own durability barrier. A rejection is logged by the registry and does not undo the archive.
-
-```ts cordis-catalog
-/**
- * Stop a session's running work because the caller archived it with
- * `stopActivity`; the archive set is durable when this dispatches. Each
- * provider stops its own families — cancelling a turn, its subagent
- * descendants, owned jobs, or active schedules — through the same cancel
- * paths the user's own stop actions use, so the session log ends every
- * open turn regularly and a later unarchive can continue the
- * conversation. Listeners issue their stop requests without waiting for
- * running work to settle; a listener may await its own durability
- * barrier. A rejection is logged by the registry and does not undo the
- * archive.
- * @param request - the session being archived.
- * @mode parallel
- */
-'workspace/session-stop'(request: SessionActivityRequest): Promise<void> | void
-```
-
-Source: [`packages/workspace/workspace/src/index.ts`](../../packages/workspace/workspace/src/index.ts)
-
 <a id="ctxworktreeregistry--worktreeregistry"></a>
 
 ### `ctx.worktreeRegistry` — `WorktreeRegistry`
@@ -741,4 +689,56 @@ async remove(id: WorktreeId, opts: { force?: boolean } = {}): Promise<void>
 ```
 
 Source: [`packages/workspace/worktree/src/index.ts`](../../packages/workspace/worktree/src/index.ts)
+
+<a id="workspace-events"></a>
+
+### `workspace/*` events
+
+<a id="workspacesession-activity--waterfall"></a>
+
+#### `workspace/session-activity` — waterfall
+
+Ask the composed providers what still runs for a session before it is archived. A listener prepends its own SessionActivity entries to the result of `next()`; the registry's innermost callback returns an empty list, so a composition without providers archives freely. Any non-empty result refuses the archive without a write.
+
+```ts cordis-catalog
+/**
+ * Ask the composed providers what still runs for a session before it is
+ * archived. A listener prepends its own {@link SessionActivity} entries to
+ * the result of `next()`; the registry's innermost callback returns an
+ * empty list, so a composition without providers archives freely. Any
+ * non-empty result refuses the archive without a write.
+ * @param request - the session about to be archived.
+ * @param next - delegate to the remaining providers.
+ * @mode waterfall
+ */
+'workspace/session-activity'( request: SessionActivityRequest, next: () => Promise<readonly SessionActivity[]>, ): Promise<readonly SessionActivity[]>
+```
+
+Source: [`packages/workspace/workspace/src/index.ts`](../../packages/workspace/workspace/src/index.ts)
+
+<a id="workspacesession-stop--parallel"></a>
+
+#### `workspace/session-stop` — parallel
+
+Stop a session's running work because the caller archived it with `stopActivity`; the archive set is durable when this dispatches. Each provider stops its own families — cancelling a turn, its subagent descendants, owned jobs, or active schedules — through the same cancel paths the user's own stop actions use, so the session log ends every open turn regularly and a later unarchive can continue the conversation. Listeners issue their stop requests without waiting for running work to settle; a listener may await its own durability barrier. A rejection is logged by the registry and does not undo the archive.
+
+```ts cordis-catalog
+/**
+ * Stop a session's running work because the caller archived it with
+ * `stopActivity`; the archive set is durable when this dispatches. Each
+ * provider stops its own families — cancelling a turn, its subagent
+ * descendants, owned jobs, or active schedules — through the same cancel
+ * paths the user's own stop actions use, so the session log ends every
+ * open turn regularly and a later unarchive can continue the
+ * conversation. Listeners issue their stop requests without waiting for
+ * running work to settle; a listener may await its own durability
+ * barrier. A rejection is logged by the registry and does not undo the
+ * archive.
+ * @param request - the session being archived.
+ * @mode parallel
+ */
+'workspace/session-stop'(request: SessionActivityRequest): Promise<void> | void
+```
+
+Source: [`packages/workspace/workspace/src/index.ts`](../../packages/workspace/workspace/src/index.ts)
 <!-- END GENERATED cordis-surface -->

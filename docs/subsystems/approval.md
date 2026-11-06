@@ -78,6 +78,15 @@ interface ApprovalRequest extends ApprovalRequestEvent {
    * immediately and a late answer from a still-pending answerer is discarded.
    */
   readonly signal?: AbortSignal
+  /**
+   * Skip the session policy short-circuit. Deployment-mandated confirmations
+   * (a guard gate asking the human to approve one dangerous call) are not the
+   * model's discretionary asks the `'never'` policy exists to silence — the
+   * gate only fires on configured dangerous patterns, so it always reaches
+   * the answerers. The answerer waterfall and fail-closed defaults are
+   * unchanged.
+   */
+  readonly bypassPolicy?: boolean
 }
 ```
 

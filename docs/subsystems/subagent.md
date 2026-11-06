@@ -384,7 +384,10 @@ The model-facing `list_agents` adapter reports current activity as `running` or 
 
 ```ts type-equiv
 /** One catalog descendant with its direct parent and edge distance from the requested root. */
-type SubagentDescendantListEntry = SubagentListEntry & {
+type SubagentDescendantListEntry = (
+  | (Extract<SubagentListEntry, { readonly kind: 'child' }> & SubagentChildFacts)
+  | Exclude<SubagentListEntry, { readonly kind: 'child' }>
+) & {
   /** Parent whose catalog contains this child. */
   readonly parentId: SessionId
   /** Edge distance from the requested root; direct children are `1`. */
@@ -401,14 +404,6 @@ type SubagentDescendantListEntry = SubagentListEntry & {
 ## Cordis API
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
-
-<a id="ctxsubagentmodelselection--subagentmodelselectionconfig"></a>
-
-### `ctx.subagentModelSelection` — `SubagentModelSelectionConfig`
-
-Host settings owner that records Session authorization before the first model request.
-
-Source: [`packages/subagent/tool-subagent/src/model-selection-settings.ts`](../../packages/subagent/tool-subagent/src/model-selection-settings.ts)
 
 <a id="ctxmodelintel--modelintelservice"></a>
 
@@ -454,7 +449,15 @@ async researchNow(trigger: string): Promise<void>
 
 Types: [AgentOptions](core.md)
 
-Source: [`packages/subagent/model-intel/src/index.ts:106`](../../packages/subagent/model-intel/src/index.ts)
+Source: [`packages/subagent/model-intel/src/index.ts`](../../packages/subagent/model-intel/src/index.ts)
+
+<a id="ctxsubagentmodelselection--subagentmodelselectionconfig"></a>
+
+### `ctx.subagentModelSelection` — `SubagentModelSelectionConfig`
+
+Host settings owner that records Session authorization before the first model request.
+
+Source: [`packages/subagent/tool-subagent/src/model-selection-settings.ts`](../../packages/subagent/tool-subagent/src/model-selection-settings.ts)
 
 <a id="ctxsubagents--subagentruntime"></a>
 
@@ -526,20 +529,17 @@ async sendMessage( sender: Agent, targetId: SessionId, content: ContentBlock[], 
 interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void
 
 /**
- * Replace one live child's model route for its next model request. The
- * selection applies to the retry of a step whose current route is failing —
- * an exhausted or rate-limited model does not have to keep retrying itself
- * until the user cancels — and to every later request the child makes.
- *
- * The override is process-local and lasts until the child Agent is disposed;
- * a cold resume composes the descriptor's creation route again. Unlike
- * {@link interrupt}, a missing live target is an error, not a no-op.
+ * Replace one live child's model route for its next model step. The choice is
+ * recorded as the child's own `model/selection` event, so it also governs a
+ * later cold resume of that child. Unlike {@link interrupt}, a missing live
+ * target is an error, not a no-op; selecting a non-live child's route is not
+ * supported.
  * @param targetSessionId - durable id of the live child whose route changes.
  * @param selection - complete provider, model, and optional reasoning effort.
  * @param authority - the exact live ancestor Agent.
  * @throws {SubagentError} `NOT_LIVE` when no Agent is published under the id.
- * @throws {SubagentError} `UNAUTHORIZED` when the authority does not own the
- *   live target.
+ * @throws {SubagentError} `UNAUTHORIZED` when the caller is stale, targets
+ *   itself, or is not a live ancestor of the target.
  */
 selectModel(targetSessionId: SessionId, selection: ModelSelection, authority: SubagentAncestorAuthority): void
 

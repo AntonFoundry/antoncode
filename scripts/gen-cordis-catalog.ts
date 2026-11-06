@@ -44,6 +44,8 @@ export { REGION_BEGIN, REGION_END }
  */
 export const SERVICE_PAGE: Record<string, string> = {
   headlessStartup: 'boot.md',
+  agentQueue: 'agent-queue.md',
+  agentDirectQueue: 'agent-queue.md',
   translator: 'translation.md',
   cotTranslation: 'translation.md',
   speechToText: 'voice-input.md',
@@ -139,7 +141,6 @@ export const SERVICE_PAGE: Record<string, string> = {
   agentTeams: 'agent-team.md',
   claudeCodeMods: 'claude-code-mods.md',
   tokenMeter: 'token-meter.md',
-  toolMatcher: 'tools.md',
   toolResultPruner: 'compaction.md',
   tools: 'tools.md',
   typert: 'typert.md',
@@ -218,8 +219,6 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   documentPreviews: 'client-side document renderer registry — docs/subsystems/sidebar-right.md owns the API',
   font: 'client-side interface-typed font service — packages/client/ui-theme/README.md owns the API',
   agentMailGateway: 'client-side optional gateway accessor (AgentMailGateway | undefined) — packages/client/ui-conversation-agent-mail/README.md owns the API',
-  agentQueue: 'host-owned durable workspace queue service (AgentQueue) — packages/interaction/agent-queue/README.md owns the API; no subsystems page renders it',
-  agentDirectQueue: 'host-owned cross-workspace direct-message service (AgentDirectQueue) — packages/interaction/agent-queue/README.md owns the API; no subsystems page renders it',
   claudeOAuth: 'optional host login-flow service (ClaudeLoginFlow | undefined) — packages/llm/llm-claude/README.md owns the API',
   opencodeOAuth: 'optional host login-flow service (ZenLoginFlow | undefined) — packages/llm/llm-opencode/README.md owns the API',
 }
@@ -301,6 +300,17 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
  * appear on more than one page.
  */
 export const LINK_MAP: Readonly<Record<string, string>> = {
+  PublishRequest: 'agent-queue.md',
+  ReadPage: 'agent-queue.md',
+  QueueNotice: 'agent-queue.md',
+  QueueListener: 'agent-queue.md',
+  DirectSendRequest: 'agent-queue.md',
+  DirectInboxPage: 'agent-queue.md',
+  DirectPeer: 'agent-queue.md',
+  DirectIdentity: 'agent-queue.md',
+  DirectAddressOptions: 'agent-queue.md',
+  QueueMessage: 'agent-queue.md',
+  DirectMessage: 'agent-queue.md',
   Principal: 'typert.md',
   PrincipalMap: 'typert.md',
   RemoteAccessResource: 'typert.md',

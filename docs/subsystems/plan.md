@@ -50,7 +50,7 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.planMode` — `PlanModeController`
 
-`ctx.planMode`: owns logged plan state, applies and narrates selected state at step start, the `plan:policy` section, the `/plan` command, and the conditional exit tool. Client carriers expose the projection's cropped `{ active, pending }` view. Agent prompt assembly fails while the projection reader is not ready; callers must await plugin activation before running an agent.
+`ctx.planMode`: owns logged plan state, applies and narrates selected state at step start, the `plan:policy` section, the `/plan` command, and the conditional exit tool. Client carriers expose the projection's cropped `{ active, pending, standingPlan }` view. Agent prompt assembly fails while the projection reader is not ready; callers must await plugin activation before running an agent.
 
 ```ts cordis-catalog
 /**

@@ -32,6 +32,19 @@ flowchart LR
   svc_pluginMarket["ctx.pluginMarket<br/>Plugin market index reader"]
   pkg_client_ui_plugin_market["client-ui-plugin-market"]
   svc_profileContext["ctx.profileContext<br/>Launcher-owned profile data"]
+  pkg_agent_queue["agent-queue"]
+  svc_agentQueue["ctx.agentQueue<br/>Durable workspace messaging"]
+  pkg_tool_agent_queue["tool-agent-queue"]
+  svc_agentDirectQueue["ctx.agentDirectQueue<br/>Cross-workspace direct messaging"]
+  pkg_flowbuilder_service["flowbuilder-service"]
+  svc_flowBuilder["ctx.flowBuilder<br/>Durable flow definitions and runs"]
+  pkg_tool_flowbuilder["tool-flowbuilder"]
+  pkg_apiproxy["apiproxy"]
+  pkg_langflow_sidecar["langflow-sidecar"]
+  svc_langflow["ctx.langflow<br/>Embedded LangFlow process"]
+  pkg_worktree["worktree"]
+  svc_worktreeRegistry["ctx.worktreeRegistry<br/>Git worktree registry"]
+  pkg_api_workspace_controller["api-workspace-controller"]
   pkg_client_connection["client-connection"]
   svc_connection["ctx.connection<br/>Authenticated browser transport"]
   pkg_api_gateway["api-gateway"]
@@ -88,6 +101,8 @@ flowchart LR
   svc_deepseekLlmApiExtensions["ctx.deepseekLlmApiExtensions<br/>Official DeepSeek request extensions"]
   pkg_session_log_deepseek["session-log-deepseek"]
   pkg_plugin_package_inventory_deepseek["plugin-package-inventory-deepseek"]
+  pkg_model_intel["model-intel"]
+  svc_modelIntel["ctx.modelIntel<br/>Researched child-model datasheet"]
   pkg_token_meter["token-meter"]
   svc_tokenMeter["ctx.tokenMeter<br/>Replay token measurement"]
   pkg_compaction_tool_result_pruner["compaction-tool-result-pruner"]
@@ -115,7 +130,6 @@ flowchart LR
   svc_workspaceChanges["ctx.workspaceChanges<br/>Host per-turn changed-file summaries"]
   pkg_api_terminal_controller["api-terminal-controller"]
   svc_terminalController["ctx.terminalController<br/>Session interactive terminal Remote controller"]
-  pkg_api_workspace_controller["api-workspace-controller"]
   svc_workspaceController["ctx.workspaceController<br/>Host Workspace Remote controller"]
   svc_directoryPickerController["ctx.directoryPickerController<br/>Host directory-picking Remote controller"]
   pkg_typert_registry["typert-registry"]
@@ -282,6 +296,7 @@ flowchart LR
   pkg_web_search_exa["web-search-exa"]
   pkg_web_search_perplexity["web-search-perplexity"]
   pkg_web_search_deepseek["web-search-deepseek"]
+  pkg_web_search_zai["web-search-zai"]
   pkg_web_deepseek_api["web-deepseek-api"]
   pkg_web_fetch_http["web-fetch-http"]
   pkg_spill["spill"]
@@ -319,6 +334,8 @@ flowchart LR
   pkg_agent_default_model --> svc_agentDefaultModel
   pkg_agent_loop --> svc_agentLoop
   pkg_agent_preset_registry --> svc_agentPresets
+  pkg_agent_queue --> svc_agentDirectQueue
+  pkg_agent_queue --> svc_agentQueue
   pkg_api_gateway --> svc_typertGateway
   pkg_api_job_controller --> svc_jobController
   pkg_api_remote_access --> svc_remoteAccess
@@ -379,6 +396,7 @@ flowchart LR
   pkg_experimental_worktree --> svc_worktrees
   pkg_file_reference --> svc_fileReferences
   pkg_file_reference_local --> svc_fileReferences
+  pkg_flowbuilder_service --> svc_flowBuilder
   pkg_fs --> svc_fs
   pkg_fs_local --> svc_fs
   pkg_fs_sandbox --> svc_fs
@@ -394,6 +412,7 @@ flowchart LR
   pkg_inspector --> svc_inspector
   pkg_jobs --> svc_jobs
   pkg_jobs_local --> svc_jobs
+  pkg_langflow_sidecar --> svc_langflow
   pkg_llm --> svc_llm
   pkg_llm_deepseek --> svc_llm
   pkg_llm_pi_ai --> svc_llm
@@ -403,6 +422,7 @@ flowchart LR
   pkg_mcp_client --> svc_mcpResources
   pkg_mcp_resources --> svc_mcpResources
   pkg_message_feedback --> svc_messageFeedback
+  pkg_model_intel --> svc_modelIntel
   pkg_office_to_pdf --> svc_officeToPdf
   pkg_otel --> svc_otel
   pkg_permission_presets --> svc_permissionPresets
@@ -474,18 +494,22 @@ flowchart LR
   pkg_web_search_deepseek --> svc_web
   pkg_web_search_exa --> svc_web
   pkg_web_search_perplexity --> svc_web
+  pkg_web_search_zai --> svc_web
   pkg_webhook --> svc_webhookRuntime
   pkg_workflow --> svc_workflowEngine
   pkg_workflow_ptc --> svc_workflowEngine
   pkg_working_directory --> svc_workingDirectory
   pkg_workspace --> svc_workspaceRegistry
   pkg_workspace_changes --> svc_workspaceChanges
+  pkg_worktree --> svc_worktreeRegistry
   svc_actionCards --> pkg_client_ui_action_cards
   svc_actionCards --> pkg_creation_recommendations
   svc_agentDefaultModel --> pkg_api_session_controller
   svc_agentDefaultModel --> pkg_headless
+  svc_agentDirectQueue --> pkg_tool_agent_queue
   svc_agentLoop --> pkg_base
   svc_agentLoop --> pkg_sdk_minimal
+  svc_agentQueue --> pkg_tool_agent_queue
   svc_agentTeams --> pkg_experimental_tool_agent_team
   svc_agents --> pkg_acp
   svc_agents --> pkg_agent_loop
@@ -521,6 +545,8 @@ flowchart LR
   svc_dynamicCordisRunner --> pkg_tool_cordis
   svc_fileReferences --> pkg_api_session_controller
   svc_fileUploads --> pkg_api_session_controller
+  svc_flowBuilder --> pkg_apiproxy
+  svc_flowBuilder --> pkg_tool_flowbuilder
   svc_forge --> pkg_experimental_client_ui_forge
   svc_forge --> pkg_experimental_forge_session
   svc_forgeSession --> pkg_experimental_client_ui_forge
@@ -532,6 +558,7 @@ flowchart LR
   svc_jobs --> pkg_tool_jobs
   svc_jobs --> pkg_tool_pwsh
   svc_jobs --> pkg_tool_terminal
+  svc_langflow --> pkg_apiproxy
   svc_llm --> pkg_agent_loop
   svc_llm --> pkg_compaction_basic
   svc_lsp --> pkg_tool_lsp
@@ -611,7 +638,6 @@ flowchart LR
   svc_systemPrompt --> pkg_tools
   svc_terminals --> pkg_tool_terminal
   svc_tokenMeter --> pkg_compaction_basic
-  svc_toolMatcher --> pkg_tools
   svc_toolResultPruner --> pkg_compaction_basic
   svc_tools --> pkg_agent_loop
   svc_tools --> pkg_tool_ask_user
@@ -643,6 +669,7 @@ flowchart LR
   svc_workingDirectory --> pkg_tool_working_directory
   svc_workspaceRegistry --> pkg_api_session_controller
   svc_workspaceRegistry --> pkg_api_workspace_controller
+  svc_worktreeRegistry --> pkg_api_workspace_controller
   svc_worktrees --> pkg_experimental_tool_worktree
   svc_fs -. event gate .-> pkg_fs_observation_policy
 ```
@@ -659,6 +686,11 @@ flowchart LR
 | `ctx.pluginManager` | `core` | [`plugin-manager`](../packages/boot/plugin-manager) | - | [`plugin-manager`](../packages/boot/plugin-manager), `ui-settings-plugin-inventory` | - | Shares profile package operations with the CLI and reports persisted and running state to Web and agent callers. |
 | `ctx.pluginMarket` | `core` | [`plugin-market`](../packages/boot/plugin-market) | - | [`client-ui-plugin-market`](../packages/client/ui-plugin-market), [`plugin-market`](../packages/boot/plugin-market) | - | Fetches and validates the index sources the user configures; installation goes through the plugin manager. |
 | `ctx.profileContext` | `core` | [`app-boot`](../packages/boot/app-boot) | - | [`plugin-manager`](../packages/boot/plugin-manager) | - | The dsh launcher supplies data-only profile locations and composition inputs; reload scheduling belongs to dsh-hmr. |
+| `ctx.agentQueue` | `service` | [`agent-queue`](../packages/interaction/agent-queue) | - | [`tool-agent-queue`](../packages/interaction/tool-agent-queue) | - | Retains workspace publications with frozen recipients and per-session acknowledgement cursors; delivery never wakes a model. |
+| `ctx.agentDirectQueue` | `service` | [`agent-queue`](../packages/interaction/agent-queue) | - | [`tool-agent-queue`](../packages/interaction/tool-agent-queue) | - | Discovers authorized live peers and retains cross-workspace messages in a global ledger with independent inbox cursors. |
+| `ctx.flowBuilder` | `service` | [`flowbuilder-service`](../packages/flowbuilder/flowbuilder-service) | - | [`tool-flowbuilder`](../packages/flowbuilder/tool-flowbuilder), `apiproxy` | - | Stores flow graphs, reusable blocks, and run records independently of the workflow execution engine. |
+| `ctx.langflow` | `service` | [`langflow-sidecar`](../packages/flowbuilder/langflow-sidecar) | - | `apiproxy` | - | Owns the local LangFlow subprocess and its readiness state for the Workflows tab. |
+| `ctx.worktreeRegistry` | `service` | [`worktree`](../packages/workspace/worktree) | - | [`api-workspace-controller`](../packages/api/workspace-controller) | - | Creates, inspects, and removes Git worktrees while retaining repository preferences and Workspace bindings. |
 | `ctx.connection` | `core` | [`client-connection`](../packages/client/connection) | - | [`api-gateway`](../packages/api/gateway), [`host-frontend-static`](../packages/host/frontend-static) | - | Owns browser authentication and shared HTTP request dispatch; API adapters register endpoints and streams. |
 | `ctx.forge` | `seam` | [`experimental-forge`](../packages/experimental/forge) | [`experimental-forge-github`](../packages/experimental/forge-github) | [`experimental-forge-session`](../packages/experimental/forge-session), [`experimental-client-ui-forge`](../packages/experimental/client-ui-forge) | - | Providers map remote and change request URLs, look up change requests by head branch, and read status in batches; watchers of one change request share one polling loop. |
 | `ctx.forgeSession` | `service` | [`experimental-forge-session`](../packages/experimental/forge-session) | - | [`experimental-client-ui-forge`](../packages/experimental/client-ui-forge) | - | A Session projection derives bindings from shell results and binding records and publishes their URLs without status to clients; push results trigger head-branch discovery, and Session watchers poll bound change requests through the forge registry. |
@@ -674,6 +706,7 @@ flowchart LR
 | `ctx.fileUploads` | `core` | [`client-file-upload`](../packages/client/file-upload) | - | [`api-session-controller`](../packages/api/session-controller) | - | Owns streaming intake, durable storage, and staged receipt lifetime; the Session controller binds receipts to accepted submissions. |
 | `ctx.llm` | `seam` | [`llm`](../packages/llm/llm) | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`llm-replay`](../packages/test-support/llm-replay) | [`agent-loop`](../packages/core/agent-loop), [`compaction-basic`](../packages/compaction/compaction-basic) | - | Adapters register provider implementations; the loop and compaction call the provider-neutral stream service. |
 | `ctx.deepseekLlmApiExtensions` | `seam` | [`deepseek-llm-api-extensions`](../packages/llm/deepseek-llm-api-extensions) | [`session-log-deepseek`](../packages/session/session-log-deepseek), [`plugin-package-inventory-deepseek`](../packages/llm/plugin-package-inventory-deepseek) | [`llm-deepseek`](../packages/llm/llm-deepseek) | - | Plugins prepare independent top-level fields; the official adapter merges them and commits their delivery state after HTTP acceptance. |
+| `ctx.modelIntel` | `core` | [`model-intel`](../packages/subagent/model-intel) | [`model-intel`](../packages/subagent/model-intel) | - | - | The scheduler refreshes a researched child-model datasheet; delegation resolvers query the `auto` route opportunistically. |
 | `ctx.tokenMeter` | `core` | [`token-meter`](../packages/llm/token-meter) | - | [`compaction-basic`](../packages/compaction/compaction-basic) | - | Owns isolated per-session replay folds; pressure consumers share immutable revisioned measurements. |
 | `ctx.toolResultPruner` | `core` | [`compaction-tool-result-pruner`](../packages/compaction/compaction-tool-result-pruner) | - | [`compaction-basic`](../packages/compaction/compaction-basic) | - | Rewrites oversized current tool results through replayable single-node surface replacements before summary compaction. |
 | `ctx.sessions` | `core` | [`session`](../packages/core/session) | - | [`agent-loop`](../packages/core/agent-loop), [`agent`](../packages/core/agent), [`session-persistence`](../packages/session/session-persistence), [`session-query`](../packages/session-query/session-query), [`session-query-sqlite`](../packages/session-query/session-query-sqlite), [`subagent`](../packages/subagent/subagent), [`message-feedback`](../packages/feedback/message-feedback) | - | Owns append-only Session instances and emits the durable session event feed. |
@@ -744,7 +777,7 @@ flowchart LR
 | `ctx.claudeCodeMods` | `core` | [`experimental-claude-code-mods`](../packages/experimental/claude-code-mods) | - | - | - | Loads mods that defineMod plugins add, raises their hook chains from harness extension points, and draws the band above the prompt over its Remote. |
 | `ctx.inspector` | `core` | `inspector` | - | - | - | Owns the Worker-hosted CDP target and the transport-independent Host and Client observation and Cordis-tree query API. |
 | `ctx.jobs` | `seam` | [`jobs`](../packages/jobs/jobs) | [`jobs-local`](../packages/jobs/jobs-local) | [`tool-bash`](../packages/shell/tool-bash), [`tool-pwsh`](../packages/shell/tool-pwsh), [`tool-terminal`](../packages/experimental/tool-terminal), [`tool-jobs`](../packages/jobs/tool-jobs), [`api-job-controller`](../packages/api/job-controller) | - | Producers (background bash/pwsh and PTY sends) register running work; record-declaring jobs additionally stream raw output for non-consuming observers; tool-jobs is the model-facing controller that reads, lists, and kills it; jobs-local is the process-local registry. |
-| `ctx.web` | `seam` | [`web`](../packages/web/web) | [`web-search-exa`](../packages/web/web-search-exa), [`web-search-perplexity`](../packages/web/web-search-perplexity), [`web-search-deepseek`](../packages/web/web-search-deepseek), [`web-deepseek-api`](../packages/web/web-deepseek-api), [`web-fetch-http`](../packages/web/web-fetch-http) | [`tool-web`](../packages/web/tool-web) | - | Search and fetch providers register into one ctx.web seam; tool-web owns the stable model-facing names. |
+| `ctx.web` | `seam` | [`web`](../packages/web/web) | [`web-search-exa`](../packages/web/web-search-exa), [`web-search-perplexity`](../packages/web/web-search-perplexity), [`web-search-deepseek`](../packages/web/web-search-deepseek), [`web-search-zai`](../packages/web/web-search-zai), [`web-deepseek-api`](../packages/web/web-deepseek-api), [`web-fetch-http`](../packages/web/web-fetch-http) | [`tool-web`](../packages/web/tool-web) | - | Search and fetch providers register into one ctx.web seam; tool-web owns the stable model-facing names. |
 | `ctx.spillStore` | `seam` | [`spill`](../packages/spill/spill) | [`spill-local`](../packages/spill/spill-local) | [`spill-policy`](../packages/spill/spill-policy) | - | The backend saves oversized tool text and returns a model-facing locator plus retrieval hint; spill-policy is the tools/post-execute consumer that decides when to spill. |
 | `ctx.directoryPicker` | `seam` | [`host-directory-picker`](../packages/host/directory-picker) | [`host-directory-picker-native`](../packages/host/directory-picker-native), [`host-directory-picker-browse`](../packages/host/directory-picker-browse) | [`api-workspace-controller`](../packages/api/workspace-controller) | - | Discriminated interaction capability: the native backend opens one OS chooser on the host display, the browse backend serves listing/creation primitives for the in-app browser; dual-face backends fill ui-workspace directory-flow slots from their browser halves (no wire advertisement). |
 | `ctx.webServer` | `core` | [`host-webserver`](../packages/host/webserver) | - | [`client-connection`](../packages/client/connection), [`client-modules`](../packages/client/modules), [`client-hmr`](../packages/client/hmr) | - | Plain node:http carrier: named-route registry, index transform taps, and the static dist fallback; web-transport plugins register their own routes. |

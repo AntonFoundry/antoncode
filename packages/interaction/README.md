@@ -26,6 +26,7 @@ Each package README and its subsystem reference own the exhaustive contracts.
 
 | Package | Role | ctx key |
 |---|---|---|
+| [`agent-queue/`](agent-queue/README.md) | Retains addressed workspace publications and cross-workspace direct mail without waking agents | `ctx.agentQueue`, `ctx.agentDirectQueue` |
 | [`commands/`](commands/README.md) | Lets users type slash commands that run directly against an agent without a model round trip | `ctx.commands` |
 | [`user-approval/`](user-approval/README.md) | Asks composed answerers for one-shot allow/reject decisions and fails closed without one | `ctx.approval` |
 | [`permission-presets/`](permission-presets/README.md) | Bundles sandbox mode with an approval policy into one user-facing Permissions selector | `ctx.permissionPresets` |
@@ -39,6 +40,7 @@ Each package README and its subsystem reference own the exhaustive contracts.
 
 Start with the subsystem references for the shared vocabularies, then the neighboring automation and composition surfaces.
 
+- [Agent queues subsystem](../../docs/subsystems/agent-queue.md) — publications, direct discovery, and acknowledgement cursors.
 - [Commands subsystem](../../docs/subsystems/commands.md) — command registry semantics and the `ctx.commands` Cordis surface.
 - [Approval subsystem](../../docs/subsystems/approval.md) — request/outcome vocabulary, the answerer waterfall, and per-session policy.
 - [Permission presets subsystem](../../docs/subsystems/permission-presets.md) — the preset table and the knob write-through.
