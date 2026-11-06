@@ -28,6 +28,7 @@ export interface RunnerOptions {
  * once per animation tick until it returns null (animation complete).
  */
 export class RevealRunner {
+  /** Engine and arena owned by this reveal, with the effect already built. */
   readonly ctx: EngineCtx
   readonly #effect: TtfxEffect
 

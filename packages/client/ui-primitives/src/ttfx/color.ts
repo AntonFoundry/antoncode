@@ -104,6 +104,7 @@ export type GradientDirection = 'vertical' | 'horizontal' | 'diagonal' | 'radial
  * by contract (see {@link Gradient.build}).
  */
 export class Gradient {
+  /** Ordered non-empty color samples, shared with the constructor caller. */
   readonly spectrum: Rgb[]
 
   /** @param spectrum - precomputed color list (see {@link Gradient.build}). */

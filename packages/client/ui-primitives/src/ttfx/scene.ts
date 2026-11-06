@@ -40,10 +40,15 @@ export type SyncMetric = 'step' | 'distance'
 
 /** One scene frame: symbol + fg + optional bg + duration in ticks. */
 export class Frame {
+  /** Symbol displayed for this frame. */
   readonly sym: string
+  /** Foreground override; null resolves to the character home color. */
   readonly fg: Rgb | null
+  /** Background override; null resolves to the character home color. */
   readonly bg: Rgb | null
+  /** Ticks for which this frame remains in the playback queue. */
   readonly duration: number
+  /** Ticks already consumed during this playback of the frame. */
   ticks = 0
 
   /** @param sym - frame symbol. @param fg - foreground color or null. */
@@ -62,9 +67,13 @@ type Visual = [string, Rgb | null, Rgb | null]
  * Per-character frame queue with optional easing and looping.
  */
 export class Scene {
+  /** Character-local scene lookup name. */
   readonly name: string
+  /** Easing used to select frames, or null for duration-queue playback. */
   readonly easeName: EasingName | null
+  /** Path progress measure driving frame selection, or null for tick playback. */
   syncMetric: SyncMetric | null = null
+  /** Whether ordinary queue playback restarts after its last frame. */
   looping = false
   /** All frames in insertion order. */
   readonly all: Frame[] = []
@@ -73,6 +82,7 @@ export class Scene {
   #head = 0
   /** Duration-map for eased stepping (frame index per eased tick). */
   readonly #map: number[] = []
+  /** Sum of all frame durations in ticks. */
   total: number
   #estep = 0
 
@@ -158,22 +168,35 @@ export class Scene {
 
 /** A movement path: waypoints, segments, and stepping state. */
 export class MotionPath {
+  /** Character-local motion path lookup name. */
   readonly name: string
+  /** Distance consumed per tick using doubled-row terminal geometry. */
   readonly speed: number
+  /** Distance easing, or null for linear traversal. */
   readonly ease: EasingName | null
+  /** Ticks to wait at the final waypoint before completion. */
   readonly hold: number
+  /** Whether completion reactivates a path with multiple segments. */
   readonly loop: boolean
+  /** Render layer applied at activation, or null to retain the character layer. */
   readonly layer: number | null
   /** Waypoints `[col, row, control]`; control is a bezier control-point list. */
   readonly waypoints: [number, number, readonly (readonly [number, number])[] | null][] = []
   /** Segments `[fromRef, toIndex, length]`; fromRef -1 = path origin. */
   readonly segments: [number, number, number][] = []
+  /** Combined segment length, including the activation origin segment. */
   total = 0
+  /** Traversal ticks consumed since the latest activation. */
   step = 0
+  /** Rounded total-distance-to-speed ratio for the active traversal. */
   maxSteps = 0
+  /** Remaining ticks at the final waypoint. */
   holdLeft: number
+  /** Most recently sampled eased distance along the full path. */
   lastDist = 0
+  /** Activation-origin segment tuple, or null before activation. */
   origin: [number, number, number] | null = null
+  /** Character coordinates captured at activation, or null before activation. */
   originWp: [number, number] | null = null
 
   /** @see {@link EngineCtx.motionNewPath} for parameter semantics. */
@@ -231,7 +254,9 @@ export interface EffectCallbackReceiver {
  * canvas frame rendering.
  */
 export class EngineCtx {
+  /** Canvas layout and shared character arena rendered by this engine. */
   readonly canvas: Canvas
+  /** Seeded random source shared by the effect and its helper algorithms. */
   readonly rng: Rng
   /** The character arena (alias of canvas.anims). */
   readonly chars: CharAnim[]
@@ -246,7 +271,10 @@ export class EngineCtx {
     this.chars = canvas.anims
   }
 
-  /** Arena character by id (ids are dense and always valid by construction). */
+  /** Arena character by id (ids are dense and always valid by construction).
+   * @param id - Character arena id owned by this engine.
+   * @returns the mutable character state at the arena id.
+   */
   anim(id: number): CharAnim {
     return this.chars[id] as CharAnim
   }
@@ -265,21 +293,35 @@ export class EngineCtx {
     return id
   }
 
-  /** Create an empty scene on a character. */
+  /** Create an empty scene on a character.
+   * @param id - Character arena id owned by this engine.
+   * @param name - Character-local scene name.
+   * @returns the new empty scene, replacing any scene with that name.
+   */
   newScene(id: number, name: string): Scene {
     const sc = new Scene(name)
     this.anim(id).scenes.set(name, sc)
     return sc
   }
 
-  /** Create an eased scene on a character. */
+  /** Create an eased scene on a character.
+   * @param id - Character arena id owned by this engine.
+   * @param name - Character-local scene name.
+   * @param easeName - Easing that maps playback ticks to frame indices.
+   * @returns the new empty eased scene, replacing any scene with that name.
+   */
   newSceneEased(id: number, name: string, easeName: EasingName): Scene {
     const sc = new Scene(name, easeName)
     this.anim(id).scenes.set(name, sc)
     return sc
   }
 
-  /** Create a synced scene on a character (visual follows path progress). */
+  /** Create a synced scene on a character (visual follows path progress).
+   * @param id - Character arena id owned by this engine.
+   * @param name - Character-local scene name.
+   * @param metric - Active-path step or distance progress used to select frames.
+   * @returns the new empty path-synchronized scene, replacing any scene with that name.
+   */
   newSceneSynced(id: number, name: string, metric: SyncMetric): Scene {
     const sc = new Scene(name)
     sc.syncMetric = metric
@@ -287,7 +329,11 @@ export class EngineCtx {
     return sc
   }
 
-  /** Create a looping scene on a character. */
+  /** Create a looping scene on a character.
+   * @param id - Character arena id owned by this engine.
+   * @param name - Character-local scene name.
+   * @returns the new empty looping scene, replacing any scene with that name.
+   */
   newSceneLoop(id: number, name: string): Scene {
     const sc = new Scene(name)
     sc.looping = true
@@ -295,13 +341,22 @@ export class EngineCtx {
     return sc
   }
 
-  /** Scene by name on a character. */
+  /** Scene by name on a character.
+   * @param id - Character arena id owned by this engine.
+   * @param name - Existing character-local scene name.
+   * @returns the existing mutable scene; the caller must create it before lookup.
+   */
   scene(id: number, name: string): Scene {
     return this.anim(id).scenes.get(name) as Scene
   }
 
   /**
    * Append a frame to a character's scene.
+   * @param id - Character arena id owned by this engine.
+   * @param name - Existing scene to append to.
+   * @param sym - Frame symbol.
+   * @param duration - Ticks before the appended frame retires; must be at least 1.
+   * @param fg - Foreground override, or null for the home color.
    * @param bg - optional background override (home color when null).
    */
   addFrame(id: number, name: string, sym: string, duration: number, fg: Rgb | null, bg: Rgb | null = null): void {
@@ -311,6 +366,8 @@ export class EngineCtx {
   /**
    * Activate a scene: current visual becomes the scene's first frame
    * (resume semantics — playback is not reset).
+   * @param id - Character arena id owned by this engine.
+   * @param name - Existing non-empty scene to resume without resetting playback.
    */
   activateScene(id: number, name: string): void {
     const a = this.anim(id)
@@ -321,12 +378,20 @@ export class EngineCtx {
     a.curBg = bg
   }
 
-  /** Set character visibility. */
+  /** Set character visibility.
+   * @param id - Character arena id owned by this engine.
+   * @param flag - Whether rendering may include this character.
+   */
   setVisible(id: number, flag: boolean): void {
     this.anim(id).visible = flag
   }
 
-  /** Direct visual override, bypassing scenes. */
+  /** Direct visual override, bypassing scenes.
+   * @param id - Character arena id owned by this engine.
+   * @param sym - Current symbol override.
+   * @param fg - Foreground override, or null for the home color.
+   * @param bg - Background override, or null for the home color.
+   */
   setAppearance(id: number, sym: string, fg: Rgb | null, bg: Rgb | null = null): void {
     const a = this.anim(id)
     a.curSym = sym
@@ -334,29 +399,51 @@ export class EngineCtx {
     a.curBg = bg
   }
 
-  /** Clear a character's active scene. */
+  /** Clear a character's active scene.
+   * @param id - Character arena id owned by this engine.
+   */
   deactivateScene(id: number): void {
     this.anim(id).active = null
   }
 
-  /** Reset a scene's playback to its first frame. */
+  /** Reset a scene's playback to its first frame.
+   * @param id - Character arena id owned by this engine.
+   * @param name - Existing scene whose frames and tick counters are reset.
+   */
   resetScene(id: number, name: string): void {
     (this.anim(id).scenes.get(name) as Scene).reset()
   }
 
-  /** hypot with the row delta doubled (terminal cell aspect convention). */
+  /** hypot with the row delta doubled (terminal cell aspect convention).
+   * @param c1col - Starting column.
+   * @param c1row - Starting row.
+   * @param c2col - Ending column.
+   * @param c2row - Ending row.
+   * @returns Euclidean distance with the row delta doubled.
+   */
   lineLength(c1col: number, c1row: number, c2col: number, c2row: number): number {
     return Math.hypot(c2col - c1col, (c2row - c1row) * 2)
   }
 
-  /** Lerp + banker's rounding to integer coords. */
+  /** Lerp + banker's rounding to integer coords.
+   * @param scol - Starting column.
+   * @param srow - Starting row.
+   * @param ecol - Ending column.
+   * @param erow - Ending row.
+   * @param t - Interpolation factor; values outside [0, 1] extrapolate.
+   * @returns integer [column, row] coordinates using half-even rounding.
+   */
   coordOnLine(scol: number, srow: number, ecol: number, erow: number, t: number): [number, number] {
     const x = (1 - t) * scol + t * ecol
     const y = (1 - t) * srow + t * erow
     return [roundHalfEven(x), roundHalfEven(y)]
   }
 
-  /** Teleport a character. */
+  /** Teleport a character.
+   * @param id - Character arena id owned by this engine.
+   * @param col - New current column, before the canvas offset.
+   * @param row - New current row, before the canvas offset.
+   */
   motionSetCoordinate(id: number, col: number, row: number): void {
     const a = this.anim(id)
     a.curCol = col
@@ -371,6 +458,8 @@ export class EngineCtx {
    * @param loop - reactivate the path on completion (multi-segment only).
    * @param layer - render layer while active (null keeps the current one).
    * @returns the path name (auto-numbered when empty).
+   * @param id - Character arena id owned by this engine.
+   * @param name - Path name to replace, or an empty string to allocate a numeric name.
    */
   motionNewPath(
     id: number,
@@ -396,6 +485,10 @@ export class EngineCtx {
    * Append a waypoint; from the second waypoint on, segment lengths and
    * maxSteps update.
    * @param control - optional bezier control points (absolute coords).
+   * @param id - Character arena id owned by this engine.
+   * @param pname - Existing path to extend.
+   * @param col - Waypoint column.
+   * @param row - Waypoint row.
    */
   motionAddWaypoint(id: number, pname: string, col: number, row: number, control?: readonly (readonly [number, number])[]): void {
     const p = this.anim(id).paths.get(pname) as MotionPath
@@ -415,6 +508,10 @@ export class EngineCtx {
   /**
    * Replace a one-waypoint target while retaining the path's speed/easing
    * (rings-style orbit retarget).
+   * @param id - Character arena id owned by this engine.
+   * @param pname - Existing path whose waypoints and origin are replaced.
+   * @param col - New target column.
+   * @param row - New target row.
    */
   motionRetargetPath(id: number, pname: string, col: number, row: number): void {
     const p = this.anim(id).paths.get(pname) as MotionPath
@@ -431,6 +528,8 @@ export class EngineCtx {
    * Activate a path from the character's current position: the origin
    * segment reaches the first waypoint, stepping restarts, and the
    * `path_activated` event fires.
+   * @param id - Character arena id owned by this engine.
+   * @param pname - Existing non-empty path to restart at the current character position.
    */
   motionActivatePath(id: number, pname: string): void {
     const a = this.anim(id)
@@ -457,7 +556,10 @@ export class EngineCtx {
     this.fireEvent(id, 'path_activated', pname)
   }
 
-  /** Deactivate a path (clears the active path when it matches). */
+  /** Deactivate a path (clears the active path when it matches).
+   * @param id - Character arena id owned by this engine.
+   * @param pname - Path to deactivate when active, or null to deactivate any path.
+   */
   motionDeactivatePath(id: number, pname: string | null): void {
     const a = this.anim(id)
     if (pname === null || a.activePath === pname) a.activePath = null
@@ -466,6 +568,8 @@ export class EngineCtx {
   /**
    * Chain paths: each path's completion activates the next.
    * @param loop - the last path's completion reactivates the first.
+   * @param id - Character arena id owned by this engine.
+   * @param names - Ordered existing path names; fewer than two registers no actions.
    */
   chainPaths(id: number, names: readonly string[], loop: boolean): void {
     if (names.length < 2) return
@@ -520,6 +624,8 @@ export class EngineCtx {
   /**
    * Step the character's active path; on completion holds, then either
    * loops (multi-segment) or deactivates and fires `path_complete`.
+   * @param id - Character arena id owned by this engine.
+   * @param effect - Optional receiver for callback actions fired at path completion.
    */
   motionMove(id: number, effect?: EffectCallbackReceiver): void {
     const a = this.anim(id)
@@ -548,12 +654,16 @@ export class EngineCtx {
     }
   }
 
-  /** Add an id to the active set (idempotent). */
+  /** Add an id to the active set (idempotent).
+   * @param id - Character arena id owned by this engine.
+   */
   activeInclude(id: number): void {
     if (!this.active.includes(id)) this.active.push(id)
   }
 
-  /** Active ids in ascending order (the canonical snapshot). */
+  /** Active ids in ascending order (the canonical snapshot).
+   * @returns a sorted copy of the active ids.
+   */
   activeSnapshot(): number[] {
     return [...this.active].sort((a, b) => a - b)
   }
@@ -571,6 +681,10 @@ export class EngineCtx {
   /**
    * Register an event: when `kind` fires from `caller`, run `action`.
    * @returns the registered entry (for tests).
+   * @param id - Character arena id owned by this engine.
+   * @param kind - Event kind to match.
+   * @param caller - Scene or path name whose event triggers the action.
+   * @param action - Action appended to the character event table.
    */
   registerEvent(id: number, kind: EventKind, caller: string, action: EventAction): EventEntry {
     let list = this.#events.get(id)
@@ -583,12 +697,21 @@ export class EngineCtx {
     return entry
   }
 
-  /** Convenience wrapper firing a `scene_complete` event. */
+  /** Convenience wrapper firing a `scene_complete` event.
+   * @param id - Character arena id owned by this engine.
+   * @param callerScene - Completed scene name matched against event registrations.
+   * @param effect - Optional receiver for registered callback actions.
+   */
   fireSceneComplete(id: number, callerScene: string, effect?: EffectCallbackReceiver): void {
     this.fireEvent(id, 'scene_complete', callerScene, effect)
   }
 
-  /** Run all actions registered for an event. */
+  /** Run all actions registered for an event.
+   * @param id - Character arena id owned by this engine.
+   * @param kind - Event kind to dispatch.
+   * @param caller - Scene or path name matched against registered callers.
+   * @param effect - Optional callback receiver; callback actions are skipped when omitted.
+   */
   fireEvent(id: number, kind: EventKind, caller: string, effect?: EffectCallbackReceiver): void {
     const list = this.#events.get(id)
     if (list === undefined) return
@@ -611,7 +734,9 @@ export class EngineCtx {
     }
   }
 
-  /** Drop a character's event table. */
+  /** Drop a character's event table.
+   * @param id - Character arena id owned by this engine.
+   */
   clearCharEvents(id: number): void {
     this.#events.delete(id)
   }
@@ -620,6 +745,8 @@ export class EngineCtx {
    * Cycle two sequences into pairs with the exact `cyclic_distribution`
    * generator semantics.
    * @returns pairs aligned to `larger`'s length.
+   * @param larger - Sequence whose order and length determine the result.
+   * @param smaller - Non-empty sequence distributed across the larger sequence.
    */
   cyclicPairs<T, U>(larger: readonly T[], smaller: readonly U[]): [T, U][] {
     const rf = Math.trunc(larger.length / smaller.length)
@@ -654,6 +781,11 @@ export class EngineCtx {
    * Apply a gradient to a scene's frames: symbols and colors cycled
    * against each other (one frame per pair).
    * @param bg - optional per-frame background color.
+   * @param id - Character arena id owned by this engine.
+   * @param sceneName - Existing scene receiving the generated frames.
+   * @param symbols - Non-empty symbols distributed against the color sequence.
+   * @param duration - Ticks for each appended frame; must be at least 1.
+   * @param pairs - Non-empty gradient colors distributed against the symbols.
    */
   applyGradient(id: number, sceneName: string, symbols: readonly string[], duration: number, pairs: readonly Rgb[], bg?: Rgb | null): void {
     if (symbols.length >= pairs.length) {
@@ -667,7 +799,10 @@ export class EngineCtx {
     }
   }
 
-  /** Step one character's active scene, firing completion events. */
+  /** Step one character's active scene, firing completion events.
+   * @param id - Character arena id owned by this engine.
+   * @param effect - Optional receiver for callback actions fired on scene completion.
+   */
   stepAnimation(id: number, effect?: EffectCallbackReceiver): void {
     const a = this.anim(id)
     if (a.active === null) return
@@ -728,7 +863,10 @@ export class EngineCtx {
     a.curBg = f.bg
   }
 
-  /** True while a character still has a non-looping active scene or path. */
+  /** True while a character still has a non-looping active scene or path.
+   * @param id - Character arena id owned by this engine.
+   * @returns true for an active path or a non-empty non-looping scene.
+   */
   charActive(id: number): boolean {
     const a = this.anim(id)
     if (a.activePath !== null) return true
@@ -742,6 +880,7 @@ export class EngineCtx {
   /**
    * Tick a snapshot of actives in ascending-id order (motion before
    * animation), then prune finished characters.
+   * @param effect - Optional receiver for callbacks fired during this tick.
    */
   update(effect?: EffectCallbackReceiver): void {
     const snap = this.activeSnapshot()

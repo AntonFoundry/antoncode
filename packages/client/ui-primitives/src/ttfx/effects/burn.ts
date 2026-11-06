@@ -69,7 +69,11 @@ export class BurnEffect implements TtfxEffect {
     ctx.activeInclude(id)
   }
 
-  /** {@inheritdoc} */
+  /** Emit smoke for callback 0, or reclaim the smoke particle for callback 1.
+   * @param ctx - engine that owns the firing character.
+   * @param id - character whose scene completed.
+   * @param cbid - registered action id; other ids have no effect.
+   */
   onCallback(ctx: EngineCtx, id: number, cbid: number): void {
     if (cbid === 0) {
       const a = ctx.anim(id)

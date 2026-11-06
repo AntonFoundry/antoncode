@@ -185,7 +185,9 @@ export class EasingTracker {
     return this.#stepDelta
   }
 
-  /** Advance one step; returns the eased value. */
+  /** Advance one step, retaining the final value after completion.
+   * @returns the latest eased value, clamped only when configured.
+   */
   step(): number {
     if (this.#currentStep < this.#totalSteps) {
       this.#currentStep += 1

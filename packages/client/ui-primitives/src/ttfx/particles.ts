@@ -49,7 +49,13 @@ export class ParticlePool {
     }
   }
 
-  /** Reset a particle to pool defaults. */
+  /** Reset selected playback state without changing appearance or position.
+   * @param ctx - engine that owns the particle arena.
+   * @param id - pooled character arena id.
+   * @param clearPaths - remove all registered paths.
+   * @param deactivatePath - clear the active path name.
+   * @param deactivateScene - clear the active scene name.
+   */
   static resetParticle(ctx: EngineCtx, id: number, clearPaths: boolean, deactivatePath: boolean, deactivateScene: boolean): void {
     const a = ctx.anim(id)
     if (deactivatePath) a.activePath = null
@@ -59,6 +65,7 @@ export class ParticlePool {
 
   /**
    * Pop an available particle (reset to defaults).
+   * @param ctx - engine that owns the preallocated particle arena.
    * @returns the arena id, or null when the pool is exhausted.
    */
   acquire(ctx: EngineCtx): number | null {
@@ -70,6 +77,8 @@ export class ParticlePool {
 
   /**
    * Return a particle to the pool.
+   * @param ctx - engine that owns the particle arena and active set.
+   * @param id - pooled character id to reclaim; repeated reclamation does not duplicate it.
    * @param hide - make the character invisible.
    * @param deactivate - clear its active scene and path.
    */

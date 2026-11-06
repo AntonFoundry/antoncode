@@ -36,33 +36,51 @@ export interface GridCell {
 
 /** Per-character animation state (the scene-machine arena entry). */
 export class CharAnim {
+  /** Dense arena index, stable for the character lifetime. */
   readonly id: number
+  /** Home column in the laid-out grid, 1-based. */
   inputCol: number
+  /** Home row in the laid-out grid, 1-based from the bottom. */
   inputRow: number
+  /** Original symbol, retained when effects change the current appearance. */
   readonly inputSym: string
   /** Home foreground color resolved at render time when curFg is null. */
   homeFg: Rgb | null
   /** Home background color (bottom half-block pixel). */
   homeBg: Rgb | null
+  /** Whether frame rendering may include this character. */
   visible = false
   /** Scene queue entries by name. */
   readonly scenes = new Map<string, Scene>()
   /** Active scene name, or null. */
   active: string | null = null
+  /** Symbol used by the current frame. */
   curSym: string
+  /** Current foreground override; null resolves to homeFg when rendered. */
   curFg: Rgb | null
+  /** Current background override; null resolves to homeBg when rendered. */
   curBg: Rgb | null
+  /** Current column before the canvas offset, 1-based. */
   curCol: number
+  /** Current row before the canvas offset, 1-based from the bottom. */
   curRow: number
+  /** Named motion paths owned by this character. */
   readonly paths = new Map<string, MotionPath>()
+  /** Active motion path name, or null when no path is active. */
   activePath: string | null = null
+  /** Whether this character fills an unoccupied input cell. */
   isFill = false
+  /** Render priority at a shared coordinate; higher values win. */
   layer = 0
   /** Neighbor character ids on the dense grid. */
   links: number[] = []
+  /** Arena id one row above, or null at the grid edge. */
   north: number | null = null
+  /** Arena id one column right, or null at the grid edge. */
   east: number | null = null
+  /** Arena id one row below, or null at the grid edge. */
   south: number | null = null
+  /** Arena id one column left, or null at the grid edge. */
   west: number | null = null
 
   /** @see {@link GridCell}; `homeFg`/`homeBg` carry the image colors. */
@@ -88,27 +106,49 @@ export class CharAnim {
  * anchoring is a no-op when the canvas matches the input size.
  */
 export class Canvas {
+  /** Requested terminal height in cells. */
   readonly rows: number
+  /** Requested terminal width in cells. */
   readonly cols: number
+  /** Left canvas coordinate, fixed at 1. */
   readonly left = 1
+  /** Bottom canvas coordinate, fixed at 1. */
   readonly bottom = 1
+  /** Right input extent clipped to terminal columns, at least 1. */
   readonly right: number
+  /** Top input extent clipped to terminal rows, at least 1. */
   readonly top: number
+  /** Integer canvas center column using the engine rounding convention. */
   readonly centerColumn: number
+  /** Integer canvas center row using the engine rounding convention. */
   readonly centerRow: number
+  /** Minimum home column among kept input characters. */
   textLeft!: number
+  /** Maximum home column among kept input characters. */
   textRight!: number
+  /** Maximum home row among kept input characters. */
   textTop!: number
+  /** Minimum home row among kept input characters. */
   textBottom!: number
+  /** Inclusive column span of the kept input characters. */
   textWidth!: number
+  /** Inclusive row span of the kept input characters. */
   textHeight!: number
+  /** Integer midpoint of the kept text column bounds. */
   textCenterColumn!: number
+  /** Integer midpoint of the kept text row bounds. */
   textCenterRow!: number
+  /** Canvas-to-terminal column translation, fixed at zero. */
   readonly colOffset = 0
+  /** Canvas-to-terminal row translation, fixed at zero. */
   readonly rowOffset = 0
+  /** First renderable terminal column after applying the offset. */
   readonly visibleLeft: number
+  /** Last renderable terminal column after applying the offset. */
   readonly visibleRight: number
+  /** Last renderable terminal row after applying the offset. */
   readonly visibleTop: number
+  /** First renderable terminal row after applying the offset. */
   readonly visibleBottom: number
   /** The full character arena (input characters then fills). */
   readonly anims: CharAnim[] = []
@@ -304,12 +344,16 @@ export class Canvas {
     return groups
   }
 
-  /** Kept input characters plus fills (full-canvas effects). */
+  /** Kept input characters plus fills (full-canvas effects).
+   * @returns arena entries in kept-input order followed by fill order.
+   */
   renderAnims(): CharAnim[] {
     return [...this.kept, ...this.fills].map(id => this.#at(id))
   }
 
-  /** Every kept id followed by every fill id. */
+  /** Every kept id followed by every fill id.
+   * @returns a new array of the kept and fill arena ids.
+   */
   allIds(): number[] {
     return [...this.kept, ...this.fills]
   }
@@ -360,7 +404,11 @@ export class Canvas {
   }
 }
 
-/** Bucket key for a coordinate (row * 1e6 + col; rows ≤ 1e6). */
+/** Bucket key for a coordinate (row * 1e6 + col; rows ≤ 1e6).
+ * @param row - grid row.
+ * @param col - grid column.
+ * @returns the numeric coordinate key.
+ */
 export function coordKey(row: number, col: number): number {
   return row * 1_000_000 + col
 }
