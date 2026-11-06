@@ -40,7 +40,7 @@ describe('code highlighting', () => {
     ['Types.fs', 'fsharp'], ['Types.fsi', 'fsharp'], ['Form.vb', 'vb'], ['script.pl', 'perl'],
     ['Module.pm', 'perl'], ['top.v', 'verilog'], ['top.sv', 'system-verilog'],
     ['defs.svh', 'system-verilog'], ['schema.graphql', 'graphql'], ['query.gql', 'graphql'],
-    ['message.proto', 'proto'], ['main.tf', 'hcl'], ['terraform.tfvars', 'hcl'], ['stack.hcl', 'hcl'],
+    ['message.proto', 'proto'], ['main.tf', 'terraform'], ['terraform.tfvars', 'terraform'], ['stack.hcl', 'hcl'],
     ['flake.nix', 'nix'], ['App.vue', 'vue'], ['App.svelte', 'svelte'], ['build.mk', 'make'],
     ['CMakeLists.cmake', 'cmake'], ['build.gradle', 'groovy'],
   ])('uses the extended %s grammar hint %s', (path, language) => {

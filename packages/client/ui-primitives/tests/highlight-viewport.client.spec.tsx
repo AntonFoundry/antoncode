@@ -102,7 +102,7 @@ describe('viewport-activated syntax highlighting', () => {
 
   it('does not observe an unsupported language', () => {
     const view = render(
-      <CodeBlock code="IDENTIFICATION DIVISION." lang="cobol" {...markdownLabels.code} />,
+      <CodeBlock code="IDENTIFICATION DIVISION." lang="invented-lang" {...markdownLabels.code} />,
     )
     expect(view.container.querySelector('pre.shiki')).toBeNull()
     expect(IntersectionObserverStub.instances).toHaveLength(0)

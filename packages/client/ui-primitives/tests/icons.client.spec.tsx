@@ -209,12 +209,21 @@ describe('FishLogo', () => {
 describe('BrandWordmark', () => {
   it('can render the name artwork with or without its leading mark', () => {
     const view = render(<primitives.BrandWordmark />)
-    const svg = view.container.querySelector('svg')!
-    expect(svg.getAttribute('width')).toBe('182')
-    expect(svg.getAttribute('viewBox')).toBe('0 0 182 24')
+    const mark = view.container.querySelector('img')!
+    expect(mark.getAttribute('src')).toBe('/anton-header.png')
+    expect(mark.getAttribute('width')).toBe('48')
+    expect(mark.getAttribute('height')).toBe('48')
+    expect(mark.getAttribute('alt')).toBe('')
+    expect(view.container.firstElementChild?.getAttribute('aria-hidden')).toBe('true')
+    expect(view.container.textContent).toBe('Anton')
 
     view.rerender(<primitives.BrandWordmark includeMark={false} />)
-    expect(svg.getAttribute('width')).toBe('156')
-    expect(svg.getAttribute('viewBox')).toBe('26 0 156 24')
+    expect(view.container.querySelector('img')).toBeNull()
+    expect(view.container.textContent).toBe('Anton')
+
+    view.rerender(<primitives.BrandWordmark size={20} className="brand" />)
+    expect(view.container.querySelector('img')?.getAttribute('width')).toBe('40')
+    expect(view.container.querySelector('img')?.getAttribute('height')).toBe('40')
+    expect(view.container.firstElementChild?.className).toBe('brand')
   })
 })

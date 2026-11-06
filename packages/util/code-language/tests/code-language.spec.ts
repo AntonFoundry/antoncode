@@ -24,12 +24,36 @@ describe('languageForPath', () => {
     ['Form.vb', 'vb'], ['script.pl', 'perl'], ['Module.pm', 'perl'],
     ['top.v', 'verilog'], ['top.sv', 'system-verilog'], ['defs.svh', 'system-verilog'],
     ['schema.graphql', 'graphql'], ['query.gql', 'graphql'], ['message.proto', 'proto'],
-    ['main.tf', 'hcl'], ['terraform.tfvars', 'hcl'], ['stack.hcl', 'hcl'], ['build.groovy', 'groovy'],
+    ['main.tf', 'terraform'], ['terraform.tfvars', 'terraform'], ['stack.hcl', 'hcl'], ['build.groovy', 'groovy'],
     ['flake.nix', 'nix'], ['App.vue', 'vue'], ['App.svelte', 'svelte'],
     ['Makefile', undefined], ['build.mk', 'make'], ['CMakeLists.cmake', 'cmake'],
     ['build.gradle', 'groovy'],
   ])('resolves %s to %s', (path, language) => {
     expect(languageForPath(path)).toBe(language)
+  })
+
+  it.each([
+    ['file.janet', 'janet', 'janet'], ['file.ben', 'bender', 'bender'], ['file.lisp', 'common-lisp', 'common-lisp'],
+    ['file.cl', 'common-lisp', 'common-lisp'], ['file.lsp', 'common-lisp', 'common-lisp'], ['file.el', 'emacs-lisp', 'emacs-lisp'],
+    ['file.fnl', 'fennel', 'fennel'], ['file.cljc', 'clojure', 'clojure'], ['file.scm', 'scheme', 'scheme'],
+    ['file.rkt', 'racket', 'racket'], ['file.hy', 'hy', 'hy'], ['file.elm', 'elm', 'elm'],
+    ['file.cr', 'crystal', 'crystal'], ['file.f90', 'fortran-free-form', 'fortran'], ['file.f95', 'fortran-free-form', 'fortran'],
+    ['file.f03', 'fortran-free-form', 'fortran'], ['file.f08', 'fortran-free-form', 'fortran'], ['file.cob', 'cobol', 'cobol'],
+    ['file.cbl', 'cobol', 'cobol'], ['file.ada', 'ada', 'ada'], ['file.adb', 'ada', 'ada'],
+    ['file.ads', 'ada', 'ada'], ['file.hx', 'haxe', 'haxe'], ['file.d', 'd', 'd'],
+    ['file.di', 'd', 'd'], ['file.purs', 'purescript', 'purescript'], ['file.gleam', 'gleam', 'gleam'],
+    ['file.gd', 'gdscript', 'gdscript'], ['file.glsl', 'glsl', 'glsl'], ['file.hlsl', 'hlsl', 'hlsl'],
+    ['file.wgsl', 'wgsl', 'wgsl'], ['file.wat', 'wasm', 'wasm'], ['file.vh', 'verilog', 'verilog'],
+    ['file.vhd', 'vhdl', 'vhdl'], ['file.asm', 'asm', 'asm'], ['file.nasm', 'asm', 'asm'],
+    ['file.s', 'asm', 'asm'], ['file.pro', 'prolog', 'prolog'], ['file.raku', 'raku', 'raku'],
+    ['file.tcl', 'tcl', 'tcl'], ['file.awk', 'awk', 'awk'], ['file.just', 'just', 'just'],
+    ['file.cue', 'cue', 'cue'], ['file.jsonnet', 'jsonnet', 'jsonnet'], ['file.prisma', 'prisma', 'prisma'],
+    ['file.pug', 'pug', 'pug'], ['file.styl', 'stylus', 'stylus'], ['file.sass', 'sass', 'sass'],
+    ['file.hbs', 'handlebars', 'handlebars'], ['file.twig', 'twig', 'twig'], ['file.liquid', 'liquid', 'liquid'],
+    ['file.cshtml', 'razor', 'razor'],
+  ])('retains the supported read extension %s across canonical and persisted hints', (path, canonical, hint) => {
+    expect(languageForPath(path)).toBe(canonical)
+    expect(readLangHintForPath(path)).toBe(hint)
   })
 
   it('resolves the extensions the preview and read tables already agreed on', () => {
@@ -135,8 +159,47 @@ describe('readLangHintForPath', () => {
     xml: 'xml', lua: 'lua', bat: 'bat', powershell: 'ps1', r: 'r', julia: 'jl',
     dart: 'dart', scala: 'scala', clojure: 'clj', erlang: 'erl', elixir: 'ex',
     haskell: 'hs', fsharp: 'fs', vb: 'vb', perl: 'pl', verilog: 'v',
-    'system-verilog': 'sv', graphql: 'graphql', proto: 'proto', hcl: 'hcl', nix: 'nix',
+    'system-verilog': 'sv', graphql: 'graphql', proto: 'proto', terraform: 'tf', hcl: 'hcl', nix: 'nix',
     vue: 'vue', svelte: 'svelte', make: 'make', cmake: 'cmake', groovy: 'groovy',
+    razor: 'razor',
+    liquid: 'liquid',
+    twig: 'twig',
+    handlebars: 'handlebars',
+    sass: 'sass',
+    stylus: 'stylus',
+    pug: 'pug',
+    prisma: 'prisma',
+    jsonnet: 'jsonnet',
+    cue: 'cue',
+    just: 'just',
+    awk: 'awk',
+    tcl: 'tcl',
+    raku: 'raku',
+    prolog: 'prolog',
+    asm: 'asm',
+    vhdl: 'vhdl',
+    wasm: 'wasm',
+    wgsl: 'wgsl',
+    hlsl: 'hlsl',
+    glsl: 'glsl',
+    gdscript: 'gdscript',
+    gleam: 'gleam',
+    purescript: 'purescript',
+    d: 'd',
+    haxe: 'haxe',
+    ada: 'ada',
+    cobol: 'cobol',
+    'fortran-free-form': 'fortran',
+    crystal: 'crystal',
+    elm: 'elm',
+    hy: 'hy',
+    racket: 'racket',
+    scheme: 'scheme',
+    fennel: 'fennel',
+    'emacs-lisp': 'emacs-lisp',
+    'common-lisp': 'common-lisp',
+    bender: 'bender',
+    janet: 'janet',
   }
 
   it('persists a short id for every suffix', () => {
@@ -145,7 +208,7 @@ describe('readLangHintForPath', () => {
     // their grammar ids (`kotlin`, `swift`, `yaml`), so a result outside both
     // sets means a canonical id leaked back in for a language that has a
     // distinct short name (`powershell`, `dotenv`, `latex`, `hcl`).
-    const allowed = new Set([...Object.values(SHORT_BY_LANGUAGE), 'tsx', 'jsx', 'tf', 'tfvars', 'gradle'])
+    const allowed = new Set([...Object.values(SHORT_BY_LANGUAGE), 'tsx', 'jsx', 'tf', 'tfvars', 'gradle', 'clojure', 'verilog'])
     for (const extension of CODE_HIGHLIGHT_EXTENSIONS) {
       const hint = readLangHintForPath(`file.${extension}`)
       expect(hint, extension).toBeDefined()

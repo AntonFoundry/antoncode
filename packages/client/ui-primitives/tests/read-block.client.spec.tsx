@@ -64,7 +64,7 @@ describe('highlightLines', () => {
   })
 
   it('returns undefined for an unknown or absent language', () => {
-    expect(highlightLines('x', 'cobol')).toBeUndefined()
+    expect(highlightLines('x', 'invented-lang')).toBeUndefined()
     expect(highlightLines('x', undefined)).toBeUndefined()
   })
 
@@ -106,7 +106,7 @@ describe('ReadBlock rows', () => {
 
   it('renders the content as bare text with no span wrappers for an unknown language', () => {
     const view = render(
-      <ReadBlock label="a.cob" lang="cobol" lines={[{ number: 1, text: 'IDENT DIVISION.' }]} totalLines={1} />,
+      <ReadBlock label="a.unknown" lang="invented-lang" lines={[{ number: 1, text: 'IDENT DIVISION.' }]} totalLines={1} />,
     )
     const content = view.container.querySelector('[class^="_content_"]')
     expect(content?.querySelectorAll('span').length).toBe(0)

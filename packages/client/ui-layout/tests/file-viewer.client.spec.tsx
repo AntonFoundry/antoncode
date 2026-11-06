@@ -4,7 +4,7 @@
  * when the extension resolves a grammar, plain otherwise; fetch failure and
  * truncation notes stay.
  */
-import { render, cleanup } from '@testing-library/react'
+import { render, cleanup, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, describe } from 'vitest'
 import { FileViewer } from '../src/client/FileViewer.tsx'
 import type { FileViewerProps } from '../src/client/FileViewer.tsx'
@@ -23,7 +23,7 @@ describe('FileViewer', () => {
   it('a code extension renders the highlighted shiki tree', async () => {
     const view = render(<FileViewer {...props()} />)
     const body = await view.findByTestId('file-viewer')
-    expect(body.querySelector('pre.shiki')).not.toBeNull()
+    await waitFor(() => { expect(body.querySelector('pre.shiki')).not.toBeNull() })
     expect(body.textContent).toContain('const x = 1')
   })
 

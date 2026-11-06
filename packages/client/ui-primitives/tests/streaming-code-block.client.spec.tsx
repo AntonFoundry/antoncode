@@ -128,7 +128,7 @@ describe('StreamingHighlightSession', () => {
 
   it('returns undefined for unknown or absent languages, then recovers when a known one arrives', () => {
     const session = new StreamingHighlightSession()
-    expect(session.update('x', 'cobol')).toBeUndefined()
+    expect(session.update('x', 'invented-lang')).toBeUndefined()
     expect(session.update('x', undefined)).toBeUndefined()
     expect(session.update('const x = 1', 'ts')).toEqual(new StreamingHighlightSession().update('const x = 1', 'ts'))
   })
@@ -277,7 +277,7 @@ describe('CodeBlock streaming arm', () => {
   })
 
   it('streaming with an unknown language stays on the identical plain arm', () => {
-    const view = render(<CodeBlock code={'IDENTIFICATION DIVISION.\n'} lang="cobol" streaming {...LABELS} />)
+    const view = render(<CodeBlock code={'IDENTIFICATION DIVISION.\n'} lang="invented-lang" streaming {...LABELS} />)
     expect(view.container.querySelector('pre.shiki')).toBeNull()
     expect(view.getByText('IDENTIFICATION DIVISION.')).toBeTruthy()
   })
