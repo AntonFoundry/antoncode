@@ -18,6 +18,7 @@ export const queueMessage = z.object({
   body: z.string().min(1).max(65536),
   createdAt: z.number().int().nonnegative(),
 })
+/** Durable workspace message with recipients frozen at publication. */
 export type QueueMessage = z.infer<typeof queueMessage>
 
 /** Session delivery cursor: direct mail creates it without opting into workspace broadcasts. */
@@ -28,12 +29,15 @@ export const queueSubscription = z.object({
   /** Only explicit subscription opts this address into later workspace topic publishes. */
   workspaceSubscribed: z.boolean().default(true),
 })
+/** Durable per-session acknowledgement cursor and workspace broadcast opt-in. */
 export type QueueSubscription = z.infer<typeof queueSubscription>
 
+/** Atomic workspace sequence allocation and retained addressed messages. */
 export const queueWorkspace = z.object({
   nextSeq: z.number().int().positive(),
   messages: z.array(queueMessage),
 })
+/** Stored workspace stream head and retained messages. */
 export type QueueWorkspace = z.infer<typeof queueWorkspace>
 
 /** Each workspace record atomically owns its per-workspace sequence and messages. */

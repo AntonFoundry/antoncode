@@ -26,6 +26,7 @@ declare module '@deepseek-ai/cordis' {
   interface Context { agentQueue: AgentQueue }
 }
 
+/** Addressed text for one durable workspace publication. */
 export interface PublishRequest {
   /** Optional workspace guard; when supplied it must equal the caller's workspace. */
   readonly workspaceId?: WorkspaceId
@@ -36,12 +37,14 @@ export interface PublishRequest {
   readonly body: string
 }
 
+/** Retained addressed messages and the unchanged durable acknowledgement cursor. */
 export interface ReadPage {
   readonly messages: readonly QueueMessage[]
   readonly cursor: number
   readonly hasMore: boolean
 }
 
+/** Advisory post-commit notification; read the queue to obtain message contents. */
 export interface QueueNotice {
   readonly workspaceId: WorkspaceId
   readonly seq: number
@@ -109,7 +112,12 @@ export class AgentQueue extends Service {
     return !!authorized && authorized.id === workspace.id && authorized.path === workspace.path
   }
 
-  /** Discover the caller's durable session address and workspace peers. */
+  /**
+   * Discover the caller's durable session address and authorized workspace peers.
+   * @param agent - Exact live caller whose header and lineage establish workspace membership.
+   * @returns Caller address and deduplicated durable workspace members and eligible live children.
+   * @throws Error when the caller is not live or cannot authorize a registered workspace.
+   */
   async identities(agent: Agent): Promise<{ workspaceId: WorkspaceId; sessionId: SessionId; sessionIds: readonly SessionId[] }> {
     const workspace = await this.authorize(agent)
     const children = this.ctx.agents.list()
@@ -131,7 +139,18 @@ export class AgentQueue extends Service {
     }
   }
 
-  /** Opt into future workspace broadcasts; direct messages need no topic subscription. */
+  /**
+   * Durably opt into future workspace broadcasts while preserving the acknowledgement cursor.
+   * Direct messages need no topic subscription. Notifications are advisory; read after
+   * listener installation to close races. Listener failures do not reject delivery.
+   * @param agent - Exact live caller authorized for the workspace.
+   * @param workspaceId - Optional guard that must equal the caller's workspace.
+   * @param listener - Optional callback for addressed committed messages, including retained unread mail.
+   * @param signal - Removes the live listener on abort; durable opt-in remains in place.
+   * @returns Disposer for the live listener only; use unsubscribe to remove durable opt-in.
+   * @throws Error on invalid membership, a mismatched workspace, or cancellation. Cancellation
+   * after the durable write can reject while leaving broadcast opt-in enabled.
+   */
   async subscribe(agent: Agent, workspaceId?: WorkspaceId, listener?: QueueListener, signal?: AbortSignal): Promise<() => void> {
     const workspace = await this.authorize(agent)
     this.requireWorkspace(workspace, workspaceId)
@@ -171,7 +190,13 @@ export class AgentQueue extends Service {
     return dispose
   }
 
-  /** Remove a session's durable workspace subscription and reset its cursor. */
+  /**
+   * Remove broadcast opt-in and live listeners without resetting the durable cursor.
+   * @param agent - Exact live caller authorized for the workspace.
+   * @param workspaceId - Optional guard that must equal the caller's workspace.
+   * @returns True when opt-in was removed, or false when the session was not subscribed.
+   * @throws Error on invalid membership, a mismatched workspace, or addressed unread messages.
+   */
   async unsubscribe(agent: Agent, workspaceId?: WorkspaceId): Promise<boolean> {
     const workspace = await this.authorize(agent)
     this.requireWorkspace(workspace, workspaceId)
@@ -196,7 +221,17 @@ export class AgentQueue extends Service {
     })
   }
 
-  /** Publish one durable fan-out message; direct targets must already belong to the workspace. */
+  /**
+   * Commit one message to direct targets and the current eligible broadcast subscribers.
+   * Publication never injects inbox input or wakes an agent. Notifications follow commit.
+   * @param agent - Exact live sender authorized for the workspace, rechecked before writing.
+   * @param request - Nonempty bounded body and direct recipients, broadcast opt-in, or both.
+   * @returns Durably committed message with a per-workspace sequence and frozen recipients.
+   * @throws Error on invalid membership, mismatched workspace, or no eligible recipients;
+   * RangeError on recipient, backlog, or sequence limits. Invalid bodies fail schema
+   * validation. Storage failures reject; failed provisional-cursor rollback is reported
+   * as an AggregateError.
+   */
   async publish(agent: Agent, request: PublishRequest): Promise<QueueMessage> {
     const workspace = await this.authorize(agent)
     this.requireWorkspace(workspace, request.workspaceId)
@@ -293,7 +328,15 @@ export class AgentQueue extends Service {
     try { listener(notice) } catch { /* delivery is advisory; durable replay remains available */ }
   }
 
-  /** Read after the ack cursor by default. Explicit cursor/after may replay below ack only while retained. */
+  /**
+   * Read addressed messages without acknowledging them; replay is limited to retained mail.
+   * @param agent - Exact live caller authorized for the workspace.
+   * @param options - Workspace guard, exclusive cursor or after alias, and limit (1–100,
+   * default 50). Omitting both positions reads after the durable acknowledgement cursor.
+   * @returns Bounded addressed messages, the unchanged acknowledgement cursor, and remaining-page flag.
+   * @throws Error on invalid membership, mismatched workspace, disagreeing cursor aliases,
+   * or an absent delivery account; RangeError on an invalid position or limit.
+   */
   async read(
     agent: Agent,
     options: { workspaceId?: WorkspaceId; cursor?: number; after?: number; limit?: number } = {},
@@ -315,7 +358,15 @@ export class AgentQueue extends Service {
     return { messages: visible.slice(0, limit), cursor: subscription.cursor, hasMore: visible.length > limit }
   }
 
-  /** Advance only this session's acknowledged cursor, never beyond committed stream head. */
+  /**
+   * Durably advance only the caller's acknowledgement cursor, never beyond committed stream head.
+   * @param agent - Exact live caller authorized for the workspace.
+   * @param workspaceId - Guard that must equal the caller's workspace.
+   * @param throughSeq - Nonnegative safe stream sequence through which messages are acknowledged.
+   * @returns Monotonic committed cursor; an earlier position leaves the cursor unchanged.
+   * @throws Error on invalid membership, mismatched workspace, or absent delivery account;
+   * RangeError on an invalid position or a position beyond the committed head.
+   */
   async ack(agent: Agent, workspaceId: WorkspaceId, throughSeq: number): Promise<number> {
     const workspace = await this.authorize(agent)
     this.requireWorkspace(workspace, workspaceId)

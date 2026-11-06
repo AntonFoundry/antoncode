@@ -17,6 +17,7 @@ export class AgentMailRemote extends TypertRemoteService {
   }
 
   /**
+   * Discover the caller address and one page of authorized live peers.
    * @param agent - target Agent resolved from its Session identity.
    * @param peerCursor - peer page cursor.
    * @returns address and discoverable peers.
@@ -26,7 +27,13 @@ export class AgentMailRemote extends TypertRemoteService {
     return this.ctx.agentDirectQueue.address(agent, peerCursor === undefined ? {} : { peerCursor })
   }
 
-  /** @param agent - target Agent. @param channel - mailbox. @param cursor - page cursor. @returns bounded mail page. */
+  /**
+   * Read at most 100 retained messages without acknowledging them.
+   * @param agent - Exact live recipient resolved from the requested Session.
+   * @param channel - Workspace-local or cross-workspace direct mailbox.
+   * @param cursor - Exclusive replay position; omission uses the durable acknowledgement cursor.
+   * @returns Addressed mail page; an absent local delivery account returns an empty page.
+   */
   @Remote
   async inbox(agent: Agent, channel: 'local' | 'direct', cursor?: number): Promise<AgentMailPage> {
     if (channel === 'local') {
@@ -55,6 +62,7 @@ export class AgentMailRemote extends TypertRemoteService {
   }
 
   /**
+   * Commit mail through the selected queue; direct mail rejects workspace broadcasts.
    * @param agent - sending Agent.
    * @param channel - delivery queue.
    * @param recipients - addressees.
@@ -73,7 +81,13 @@ export class AgentMailRemote extends TypertRemoteService {
     return { seq: sent.seq }
   }
 
-  /** @param agent - target Agent. @param channel - mailbox. @param throughSeq - highest confirmed sequence. @returns committed cursor. */
+  /**
+   * Durably acknowledge only the caller's selected mailbox.
+   * @param agent - Exact live recipient resolved from the requested Session.
+   * @param channel - Workspace-local or cross-workspace direct mailbox.
+   * @param throughSeq - Highest processed sequence in that mailbox.
+   * @returns Committed monotonic cursor; queue authorization and sequence failures reject.
+   */
   @Remote
   async ack(agent: Agent, channel: 'local' | 'direct', throughSeq: number): Promise<{ cursor: number }> {
     if (channel === 'direct') return { cursor: await this.ctx.agentDirectQueue.ackInbox(agent, throughSeq) }

@@ -117,7 +117,12 @@ export interface Config {
 }
 
 /** Deployment policy after schema defaults have been applied. */
-type ResolvedConfig = Omit<Config, 'disabledProviders'> & { readonly listWorkSliceMs: number; readonly disabledProviders: Volatile<string[]> }
+type ResolvedConfig = Omit<Config, 'disabledProviders'> & {
+  /** Positive integral milliseconds of list work before yielding between complete rows; defaults to 16. */
+  readonly listWorkSliceMs: number
+  /** Live provider-route exclusion list for browser model choices; defaults to no exclusions. */
+  readonly disabledProviders: Volatile<string[]>
+}
 
 /** Host integrations replaceable by direct unit tests. */
 export interface SessionControllerInternals {

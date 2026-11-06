@@ -59,6 +59,8 @@ const result = { schema: { type: 'object', additionalProperties: true } as const
  * Keep acknowledgement explicit: the digest is a bounded, replayable view of
  * unread messages, not a delivery receipt. Never mutate the Agent inbox or
  * wake a turn from this listener.
+ * @param ctx - Host context with the workspace queue and agent pre-step events.
+ * @returns Disposer for the pre-step listener; durable queue cursors remain unchanged.
  */
 export function installQueueDigest(ctx: Context): () => void {
   return ctx.on('agent/pre-step', async ({ agent, step, signal }, next): Promise<PreStepDecision> => {
