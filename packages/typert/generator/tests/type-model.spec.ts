@@ -495,6 +495,19 @@ describe('WorkspaceAnalyzer', { timeout: 60_000 }, () => {
     )
   })
 
+  it.each(['missing', 'script'])('reports an unresolved %s export module instead of a compiler crash', (variant) => {
+    const root = copyFixture('typert-unresolved-export-')
+    const manifestPath = join(root, 'packages/host/package.json')
+    writeFileSync(manifestPath, readFileSync(manifestPath, 'utf8').replace('./lib/types/models.d.ts', './lib/types/unresolved.d.ts'))
+    if (variant === 'script') writeFileSync(join(root, 'packages/host/src/unresolved.ts'), 'const privateValue = 1\n')
+    const sourcePath = join(root, 'packages/client/src/index.ts')
+    writeFileSync(sourcePath, readFileSync(sourcePath, 'utf8') + "\nexport type { Payload } from '@fixture/host/models'\n")
+
+    expect(() => new WorkspaceAnalyzer({ root, faces: ['client'], checkDiagnostics: false }).analyze()).toThrow(
+      `@fixture/host export ./models has no module symbol at ${join(root, 'packages/host/src/unresolved.ts')}`,
+    )
+  })
+
   it('rejects cross-face namespace re-exports until the model has a namespace target', () => {
     const root = copyFixture('typert-namespace-reexport-')
     const sourcePath = join(root, 'packages/client', 'src/index.ts')
