@@ -1,5 +1,5 @@
 ---
-description: "English"
+description: "Use Claude models with a Claude Code subscription and reuse the Harness tool executor."
 kind: "package-reference"
 ---
 
@@ -9,16 +9,16 @@ English
 
 ## Summary
 
-English
+Use Claude models through an existing Claude Code subscription rather than an Anthropic API key. Sign in from the Models page or the terminal, then run ordinary Harness conversations and tools. The route refreshes its stored OAuth session and keeps subscription credentials separate from keyed Anthropic routes.
 
 ## Table of Contents
 
 - [Understand the implementation](#understand-the-implementation)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
 
 ## Understand the implementation
-
-English
 
 This provider registers `claude-code` on `ctx.llm`: Claude models over the Anthropic Messages API authenticated with the operator's Claude Code subscription OAuth session (browser login, approved once, refreshed silently). Transport reuses pi-ai's Anthropic implementation wholesale — it already sends Claude Code identity (`Bearer` plus the `oauth-2025-04-20` beta) for `sk-ant-oat` tokens — so this package owns only auth, routing, and capability surface: no wire code, no message translation. Returned tool calls execute through Harness tools, never through the Claude Code agent loop.
 
@@ -30,11 +30,19 @@ OAuth mechanics (PKCE S256, manual code paste-back, token and refresh shapes, sc
 
 ## Model Experience
 
-Subscription turns send the Harness system text, message history, and tool schemas to the Anthropic gateway with the workspace bearer; pi-ai's Anthropic transport handles protocol, effort, and tool-call translation exactly as on a keyed route. Past tool traffic serializes per the shared translator. No new model-visible text is added by the plugin.
+### Claude subscription request
+
+#### What the model sees
+
+The selected Claude model receives the Harness system text, message history, and tool definitions through pi-ai’s Anthropic translator. The `claude-code` route adds authentication, not adapter-authored prompt text; returned tool calls execute in the Harness rather than the Claude Code agent loop.
+
+#### Token effect
+
+Input tokens follow the translated history and tool definitions; output tokens follow the request limits and selected model. Subscription authentication does not remove provider usage limits or the token cost of retained conversation history.
 
 #### KV Cache effect
 
-Turns resend the complete request prefix on each call; cache reuse depends on the Anthropic gateway.
+Turns resend the translated request prefix. Cache eligibility and accounting follow the shared pi-ai Anthropic transport and the gateway; changing model, system text, or tool definitions can change prefix reuse.
 
 ## Known Limitations and Deferred Work
 
@@ -42,6 +50,6 @@ Turns resend the complete request prefix on each call; cache reuse depends on th
 - Login runs from the terminal (`dsh claude-login`) or the Models-page Log in button (same paste-back flow server-side, no polling); the row dot and logout toggle follow the stored session.
 - Token family detection (`sk-ant-oat`) lives in pi-ai's Anthropic implementation; a subscription token presented through any other route depends on that route's own auth vocabulary.
 
-## Dev Note
+### Dev Note
 
 - See the module JSDoc for the owning contract and its rationale.

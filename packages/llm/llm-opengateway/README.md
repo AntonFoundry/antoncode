@@ -1,5 +1,5 @@
 ---
-description: "English"
+description: "Discover account-accessible OpenGateway models and configure their compatible inference route."
 kind: "package-reference"
 ---
 
@@ -9,16 +9,16 @@ English
 
 ## Summary
 
-English
+Use OpenGateway models with one stored API credential and an account-specific model catalog. The picker follows gateway-advertised capacity and supported wire protocols. Configure a reasoning-effort ladder for the route, while treating each model’s actual support and request-time availability as gateway-owned.
 
 ## Table of Contents
 
 - [Understand the implementation](#understand-the-implementation)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
 
 ## Understand the implementation
-
-English
 
 This provider registers `opengateway` on `ctx.llm`: one route to [OpenGateway](https://opengateway.ai)'s OpenAI-compatible gateway, authenticated with `OPENGATEWAY_API_KEY` (or the `apiKeyEnv` named in its `llm-opengateway:` settings section). Discovery reads the gateway's own `GET /models` document, so the picker lists exactly the models the account can reach — including each model's context window, output cap, and wire protocol — without a bundled catalog to keep current. A missing key fails `MISSING_CREDENTIAL` at request time and names the reference to store.
 
@@ -64,6 +64,6 @@ Loop-retained response blocks append to the next request and preserve its earlie
 - The gateway catalog is advisory. A model it lists can still be retired or ungranted for an account; the request-time provider error remains authoritative.
 - Only the OpenAI chat-completions and Responses protocols are served. A model the gateway advertises solely through the Anthropic Messages protocol stays out of the picker.
 
-## Dev Note
+### Dev Note
 
 - See the module JSDoc for the owning contract and its rationale.

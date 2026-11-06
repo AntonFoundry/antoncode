@@ -1,171 +1,59 @@
 ---
-description: "* OpenAI Codex subscription (OAuth) adapter for the DeepSeek Harness LLM seam.
- *
- * Uses your **ChatGPT/Codex subscription** — not an API key. The pl"
+description: "Use a ChatGPT/Codex subscription for Harness conversations with shared OAuth login and Responses streaming."
 kind: "package-reference"
 ---
 
-/**
+# @deepseek-ai/dsh-llm-codex
 
 English
 
 ## Summary
 
-* OpenAI Codex subscription (OAuth) adapter for the DeepSeek Harness LLM seam.
- *
- * Uses your **ChatGPT/Codex subscription** — not an API key. The plugin reads
- * the OAuth login the Codex CLI or the VS Code Codex extension already holds
- * in `~/.codex/auth.json`, refreshes the access token silently through the
- * OpenAI OAuth endpoint, and talks to the Codex backend
- * (`https://chatgpt.com/backend-api/codex/responses`) with the Responses
- * protocol. There is no API-key field anywhere in the configuration — by
- * design, this provider never shows a key input box.
- *
- * ## Setup (one time)
- *
- * Log in once with the Codex CLI (`codex login`) or the VS Code Codex
- * extension. That writes/refreshes `~/.codex/auth.json`; this plugin reuses
- * it. If you have no login yet, `codex login` opens the browser flow.
- *
- * The adapter mounts **dormant**: the `codex` route registers only while the
- * `providers` dict names it, so the web Models page can offer, add, and
- * delete this built-in exactly like a user-added provider.
- *
- * ## Configuration
- *
- * ```yaml
- * # $DSH_HOME/settings.yaml — written by the web Models page
- * llm-codex:
- *   codexHome: ~/.codex        # optional; defaults to $CODEX_HOME or ~/.codex
- *   maxTokens: 32768
- *   models:
- *     - id: gpt-5.2-codex
- *       name: GPT-5.2 Codex
- *       contextWindow: 400000
- *   # The dict key IS the route id; its presence registers the route. An empty
- *   # profile is legitimate — the subscription login needs no fields.
- *   providers:
- *     codex: {}
- * ```
- *
- * Everything is included with the ChatGPT/Codex subscription — no metered
- * API billing.
- *
- * ## Wire behavior
- *
- * - **Protocol**: OpenAI Responses API (`POST {base}/responses`, SSE stream),
- *   `causal: true`, reasoning effort + auto summary, `max_output_tokens`.
- * - **Reasoning effort** comes from the Codex model catalog cached at
- *   `~/.codex/models_cache.json`. The Harness reads each model's
- *   `supported_reasoning_levels` and `default_reasoning_level`; GPT-6 Luna's
- *   current catalog offers low, medium, high, xhigh, and max, with medium as
- *   its default. When cache metadata is unavailable, the adapter keeps its
- *   legacy fallback effort set. Explicit `models[].reasoningEfforts` values
- *   override the cached list for a configured model.
- * - **Models and capacity**: the built-in list is supplemented by the models
- *   discovered from the Codex CLI's account-specific model cache. A cached
- *   `context_window` supplies discovered model capacity unless a configured
- *   exact model entry provides its own `contextWindow`.
- * - **Auth**: reads `~/.codex/auth.json` per request; sends the OAuth bearer
- *   token and `ChatGPT-Account-ID`, refreshes the token when near expiry or
- *   when the backend returns `token_expired`, and writes the refreshed session
- *   back so the CLI/editor stay in sync. A missing login fails with a pointer
- *   to `codex login` — never a key prompt.
- * - **Text-only route**: image blocks are rejected with `UNSUPPORTED_CONTENT`.
- * - **Errors** normalize to harness `LlmError` codes: `AUTH`, `RATE_LIMIT`,
- *   `QUOTA_EXCEEDED`, `CONTEXT_WINDOW_EXCEEDED`, `INVALID_REQUEST`, `SERVER`,
- *   `TRANSPORT`, `TIMEOUT`, `ABORTED`.
- *
- * ## Development
- *
- * ```sh
- * tsc -b tsconfig.host.json
- * tsdown --env.DSH_BUILD_FACE host
- * vitest run packages/llm/llm-codex/tests
- * ```
- */
+Use your ChatGPT/Codex subscription for Harness conversations without configuring an OpenAI API key. The provider reuses the Codex CLI or editor’s OAuth login and refreshes it when needed. Model discovery combines the configured catalog with the account’s Codex model cache. Text, tools, and retained images use the Responses protocol; the Harness owns tool execution.
 
 ## Table of Contents
 
+- [Use this package](#use-this-package)
 - [Understand the implementation](#understand-the-implementation)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
+
+## Use this package
+
+Mount the plugin in a Harness composition and add `codex` to its `providers` dictionary, either in entry configuration or the `llm-codex` settings section. An empty `codex` profile is valid: authentication comes from the shared OAuth login, not a configured API key. Without that profile, the route remains dormant and available to configuration consumers.
+
+The Codex CLI or editor owns the initial login. The provider reads its `auth.json` under the resolved Codex home, refreshes expiring credentials, and writes refreshed tokens back. A missing login reports the sign-in action rather than asking for an API key. The [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-llm-codex) owns accepted settings.
 
 ## Understand the implementation
 
- * OpenAI Codex subscription (OAuth) adapter for the DeepSeek Harness LLM seam.
- *
- * Uses your **ChatGPT/Codex subscription** — not an API key. The plugin reads
- * the OAuth login the Codex CLI or the VS Code Codex extension already holds
- * in `~/.codex/auth.json`, refreshes the access token silently through the
- * OpenAI OAuth endpoint, and talks to the Codex backend
- * (`https://chatgpt.com/backend-api/codex/responses`) with the Responses
- * protocol. There is no API-key field anywhere in the configuration — by
- * design, this provider never shows a key input box.
- *
- * ## Setup (one time)
- *
- * Log in once with the Codex CLI (`codex login`) or the VS Code Codex
- * extension. That writes/refreshes `~/.codex/auth.json`; this plugin reuses
- * it. If you have no login yet, `codex login` opens the browser flow.
- *
- * The adapter mounts **dormant**: the `codex` route registers only while the
- * `providers` dict names it, so the web Models page can offer, add, and
- * delete this built-in exactly like a user-added provider.
- *
- * ## Configuration
- *
- * ```yaml
- * # $DSH_HOME/settings.yaml — written by the web Models page
- * llm-codex:
- *   codexHome: ~/.codex        # optional; defaults to $CODEX_HOME or ~/.codex
- *   maxTokens: 32768
- *   models:
- *     - id: gpt-5.2-codex
- *       name: GPT-5.2 Codex
- *       contextWindow: 400000
- *   # The dict key IS the route id; its presence registers the route. An empty
- *   # profile is legitimate — the subscription login needs no fields.
- *   providers:
- *     codex: {}
- * ```
- *
- * Everything is included with the ChatGPT/Codex subscription — no metered
- * API billing.
- *
- * ## Wire behavior
- *
- * - **Protocol**: OpenAI Responses API (`POST {base}/responses`, SSE stream),
- *   `causal: true`, reasoning effort + auto summary, `max_output_tokens`.
- * - **Reasoning effort** comes from the Codex model catalog cached at
- *   `~/.codex/models_cache.json`. The Harness reads each model's
- *   `supported_reasoning_levels` and `default_reasoning_level`; GPT-6 Luna's
- *   current catalog offers low, medium, high, xhigh, and max, with medium as
- *   its default. When cache metadata is unavailable, the adapter keeps its
- *   legacy fallback effort set. Explicit `models[].reasoningEfforts` values
- *   override the cached list for a configured model.
- * - **Models and capacity**: the built-in list is supplemented by the models
- *   discovered from the Codex CLI's account-specific model cache. A cached
- *   `context_window` supplies discovered model capacity unless a configured
- *   exact model entry provides its own `contextWindow`.
- * - **Auth**: reads `~/.codex/auth.json` per request; sends the OAuth bearer
- *   token and `ChatGPT-Account-ID`, refreshes the token when near expiry or
- *   when the backend returns `token_expired`, and writes the refreshed session
- *   back so the CLI/editor stay in sync. A missing login fails with a pointer
- *   to `codex login` — never a key prompt.
- * - **Text-only route**: image blocks are rejected with `UNSUPPORTED_CONTENT`.
- * - **Errors** normalize to harness `LlmError` codes: `AUTH`, `RATE_LIMIT`,
- *   `QUOTA_EXCEEDED`, `CONTEXT_WINDOW_EXCEEDED`, `INVALID_REQUEST`, `SERVER`,
- *   `TRANSPORT`, `TIMEOUT`, `ABORTED`.
- *
- * ## Development
- *
- * ```sh
- * tsc -b tsconfig.host.json
- * tsdown --env.DSH_BUILD_FACE host
- * vitest run packages/llm/llm-codex/tests
- * ```
- */
+The plugin resolves request connection settings and authentication for the `codex` route. [`src/adapter.ts`](src/adapter.ts) combines configured model facts with `models_cache.json`; exact configured values take precedence over cached capacity and reasoning metadata. Missing cache data falls back to the configured catalog rather than proving account access.
 
-## Dev Note
+[`src/serialize.ts`](src/serialize.ts) maps system text to Responses `instructions`, conversation blocks to input items, and offered tools to function definitions. User images resolve through the attachment store as `input_image` parts. Tool-result images become a following user-image item because function outputs carry text. [`src/auth.ts`](src/auth.ts) owns shared-login resolution and refresh; the stream translator returns text, reasoning, tool-call, and usage chunks to the Harness.
 
-- See the module JSDoc for the owning contract and its rationale.
+## Model Experience
+
+### Codex request
+
+#### What the model sees
+
+The selected model receives Harness system text as `instructions`, serialized conversation items, and function definitions for offered tools. Resolvable retained images are sent as `input_image` data URLs. Historical reasoning is not copied into visible message text. The adapter adds no authored system prompt and requests Responses streaming with `store: false`.
+
+#### Token effect
+
+Text, function definitions, and retained image input contribute to the provider’s request usage. Catalog `maxTokens` values inform Harness model metadata, but the Responses serializer does not emit an output-token-cap field; callers must not treat that metadata as a backend-enforced cap. Retained response blocks contribute to later requests according to Harness history assembly.
+
+#### KV Cache effect
+
+Each turn resends the serialized prefix; `store: false` is not a promise of provider KV-cache behavior. The backend decides reuse, and changes to the selected model, system text, tools, history, or image representation can change the reusable prefix.
+
+## Known Limitations and Deferred Work
+
+- The route requires a usable ChatGPT/Codex OAuth login and backend entitlement; it does not accept an OpenAI API key or guarantee subscription access to every discovered model.
+- The local model cache is advisory and can be missing or stale. Request-time rejection remains authoritative.
+- Images require the attachment reader. When it is unavailable, image blocks become the shared omitted-image placeholder; system instructions and function outputs cannot directly carry image parts.
+- The Responses serializer does not send an output-token cap, even though the model metadata exposes a default `maxTokens` value.
+
+### Dev Note
+
+None.

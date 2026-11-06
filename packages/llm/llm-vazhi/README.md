@@ -1,5 +1,5 @@
 ---
-description: "English"
+description: "Choose free-model pool entries with bounded failover and persistent local cooldowns."
 kind: "package-reference"
 ---
 
@@ -9,16 +9,16 @@ English
 
 ## Summary
 
-English
+Use a ranked pool of free models, or pin a specific upstream/model entry. Automatic selection tries eligible upstreams until one produces output, with a bounded attempt count and local cooldowns for recent failures. Credentials enable keyed upstreams; anonymous entries need no account. Failover can resend the prompt to several providers before the first response chunk.
 
 ## Table of Contents
 
 - [Understand the implementation](#understand-the-implementation)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
 
 ## Understand the implementation
-
-English
 
 This provider registers `vazhi` on `ctx.llm`: a free-model pool route over anonymous and keyed OpenAI-compatible upstreams, ported from [vazhi](https://github.com/itsgg/vazhi) (MIT, © itsgg). Model `auto` walks the pool in ranked order; any other id pins one `upstream/model` entry, and a pinned model that fails reports its own provider error instead of falling through.
 
@@ -72,6 +72,6 @@ Loop-retained response blocks append to the next request and preserve its earlie
 - The pool document carries no effort vocabulary, so the picker cannot hide levels an upstream rejects; the route offers its configured ladder on every model, and a selected level is the caller's choice.
 - Pinned ids name `upstream/model`. A model the pool document does not carry is not routable even when its upstream is reachable, because admission is what the pool decides.
 
-## Dev Note
+### Dev Note
 
 - See the module JSDoc for the owning contract and its rationale.
