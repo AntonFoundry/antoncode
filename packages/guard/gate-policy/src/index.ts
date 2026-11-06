@@ -9,6 +9,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { shellCommands } from './shell-commands.ts'
 import { z as zod } from 'zod'
 import type { ZodType } from 'zod'
 import z from '@deepseek-ai/schemastery'
@@ -38,8 +39,10 @@ export interface GateRule {
   name: string
   /** `*`-wildcard patterns over the tool name (default `['bash']`). */
   tools?: string[]
-  /** Anchored-regex sources tested against the call's `command` argument; first match wins. */
+  /** Regex sources tested against the selected command scope; first match wins. */
   commandPatterns: string[]
+  /** Raw text by default; shellCommands anchors patterns at each literal executable, retaining raw checks for unsupported syntax. */
+  commandScope?: 'raw' | 'shellCommands'
   /** The checks the model must perform and state before retrying the call. */
   checklist: string
   /**
@@ -100,6 +103,7 @@ export const Config: z<Config> = z.object({
     name: z.string(),
     tools: z.array(z.string()).default(['bash']),
     commandPatterns: z.array(z.string()),
+    commandScope: z.union(['raw', 'shellCommands']).default('raw'),
     checklist: z.string(),
     confirm: z.boolean().default(false),
   })).default([]),
@@ -199,6 +203,7 @@ interface CompiledRule {
   name: string
   tools: RegExp[]
   patterns: RegExp[]
+  shellPatterns: RegExp[] | undefined
   checklist: string
   confirm: boolean
 }
@@ -221,7 +226,10 @@ function compileRules(rules: GateRule[]): CompiledRule[] {
     } catch (error) {
       throw new Error(`gate-policy: rule '${rule.name}' has an invalid \`commandPatterns\` entry: ${error instanceof Error ? error.message : String(error)}`)
     }
-    return { name: rule.name, tools: (rule.tools ?? ['bash']).map(wildcardToRegExp), patterns, checklist: rule.checklist, confirm: rule.confirm ?? false }
+    const shellPatterns = rule.commandScope === 'shellCommands'
+      ? rule.commandPatterns.map(source => new RegExp(`^(?:${source})`))
+      : undefined
+    return { name: rule.name, tools: (rule.tools ?? ['bash']).map(wildcardToRegExp), patterns, shellPatterns, checklist: rule.checklist, confirm: rule.confirm ?? false }
   })
 }
 
@@ -376,7 +384,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     if (command === undefined) return undefined
     for (const rule of rules) {
       if (!rule.tools.some(pattern => pattern.test(execution.name))) continue
-      if (!rule.patterns.some(pattern => pattern.test(command))) continue
+      const shellPatterns = rule.shellPatterns
+      const commands = shellPatterns === undefined ? undefined : shellCommands(command)
+      const matches = commands === undefined || shellPatterns === undefined
+        ? rule.patterns.some(pattern => pattern.test(command))
+        : commands.some(candidate => shellPatterns.some(pattern => pattern.test(candidate)))
+      if (!matches) continue
       return { rule, command }
     }
     return undefined

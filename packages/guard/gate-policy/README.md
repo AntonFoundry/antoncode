@@ -19,7 +19,7 @@ Block tool calls that match deployment-configured command rules and return the c
 
 ## Understand the implementation
 
-A deny-with-question gate on the tool-execution path. Each configured rule pairs a trigger (tool-name patterns plus anchored regexes over the call's `command` argument) with a checklist. When a call matches, the gate denies it and the checklist becomes the denial reason — the model reads it as the tool result, performs the checks, states their outcome, and retries the same call. A gate never approves anything; it can only block a call until the checks are stated. Decision record: [the guidebook-gates-and-recipes Agent Note](../../../.agents/notes/proposed/feature/2026-09-13-guidebook-gates-and-recipes.md).
+A deny-with-question gate on the tool-execution path. Each configured rule pairs a trigger (tool-name patterns plus regexes over its selected command scope) with a checklist. When a call matches, the gate denies it and the checklist becomes the denial reason — the model reads it as the tool result, performs the checks, states their outcome, and retries the same call. A gate never approves anything; it can only block a call until the checks are stated. Decision record: [the guidebook-gates-and-recipes Agent Note](../../../.agents/notes/proposed/feature/2026-09-13-guidebook-gates-and-recipes.md).
 
 The plugin ships mechanism only. Which actions gate, and what the checklist demands, are deployment policy in `cordis.yml` — nothing is hardcoded.
 
@@ -35,8 +35,15 @@ The plugin ships mechanism only. Which actions gate, and what the checklist dema
 |---|---|
 | `name` | Required, non-empty. Quoted in the denial so the transcript names the gate. |
 | `tools` | `*`-wildcard patterns over the tool name; default `['bash']`. |
-| `commandPatterns` | Anchored regex sources tested against the `command` string argument. First matching rule denies. |
+| `commandPatterns` | Regex sources tested against the selected command scope. First matching rule denies. |
+| `commandScope` | `raw` (default) tests the complete `command` string unchanged. `shellCommands` anchors each pattern at each normalized executable command; unsupported syntax retains raw checks. |
 | `checklist` | Required, non-empty. The checks the model must perform before retrying. |
+
+### Shell command matching (opt-in)
+
+Set `commandScope: shellCommands` only on rules intended to match executable commands rather than literal text. Patterns are implicitly anchored at the executable start; for example, `npm\s+publish\b` matches `cd repo && npm publish`, quoted executable/subcommand words, absolute executable paths, literal `env`/`sudo`/`command`/`exec` wrappers, and nested `bash -c` scripts. It does not match `grep publish package.json`, commit messages, or source paths. Multiword quoted operands retain their separation and do not become executable subcommands. Quoted `cat`/`tee` heredocs are data; unquoted or executable heredocs retain raw checks.
+
+Simple `$NAME` and `${NAME}` references are accepted only in leading shell assignments or `export NAME=value` operands; the classifier never reads their values. Executable-variable references and other expansions retain raw checks. Unsupported shell constructs, substitutions, malformed quoting, unknown executables, opaque interpreter scripts, and excessive nested shells retain the original raw regex checks. This conservative fallback can still gate a Python or Node source-editing script that contains deployment text. Use direct file-edit tools for such source edits; do not treat this classifier as a security sandbox or assume that it resolves aliases, scripts, variables, or arbitrary program behavior. Existing raw rules, checklists, confirmations, and rule order are unchanged. Enabling this scope requires the updated plugin code and an explicit deployment-policy edit; a source change alone does not alter installed profile rules.
 
 ### Guidebook verdicts (opt-in)
 
