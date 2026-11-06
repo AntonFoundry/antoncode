@@ -3,17 +3,20 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { MarkdownFileView } from '../src/client/MarkdownFileView.tsx'
+import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { en } from '../src/client/locales.ts'
 import type { MarkdownFileViewProps } from '../src/client/MarkdownFileView.tsx'
 
 /** Owner-share stub: a resolving read face over a small fixture unless overridden. */
 function props(over: Partial<MarkdownFileViewProps> = {}): MarkdownFileViewProps {
   return {
+    t: makeTranslate(en),
     path: '/w/README.md',
     readText: () => Promise.resolve({ content: '# Title\n\nBody text.', truncated: false }),
     mediaUrl: p => `/api/host/media?path=${encodeURIComponent(p)}`,
     openWithOs: () => {},
     ...over,
-  } as MarkdownFileViewProps
+  }
 }
 
 afterEach(() => { cleanup() })
@@ -41,7 +44,7 @@ describe('MarkdownFileView', () => {
 
   it('flags a head-truncated read', async () => {
     const { container } = render(<MarkdownFileView {...props({ readText: () => Promise.resolve({ content: '# Head', truncated: true }) })} />)
-    await waitFor(() => { expect(screen.getByText('showing the first 512 KiB')).toBeTruthy() })
+    await waitFor(() => { expect(screen.getByText('Showing the first 512 KiB')).toBeTruthy() })
     expect(container.querySelector('[data-truncated]')).toBeTruthy()
   })
 })

@@ -34,8 +34,9 @@
 .selectionBox {
   width: 16px;
   height: 16px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 50%;
+  corner-shape: round;
   box-sizing: border-box;
   color: var(--dsw-alias-label-primary);
 }

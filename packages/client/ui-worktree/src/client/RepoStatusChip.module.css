@@ -8,6 +8,7 @@
   padding: 2px 8px;
   border: 1px solid var(--dsw-border-subtle, rgba(255, 255, 255, 0.1));
   border-radius: 999px;
+  corner-shape: round;
   background: transparent;
   color: var(--dsw-text-secondary, var(--dsw-text-secondary, #9a9a9a));
   font-size: 12px;
@@ -16,9 +17,11 @@
   max-width: 240px;
 }
 
-.chip:hover {
-  color: var(--dsw-text-primary, var(--dsw-text-primary, #e6e6e6));
-  border-color: var(--dsw-border-strong, rgba(255, 255, 255, 0.2));
+@media (hover: hover) {
+  .chip:hover {
+    color: var(--dsw-text-primary, var(--dsw-text-primary, #e6e6e6));
+    border-color: var(--dsw-border-strong, rgba(255, 255, 255, 0.2));
+  }
 }
 
 .icon {
@@ -37,6 +40,7 @@
   flex: none;
   padding: 0 6px;
   border-radius: 999px;
+  corner-shape: round;
   background: var(--dsw-fill-subtle, rgba(255, 255, 255, 0.08));
   font-size: 11px;
 }

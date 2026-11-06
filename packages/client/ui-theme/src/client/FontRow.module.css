@@ -22,7 +22,7 @@
   align-items: center;
   gap: 8px;
   padding: 12px 0;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 .panel .section:last-child {
@@ -69,7 +69,8 @@
   height: 36px;
   padding: 0 14px;
   border: none;
-  border-radius: 18px;
+  border-radius: 999px;
+  corner-shape: round;
   background: var(--dsw-alias-bg-module-platform);
   font: inherit;
   font-size: 14px;
@@ -88,7 +89,8 @@
   display: inline-flex;
   align-items: center;
   height: 36px;
-  border-radius: 18px;
+  border-radius: 999px;
+  corner-shape: round;
   background: var(--dsw-alias-bg-module-platform);
 }
 
@@ -106,8 +108,10 @@
   cursor: pointer;
 }
 
-.stepButton:hover:not(:disabled) {
-  color: var(--dsw-alias-brand-primary);
+@media (hover: hover) {
+  .stepButton:hover:not(:disabled) {
+    color: var(--dsw-alias-brand-primary);
+  }
 }
 
 .stepButton:disabled {
@@ -130,8 +134,8 @@
   width: 100%;
   height: 30px;
   padding: 0 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-sm);
   background: transparent;
   box-sizing: border-box;
   font: inherit;

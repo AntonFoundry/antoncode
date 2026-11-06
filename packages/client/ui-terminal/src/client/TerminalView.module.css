@@ -94,8 +94,8 @@
   right: 10px;
   z-index: 5;
   appearance: none;
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 6px;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-sm);
   padding: 2px 7px;
   font-size: 12px;
   line-height: 1.4;
@@ -105,8 +105,10 @@
   opacity: 0.55;
 }
 
-.broadcastToggle:hover {
-  opacity: 1;
+@media (hover: hover) {
+  .broadcastToggle:hover {
+    opacity: 1;
+  }
 }
 
 .broadcastToggle[data-active] {

@@ -634,13 +634,19 @@
   pointer-events: none;
 }
 
-.memoryResizer:hover::after,
 .memoryResizer[data-dragging]::after {
   opacity: 0.9;
 }
+@media (hover: hover) {
+  .memoryResizer:hover::after {
+    opacity: 0.9;
+  }
+}
 
-.memoryResizer:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  .memoryResizer:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .memoryArea {

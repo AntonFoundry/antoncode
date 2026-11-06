@@ -25,7 +25,7 @@
   margin: 0 -2px;
   padding: 0 10px 0 8px;
   border: none;
-  border-radius: 12px;
+  border-radius: var(--dsw-radius-md);
   background: transparent;
   color: var(--dsw-alias-label-primary);
   font-family: inherit;
@@ -44,16 +44,22 @@
   background: var(--dsw-alias-state-warn-tertiary);
 }
 
-.badge[data-active]:hover {
-  background: var(--dsw-alias-state-warn-tertiary);
-  filter: brightness(1.06);
+@media (hover: hover) {
+  .badge[data-active]:hover {
+    background: var(--dsw-alias-state-warn-tertiary);
+    filter: brightness(1.06);
+  }
 }
 
 .badge[data-active] .badgeLabel,
-.badge[data-active] .badgeCount,
-.badge[data-active]:hover .badgeLabel,
-.badge[data-active]:hover .badgeCount {
+.badge[data-active] .badgeCount {
   color: var(--dsw-alias-state-warn-label);
+}
+@media (hover: hover) {
+  .badge[data-active]:hover .badgeLabel,
+  .badge[data-active]:hover .badgeCount {
+    color: var(--dsw-alias-state-warn-label);
+  }
 }
 
 .badgeLabel {
@@ -106,7 +112,7 @@
   max-height: 60vh;
   overflow: hidden;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--dsw-radius-md);
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
   box-shadow: var(--dsw-elevation-prominent);
   /* Only `.body` scrolls; the header remains fixed above it. */
@@ -187,7 +193,7 @@
   gap: 8px;
   padding: 14px 12px 10px;
   border: 0.5px solid var(--dsw-alias-border-l4);
-  border-radius: 12px;
+  border-radius: var(--dsw-radius-md);
 }
 
 .row[data-cordis-awaiting] {
@@ -388,6 +394,7 @@
   flex: none;
   padding: 1px 8px;
   border-radius: 999px;
+  corner-shape: round;
   background: var(--dsw-alias-state-warn-tertiary);
   color: var(--dsw-alias-state-warn-label);
   font-size: 11px;

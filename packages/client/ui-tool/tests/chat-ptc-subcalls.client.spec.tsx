@@ -177,7 +177,7 @@ describe('run_code sub-calls through the real chat machinery', () => {
 
     const bashRow = nest!.querySelector('[data-sample="bash"]')!
     expect(bashRow.getAttribute('role')).toBe('button')
-    fireEvent.click(bashRow)
+    expect(bashRow.getAttribute('aria-expanded')).toBe('true')
     expect(nest!.querySelector('[data-terminal]')).not.toBeNull()
     expect(view.getByText('ls notes')).toBeTruthy()
     expect(nest!.querySelector('[data-terminal]')!.textContent).toContain('demo.txt')

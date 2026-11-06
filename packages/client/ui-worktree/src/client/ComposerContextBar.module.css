@@ -16,6 +16,7 @@
   padding: 2px 8px;
   border: none;
   border-radius: 999px;
+  corner-shape: round;
   background: transparent;
   color: var(--dsw-text-secondary, var(--dsw-text-secondary, #9a9a9a));
   font-size: 12px;
@@ -24,10 +25,12 @@
   max-width: 200px;
 }
 
-.repoChip:hover,
-.basePicker:hover {
-  color: var(--dsw-text-primary, var(--dsw-text-primary, #e6e6e6));
-  background: var(--dsw-fill-subtle, rgba(255, 255, 255, 0.06));
+@media (hover: hover) {
+  .repoChip:hover,
+  .basePicker:hover {
+    color: var(--dsw-text-primary, var(--dsw-text-primary, #e6e6e6));
+    background: var(--dsw-fill-subtle, rgba(255, 255, 255, 0.06));
+  }
 }
 
 .icon {

@@ -129,6 +129,7 @@
   padding: 0 8px;
   border: 1px solid color-mix(in srgb, var(--effort-hue) 45%, transparent);
   border-radius: 999px;
+  corner-shape: round;
   outline: none;
   background: color-mix(in srgb, var(--effort-hue) 14%, transparent);
   color: var(--effort-hue);
@@ -138,13 +139,17 @@
   cursor: pointer;
 }
 
-.pill:hover:not(:disabled),
 .pill:focus-visible {
   background: color-mix(in srgb, var(--effort-hue) 24%, transparent);
 }
+@media (hover: hover) {
+  .pill:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--effort-hue) 24%, transparent);
+  }
+}
 
 .pill:focus-visible {
-  box-shadow: 0 0 0 2px var(--dsw-alias-border-l3);
+  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
 }
 
 .pill:disabled {
@@ -176,9 +181,9 @@
   min-width: 260px;
   max-width: min(360px, calc(100vw - 32px));
   padding: 10px 12px 8px;
-  border: 1px solid var(--dsw-alias-border-inverted);
-  border-radius: 12px;
+  border-radius: var(--dsw-radius-md);
   background: var(--dsw-specific-menu);
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
   box-shadow: var(--dsw-shadow-lv3);
   color: var(--dsw-alias-label-primary);
   opacity: 0;
@@ -187,12 +192,19 @@
   transition: opacity 120ms ease, transform 120ms ease, visibility 120ms;
 }
 
-.pillWrap:hover .sliderCard,
 .sliderPinned {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
   pointer-events: auto;
+}
+@media (hover: hover) {
+  .pillWrap:hover .sliderCard {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
 }
 
 .sliderCard:not(.sliderPinned) {
@@ -223,7 +235,7 @@
   min-width: 0;
   padding: 2px 6px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--dsw-radius-sm);
   outline: none;
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
@@ -235,9 +247,13 @@
   white-space: nowrap;
 }
 
-.stop:hover:not(:disabled),
 .stop:focus-visible {
   color: var(--dsw-alias-label-primary);
+}
+@media (hover: hover) {
+  .stop:hover:not(:disabled) {
+    color: var(--dsw-alias-label-primary);
+  }
 }
 
 .stopActive {
@@ -412,7 +428,7 @@
   align-items: center;
   gap: 7px;
   padding: 8px 12px 6px;
-  border-bottom: 1px solid var(--dsw-alias-border-l3);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l3);
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
@@ -422,6 +438,7 @@
 
 .groupTitle[data-stuck] {
   background: var(--dsw-specific-menu);
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
 }
 
 .option {

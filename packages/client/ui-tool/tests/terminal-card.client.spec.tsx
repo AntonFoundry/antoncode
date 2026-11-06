@@ -542,7 +542,7 @@ describe('BashRow terminal card', () => {
     const view = render(<BashRow {...rowProps(settled({
       call: { name: 'bash', argsRaw: shellArgs({ sandbox_permissions: 'danger-full-access', justification: '' }) },
     }))} />)
-    expect(view.getByRole('button').getAttribute('aria-expanded')).toBe('true')
+    expect(view.container.querySelector('[data-expandable]')!.getAttribute('aria-expanded')).toBe('true')
     expect(view.getByText('a.ts  b.ts', RAW)).toBeTruthy()
   })
 
@@ -567,7 +567,7 @@ describe('BashRow terminal card', () => {
     // Default-expanded: the exit status shows on the row and inside the card.
     expect(view.getAllByText('退出码 2')).toHaveLength(2)
     expect(view.getByText('boom', RAW)).toBeTruthy()
-    fireEvent.keyDown(view.getByRole('button'), { key: 'Enter' })
+    fireEvent.keyDown(view.container.querySelector('[data-expandable]')!, { key: 'Enter' })
     expect(view.getAllByText('退出码 2')).toHaveLength(1)
     expect(view.getByText('List files')).toBeTruthy()
   })
@@ -621,7 +621,7 @@ describe('BashRow terminal card', () => {
       return name === 'bash' ? <BashRow {...props} /> : <GenericToolCard {...props} />
     }
     const view = render(renderRow(running({ name, argsRaw, ...parent })))
-    const row = view.getByRole('button')
+    const row = view.container.querySelector('[data-expandable]')!
     expect(view.getByText('Wait')).toBeTruthy()
     // BashRow mounts expanded; the generic pwsh row mounts collapsed.
     if (name === 'bash') expect(row.getAttribute('aria-expanded')).toBe('true')
@@ -675,7 +675,7 @@ describe('BashRow terminal card', () => {
       return name === 'bash' ? <BashRow {...props} /> : <GenericToolCard {...props} />
     }
     const view = render(renderRow(running({ name, argsRaw })))
-    const row = view.getByRole('button')
+    const row = view.container.querySelector('[data-expandable]')!
     // BashRow mounts expanded; the generic pwsh row needs one click.
     if (name !== 'bash') fireEvent.click(row)
     view.rerender(renderRow(settled({ call: { name, argsRaw }, isError: true,

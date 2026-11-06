@@ -21,7 +21,7 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   background: var(--dsw-specific-sidebar-fill, var(--dsw-alias-bg-base));
-  border-right: 1px solid var(--dsw-alias-border-l2);
+  border-right: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 .brand {
@@ -52,7 +52,7 @@
   width: 100%;
   padding: 7px 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--dsw-radius-sm);
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   font: inherit;
@@ -61,9 +61,11 @@
   cursor: pointer;
 }
 
-.channel:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
+@media (hover: hover) {
+  .channel:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+    color: var(--dsw-alias-label-primary);
+  }
 }
 
 .channelActive {
@@ -87,7 +89,8 @@
 .badge {
   min-width: 18px;
   padding: 0 5px;
-  border-radius: 9px;
+  border-radius: 999px;
+  corner-shape: round;
   background: var(--dsw-alias-state-business-primary);
   color: var(--dsw-alias-label-primary);
   font-size: 11px;
@@ -101,7 +104,7 @@
   gap: 8px;
   margin-top: auto;
   padding: 8px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 .meText {
@@ -136,7 +139,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 10px 16px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 .headerTitle {
@@ -160,8 +163,8 @@
 .readButton {
   flex: none;
   padding: 4px 10px;
-  border: 1px solid var(--dsw-alias-border-l3);
-  border-radius: 5px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-xs);
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   font: inherit;
@@ -214,6 +217,7 @@
   align-items: center;
   justify-content: center;
   border-radius: 50%;
+  corner-shape: round;
   color: #fff;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -291,15 +295,17 @@
   align-items: center;
   gap: 8px;
   padding: 10px 16px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 .peer {
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
   flex: none;
   max-width: 140px;
   padding: 6px 8px;
-  border: 1px solid var(--dsw-alias-border-l3);
-  border-radius: 6px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-sm);
   background: var(--dsw-specific-selector, var(--dsw-alias-bg-base));
   color: var(--dsw-alias-label-primary);
   font: inherit;
@@ -317,13 +323,15 @@
 }
 
 .input {
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
   flex: 1;
   min-width: 0;
   min-height: 34px;
   max-height: 120px;
   padding: 7px 10px;
-  border: 1px solid var(--dsw-alias-border-l3);
-  border-radius: 6px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-sm);
   outline: none;
   background: var(--dsw-specific-input-major, var(--dsw-alias-bg-base));
   color: var(--dsw-alias-label-primary);
@@ -340,7 +348,7 @@
   flex: none;
   padding: 7px 14px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--dsw-radius-sm);
   background: var(--dsw-alias-button-info-fill);
   color: #fff;
   font: inherit;
@@ -348,8 +356,10 @@
   cursor: pointer;
 }
 
-.send:hover:not(:disabled) {
-  background: var(--dsw-alias-button-info-hover);
+@media (hover: hover) {
+  .send:hover:not(:disabled) {
+    background: var(--dsw-alias-button-info-hover);
+  }
 }
 
 .send:disabled {

@@ -9,8 +9,8 @@
   min-width: 0;
   margin: 5px 2px 8px;
   padding: 6px 10px 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 10px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
   background: var(--dsw-specific-sidebar-fill);
 }
 
@@ -25,14 +25,17 @@
   margin: 0 0 8px;
   border: 0;
   border-radius: 50%;
+  corner-shape: round;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
 }
 
-.railButton:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
+@media (hover: hover) {
+  .railButton:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+    color: var(--dsw-alias-label-primary);
+  }
 }
 
 .body {
@@ -182,7 +185,7 @@
   gap: 4px;
   padding: 8px 10px;
   border-left: 2px solid var(--goal-accent);
-  border-radius: 6px;
+  border-radius: var(--dsw-radius-sm);
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
@@ -210,6 +213,7 @@
   font-style: normal;
   padding: 1px 6px;
   border-radius: 999px;
+  corner-shape: round;
   font-size: 11px;
   line-height: 16px;
   background: color-mix(in srgb, var(--goal-accent) 16%, transparent);
@@ -255,9 +259,13 @@
   cursor: pointer;
 }
 
-.row:hover .content,
 .row:focus-visible .content {
   color: var(--dsw-alias-label-primary);
+}
+@media (hover: hover) {
+  .row:hover .content {
+    color: var(--dsw-alias-label-primary);
+  }
 }
 
 .disclose {

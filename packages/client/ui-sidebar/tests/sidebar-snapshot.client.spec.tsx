@@ -111,7 +111,8 @@ describe('sidebar shell snapshots', () => {
       const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300 })
       expect(slot.container).toMatchSnapshot('windows expanded')
       slot.update({ collapsed: true, width: 0 })
-      expect(slot.view.getAllByRole('button', { name: 'New session' })).toHaveLength(1)
+      expect(slot.view.queryByRole('button', { name: 'New session' })).toBeNull()
+      expect(slot.view.getByRole('button', { name: 'New workspace' })).toBeTruthy()
       expect(slot.container).toMatchSnapshot('windows collapsed')
     } finally {
       await runtime.dispose()

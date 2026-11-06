@@ -2,6 +2,7 @@
 /** plan_write / exit_plan_mode atomic Tool presentation: the plan-reference block. */
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { useDisclosure } from '@deepseek-ai/dsh-client-ui-chat/src/client/chat/use-disclosure.ts'
 import { PartialArguments } from '@deepseek-ai/dsh-util-values'
 import type { ToolResultNode } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
@@ -25,7 +26,7 @@ const resultNode = (argsRaw: string, over?: Partial<ToolResultNode>): ToolResult
 
 function rowProps(block: unknown, openFile = vi.fn()): PlanRowProps {
   return {
-    callId: 'c1', toolName: 'plan_write', block,
+    useDisclosure, callId: 'c1', toolName: 'plan_write', block,
     openFile,
     sessionId: 's1',
     useSessions: () => undefined,
@@ -65,18 +66,20 @@ describe('PlanRow', () => {
 
   it('reads running-call args the same way', () => {
     const running = render(
-      <PlanRow {...rowProps({ callId: 'c1', name: 'plan_write', argsRaw: ARGS, turn: 1, step: 1, time: 1_000, callView: null, subCalls: [] })} />,
+      <PlanRow {...rowProps({ phase: 'start', callId: 'c1', name: 'plan_write', args: PartialArguments.fromText(ARGS), argsRaw: ARGS, turn: 1, step: 1, time: 1_000, callView: null, subCalls: [] })} />,
     )
     expect(running.container.querySelector('[data-state="running"]')).not.toBeNull()
     expect(screen.getByText('Wake Word Fix')).toBeTruthy()
   })
 
-  it('falls back to the generic summary on malformed errored args (summary link keeps the default path)', () => {
-    const view = render(<PlanRow {...rowProps(resultNode('not json', { isError: true }))} />)
+  it('shows the generic error summary without offering an unsaved file link', () => {
+    const openFile = vi.fn()
+    const view = render(<PlanRow {...rowProps(resultNode('not json', { isError: true }), openFile)} />)
     expect(view.container.querySelector('[data-state="error"]')).not.toBeNull()
-    // No errorSummary line: the generic summary doubles as the link and the
-    // default plan path stays the link's target.
-    expect(screen.getByRole('button', { name: 'plan_write · not json' })).toBeTruthy()
+    expect(screen.getByText('plan_write · not json')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'plan_write · not json' })).toBeNull()
+    fireEvent.click(screen.getByText('plan_write · not json'))
+    expect(openFile).not.toHaveBeenCalled()
   })
 
   it.each([

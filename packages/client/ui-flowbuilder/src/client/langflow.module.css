@@ -23,6 +23,7 @@
   gap: 4px;
   padding: 1px 8px;
   border-radius: 999px;
+  corner-shape: round;
   border: 1px solid var(--dsw-border, transparent);
   font-size: var(--dsw-font-size-xs, 11px);
   color: var(--dsw-text-muted, inherit);
@@ -45,7 +46,7 @@
 .button {
   padding: 2px 10px;
   border: 1px solid var(--dsw-border, transparent);
-  border-radius: var(--dsw-radius-sm, 6px);
+  border-radius: var(--dsw-radius-sm);
   background: var(--dsw-surface, transparent);
   color: inherit;
   cursor: pointer;

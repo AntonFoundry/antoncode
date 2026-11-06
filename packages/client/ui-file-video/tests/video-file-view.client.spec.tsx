@@ -3,17 +3,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { VideoFileView } from '../src/client/VideoFileView.tsx'
+import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { en } from '../src/client/locales.ts'
 import type { VideoFileViewProps } from '../src/client/VideoFileView.tsx'
 
 /** Owner-share stub with a deterministic media URL and inert faces. */
 function props(over: Partial<VideoFileViewProps> = {}): VideoFileViewProps {
   return {
+    t: makeTranslate(en),
     path: '/w/clip.mkv',
     readText: () => Promise.resolve({ content: '', truncated: false }),
     mediaUrl: p => `/api/host/media?path=${encodeURIComponent(p)}`,
     openWithOs: vi.fn(),
     ...over,
-  } as VideoFileViewProps
+  }
 }
 
 afterEach(() => { cleanup() })

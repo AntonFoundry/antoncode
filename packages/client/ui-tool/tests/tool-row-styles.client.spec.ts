@@ -43,8 +43,12 @@ describe('ToolRow.module.css summary line', () => {
     // keeps its own solid hover fill and is not row text.
     const sheet = readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
       .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    expect(sheet).not.toMatch(/\.(title|summary|summarySuffix)\s*\{[^{}]*\bcolor:/)
+    expect(sheet).not.toMatch(/(?:^|\})\s*\.(title|summary|summarySuffix)\s*\{[^{}]*\bcolor:/)
     expect(sheet).not.toMatch(/:hover\s+\.(title|summary|summarySuffix)\b/)
+  })
+
+  it('colors read-before-edit notices without changing ordinary summary colors', () => {
+    expect(declarationText).toMatch(/\.root\[data-state='notice'\] \.summary\s*\{\s*color: var\(--dsw-alias-state-warn-primary\);/)
   })
 
   it('keeps the summary suffix on one line and unshrunk', () => {

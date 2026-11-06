@@ -30,9 +30,9 @@ describe('ui-theme host', () => {
     const ctx = new Context()
     const configuration = await liveConfig(ctx, { Config, apply })
     const { fiber } = configuration
-    expect(plainConfig(configuration.fiber.effectiveConfig)).toEqual({ preference: DEFAULT_PREFERENCE, fontSize: 14, codeFontSize: 11, terminalFontSize: 13, textFontFamily: '', codeFontFamily: '', terminalFontFamily: '' })
+    expect(plainConfig(configuration.fiber.effectiveConfig)).toEqual({ uiFamily: 'system', uiSize: 14, chatSize: 16, monoFont: 'monaco', monoSize: 15, termSize: 13, preference: DEFAULT_PREFERENCE, fontSize: 14, codeFontSize: 11, terminalFontSize: 13, textFontFamily: '', codeFontFamily: '', terminalFontFamily: '' })
     await configuration.update({ preference: 'dark', fontSize: 10, codeFontSize: 16, codeFontFamily: '"Iosevka"' })
-    expect(plainConfig(configuration.fiber.effectiveConfig)).toEqual({ preference: 'dark', fontSize: 10, codeFontSize: 16, terminalFontSize: 13, textFontFamily: '', codeFontFamily: '"Iosevka"', terminalFontFamily: '' })
+    expect(plainConfig(configuration.fiber.effectiveConfig)).toEqual({ uiFamily: 'system', uiSize: 14, chatSize: 16, monoFont: 'monaco', monoSize: 15, termSize: 13, preference: 'dark', fontSize: 10, codeFontSize: 16, terminalFontSize: 13, textFontFamily: '', codeFontFamily: '"Iosevka"', terminalFontFamily: '' })
     await configuration.update({ fontSize: 22 })
     expect(plainConfig(configuration.fiber.effectiveConfig)).toMatchObject({ preference: 'dark', fontSize: 22 })
     await expect(configuration.update({ preference: 'sepia' })).rejects.toThrow()
@@ -40,6 +40,14 @@ describe('ui-theme host', () => {
     await expect(configuration.update({ fontSize: 23 })).rejects.toThrow()
     await expect(configuration.update({ codeFontSize: 17 })).rejects.toThrow()
     await expect(configuration.update({ terminalFontSize: 9 })).rejects.toThrow()
+    await configuration.update({ uiSize: 20, chatSize: 22, monoSize: 24, termSize: 24, uiFamily: 'Inter', monoFont: 'monaco' })
+    expect(plainConfig(fiber.effectiveConfig)).toMatchObject({ uiSize: 20, chatSize: 22, monoSize: 24, termSize: 24, uiFamily: 'Inter', monoFont: 'monaco' })
+    for (const patch of [
+      { uiSize: 11 }, { uiSize: 21 }, { chatSize: 11 }, { chatSize: 23 },
+      { monoSize: 9 }, { monoSize: 25 }, { termSize: 9 }, { termSize: 25 },
+    ]) {
+      await expect(configuration.update(patch)).rejects.toThrow()
+    }
     await fiber.dispose()
   })
 
