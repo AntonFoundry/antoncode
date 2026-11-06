@@ -142,7 +142,7 @@ bundledNode(nodeHome)
 writeLauncher()
 
 // Harness runs from its built lib/ tree; the same shipping excludes as macOS.
-syncDirectory(harnessRoot, join(appRoot, 'deepseek-harness'), ['/.git', '/dist', '/.turbo', 'packages/*/*/src', 'apps/*/src', '*.ts', '*.tsx', '*.map', '*.bun-build', 'apps/anton-bridge/dist'])
+syncDirectory(harnessRoot, join(appRoot, 'deepseek-harness'), ['/.git', '/dist', '/.turbo', '/plugins', 'packages/*/*/src', 'apps/*/src', '*.ts', '*.tsx', '*.map', '*.bun-build', 'apps/anton-bridge/dist'])
 syncDirectory(contextRoot, join(appRoot, 'c0ntext'), ['/.git', '/runtime', '__pycache__', '*.pyc', '*.ts', '*.tsx', '*.map', 'deepseek-harness-plugin/src', '/docker-compose.yml'])
 writeFileSync(join(appRoot, 'c0ntext', 'docker-compose.yml'), [
   '# The c0ntext engine is decoupled from the Anton bundle: this stub',

@@ -6,13 +6,13 @@
   "panel": "Sticky notes",
   "title": "Sticky notes",
   "subtitle": "Capture an idea before it escapes.",
-  "placeholder": "Write an idea…",
-  "add": "Add note",
-  "empty": "No notes yet. Write one above.",
+  "placeholder": "Write an idea\u2026",
+  "add": "Stick it",
+  "empty": "The wall is empty. Write your first note above.",
   "emptyHint": "Notes stay in this browser.",
   "delete": "Delete note",
-  "saved": "Saved",
-  "storageFull": "This browser is out of local storage space, so the last change may not have been kept.",
+  "storageFull": "Could not save this change. Your draft and notes have been kept. Try again after making browser storage available.",
   "countOne": "1 note",
-  "countOther": "{count} notes"
+  "countOther": "{count} notes",
+  "storageUnreadable": "Saved notes could not be read. No changes will be saved, so your stored data stays untouched."
 }

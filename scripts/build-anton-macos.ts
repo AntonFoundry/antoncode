@@ -197,7 +197,7 @@ run(['swiftc', '-parse-as-library',
 syncDirectory(harnessRoot, join(resources, 'deepseek-harness'), ['/.git', '/.github', '/.gitlab-ci.yml', '/.gitignore', '/.gitattributes',
   // Credentials and machine-local state never enter a distributed bundle.
   // `.env` in particular is the developer's real key file.
-  '/.env', '/.env.*', '/.pnpm-store', '/.claude', '/.commandcode', '/.tmp', '/tmp', '/dsh-session',
+  '/.env', '/.env.*', '/.pnpm-store', '/.claude', '/.commandcode', '/.tmp', '/tmp', '/dsh-session', '/plugins',
   '/.DS_Store', '**/.DS_Store',
   // Package-manager bin shims and metadata embed the build machine's absolute
   // paths and are never read by the packaged runtime.
