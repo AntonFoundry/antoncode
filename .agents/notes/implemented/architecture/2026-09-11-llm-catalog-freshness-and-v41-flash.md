@@ -20,7 +20,7 @@ The OpenCode free tier cannot list V4.1 Flash today: both models.dev's `opencode
 - **Clear the cache when a refresh fails** — rejected: a transient models.dev outage would empty the selector; the stale snapshot is strictly better UX and `freeModels` already recovered this way.
 - **Have `llm-deepseek` fetch its list from models.dev too** — rejected for now: its catalog is advisory with pass-through ids and deployment-owned entries (private `baseURL` gateways); a live fetch would couple an offline-configurable surface to network state.
 
-## Results
+## Consequences
 
 - Every restart fetches the current models.dev document for each configured route before any picker query; every `catalogRefreshMs` (one hour by default) re-fetches in the background; disposal stops the timer.
 - A failed refresh logs once through the existing `onCatalogError` path and keeps the last good snapshot for both query-time and pushed discovery.

@@ -25,3 +25,7 @@ Two numeric contracts worth recording: OKLCH→sRGB output is gamut-fit by chrom
 **Hand-author complete palettes for all 76 themes.** 76 × ~89 values of hand-maintained color data invites exactly the drift this defect class feeds on; anchors + derivation keep each theme's identity in its hand tokens and the rest mechanical.
 
 **Ship per-theme CSS refinement sheets under `body[data-ds-theme]`.** New surface per theme, a second mechanism beside the existing token application, and no help for the doom library; the token layer already reaches every surface the user flagged.
+
+## Consequences
+
+Theme authors maintain identity anchors rather than a complete token table. Generated values never override those anchors, and adding an uncovered target token fails registry construction. The compact color conversion remains maintained locally, including gamut-fit and floating-point edge cases.

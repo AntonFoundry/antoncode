@@ -1,6 +1,4 @@
 # Agent Note: WM buffers fill their windows
-English
-
 
 Status: implemented
 

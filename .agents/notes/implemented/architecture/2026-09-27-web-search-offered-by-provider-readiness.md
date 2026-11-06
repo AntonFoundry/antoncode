@@ -2,8 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-09-27-web-search-offered-by-provider-readiness.zh.md)
-
+English
 ## Problem
 
 `dsh-tool-web` registers `web_search` whenever search is enabled, and the [web capability seam decision](2026-06-24-web-capability-seam.md) keeps it visible while the selected provider cannot run. The shipped search provider, `dsh-web-search-deepseek`, authenticates a search with the DeepSeek account token only for a model request on the `deepseek-account` route; every other route needs a configured API key. A Session on an API-key route without a search key was therefore offered a tool whose every call failed with `WEB_PROVIDER_CREDENTIAL_MISSING`. Sessions in one Host can use different routes, a Session can switch routes between requests, and the Web app registers `web_search` once per agent preset, so no registration decision matches every request. The Search and Fetch APIs of `dsh-web-deepseek-api`, which the Web search settings switch selects together, need that credential for both operations, so the same Session was also offered a `web_fetch` whose every call failed.

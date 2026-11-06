@@ -2,8 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-09-12-computer-use-provider-registration.zh.md)
-
+English
 ## Problem
 
 Desktop providers expose different operations, observation formats, and platform facilities. DSH needs to prevent accidentally enabling two providers in one composition while allowing provider-specific integrations to work without committing to a common action API.

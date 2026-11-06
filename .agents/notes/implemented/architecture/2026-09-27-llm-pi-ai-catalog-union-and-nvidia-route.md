@@ -17,3 +17,13 @@ The `nvidia` route uses pi-ai's builtin endpoint with `apiKeyEnv: NVIDIA_API_KEY
 ## Verification
 
 Focused tests cover the NVIDIA reference parser, the document-plus-endpoint union, configured pin precedence, and selector-label formatting. The reference currently documents 55 models under its shared `POST /v1/chat/completions` API; the NVIDIA Build page's “Free Endpoint 38” badge counts models across publishers and includes non-chat services, so it is not the correct source for this chat selector. The endpoint listing remains a supplement for ids the account advertises, while model ids stay unchanged for requests.
+
+## Alternatives considered
+
+**Select exactly one catalog source.** Rejected: a partial configured or discovered list hides installed catalog entries. Union preserves installed models while giving explicitly supplied fields precedence.
+
+**Use only NVIDIA’s endpoint listing.** Rejected: it can omit chat models documented in the maintained reference. The reference supplies the catalog and the endpoint supplements it.
+
+## Consequences
+
+Configured model fields retain precedence, catalog-only models remain available, and routes refresh independently. Keyless profiles remain catalog-only; failed live sources retain the installed catalog instead of making discovery a boot prerequisite.

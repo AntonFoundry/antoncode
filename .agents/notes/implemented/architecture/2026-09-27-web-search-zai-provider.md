@@ -14,6 +14,10 @@ New implementation package `packages/web/web-search-zai`, cloned from `web-searc
 
 Mapping: `link`→`url`, `title`→`title`, `content`→`snippet`, `publish_date`→`publishedAt`; link-less entries drop, URLs dedupe first-wins, per-request `maxResults` clamps to the API's 1–50 range. `redirect: 'error'` retained per the web packages' credential-bearing-request rule, with a dedicated redirect spec proving the target is never contacted. Deferred: `content_size`, `custom` recency windows, a dedicated client settings card (the existing card is DeepSeek-namespaced).
 
-## Unrelated repairs absorbed to unblock shared gates
+## Consequences
 
-`gen-doc-graphs` and the README gates failed on pre-existing gaps from the in-flight `model-intel` work; fixed here because they block every doc regeneration: five missing JSDoc `@param`/`@returns` in `model-intel/src/index.ts`, `ModelIntelDatasheet` type-link exemption, `modelIntel`/`toolMatcher` `SERVICE_ROLES` entries, and the model-intel README's Model Experience/Known Limitations final-two ordering. Still failing (pre-existing, untouched): `web-search-browser` short Model Experience audit entry, `llm-models-dev` and `llm-openai` Known Limitations sections, and type errors in `packages/llm/llm-models-dev/src/index.ts` and `apps/cli/src/anton-rebuild.ts`.
+The provider remains opt-in: mounting it beside another search provider requires explicit selection. Redirects are refused on credential-bearing requests. Custom recency windows, content-size controls, and a dedicated settings card remain deferred.
+
+## Alternatives considered
+
+**Use the LLM-backed DeepSeek search provider as the implementation template.** Rejected: Z.AI exposes a plain HTTP search endpoint with a flat result list, matching the Exa adapter rather than a model-generated search response.

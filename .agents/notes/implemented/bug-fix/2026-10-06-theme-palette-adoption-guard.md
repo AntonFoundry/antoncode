@@ -12,7 +12,7 @@ The ui-layout comment describing the wipe-on-built-in rule already assumed "the 
 
 ## Decision
 
-`ThemeRuntime.adopt()` returns while the live preference is not one of the three built-ins. The durable scope models only `light`/`dark`/`system`; a registered palette is an explicit load-theme choice that rides over the stored built-in until something releases it — an explicit built-in selection (which ui-layout's listener uses to clear the stored id) or the palette's registration disposer. This matches the documented model that third-party theme ids do not cross the built-in settings schema ([Host-backed preferences decision](2026-08-06-host-backed-web-preferences.md)).
+`ThemeRuntime.adopt()` returns while the live preference is not one of the three built-ins. The durable scope models only `light`/`dark`/`system`; a registered palette is an explicit load-theme choice that rides over the stored built-in until something releases it — an explicit built-in selection (which ui-layout's listener uses to clear the stored id) or the palette's registration disposer. This matches the documented model that third-party theme ids do not cross the built-in settings schema ([Host-backed preferences decision](../../archived/bug-fix/2026-08-06-host-backed-web-preferences.md)).
 
 ## Alternatives considered
 
@@ -20,6 +20,6 @@ The ui-layout comment describing the wipe-on-built-in rule already assumed "the 
 
 **Persist palette ids through the Host settings schema.** The schema deliberately carries only the three built-in preferences; palette registries are per-composition client state, and widening the wire contract for a localStorage key would couple the Host document to client-side registrations.
 
-## Partial supersession (2026-10-12)
+## Consequences
 
 The unqualified guard blocked legitimate boot adoption: ui-layout's Aqua fallback applied a registered id through `setTheme` before the first section published, and the durable dark/light choice then could never adopt (splash dark, app light, no cube pressed). The refinement introduces `ThemeRuntime.restoreBootDefault` — the one palette kind a durable light/dark section may replace; an explicit `setTheme` palette keeps the protection this note decided. See [theme boot adoption vs the Aqua default](2026-10-12-theme-boot-adoption-vs-aqua-default.md).

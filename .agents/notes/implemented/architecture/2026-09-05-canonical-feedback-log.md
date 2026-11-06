@@ -2,8 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-09-05-canonical-feedback-log.zh.md)
-
+English
 ## Problem
 
 Editable message ratings need one durable authority that Session export and request delivery can retain. A separate feedback store makes those consumers incomplete and introduces a second commit relationship with the target message. Recording a human judgment must not change model input or imply that a collector accepted it.

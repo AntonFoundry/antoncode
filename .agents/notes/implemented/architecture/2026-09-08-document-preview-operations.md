@@ -2,8 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-09-08-document-preview-operations.zh.md)
-
+English
 ## Problem
 
 File viewers need different loading policies and may offer several implementations for one extension. A change stream cannot also express an on-demand read without mixing live data with callable capabilities. HTML dependencies additionally need the Host's filesystem authorization and path resolution, not the browser's current directory.

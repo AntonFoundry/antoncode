@@ -2,8 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-09-17-sidebar-file-and-directory-auto-refresh.zh.md)
-
+English
 ## Problem
 
 The Sidebar's Document Preview and Files panels need to reflect current disk state. Changes come from Harness file tools, shell commands, user editors, and other processes; observing only Harness file operations is insufficient.

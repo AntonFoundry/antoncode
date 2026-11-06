@@ -30,7 +30,3 @@ Plugin: `tests/prompt-sections.spec.ts` (resolver semantics, verbatim-pinned def
 
 - A generic prompt-text override registry in `dsh-system-prompt` (override any section by name from one settings surface): rejected for now — one consumer exists, and ownership stays cleanest when the owning plugin declares and reads its own override fields; revisit if a second plugin wants the same.
 - Persisting overrides in the plugin composition (`cordis.patch.yml`) instead of the settings store: rejected — it needs a profile edit and a restart, defeating the live-edit requirement, and it puts prose in a file the app already manages a UI for.
-
-### Unrelated pre-existing red (handoff note)
-
-`pnpm run test:gui` fails 6 tests in `packages/host/apiproxy/tests/api-proxy-config.spec.ts`: the settings-domain namespace list gains `tools-discipline` from the committed tools-discipline plugin while that spec's expected list predates it. Stash-verified pre-existing on the committed tree and untouched here; it belongs to the tools-discipline change's sweep.

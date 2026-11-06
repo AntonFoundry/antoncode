@@ -2,8 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-09-17-workspace-file-binary-transfer.zh.md)
-
+English
 ## Problem
 
 Document previews need native bytes. Encoding file contents as base64 adds about one third to the payload before compression and requires browser decoding. A separate file Fetch route also duplicates the Gateway's method dispatch, Session lookup, and error handling.

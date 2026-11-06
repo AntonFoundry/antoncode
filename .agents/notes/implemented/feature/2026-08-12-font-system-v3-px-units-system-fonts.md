@@ -1,10 +1,8 @@
-# Font system v3 — uniform px units, installed system families, overlay zoom coverage
+# Agent Note: Font system v3 — uniform px units, installed system families, overlay zoom coverage
 
-- Date: 2026-08-12
-- Status: implemented
-- Scope: `packages/client/ui-theme`, `packages/client/ui-primitives`
+Status: implemented
 
-## Trigger
+## Problem
 
 User feedback on the sectioned font panel: units were inconsistent (Interface/Chat in percent, Code/Terminal in px), the Interface family menu offered only five curated fonts instead of the system's fonts, and coverage was inconsistent — menus and dialogs portaled to `document.body` sat outside ui-layout's `.frame`, so they ignored the interface zoom.
 
@@ -24,3 +22,9 @@ Parsing facts that cost real debugging time, encoded as tests in `system-fonts.s
 - The family list is enumerated once per activation: fonts installed while the app runs appear after restart (documented in the package README).
 - Families managed by the system font-asset pipeline rather than files in the standard directories (PingFang SC on current macOS builds) are not listed; the shipped UI fallback stack still carries them, so CJK rendering is unaffected.
 - `ui-theme`'s package tsconfig now admits `types: ["node"]` for the host-half enumeration module; the client bundle is unaffected (only `src/index.ts` imports it).
+
+## Alternatives considered
+
+**Keep percentage units for Interface/Chat and pixel units elsewhere.** Rejected: the settings exposed inconsistent units despite all sections controlling a text size. Pixel values provide one user-facing unit while preserving nested zoom compensation.
+
+**Enumerate font families in WKWebView.** Unavailable through browser scripting. The Host reads installed font name tables; mono families remain curated because arbitrary families need not provide code-appropriate weight and italic cuts.

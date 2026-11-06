@@ -2,8 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-09-15-first-class-tool-role-messages.zh.md)
-
+English
 ## Problem
 
 The released Session format stores tool results inside a user-role `tool-result` content block, while the model conversation and provider protocols treat a tool result as a separate role. Keeping both descriptions active makes validation, replay, and adapter projections disagree.

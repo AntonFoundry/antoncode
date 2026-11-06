@@ -2,8 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-09-20-dynamic-tool-updates.zh.md)
-
+English
 ## Problem
 
 Plugin and MCP tools change during conversations. Providers differ in whether they activate deferred definitions or remove tools through history. Storing retained provider declarations as active tools makes comparisons repeat removals and miss restorations.

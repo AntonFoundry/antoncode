@@ -43,6 +43,6 @@ An operator can now raise or lower `tool-subagent`'s effective recursion cap, an
 ## Verification
 
 - `packages/subagent/tool-subagent/tests/tool-subagent.spec.ts`: `resolveChildEffort` precedence, the depth-limit override reaching the provider's start request, the depth section never installing under `'provider-managed'`, the child-model section's `defaultEffort` reaching agent options, and two mounted instances sharing both namespaces without the second's registration throwing or losing live updates.
-- `packages/client/ui-settings-plugins/tests/stores.client.spec.ts`: the subagent-model card's `defaultEffort` field stages, saves, and resets independently of the model route.
+- `packages/client/ui-settings-subagent/tests/controllers.client.spec.ts`: the subagent-model card's `defaultEffort` field stages, saves, and resets independently of the model route.
 - `packages/client/ui-agent-preset/tests/components.client.spec.tsx` and `tests/section.client.spec.tsx`: `PresetMenu` renders a stacked name/description; the Agents section's default-agent dropdown picks through `makeDefault` and omits broken presets; the delegation-depth card's availability, slider staging, save/discard, reset, and read-only/failed states.
 - `pnpm run test:gui` green across all three touched client packages plus the rest of the client/host GUI surfaces.

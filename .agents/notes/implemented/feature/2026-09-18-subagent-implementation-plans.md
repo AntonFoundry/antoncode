@@ -24,8 +24,7 @@ We introduce a complete capability loop for subagent implementation planning, di
 
 ### 2. Side-by-Side Right-Hand Split Buffer Presentation
 
-In Anton (macOS app) and the Web UI layout (`packages/client/ui-layout`), inline-family file paths open through `ILayout.openFile(path)`, which creates a horizontal row split displaying the file in a buffer beside the chat; the chat view's `openFile` face routes inline-first and only OS-open binary families fall through to the Host ([mechanism](../architecture/2026-09-30-plan-block-inline-split.md)).
-Both `plan_write` and `exit_plan_mode` return presentation metadata with `locations: [{ path }]`, and the dedicated `planToolview` rows render the plan title, a one-line summary, and the saved markdown path as the clickable link that opens `implementation_plan.md` in the right-hand buffer split without cluttering the chat with raw markdown bodies.
+In Anton (macOS app) and the Web UI layout (`packages/client/ui-layout`), inline-family file paths open through `ILayout.openFile(path)`, which creates a horizontal row split displaying the file in a buffer beside the chat; the chat view's `openFile` face routes inline-first and only OS-open binary families fall through to the Host ([mechanism](../architecture/2026-09-30-plan-block-inline-split.md)). Both `plan_write` and `exit_plan_mode` return presentation metadata with `locations: [{ path }]`, and the dedicated `planToolview` rows render the plan title, a one-line summary, and the saved markdown path as the clickable link that opens `implementation_plan.md` in the right-hand buffer split without cluttering the chat with raw markdown bodies.
 
 ### 3. Subagent Delegation Discipline in Prompts and Presets
 

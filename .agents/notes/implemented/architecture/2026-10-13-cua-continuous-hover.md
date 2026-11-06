@@ -2,8 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-10-13-cua-continuous-hover.zh.md)
-
+English
 ## Problem
 
 Hover interactions span movement, delayed content, observation and input inside a revealed region. A request cleanup that restores the pointer, or a click that first presses outside that region, can dismiss the content even when nobody else sends input.

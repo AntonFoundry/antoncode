@@ -18,7 +18,7 @@ Proven from this macOS host: both cross-compile targets produce real binaries (`
 - **Empty stubs behind the pnpm scripts** (the initial state reviewed here) — rejected: silent no-op success fails the fail-loud rule and would mislead the first real cross-platform run.
 - **AppImage/MSI packaging now** — deferred: a validated directory bundle is the parity step with macOS (which also ships a directory `.app`); installers are a follow-up once the bundles boot on real machines.
 
-## Results
+## Consequences
 
 - `pnpm run anton:build:windows` assembles `dist/Anton-windows-x64` (x64 only — bun publishes no windows-arm64 target); `pnpm run anton:build:linux [x64|arm64]` assembles `dist/Anton-linux-<arch>`.
 - Neither platform signs binaries (no Authenticode/codesign step); each script says so in its output. The c0ntext compose stub bakes in the build machine's checkout path, same as macOS.

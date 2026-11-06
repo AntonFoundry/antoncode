@@ -2,8 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-08-25-session-observations-and-projection-owned-client-state.zh.md)
-
+English
 ## Problem
 
 Session-facing consumers needed the same logical data but resolved it independently. List, follow, page, attachment and fork reads, and subagent inspection each chose between an attached Session, persisted metadata, a prepared Session, and projection cache entries. One page visit could therefore materialize the same cold log more than once, and independently assembled header, event, cursor, and projection values could describe different cuts.

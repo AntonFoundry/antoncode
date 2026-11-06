@@ -2,8 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-10-21-subagent-end-turn-guidance.zh.md)
-
+English
 ## Problem
 
 The delegation guidance paragraph ended with `When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn.` A later prompt revert removed that sentence together with unrelated prompt changes.

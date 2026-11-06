@@ -2,8 +2,7 @@
 
 Status: proposed
 
-English | [中文](2026-09-10-session-refactor-faq.zh.md)
-
+English
 ## Problem
 
 `LogicalSession`, service, storage, projection, and query can look like a rename or unnecessary layers. Contributors need short answers that distinguish temporary naming, long-term responsibility, and current stack state.

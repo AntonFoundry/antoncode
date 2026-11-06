@@ -2,8 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-09-23-best-effort-persistent-ptc.zh.md)
-
+English
 ## Problem
 
 Interactive automation retains application objects, imported modules and helper functions between model calls. Recreating every object for every program prevents consumers from using ordinary JavaScript references across observations and actions.

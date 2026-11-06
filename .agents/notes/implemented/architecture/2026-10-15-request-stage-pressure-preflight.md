@@ -14,7 +14,7 @@ The loop awaits serial `agent/request-prepared` after resolving the final adapte
 
 `dsh-compaction-basic` uses the prepared route and capacity, and estimates messages not yet on the session surface in addition to the durable meter result. Pressure therefore applies to the initial request, the actual route selected by request middleware, the assembled system prompt and tools, and the incoming message batch. Within the pressure path, the active-compaction lock scan runs only after the target-specific threshold qualifies and before any surface mutation, so unpressured requests never pay its O(session log) walk; the capacity-misconfiguration error still fires on every pressure check regardless of threshold. Provider-confirmed context overflow remains a bounded backstop when heuristic estimation or compaction cannot make the request safe.
 
-This decision partially supersedes the [after-call pressure decision](2026-07-10-after-call-compaction-pressure-and-overflow-recovery.md): successful pressure is no longer triggered at the next pre-step from only the previous durable route. The [claimed pre-step lifecycle](2026-07-31-claimed-pre-step-inbox-lifecycle.md) remains authoritative for inbox ownership and admission.
+This decision partially supersedes the [after-call pressure decision](../../archived/architecture/2026-07-10-after-call-compaction-pressure-and-overflow-recovery.md): successful pressure is no longer triggered at the next pre-step from only the previous durable route. The [claimed pre-step lifecycle](../../archived/architecture/2026-07-31-claimed-pre-step-inbox-lifecycle.md) remains authoritative for inbox ownership and admission.
 
 ## Alternatives considered
 

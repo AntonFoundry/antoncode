@@ -2,8 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-09-22-platform-browser-storage.zh.md)
-
+English
 ## Problem
 
 Embedded Platform notices store dismissal in localStorage. Disposable browser partitions lose that preference whenever the view closes.

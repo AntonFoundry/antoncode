@@ -28,3 +28,7 @@ Unaffected by design: `HoverCard` and `Toast` portal to body without self-zoom, 
 **Drop the portaled list's self-zoom and render menus at unzoomed size.** Menus would visibly shrink against the zoomed chrome — trading one defect for another.
 
 **Compensate at the measurement source** by scaling rects up before storage. Same arithmetic at every call site; the shared factor helper keeps one probe-verified contract and one place to extend (HoverCard-style portals stay exempt by simply not calling it).
+
+## Consequences
+
+Measured fixed-position primitives preserve anchor alignment under nested interface/chat zoom. Body portals without self-zoom retain viewport coordinates; the helper applies only where the positioned element carries a zoom factor.

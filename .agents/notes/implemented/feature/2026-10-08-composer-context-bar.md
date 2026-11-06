@@ -1,6 +1,6 @@
-# Composer context bar: worktree menu, repo indicator, base picker
+# Agent Note: Composer context bar: worktree menu, repo indicator, base picker
 
-Date: 2026-10-08 · Status: implemented
+Status: implemented
 
 ## Problem
 
@@ -14,7 +14,7 @@ The reference design places three workspace controls in one slim bar under the c
 - **First-time repositories**: `WorktreeModeSelect` previously rendered nothing until a preference existed, so a fresh repo offered no control. It now falls back to `{ key: cwd, pref: undefined }` — the effective default (checkout) shows selected, and the first choice writes the first preference. This mirrors the runtime, which treats a missing pref as checkout.
 - **Mode select survives, relocated**: same component, now embedded in the bar instead of the toolbar row.
 
-Alternatives considered:
+## Alternatives considered
 
 - *A shared status cache/hook*: rejected — the client slot standard forbids module-level caches and business-made hooks; status stays per-component via the inject callback (the chip's established pattern), with the duplicate reads recorded as a known limitation whose real fix is an object-layer projection in the runtime.
 - *Host-side mode resolution in `session.create`*: kept the existing client-side orchestration (`startSession` → `worktree.create` → `session.create`), so the host session contract stays `workspaceId | cwd`.

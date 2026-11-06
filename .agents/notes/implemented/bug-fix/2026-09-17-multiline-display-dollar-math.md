@@ -2,8 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-09-17-multiline-display-dollar-math.zh.md)
-
+English
 ## Problem
 
 Authors and models write `$$` display math in three shapes. The settled grammar rendered two of them: `$$math$$` on one line, and an opening `$$` alone on its line closed by `$$` alone on its line. The third shape — math on the opening line, a closing `$$` at the end of the last math line — did not:

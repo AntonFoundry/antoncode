@@ -2,8 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-09-11-subprocess-control-pipe.zh.md)
-
+English
 ## Problem
 
 A managed Node program can write arbitrary bytes to stdout and stderr. A host protocol sharing either stream cannot distinguish those bytes from program diagnostics without restricting ordinary Node behavior. Windows process wrappers also require explicit descriptor inheritance before the child runtime allocates its own descriptors.

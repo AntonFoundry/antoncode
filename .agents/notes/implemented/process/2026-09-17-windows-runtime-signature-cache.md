@@ -2,8 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-09-17-windows-runtime-signature-cache.zh.md)
-
+English
 ## Problem
 
 Windows packaging reconstructs unsigned native dependencies on each build. Signing unchanged Python and LibreOffice files repeats hardware-token and timestamp operations. Starting PowerShell for each public-key inspection also repeats process initialization.

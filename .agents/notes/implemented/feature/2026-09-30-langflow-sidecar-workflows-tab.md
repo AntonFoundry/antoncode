@@ -23,3 +23,7 @@ Builds on the flowbuilder series (domain vocabulary, storage service, run engine
 **iframe without a sidecar service (user starts `langflow run` themselves).** Rejected: the embed could not show a truthful starting/error state, and teardown would not be owned by the plugin lifecycle.
 
 **Bridge chat to LangFlow's REST API now.** Deferred: LangFlow's API can create and run flows programmatically, but nothing consumes that yet — the `flow.*` domain and tools stay for a later bridge rather than being deleted with the canvas.
+
+## Consequences
+
+The Workflows tab embeds a separately running Python application instead of maintaining a custom canvas. The plugin owns process readiness and teardown; first startup may download substantial dependencies. Existing workflow definitions and tools remain independent of the embedded product until a consumer requires a REST bridge.

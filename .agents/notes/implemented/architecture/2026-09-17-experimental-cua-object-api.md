@@ -2,8 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-09-17-experimental-cua-object-api.zh.md)
-
+English
 ## Problem
 
 Computer-use programs need consistent app and window operations. Coupling those operations to a CUA-specific interpreter makes input handling depend on unrelated choices about variable persistence, imports and cancellation.

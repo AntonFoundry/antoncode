@@ -1,8 +1,6 @@
-# Client syntax highlighting covers Janet and the Lisp family
+# Agent Note: Client syntax highlighting covers Janet and the Lisp family
 
 Status: implemented
-
-English
 
 ## Problem
 

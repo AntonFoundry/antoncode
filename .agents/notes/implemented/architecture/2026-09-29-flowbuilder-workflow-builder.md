@@ -1,8 +1,8 @@
 # Agent Note: flowbuilder — durable workflow definitions and the block library behind `ctx.flowBuilder`
 
-Status: implemented (all phases; the canvas phase shipped and was then superseded by the LangFlow pivot —
-see [2026-09-30-langflow-sidecar-workflows-tab](../feature/2026-09-30-langflow-sidecar-workflows-tab.md). The domain,
-service, and tool decisions below stand unchanged; the tab surface no longer renders the custom canvas.)
+Status: implemented
+
+The canvas presentation is superseded by [the LangFlow integration](../feature/2026-09-30-langflow-sidecar-workflows-tab.md); the domain, service, and tool ownership remains.
 
 English
 

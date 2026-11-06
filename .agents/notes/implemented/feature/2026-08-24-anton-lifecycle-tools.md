@@ -18,6 +18,10 @@ The bridge remains the authority for starting and stopping processes. Stop and r
 
 The package has unit tests for HTTP routing, refusal/error behavior, environment endpoint selection, configuration gating, self-termination semantics, and the package invariant, plus a real Loader composition test. The package is included in the host TypeScript references, base bundle manifest and patch, and generated tool catalog.
 
-## Known limitation
+## Consequences
 
 The bundled c0ntext engine is shipped as app resources but uses Docker Compose; recipients still need a compatible Docker runtime and network access for first-time images/builds.
+
+## Alternatives considered
+
+**Keep bridge process supervision inside c0ntext.** Rejected: memory operations do not own the Anton launcher. A dedicated lifecycle plugin isolates the bridge endpoint and self-termination behavior from memory storage.

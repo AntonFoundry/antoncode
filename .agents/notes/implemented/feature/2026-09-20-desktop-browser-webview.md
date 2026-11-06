@@ -2,8 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-09-20-desktop-browser-webview.zh.md)
-
+English
 ## Problem
 
 An iframe cannot expose cross-origin navigation or render sites that refuse embedding. An Electron guest loses forms, scroll position and native history if its tab body unmounts on selection or container changes. Page lifetime must therefore remain independent of visibility and layout changes.

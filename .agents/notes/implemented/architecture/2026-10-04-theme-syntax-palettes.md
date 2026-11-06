@@ -26,4 +26,4 @@ Palettes are authored where each theme already lives. The eleven curated palette
 
 ## Related
 
-- [Web syntax highlighting (shiki)](../process/2026-07-26-web-syntax-highlighting-shiki.md) — owns the shiki singleton, the grammar allowlist, and the `--shiki-*` sheet this note refines per theme. Partial supersession: the palette VALUES are no longer one fixed light/dark pair; the sheet, engine, and lazy-grammar decisions stand.
+- [Web syntax highlighting (shiki)](../../archived/process/2026-07-26-web-syntax-highlighting-shiki.md) — owns the shiki singleton, the grammar allowlist, and the `--shiki-*` sheet this note refines per theme. Partial supersession: the palette VALUES are no longer one fixed light/dark pair; the sheet, engine, and lazy-grammar decisions stand.

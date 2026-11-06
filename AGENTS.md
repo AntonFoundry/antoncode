@@ -8,7 +8,7 @@ Public APIs are pre-stable; update every consumer. Follow [version/status](docs/
 
 Acknowledge [declared persistence-type changes](docs/cookbook/reviewing-persistence-type-changes.md).
 
-Record each externally perceptible breaking change immediately in an [upgrade guide](.agents/skills/dsh-create-upgrade-guide/SKILL.md).
+Immediately record externally perceptible breaks in an [upgrade guide](.agents/skills/dsh-create-upgrade-guide/SKILL.md).
 
 **Application launch.** Only `dsh` profiles launch supported Node apps; package bins, demos, and public SDK argv escapes are forbidden ([rule](docs/architecture.md#application-launch)).
 
@@ -17,61 +17,6 @@ Record each externally perceptible breaking change immediately in an [upgrade gu
 ```
 vendor/      Vendored Cordis (vendor/README.md)
 packages/    @deepseek-ai/dsh-<pkg> workspaces at packages/<group>/<pkg>/
-  core/                 agent/session API
-  api/                  remote BFF
-  typert/               type graphs
-  llm/                  model providers
-  shell/                command execution
-  subprocess/           child-process management
-  ssh/                  SSH execution providers
-  terminal/             persistent terminals
-  ptc-runtime/          PTC execution
-  sandbox/              process confinement
-  deliverables/         turn deliverables
-  fs/                   filesystem access
-  lsp/                  language servers
-  skill/                skill loading
-  web/                  search/fetch tools
-  computer-use/         computer interaction
-  browser-use/          browser interaction
-  compaction/           context compaction
-  context/              request context
-  subagent/             delegated agents
-  jobs/                 background jobs
-  bundle/               profile bundles
-  workflow/             workflow execution
-  todo/                 todo_write tool
-  plan/                 logged planning
-  goal/                 session goals
-  schedule/             scheduled follow-ups
-  preset/               agent composition
-  guard/                loop/tool guards
-  extensions/           runtime self-modification
-  session/              durable sessions
-  session-query/        browsing/search/export
-  attachment/           binary attachments
-  spill/                output spill
-  storage/              non-session storage
-  workspace/            workspace entities
-  feedback/             human feedback
-  identity/             anonymous identity
-  settings/             user settings
-  credentials/          credentials/authorization
-  acp/                  automation-only ACP
-  interaction/          human interaction
-  boot/                 application boot
-  sdk/                  JSON-RPC SDK
-  host/                 GUI host
-  client/               GUI client
-  mcp/                  external tools
-  experimental/         evaluated capabilities without a product-support commitment
-  test-support/         test infrastructure
-  document/             Office-to-PDF conversion
-  flowbuilder/          flow definitions, block library, LangFlow sidecar
-  lifecycle/            Anton lifecycle tools
-  telemetry/            OTLP event and Session-log channels
-  zai/                  native Z.AI tools
-  util/                 zero-dependency utilities
 python/      Python SDK/runtime (python/README.md)
 native/      @deepseek-ai/node-addon-system source (native/README.md)
 benchmarks/  performance gates
@@ -81,13 +26,13 @@ scripts/     gates and generators
 website/     VitePress documentation projection
 ```
 
-Package groups: [packages/README.md](packages/README.md). [Experimental status](packages/experimental/README.md#status) is independent of optional delivery; nonexperimental packages need product use or an explicit [classification](scripts/product-package-policy.ts).
+Groups: [packages/README.md](packages/README.md). [Experimental status](packages/experimental/README.md#status) means evaluated capabilities without product-support commitment, independently of optional delivery; nonexperimental packages need product use or an explicit [classification](scripts/product-package-policy.ts).
 
 ## Commands
 
 ```sh
 pnpm install            # pnpm workspaces, node >=24.9
-pnpm run clean           # remove build outputs and safe residue from deleted packages
+pnpm run clean           # remove build outputs and safe deleted-package residue
 pnpm run test           # unit tests
 pnpm run test:coverage  # CI coverage gate: per-file 100% on packages/*/*/src
 pnpm run test:e2e       # real-API tests; self-skip without DEEPSEEK_API_KEY
@@ -98,13 +43,13 @@ pnpm run typecheck
 pnpm run lint
 pnpm run duplication    # cross-file TypeScript clone detection
 pnpm run build          # build:artifacts + build:check, concurrently
-pnpm run build:artifacts # artifacts: tsc emits lib/types, tsdown bundles runtime, Web
+pnpm run build:artifacts # tsc emits lib/types; tsdown bundles runtime/Web
 pnpm run build:check    # typecheck aggregate tests/scripts against current build:artifacts output
 pnpm run hygiene        # publint + workspace/package/dependency checks + NodeNext consumer check
 pnpm run check:windows-wine  # ONLY when diagnosing a known Windows failure (needs wine); CI owns this signal
 pnpm run doc-sync       # documentation gates (scripts/run-gates.ts)
 pnpm run test:docs      # quick documentation checks (no build; doc-quick aggregate)
-pnpm run website:build  # VitePress build (doubles as dead-link check)
+pnpm run website:build  # VitePress build/dead-link check
 pnpm anton --profile headless "task"  # run one task from source (needs DEEPSEEK_API_KEY)
 pnpm run demo:ptc -- "task"  # headless PTC mode run (needs key)
 pnpm run dev:web | dev:desktop  # build:artifacts, then launch; Web also rebuilds client bundles on edits. start:web | start:desktop skip the build
@@ -113,26 +58,26 @@ make web|dev-web|desktop|dev-desktop|build  # the same commands; ARGS='--no-open
 
 ### Anton macOS app (apps/anton-bridge)
 
-The app ships only built `lib/` output, so rebuild changed packages first (`npx tsc -b tsconfig.client.json` + `pnpm --filter <pkg> run bundle`, or a full `pnpm run build`; the `dsh` CLI runtime additionally needs `npm run build:lib:host`), then:
+The app ships only built `lib/`; first rebuild changed packages (`npx tsc -b tsconfig.client.json` + `pnpm --filter <pkg> run bundle`, or a full `pnpm run build`; the `dsh` CLI runtime additionally needs `npm run build:lib:host`), then:
 
 ```sh
 pnpm run anton:build:macos  # self-contained: quits a running Anton, builds + boot-smokes a staging bundle in dist/, installs /Applications/Anton.app (override with ANTON_INSTALL_DIR; previous bundle kept as Anton.previous.app), relaunches, and verifies
 ```
 
-**Controlling the running app — always use `anton`, never hand-crafted quit/kill/open chains**: `anton status` reads bridge + harness + memory-service health; `anton restart` reloads the harness tree the bridge serves (installed bundle or this checkout under `pnpm run anton:dev`) while the app itself stays up; `anton stop`/`start` are deliberate lifecycle calls. `anton restart` replaces the raw `POST http://127.0.0.1:3742/bridge/api/harness/restart` (still available) — all are safe under an interrupted tool call: read-only or idempotent, and none can quit the app.
+**Control the app through `anton`, never custom quit/kill/open chains.** `anton status` reads bridge/harness/memory-service health; `anton restart` reloads the bridge-served harness (installed bundle or checkout under `pnpm run anton:dev`), keeping the app up; `anton stop`/`start` are deliberate lifecycle calls. Restart supersedes the still-available `POST http://127.0.0.1:3742/bridge/api/harness/restart`. All are interruption-safe: read-only/idempotent; none quits the app.
 
-Boot resilience, in layers: the build boot-smokes the staged bundle end to end (a broken plugin fails the build, not the launch); the profile boot retries with a failing loader entry disabled (degraded, loud — one broken plugin costs its own features, not the surface); and the Mac app's watchdog escalates persistent harness/bridge failures onto the first-party-only `recovery` profile (amber chip, "Exit Recovery Mode" menu) whose web UI is where repair happens, with a one-shot repair agent on the `repair` profile that diagnoses from `bridge.log`, fixes, rebuilds, and swaps the bundle in place (`ANTON_IN_PLACE_SWAP=1`). First run installs an `anton` launcher into `~/.local/bin` sharing the app's `~/.anton/dsh` home (profiles `web`, `recovery`, `repair`, `headless`; `anton models` lists a composition's providers and models). The app also installs the `anton` binary itself (browser driver + notification tools included) so a repairing agent can reach the same tree the app runs.
+End-to-end staged-bundle boot-smokes fail builds, not launches, for broken plugins. Profile boot loudly retries with the failing loader entry disabled, losing only its features. Persistent harness/bridge failures trigger the Mac watchdog's first-party-only `recovery` profile (amber chip, "Exit Recovery Mode" menu). Repair happens in its Web UI; a one-shot `repair`-profile agent diagnoses `bridge.log`, fixes, rebuilds, and swaps in place (`ANTON_IN_PLACE_SWAP=1`). First run installs `~/.local/bin/anton`, sharing the app's `~/.anton/dsh` home (profiles `web`, `recovery`, `repair`, `headless`; `anton models` lists composition providers/models). The installed `anton` binary includes browser-driver/notification tools for same-tree repairs.
 
 ### Host sandbox failures
 
-If a required `gh`, `pnpm`, build, test, or generator command fails because the sandbox blocks credentials, network, IPC, watching, or nested `sandbox-exec`, retry unchanged with the narrowest host escalation. Require sandbox evidence; never bypass test failures or the product sandbox.
+When sandbox evidence shows blocked credentials, network, IPC, watching, or nested `sandbox-exec`, retry required `gh`, `pnpm`, build, test, or generator commands unchanged with the narrowest host escalation. Never bypass test failures or the product sandbox.
 
 ### Run relevant checks locally
 
-Before pushing, follow [dsh-pre-push-checks](.agents/skills/dsh-pre-push-checks/SKILL.md); report only commands run. After `gh stack sync`, validate immediately; do not merge before checks pass.
+Before pushing, use [dsh-pre-push-checks](.agents/skills/dsh-pre-push-checks/SKILL.md); report only executed commands. After `gh stack sync`, validate immediately; do not merge before checks pass.
 
 - Match evidence to the surface: focused behavior tests, model/user-output snapshots, `doc-sync` for docs, built smokes for published paths, and real-API e2e for providers.
-- Never default to the full suite or repeat a passing check for commit or push. CI owns exhaustive coverage and the platform matrix; rehearse all locally only by explicit request, for CI diagnosis, or for an irreducibly repository-wide change.
+- Never default to full suites or repeat passing checks for commit/push. CI owns exhaustive coverage/platform checks; run all locally only by explicit request, for CI diagnosis, or for irreducibly repository-wide changes.
 - `test:coverage`, not `test`, is the CI coverage gate ([why](docs/testing.md)).
 - Develop with `build:artifacts`; before claiming completion, run `build:check` after the latest `build:artifacts`, or `build` ([layout](docs/development.md#typescript-project-layout)).
 - **Web browser automation and GIF recording:** launch with `pnpm dsh web --patch apps/web/tests/pin-browse-picker.overlay.yml` to use the [in-page directory picker](apps/web/tests/pin-browse-picker.overlay.yml); omit this override only when testing native picker behavior explicitly.
@@ -148,27 +93,27 @@ Real-API tests/demos read `DEEPSEEK_API_KEY`, optional `DEEPSEEK_BASE_URL`, and 
 - Packages use `@deepseek-ai/dsh-<name>`; vendor is [rescoped](docs/rescope.md) and `private: true`. Harness packages declare `@deepseek-ai/cordis` in `peerDependencies`/`devDependencies`. Workspace dependency sections use DSH `workspace:*`, vendor/native `workspace:~` ([rules](.agents/notes/implemented/process/2026-08-10-npm-release-sequences.md)).
 - ESM everywhere (`"type": "module"`). Use package names across packages and `.ts` in local relative imports. Config subprocesses run built `lib/` under plain Node; source regressions use their declared launcher ([testing policy](docs/testing.md#test-subprocess-launch-modes)). The `dsh` CLI source launch runs through tsx's ESM-only hook (`node --import tsx/esm`); modules it reaches must stay ESM (no CJS-only exports) ([source-launch contract](.agents/notes/implemented/architecture/2026-07-29-dsh-source-launch-tsx-esm.md)). Raw/Web `cordis.yml` bare plugins must appear in their resolver manifest's `dependencies`; `verify-cordis-config` enforces it.
 - **Registrations are effects**: every contribution goes through `ctx.effect()` / `ctx.on()`; a registry's `register()` returns the disposer, directly or through its documented registration handle.
-- **Typed events use declaration merging** and merge-extensible maps. Event JSDoc needs `@mode` and payload `@param`. Public service methods document parameters and non-void returns. `SessionEventMap` members are required-on-read unless the envelope carries `ignorable: true`. Bump `SESSION_FORMAT_VERSION` only when existing discriminators cannot prevent unsafe interpretation; same-version changes require safe reader behavior ([review](.agents/notes/implemented/process/2026-10-08-session-reader-compatibility-review.md)).
-- **Switch on discriminant tags.** Closed unions end in `assertNever`; merge-extensible unions fall through a documented default.
+- **Typed events use declaration merging** and merge-extensible maps. Document event `@mode`/payload `@param` and public service parameters/non-void returns. `SessionEventMap` members are required-on-read unless envelopes carry `ignorable: true`. Bump `SESSION_FORMAT_VERSION` only if existing discriminators cannot prevent unsafe interpretation; same-version changes require safe readers ([review](.agents/notes/implemented/process/2026-10-08-session-reader-compatibility-review.md)).
+- **Switch on discriminants.** Closed unions end in `assertNever`; merge-extensible unions fall through a documented default.
 - **Waterfall listeners MUST call `next()`** to delegate; returning without it short-circuits the chain ([semantics](docs/cordis-primer.md#cordis-waterfall-semantics)).
 - **Model-visible ⟺ logged**: anything that reaches a model request must be reconstructable from the session log; a new model-visible input requires a session event.
 - **Session projections:** follow [dsh-session-projection](.agents/skills/dsh-session-projection/SKILL.md) when creating, extending, or reviewing one, or migrating a fold helper to one.
 - **Plugins, not loop changes**: new behavior goes on documented extension points; changing `agent-loop` requires updating docs/architecture.md.
-- **A capability seam comprises Service Definition / Service Provider / Consumer roles.** It is complete, never one role; split only when roles evolve independently ([glossary](docs/glossary.md#capability-seam)).
-- **Prefer maintained dependencies over hand-rolling** when they genuinely delete owned code and tests ([policy](.agents/notes/implemented/process/2026-07-26-dependencies-over-hand-rolling.md)).
-- **Explicit > implicit at package boundaries**: defaulting is an explicit `resolve(request): Spec` step in the owning implementation, never a hidden `?? default` inside `run()` (the `dsh-shell` request/spec split is the template).
-- **No hardcoded tunables in plugins**: deployment-varying choices are validated `Config` fields changeable from cordis.yml; a `DEFAULT_*` constant or test hook is not configurability. Protocol constants, external specs, and security invariants stay fixed.
+- **Capability seams comprise Service Definition / Service Provider / Consumer**, never one role; split only independently evolving roles ([glossary](docs/glossary.md#capability-seam)).
+- **Prefer maintained dependencies over hand-rolling** when they delete owned code/tests ([policy](.agents/notes/implemented/process/2026-07-26-dependencies-over-hand-rolling.md)).
+- **Explicit package defaulting**: the owning implementation uses `resolve(request): Spec`, never hidden `?? default` inside `run()` (`dsh-shell` request/spec template).
+- **No hardcoded plugin tunables**: deployment-varying choices need validated, cordis.yml-changeable `Config` fields, not `DEFAULT_*` constants/test hooks. Protocol constants, external specs, and security invariants stay fixed.
 - **Misconfiguration fails loud** at load when self-contained, otherwise at the earliest resolvable point; never silently skip a missing referent.
 - **Opaque cross-boundary ids are branded** (`Branded<B>` from `dsh-brand`), never bare `string`.
-- **Trust TypeScript at typed same-process boundaries.** Do not add runtime validation, fallback behavior, or hostile-input tests solely for values the static interface requires; validate at parser/config, queued, model/tool JSON, durable/file, worker, process, and wire boundaries.
+- **Trust typed same-process interfaces**: no runtime validation, fallbacks, or hostile-input tests solely for statically required values. Validate parser/config, queued, model/tool JSON, durable/file, worker, process, and wire inputs.
 - **No new assertions to `unknown`** (`as unknown` or `<unknown>`). Preserve or reduce the exact legacy baseline; use typed values or validation for replacements ([rule](.agents/notes/implemented/process/2026-09-19-no-unknown-casts.md)).
-- **Source plane vs artifact plane, never mixed.** Static gates and tests resolve workspace imports through tsconfig `paths` to `src` and pass on a clean tree; gates consuming built `lib/` declare that dependency ([layout](docs/development.md#typescript-project-layout)).
-- **Keep compiler faces explicit.** A package with both Host and Client programs exposes face-specific leaf configs and a solution-only root; repo-wide programs seed a face config, never the root solution ([layout](docs/development.md#typescript-project-layout)).
+- **Never mix source/artifact planes.** Static gates/tests resolve workspace imports via tsconfig `paths` to `src`, passing on clean trees; built-`lib/` gates declare that dependency ([layout](docs/development.md#typescript-project-layout)).
+- **Explicit compiler faces**: packages with both Host/Client programs expose face-specific leaves and solution-only roots; repo-wide programs seed a face config, never the root solution ([layout](docs/development.md#typescript-project-layout)).
 - **Error handling:** use typed, structured failures and localized, actionable reports. Define handling ownership, containment, and failure guarantees; stop dependent work and visibly report untrusted state or unknown outcomes. Follow [dsh-error-handling](.agents/skills/dsh-error-handling/SKILL.md).
 - **An empty `catch` names the error** and why; keep its `try` to one statement.
 - **Keep comments local.** Do not restate code, expand unrelated comments, or explain distant behavior without local need ([rationale](.agents/skills/dsh-prose-standard/SKILL.md)).
 - **Ban `prove` + `nance`** ([rule](.agents/notes/implemented/process/2026-08-26-ban-ambiguous-origin-label.md)).
-- **Prefer symmetry for parallel values**; unexplained asymmetry usually signals a missed extraction.
+- **Prefer parallel-value symmetry**; unexplained asymmetry suggests missed extraction.
 - **Tests describe behavior, not correctness.** Change obsolete behavior with its tests; explain why in the PR.
 - **Create Agent Notes only for durable decision rationale;** mechanical/local edits are exempt, including local UI changes ([scope](.agents/notes/README.md#when-to-write-one)). Archived notes are frozen: never edit or treat them as current authority ([archive policy](.agents/notes/README.md#archiving-and-deletion)).
 - **Official plugin artwork:** use [dsh-official-plugin-artwork](.agents/skills/dsh-official-plugin-artwork/SKILL.md) for official and official experimental plugin icons; obtain designer approval before landing new glyphs.
@@ -177,10 +122,10 @@ Real-API tests/demos read `DEEPSEEK_API_KEY`, optional `DEEPSEEK_BASE_URL`, and 
 - **Design each tool's UI presentation up front.** Host presenters stay pure; Web cards derive from raw events and persisted result metadata ([cookbook](docs/cookbook/adding-a-tool.md)).
 - **Plan unit, e2e, and snapshot coverage** for capability seams, lifecycle paths, and transcript output; include missing snapshot-harness support in the same change.
 - **Both SDKs project the loop.** Agent-loop, session-lifecycle, and `SessionEventMap` changes update the TypeScript and Python SDK expected outputs in the same PR; `pnpm run test` covers neither ([surfaces](docs/testing.md#when-a-snapshot-test-is-required)).
-- **Commit the tree after each feature or bug fix.** When a feature or bug fix passes its narrow checks, commit it immediately (deliberate message; its Agent Note, README, and test updates in the same commit) — do not leave a large uncommitted tree accumulating across tasks. Never commit `dist/` output or credentials.
-- **Choose PR history deliberately.** Split independent changes and fix the introducing PR before propagation. Standalone/stack branches may merge-forward or rebase. Rewrites use `--force-with-lease`, abort on remote movement, never raw `--force`; preserve an in-progress merge-forward checkpoint before taking a newer base ([rationale](.agents/notes/implemented/process/2026-08-02-native-github-stacks-and-optional-rebases.md)).
+- **Commit each feature or bug fix immediately after its narrow checks pass**, with a deliberate message and its Agent Note, README, and tests together; never accumulate uncommitted tasks or commit `dist/` or credentials.
+- **Choose PR history deliberately.** Split independent changes; fix introducing PRs before propagation. Standalone/stack branches may merge-forward/rebase. Rewrites use `--force-with-lease`, never `--force`; abort on remote movement. Preserve in-progress merge-forward checkpoints before newer bases ([rationale](.agents/notes/implemented/process/2026-08-02-native-github-stacks-and-optional-rebases.md)).
 - **Labels:** one PR `kind/*`, all material `area/*`, and native Issue Type ([taxonomy](.agents/notes/implemented/process/2026-08-08-unified-github-label-taxonomy.md)).
-- **PR descriptions:** write and update every PR description with [dsh-pr-description](.agents/skills/dsh-pr-description/SKILL.md).
+- **PR descriptions:** write/update every description with [dsh-pr-description](.agents/skills/dsh-pr-description/SKILL.md).
 - TODO markers: `FIXME`/`TODO`/`XXX` by urgency ([semantics](docs/development.md)).
 - Files end with exactly one trailing newline; `git diff --cached --check` (pre-commit) gates it.
 
@@ -190,15 +135,15 @@ Read [docs/defensive-patterns/README.md](docs/defensive-patterns/README.md) befo
 
 ## Type safety and documentation
 
-Everything compiles under `strict: true` with `noImplicitAny`; every remaining `any` explains why narrowing is infeasible. Every module and export has concise JSDoc for its non-obvious contract; function-like exports include `@param`/`@returns`, as enforced by `verify-export-jsdoc`. Heritage-declared members, plugin-protocol slots, and constructors keep their docs at the declaring Service Definition, protocol, or class.
+Compile with `strict: true`/`noImplicitAny`; explain why each remaining `any` cannot narrow. Document every module/export's non-obvious contract in concise JSDoc; function-like exports include `@param`/`@returns` (`verify-export-jsdoc`). Heritage-declared members, plugin-protocol slots, and constructors retain docs at the declaring Service Definition, protocol, or class.
 
-Comments and docs state complete contracts and context, not reasoning transcripts. Use direct, concrete terms. Do not use metaphors. Before writing `contract`, `boundary`, or `shape`, ask whether a more exact term names the subject: write `response fields`, `JSON validation`, or `ESM exports` instead of `response shape`, `validation boundary`, or `module shape`. Keep `contract` for preconditions, postconditions, invariants, compatibility promises, and other obligations that callers, callees, implementers, providers, producers, or consumers rely on. Keep a literal process, wire, security, transaction, or lifecycle boundary. Do not narrate control flow or tests, preserve review history, or restate code. Keep behavior, failure, timing, ownership, and safe-use facts; link the rationale. Use [dsh-prose-standard](.agents/skills/dsh-prose-standard/SKILL.md) for decisions. Wire mechanically checkable invariants into an executed top-level gate and prove each changed acceptance path rejects an invalid case. Use narrow, justified exceptions instead of disabling a rule globally.
+Comments/docs state complete contracts/context, not reasoning transcripts. Use direct, concrete terms, never metaphors. Check `contract`, `boundary`, and `shape` against exact alternatives: `response fields`, `JSON validation`, `ESM exports`. Reserve `contract` for relied-upon preconditions, postconditions, invariants, compatibility promises, and obligations; retain literal process, wire, security, transaction, or lifecycle boundaries. Omit control-flow/test narration, review history, and code restatement. Preserve behavior, failure, timing, ownership, and safe use; link rationale. Follow [dsh-prose-standard](.agents/skills/dsh-prose-standard/SKILL.md). Enforce mechanically checkable invariants in executed top-level gates; prove each changed acceptance path rejects an invalid case. Use narrow, justified exceptions, never global rule disabling.
 
-Docs accompany every code change: update affected README and JSDoc contracts together. Documentation is English-exclusive: no Chinese docs, translations, or translation gates. Current-state prose, one physical line per paragraph, one home per fact, and word budgets live in [docs/AGENTS.md](docs/AGENTS.md).
+Docs accompany every code change: update affected README and JSDoc contracts together. English-exclusive documentation: no Chinese docs, translations, or translation gates. Current-state prose, one physical line per paragraph, one home per fact, and word budgets live in [docs/AGENTS.md](docs/AGENTS.md).
 
 ## Editing these instructions
 
-`CLAUDE.md` symlinks `AGENTS.md` at root and `packages/`; edit the real file. Keep each rule self-contained while linking high-level docs. Condense when clarity survives; raise a `verify-doc-budgets` ceiling when the required content genuinely needs more space.
+Root/`packages/` `CLAUDE.md` symlinks `AGENTS.md`; edit the real files. Keep rules self-contained, linking high-level docs. Condense without losing clarity; raise `verify-doc-budgets` ceilings only for required space.
 
 ## Vendoring policy
 

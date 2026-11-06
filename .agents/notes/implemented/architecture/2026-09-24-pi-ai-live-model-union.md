@@ -21,3 +21,7 @@ A route cannot both hide a model the live listing returns and keep the live ones
 ## Verification
 
 `pnpm vitest run packages/llm/llm-pi-ai/tests/{catalog,models-dev,config,dynamic-config,discovery}.spec.ts` — the catalog spec's live-materialization case asserts strict curation keeps the live id out, and the union case asserts configured fields win, discovered fields land, and installed ids deduplicate against both. `npx tsc -p packages/llm/llm-pi-ai/tsconfig.json --noEmit` is clean.
+
+## Alternatives considered
+
+**Treat a configured model list as strict curation on every route.** This remains the default, but cannot serve a deployment that pins boot models while also needing discovery. An explicit opt-in joins live models without changing curated deployments.

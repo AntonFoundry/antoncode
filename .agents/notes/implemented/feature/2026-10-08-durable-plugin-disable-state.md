@@ -1,8 +1,8 @@
-# Durable plugin disable-state (`plugin-state.json`)
+# Agent Note: Durable plugin disable-state (`plugin-state.json`)
 
-Date: 2026-10-08 · Status: implemented
+Status: implemented
 
-## Context
+## Problem
 
 The settings UI's plugin inventory (`PluginInventoryGateway.toggle` in `packages/host/plugin-inventory`) updated the Loader entry in memory only — the code comment said it explicitly: avoid `tree.write()` mutations on base bundle files. Any host restart recomposed the tree from the patch layers, so every disabled plugin re-enabled; a rebuild or full reinstall did the same, because the bundle's rows are the source the layers compose over. `configure` had the same runtime-only scope. A user disabling, say, the mail client saw it vanish until the next restart brought it back.
 
@@ -16,7 +16,7 @@ Persist the user's toggle/configure intent in `$DSH_HOME/plugin-state.json` — 
 - `configure` stores the entry's full post-merge config because the include patcher replaces a row's whole `config` key; when the live config carries non-JSON nodes (`!!js` results, functions), the config is NOT stored (a wholesale replacement at boot would drop them) and the edit stays runtime-scoped with a warning. `disabled` still persists in that case.
 - The layer re-reads per live-reload generation (`composeLive`), so a toggle that landed since boot joins the next recomposition.
 
-Alternatives considered:
+## Alternatives considered
 
 - *Settings namespace* (`settings.yaml`): rejected — settings are user-global and plugin-owned; the disable set must be readable by profile boot BEFORE any plugin mounts (chicken-and-egg with the settings service), and per-machine machine-local state is not user settings.
 - *Write into `cordis.patch.yml`*: rejected — that file is the user's hand-editable layer; programmatic rewrites would clobber comments and hand edits.

@@ -2,8 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-10-05-official-on-demand-bundles.zh.md)
-
+English
 ## Problem
 
 Native subagent integrations bring their own runtimes. Shipping those dependencies with every DSH installation charges that cost to people who never delegate to them, while requiring a package name hides the integrations from the Plugins page.

@@ -22,4 +22,4 @@ This setting changes the draft-area floor instead of fixing the whole card heigh
 
 The empty chat composer is taller and exposes three text lines before scrolling; longer drafts still grow naturally and scroll at the existing cap. The same text area minimum applies to the blank-session hero so choosing a workspace does not change the composer size.
 
-The transcript and composer fill the conversation root using the shared width axis documented in the [composer width decision](2026-08-04-web-composer-shared-width-axis.md), with existing side gutters retained.
+The transcript and composer fill the conversation root using the shared width axis documented in the [composer width decision](../../archived/feature/2026-08-04-web-composer-shared-width-axis.md), with existing side gutters retained.

@@ -2,8 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-10-19-pi-ai-system-reminder-fallback.zh.md)
-
+English
 ## Problem
 
 Pi-ai concatenates later system messages into the initial prompt for models without native mid-conversation system support. Later system messages supplied to the adapter therefore invalidate the preceding conversation cache prefix.

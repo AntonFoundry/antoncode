@@ -2,8 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-09-08-present-workspace-source-files.zh.md)
-
+English
 ## Problem
 
 Users need to open and edit the files produced in their workspace, including shell-created files that have no editor mutation records. Preserving an independent delivered version adds content storage, copy verification, temporary-file retention, and a second editing destination to this workflow.
