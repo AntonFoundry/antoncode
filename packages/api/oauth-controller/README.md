@@ -16,6 +16,7 @@ Start OpenCode Zen or Claude subscription sign-in from the Models page and follo
 - [Use this package](#use-this-package)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Use this package
 
@@ -32,3 +33,12 @@ No direct effect; a later model request uses the selected provider's own credent
 ## Known Limitations and Deferred Work
 
 - Login attempts live in the Host process and do not survive a restart; start a new attempt after reconnecting to a restarted Host.
+
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

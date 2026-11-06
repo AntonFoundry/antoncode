@@ -3,13 +3,23 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { MarkdownFileView } from '../src/client/MarkdownFileView.tsx'
-import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { en } from '../src/client/locales.ts'
 import type { MarkdownFileViewProps } from '../src/client/MarkdownFileView.tsx'
+
+/** These file viewers consume owner data and locale, not framework hooks. */
+const unusedHook = (): never => { throw new Error('File viewer unexpectedly consumed a framework hook') }
+const globalStandard: GlobalStandardProps = {
+  usePanelInfo: unusedHook, useSessions: unusedHook, useSessionStatus: unusedHook,
+  useSessionRetainInfo: unusedHook, useWorkspaces: unusedHook, useResource: unusedHook,
+  ...allowAllAccess,
+}
 
 /** Owner-share stub: a resolving read face over a small fixture unless overridden. */
 function props(over: Partial<MarkdownFileViewProps> = {}): MarkdownFileViewProps {
   return {
+    ...globalStandard,
     t: makeTranslate(en),
     path: '/w/README.md',
     readText: () => Promise.resolve({ content: '# Title\n\nBody text.', truncated: false }),
