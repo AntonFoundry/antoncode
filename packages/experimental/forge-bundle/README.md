@@ -5,8 +5,6 @@ kind: "package-bundle"
 
 # @deepseek-ai/dsh-experimental-forge-bundle
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 Show the change requests of each Session with their checks and reviews, and let a new Session start in its own Git worktree. Enable Change requests & worktrees on the Web or Desktop Plugins page; shipped profiles leave it disabled. GitHub status comes from the `gh` CLI signed in on the Host; without it, the panel still shows the branch and the worktree option still works.

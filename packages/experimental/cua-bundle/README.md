@@ -5,8 +5,6 @@ kind: "package-bundle"
 
 # @deepseek-ai/dsh-cua-bundle
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 Enable macOS Computer Use from Plugins for existing and new PTC sessions. Windows support is in development. This bundle remains in `experimental` until that support is complete, then moves to the `computer-use` group. It is off by default and hidden from the default plugin lists until enabled or separately installed; disabled profiles prepare no native components and register neither CUA tools nor their model guidance.

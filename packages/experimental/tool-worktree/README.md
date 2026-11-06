@@ -5,8 +5,6 @@ kind: "package-bundle"
 
 # @deepseek-ai/dsh-experimental-tool-worktree
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 Add Git worktrees from the GUI plugin manager to let a model create and enter a new Git worktree with one call. This optional bundle is installed with Harness and stays off until selected. Native tool calls and PTC programs receive the same typed result, and the existing file policy governs creation.

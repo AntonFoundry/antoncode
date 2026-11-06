@@ -5,8 +5,6 @@ kind: "package-reference"
 
 # @deepseek-ai/dsh-client-ui-settings-subagent
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 Open **Settings → Subagents** to set how deep and how wide delegation may go, and which models agents may choose for their subagents. The same form is available under **Plugins → Subagent**. It groups the two Host namespaces, `subagent` and `subagent-model-selection-settings`, under one save; it exists while the Host serves either and shows the sections it serves.

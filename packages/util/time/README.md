@@ -5,8 +5,6 @@ kind: "package-library"
 
 # dsh-util-time
 
-English | [中文](README.zh.md)
-
 ## Summary
 
 Shared time vocabulary for the boundaries that accept a caller's zone, a wall-clock selector, or an elapsed time. `canonicalClientTimeZone` answers the platform-canonical `UTC` or IANA `Area/Location` spelling, so an alias never reaches a durable record. The strict parsers read RFC 3339 instants, local calendar fields, and zone names as discriminated results, and `resolveLocalInstant` applies maintained `Temporal` DST and overlap behavior. `Duration` holds a span in milliseconds and splits it into whole parts. The library owns no failure vocabulary and no model-facing text: each caller maps a reason onto its own domain code.
