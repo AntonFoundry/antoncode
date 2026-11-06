@@ -4,8 +4,8 @@
   flex-direction: column;
   padding: 8px;
   margin: 4px 0;
-  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.08));
-  border-radius: 8px;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-sm);
   background: var(--dsw-alias-bg-base, transparent);
   overflow-x: auto;
 }
@@ -22,17 +22,19 @@
 .copyButton,
 .zoomButton {
   padding: 2px 8px;
-  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.08));
-  border-radius: 6px;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-sm);
   font-size: 11px;
   background: var(--dsw-alias-bg-base, transparent);
   color: var(--dsw-alias-label-secondary, gray);
   cursor: pointer;
 }
 
-.copyButton:hover,
-.zoomButton:hover {
-  color: var(--dsw-alias-label-primary, black);
+@media (hover: hover) {
+  .copyButton:hover,
+  .zoomButton:hover {
+    color: var(--dsw-alias-label-primary);
+  }
 }
 
 .zoomButton {

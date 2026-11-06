@@ -194,20 +194,12 @@ function downloadPng(png: Blob, id: string): void {
 }
 
 /**
- * Render one mermaid diagram to static SVG. The library loads lazily on the
- * first diagram; a module-level promise caches the configured instance.
- * Render ids must be unique per call — mermaid keys its SVG defs by id.
- */
-/** Render cache keyed by `theme\u0000code`. Failures are cached too: a
- * diagram that failed once fails instantly and silently on every later
- * mount instead of replaying mermaid's parse attempt (and its injected
- * error bomb) each time history re-renders. */
-/**
  * mermaid v11's render() is not safe to run concurrently: parallel calls race
  * on its shared temp-DOM state and throw "Cannot read properties of null
  * (reading 'firstChild')". History pages mount many diagram cards at once, so
  * every render is serialized through this chain.
  */
+let nextRenderIndex = 0
 let renderChain: Promise<unknown> = Promise.resolve()
 function serializeRender<T>(job: () => Promise<T>): Promise<T> {
   const run = renderChain.then(job, job)
@@ -215,13 +207,19 @@ function serializeRender<T>(job: () => Promise<T>): Promise<T> {
   return run
 }
 
-const renderCache = new Map<string, Render>()
-
+/**
+ * Render settled Mermaid source as a theme-aware SVG, retaining source on failure.
+ * Each mounted card owns its cached SVGs; queued work skips disposed effects,
+ * and admitted work removes its scratch DOM before publishing an outcome.
+ */
 export const MermaidDiagram = memo(function MermaidDiagram({
   code, copyLabel, copiedLabel, labels,
 }: MermaidDiagramProps): ReactNode {
   const [render, setRender] = useState<Render>({ phase: 'idle' })
   const mermaidRef = useRef<typeof import('mermaid').default | undefined>(undefined)
+  // SVG ids belong to one mounted card. Keep at most both theme outcomes
+  // for its current source; remounts render again rather than sharing ids.
+  const renderCache = useRef({ code, outcomes: new Map<string, Render>() })
   const renderIndex = useRef(0)
   const [theme, setTheme] = useState<'dark' | 'default'>(() => activeMermaidTheme())
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
@@ -265,11 +263,12 @@ export const MermaidDiagram = memo(function MermaidDiagram({
 
   useEffect(() => {
     let cancelled = false
-    const cacheKey = `${theme}\u0000${code}`
-    const cached = renderCache.get(cacheKey)
+    if (renderCache.current.code !== code) {
+      renderCache.current = { code, outcomes: new Map<string, Render>() }
+    }
+    const outcomes = renderCache.current.outcomes
+    const cached = outcomes.get(theme)
     if (cached !== undefined) {
-      // Known outcome (success or failure): no mermaid render at all. For a
-      // failure this also skips mermaid's DOM error-bomb injection entirely.
       setRender(cached)
       return
     }
@@ -279,28 +278,38 @@ export const MermaidDiagram = memo(function MermaidDiagram({
         mermaidRef.current ??= (await import('mermaid')).default
         const mermaid = mermaidRef.current
         if (mermaid === undefined) throw new Error('mermaid failed to load')
-        mermaid.initialize({
-          startOnLoad: false,
-          securityLevel: 'strict',
-          theme,
-          themeVariables: { background: 'transparent', fontFamily: 'inherit' },
+        const renderId = `dsh-mermaid-${theme}-${++nextRenderIndex}`
+        renderIndex.current = nextRenderIndex
+        const result = await serializeRender(async () => {
+          // Queued effects may be replaced or unmounted before admission.
+          if (cancelled) return undefined
+          // Give Mermaid its own scratch root: its ID-based cleanup must never
+          // resolve to an SVG already mounted in another history card.
+          const scratch = document.createElement('div')
+          scratch.style.position = 'absolute'
+          scratch.style.left = '-100000px'
+          document.body.appendChild(scratch)
+          try {
+            mermaid.initialize({
+              startOnLoad: false,
+              securityLevel: 'strict',
+              theme,
+              themeVariables: { background: 'transparent', fontFamily: 'inherit' },
+            })
+            return await mermaid.render(renderId, code, scratch)
+          } finally {
+            scratch.remove()
+          }
         })
-        renderIndex.current += 1
-        const { svg } = await serializeRender(() =>
-          mermaid.render(`dsh-mermaid-${theme}-${renderIndex.current}`, code),
-        )
-        const next: Render = { phase: 'ready', svg }
-        renderCache.set(cacheKey, next)
-        if (!cancelled) setRender(next)
+        if (cancelled || result === undefined) return
+        const next: Render = { phase: 'ready', svg: result.svg }
+        outcomes.set(theme, next)
+        setRender(next)
       } catch (error: unknown) {
-        // mermaid injects its error SVG (the bomb) into the page under the
-        // render id before throwing — remove it so the fallback is the only
-        // thing the user sees.
-        document.getElementById(`dsh-mermaid-${theme}-${renderIndex.current}`)?.remove()
-        document.querySelectorAll('[id^="dsh-mermaid-"]').forEach((node) => { node.remove() })
+        if (cancelled) return
         const next: Render = { phase: 'failed', message: error instanceof Error ? error.message : String(error) }
-        renderCache.set(cacheKey, next)
-        if (!cancelled) setRender(next)
+        outcomes.set(theme, next)
+        setRender(next)
       }
     }
     void run()

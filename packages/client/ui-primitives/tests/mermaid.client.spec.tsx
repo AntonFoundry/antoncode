@@ -7,12 +7,12 @@
  * pipeline returns a deterministic stub SVG.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MermaidDiagram, svgDimensions } from '@deepseek-ai/dsh-client-ui-primitives/src/markdown/mermaid.tsx'
 
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80" viewBox="0 0 120 80"><rect width="120" height="80"/></svg>'
 
-const renderMermaid = vi.hoisted(() => vi.fn(async () => ({ svg: SVG })))
+const renderMermaid = vi.hoisted(() => vi.fn(async (_id: string, _code: string, _root: Element) => ({ svg: SVG })))
 const initialize = vi.hoisted(() => vi.fn())
 
 vi.mock('mermaid', () => ({
@@ -50,8 +50,8 @@ describe('svgDimensions', () => {
 
 describe('MermaidDiagram', () => {
   beforeEach(() => {
-    renderMermaid.mockClear()
-    initialize.mockClear()
+    renderMermaid.mockReset().mockResolvedValue({ svg: SVG })
+    initialize.mockReset()
   })
   afterEach(() => {
     cleanup()
@@ -126,6 +126,106 @@ describe('MermaidDiagram', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Copy image' }))
     await waitFor(() => { expect(container.querySelector('[data-copy="copied"]')).toBeNull() })
     expect(URL.createObjectURL).toHaveBeenCalled()
+  })
+
+  it('keeps mounted diagrams intact when a later render fails and owns only its scratch DOM', async () => {
+    const ids: string[] = []
+    const roots: Element[] = []
+    renderMermaid.mockImplementationOnce(async (...args: unknown[]) => {
+      const [id, , root] = args as [string, string, Element]
+      ids.push(id)
+      roots.push(root)
+      return { svg: SVG.replace('<svg ', `<svg id="${id}" `) }
+    })
+    const first = render(
+      <MermaidDiagram code="graph TD; uniqueFirst-->card" copyLabel="Copy" copiedLabel="Copied" labels={labels} />,
+    )
+    await waitFor(() => { expect(first.container.querySelector('[data-mermaid="ready"]')).not.toBeNull() })
+    const mounted = first.container.querySelector(`svg[id="${ids[0]}"]`)
+    expect(mounted).not.toBeNull()
+    renderMermaid.mockImplementationOnce(async (...args: unknown[]) => {
+      const [id, , root] = args as [string, string, Element]
+      ids.push(id)
+      roots.push(root)
+      const errorSvg = document.createElement('div')
+      errorSvg.id = id
+      root.appendChild(errorSvg)
+      throw new Error('isolated failure')
+    })
+    const second = render(
+      <MermaidDiagram code="graph TD; uniqueBroken" copyLabel="Copy" copiedLabel="Copied" labels={labels} />,
+    )
+    await waitFor(() => { expect(second.container.querySelector('[data-mermaid="failed"]')).not.toBeNull() })
+    expect(new Set(ids).size).toBe(2)
+    expect(mounted?.isConnected).toBe(true)
+    expect(document.getElementById(ids[1]!)).toBeNull()
+    expect(roots.every(root => !root.isConnected)).toBe(true)
+  })
+
+  it('renders identical cards with independent SVG ids and reuses only its own theme outcomes', async () => {
+    const originalScheme = document.documentElement.style.colorScheme
+    document.documentElement.style.colorScheme = 'light'
+    renderMermaid.mockImplementation(async id => ({ svg: SVG.replace('<svg ', `<svg id="${id}" `) }))
+    try {
+      const first = render(<MermaidDiagram code="graph TD; identical-->cards" copyLabel="Copy" copiedLabel="Copied" labels={labels} />)
+      await waitFor(() => { expect(first.container.querySelector('[data-mermaid="ready"]')).not.toBeNull() })
+      const firstId = first.container.querySelector('svg[id]')?.id
+      const second = render(<MermaidDiagram code="graph TD; identical-->cards" copyLabel="Copy" copiedLabel="Copied" labels={labels} />)
+      await waitFor(() => { expect(second.container.querySelector('[data-mermaid="ready"]')).not.toBeNull() })
+      expect(second.container.querySelector('svg[id]')?.id).not.toBe(firstId)
+      await act(async () => { document.documentElement.style.colorScheme = 'dark' })
+      await waitFor(() => { expect(first.container.querySelector('svg[id]')?.id).toContain('-dark-') })
+      await waitFor(() => { expect(second.container.querySelector('svg[id]')?.id).toContain('-dark-') })
+      await act(async () => { document.documentElement.style.colorScheme = 'light' })
+      await waitFor(() => { expect(first.container.querySelector('svg[id]')?.id).toBe(firstId) })
+      expect(renderMermaid).toHaveBeenCalledTimes(4)
+    } finally {
+      cleanup()
+      document.documentElement.style.colorScheme = originalScheme
+      renderMermaid.mockImplementation(async () => ({ svg: SVG }))
+    }
+  })
+
+  it('serializes configuration with rendering and skips an unmounted queued card after failure', async () => {
+    let rejectFirst!: (error: Error) => void
+    const firstRender = new Promise<{ svg: string }>((_resolve, reject) => { rejectFirst = reject })
+    let activeRoot: Element | undefined
+    renderMermaid.mockImplementationOnce(async (_id, _code, root) => {
+      activeRoot = root
+      return await firstRender
+    })
+    const first = render(<MermaidDiagram code="graph TD; blocked-->first" copyLabel="Copy" copiedLabel="Copied" labels={labels} />)
+    try {
+      await waitFor(() => { expect(renderMermaid).toHaveBeenCalledTimes(1) })
+      const removed = render(<MermaidDiagram code="graph TD; cancelled-->queued" copyLabel="Copy" copiedLabel="Copied" labels={labels} />)
+      await act(async () => { await vi.dynamicImportSettled() })
+      const next = render(<MermaidDiagram code="graph TD; next-->queued" copyLabel="Copy" copiedLabel="Copied" labels={labels} />)
+      await act(async () => { await vi.dynamicImportSettled() })
+      expect(initialize).toHaveBeenCalledTimes(1)
+      removed.unmount()
+      first.unmount()
+      expect(activeRoot?.isConnected).toBe(true)
+      await act(async () => { rejectFirst(new Error('late failure')) })
+      await waitFor(() => { expect(next.container.querySelector('[data-mermaid]')?.getAttribute('data-mermaid')).not.toBe('pending') })
+      expect(next.container.querySelector('[data-mermaid="ready"]')).not.toBeNull()
+      expect(renderMermaid.mock.calls.map(([, code]) => code)).toEqual(['graph TD; blocked-->first', 'graph TD; next-->queued'])
+      expect(initialize).toHaveBeenCalledTimes(2)
+      expect(activeRoot?.isConnected).toBe(false)
+      expect(document.querySelector('[data-mermaid="failed"]')).toBeNull()
+    } finally {
+      rejectFirst(new Error('test cleanup'))
+      await act(async () => { await firstRender.catch(() => undefined) })
+    }
+  })
+
+  it('removes its scratch root when configuration throws and lets the next card render', async () => {
+    const rootsBefore = [...document.body.children]
+    initialize.mockImplementationOnce(() => { throw new Error('configuration failed') })
+    const failed = render(<MermaidDiagram code="graph TD; configure-->failure" copyLabel="Copy" copiedLabel="Copied" labels={labels} />)
+    await waitFor(() => { expect(failed.container.querySelector('[data-mermaid="failed"]')).not.toBeNull() })
+    expect([...document.body.children]).toEqual([...rootsBefore, failed.container])
+    const next = render(<MermaidDiagram code="graph TD; configure-->next" copyLabel="Copy" copiedLabel="Copied" labels={labels} />)
+    await waitFor(() => { expect(next.container.querySelector('[data-mermaid="ready"]')).not.toBeNull() })
   })
 
   it('falls back to the fenced source with the error when mermaid rejects', async () => {
