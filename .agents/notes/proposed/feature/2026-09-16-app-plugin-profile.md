@@ -28,7 +28,9 @@ Clicking the header icon must raise the app's root surface. The active view on t
 **Shipped mechanism**: ui-conversation publishes a `sessionViews` provide contribution; every session-scope occupant receives a `viewActions` prop:
 
 ```ts
-viewActions: { activate(viewId: string): void }
+type AppViewProps = {
+  viewActions: { activate(viewId: string): void }
+}
 ```
 
 `activate` writes the shared chat store (`actions.setView(viewId)`) through the slots service's get-or-create instance accessor (`ctx.slots.storeInstanceOf(handle, sessionId)` — added for this channel, because `StoreHandle.create` deliberately does not dedupe). The channel carries only JSON (a view id); view selection is UI state, so no session event is required. Verified by `packages/client/ui-conversation/tests/app-view-activation.client.spec.tsx`: a header-utilities toggle activating a registered `myapp` view flips the ring selection. An earlier theory — that the header seat's registration (`store: chatStore`) automatically shares the store with child-seat occupants — is false: `store` is per registration, and child seats declare none.
