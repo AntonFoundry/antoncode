@@ -53,7 +53,7 @@ The agent sends the ENTIRE tree on every update; the new tree replaces the previ
 
 Historical flat `todo/write` records retain their released per-turn lifetime: the next `turn/start` clears them, and they do not become a standing prompt. Current tool calls write required `todo/tree-write` records instead; older readers that do not know this event refuse the Session before replay rather than dropping subtasks or misreading cancellation.
 
-The latest tree persists across turns and is the standing plan: the `todo:standing-plan` system-prompt section renders it as a checklist on every model request, with content kept literal (including `{{…}}` groups), so a request to continue extends the real plan.
+The latest tree persists across turns and is the standing plan: the `todo:standing-plan` system-prompt section renders it as a checklist on every model request, with content kept literal (including `{{…}}` groups), so a request to continue extends the real plan. Continuation instructions follow the checklist as a separate paragraph.
 
 ### Single owner
 

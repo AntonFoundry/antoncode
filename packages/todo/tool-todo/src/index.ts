@@ -69,46 +69,35 @@ const DESCRIPTION_HEAD =
   + 'for the user to ask for a plan.'
 
 const DESCRIPTION_WORKFLOW = `
-Workflow: plan first, then encode the plan as a todo tree, then execute it one node at a time:
-1. Plan: analyze the request and form a step-by-step plan before taking any action. For
-   non-trivial work (3 or more tasks, multi-phase, cross-package, or architectural), record
-   the plan with plan_write BEFORE calling this tool; if a delegating subagent fails or is
-   unavailable, author the plan from current knowledge and proceed inline — never stall on
-   a failed delegation.
-2. Write the tree: convert the plan into this tool's \`todos\` argument. Nest child tasks under a
-   parent when they are its concrete phases or subtasks — up to three levels (task, child,
-   grandchild); never deeper, and keep simple work flat rather than nesting for its own sake.
-3. Execute sequentially: keep exactly one branch of work \`in_progress\`, finish it, mark it
-   \`completed\`, and move to the next. Update statuses in real time — mark a node completed the
-   moment it is done, never batch completions.
 
-Persistence: the tree OUTLIVES the turn — the user sees it between and across messages, so it
-is the standing plan, not a per-turn scratchpad. At the start of any new user request that
-involves multi-step work, plan first (plan_write for non-trivial work), then write the tree
-(rewriting or extending the standing one) before any other tool call. When later phases or
-follow-ups remain, leave them \`pending\` on the tree rather than reporting everything
-completed; an all-settled tree is only correct when the whole request is genuinely finished.`
+Workflow: plan first, then encode the plan as a todo tree, then execute it one node at a time:
+
+1. Plan: analyze the request and form a step-by-step plan before taking any action. For non-trivial work (3 or more tasks, multi-phase, cross-package, or architectural), record the plan with plan_write BEFORE calling this tool; if a delegating subagent fails or is unavailable, author the plan from current knowledge and proceed inline — never stall on a failed delegation.
+2. Write the tree: convert the plan into this tool's \`todos\` argument. Nest child tasks under a parent when they are its concrete phases or subtasks — up to three levels (task, child, grandchild); never deeper, and keep simple work flat rather than nesting for its own sake.
+3. Execute sequentially: keep exactly one branch of work \`in_progress\`, finish it, mark it \`completed\`, and move to the next. Update statuses in real time — mark a node completed the moment it is done, never batch completions.
+
+Persistence: the tree OUTLIVES the turn — the user sees it between and across messages, so it is the standing plan, not a per-turn scratchpad. At the start of any new user request that involves multi-step work, plan first (plan_write for non-trivial work), then write the tree (rewriting or extending the standing one) before any other tool call. When later phases or follow-ups remain, leave them \`pending\` on the tree rather than reporting everything completed; an all-settled tree is only correct when the whole request is genuinely finished.`
 
 const DESCRIPTION_DELEGATION =
-  '\nDelegation: every agent session owns its own tree. As the orchestrator, keep the top-level '
+  '\n\nDelegation: every agent session owns its own tree. As the orchestrator, keep the top-level '
   + 'nodes here; when you delegate one node to a subagent, that node stays on your tree until its '
   + 'subtree reports back, and the subagent tracks its own finer-grained subtree in its own session '
   + 'rather than rewriting yours.'
 
 const DESCRIPTION_LIFECYCLE =
-  '\nNode fields: \`status\` is pending (not started) | in_progress (being worked on now) | '
+  '\n\nNode fields: \`status\` is pending (not started) | in_progress (being worked on now) | '
   + 'completed (done) | cancelled (no longer needed); \`priority\` optionally ranks nodes '
   + '(high | medium | low). Mark a parent completed only after all of its children are completed '
   + 'or cancelled. Only a trivial single-step request (one obvious action, no phases) may skip '
   + 'the tree; when in doubt, write it.'
 
 const DESCRIPTION_PARALLEL =
-  '\nParallelism: mark every node being actively worked `in_progress` — several at once when work '
+  '\n\nParallelism: mark every node being actively worked `in_progress` — several at once when work '
   + 'genuinely runs concurrently (e.g. parallel subagents or background commands); while work '
   + 'remains, at least one task should be `in_progress`.'
 
 const DESCRIPTION_SINGLE =
-  '\nParallelism: Keep AT MOST ONE node `in_progress` at a time across the whole tree; while work '
+  '\n\nParallelism: Keep AT MOST ONE node `in_progress` at a time across the whole tree; while work '
   + 'remains, exactly one active task should be `in_progress`.'
 
 /**
@@ -220,6 +209,7 @@ export function standingPlanSection(todos: readonly TodoItem[]): string {
   return [
     'Standing todo plan (the todo_write tree currently in force — it persists across turns):',
     ...lines,
+    '',
     'When the user asks to continue this plan: keep finished nodes completed, mark the next work in_progress, and extend the tree with todo_write — never replace it with a partial tree. Only a whole new plan replaces it, via one todo_write carrying the complete new tree.',
   ].join('\n')
 }

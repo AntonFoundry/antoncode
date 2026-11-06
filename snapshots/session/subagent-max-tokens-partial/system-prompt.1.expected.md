@@ -48,6 +48,7 @@ When the user describes a repeatable multi-step workflow they want automated —
 
 Standing todo plan (the todo_write tree currently in force — it persists across turns):
 - [~] keep going
+
 When the user asks to continue this plan: keep finished nodes completed, mark the next work in_progress, and extend the tree with todo_write — never replace it with a partial tree. Only a whole new plan replaces it, via one todo_write carrying the complete new tree.
 
 Check the [exit code: N] marker on every bash result; investigate failures before moving on.
