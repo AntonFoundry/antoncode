@@ -215,10 +215,10 @@ describe('shipped orchestrator composition', () => {
     expect(b.sessions.getSnapshot()).toBe(beforeCancel)
     expect(screen.getByText('Renamed mission')).toBeTruthy()
 
-    await act(async () => { b.workspaces.update((state) => { state.archivedSessionIds = [ROOT, CHILD] }) })
+    await act(async () => { b.workspaces.set({ ...b.workspaces.getSnapshot(), archivedSessionIds: [ROOT, CHILD] }) })
     expect(screen.queryByText('Renamed mission')).toBeNull()
     expect(screen.queryByText('Attached worker')).toBeNull()
-    await act(async () => { b.workspaces.update((state) => { state.archivedSessionIds = [] }) })
+    await act(async () => { b.workspaces.set({ ...b.workspaces.getSnapshot(), archivedSessionIds: [] }) })
     expect(screen.getByText('Renamed mission')).toBeTruthy()
     await act(async () => { b.sessions.update((state) => { state.byId[ROOT]!.running = false; state.byId[CHILD]!.running = false }) })
     expect(screen.queryByText('Renamed mission')).toBeNull()

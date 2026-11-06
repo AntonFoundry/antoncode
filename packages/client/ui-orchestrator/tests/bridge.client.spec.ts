@@ -5,7 +5,7 @@
  */
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'
 import { describe, expect, it } from 'vitest'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionSummary as WireSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import { deriveRuns, type BoardSnapshot } from '../src/client/bridge.ts'
@@ -48,7 +48,7 @@ describe('deriveRuns: plan folding', () => {
     const runs = deriveRuns(board({
       items: [workspace('w', ['root'])],
       sessions: [summary('root', { running: true })],
-      projectionsBySession: { root: { values: { todos: [...todos] }, state: 'ready', error: null } },
+      projectionsBySession: { [SessionId('root')]: { values: { todos: [...todos] }, state: 'ready', error: null } },
     }))
     expect(runs).toHaveLength(1)
     expect(runs[0]?.plan).toEqual([
@@ -62,7 +62,7 @@ describe('deriveRuns: plan folding', () => {
     const runs = deriveRuns(board({
       items: [workspace('w', ['bare'])],
       sessions: [summary('bare'), summary('nulled')],
-      projectionsBySession: { nulled: { values: { todos: null }, state: 'ready', error: null } },
+      projectionsBySession: { [SessionId('nulled')]: { values: { todos: null }, state: 'ready', error: null } },
     }))
     expect(runs[0]?.plan).toBeUndefined()
     expect(runs[1]?.plan).toBeUndefined()

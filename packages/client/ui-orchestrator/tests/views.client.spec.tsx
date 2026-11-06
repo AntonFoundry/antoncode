@@ -4,6 +4,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createElement } from 'react'
+import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -106,7 +107,7 @@ describe('apply', () => {
 
   it('reports the original structured denial without changing board data', async () => {
     const { ctx, capture, fiber } = await bench()
-    const denied = { code: 'session/forbidden', message: 'This peer cannot cancel this session' }
+    const denied = new RemoteError('gateway/bad-request', 'This peer cannot cancel this session', {})
     vi.spyOn(ctx.remote.session, 'cancel').mockResolvedValue({ ok: false, error: denied })
     const entry = capture.slots.entries('conversation.view')[0]!
     const face = (entry.inject as (sessionId: SessionId) => { onAct: (id: string, action: 'kill') => void })(sid(SNAPSHOT_SESSION))
