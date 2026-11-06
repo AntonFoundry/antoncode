@@ -96,9 +96,16 @@ export interface ILayout {
   closeSettings(): void
   /** Toggle the settings window. */
   toggleSettings(): void
-  /** Whether the settings window is open. */
+  /**
+   * Report whether the settings window exists.
+   * @returns True when the attached window-manager tree contains the settings leaf; false without a store.
+   */
   settingsOpen(): boolean
-  /** Subscribe to settings-window changes; returns the disposer. */
+  /**
+   * Subscribe to window-manager updates that may change settings-window visibility.
+   * @param listener - Callback invoked on store updates, including unrelated window changes.
+   * @returns Listener disposer, or a no-op disposer when no window-manager store is attached.
+   */
   onSettingsOpenChange(listener: () => void): () => void
 }
 

@@ -100,10 +100,16 @@ export class FontRuntime {
     return this.snapshot
   }
 
-  /** Switch the UI family; any non-empty family name is accepted. */
+  /**
+   * Switch the UI family and publish changed selection while requesting its settings write.
+   * @param family - Interface family name, or system for the built-in system stack.
+   */
   setUiFamily(family: string): void { this.writeId('uiFamily', family) }
 
-  /** Switch the interface base size in px; non-integer or out-of-range throws. */
+  /**
+   * Switch the interface base size in px; non-integer or out-of-range throws.
+   * @param size - Integral interface size within UI_SIZE_RANGE.
+   */
   setUiSize(size: number): void {
     if (!Number.isInteger(size) || size < UI_SIZE_RANGE.min || size > UI_SIZE_RANGE.max) {
       throw new Error(`ui size ${size} outside [${UI_SIZE_RANGE.min}, ${UI_SIZE_RANGE.max}]`)
@@ -111,7 +117,10 @@ export class FontRuntime {
     this.writeNumber('uiSize', size)
   }
 
-  /** Switch the chat base size in px; non-integer or out-of-range throws. */
+  /**
+   * Switch the chat base size in px; non-integer or out-of-range throws.
+   * @param size - Integral chat size within CHAT_SIZE_RANGE.
+   */
   setChatSize(size: number): void {
     if (!Number.isInteger(size) || size < CHAT_SIZE_RANGE.min || size > CHAT_SIZE_RANGE.max) {
       throw new Error(`chat size ${size} outside [${CHAT_SIZE_RANGE.min}, ${CHAT_SIZE_RANGE.max}]`)
@@ -119,13 +128,19 @@ export class FontRuntime {
     this.writeNumber('chatSize', size)
   }
 
-  /** Switch the monospace family; unknown ids throw. */
+  /**
+   * Switch the monospace family; unknown ids throw.
+   * @param id - Curated monospace family identifier accepted by isMonoFont.
+   */
   setMonoFont(id: string): void {
     if (!isMonoFont(id)) throw new Error(`mono font "${id}" is not curated`)
     this.writeId('monoFont', id)
   }
 
-  /** Switch the monospace size in px; out-of-range throws. */
+  /**
+   * Switch the monospace size in px; out-of-range throws.
+   * @param size - Monospace size within MONO_SIZE_RANGE.
+   */
   setMonoSize(size: number): void {
     if (size < MONO_SIZE_RANGE.min || size > MONO_SIZE_RANGE.max) {
       throw new Error(`mono size ${size} outside [${MONO_SIZE_RANGE.min}, ${MONO_SIZE_RANGE.max}]`)
@@ -133,7 +148,10 @@ export class FontRuntime {
     this.writeNumber('monoSize', size)
   }
 
-  /** Switch the terminal size in px; out-of-range throws. */
+  /**
+   * Switch the terminal size in px; out-of-range throws.
+   * @param size - Terminal size within TERM_SIZE_RANGE.
+   */
   setTermSize(size: number): void {
     if (size < TERM_SIZE_RANGE.min || size > TERM_SIZE_RANGE.max) {
       throw new Error(`term size ${size} outside [${TERM_SIZE_RANGE.min}, ${TERM_SIZE_RANGE.max}]`)

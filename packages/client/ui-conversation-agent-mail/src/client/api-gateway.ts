@@ -19,7 +19,11 @@ const unwrap = async <T>(call: Promise<{ ok: true; value: T } | { ok: false; err
   return result.value
 }
 
-/** Browser snapshot and compose adapter for the owner-only Agent Mail Remote. */
+/**
+ * Create a browser snapshot and compose adapter for the owner-only Agent Mail Remote.
+ * @param remote - Generated Agent Mail Remote methods; Host queue services enforce access.
+ * @returns Browser-local mailbox state and operations backed by the supplied Remote.
+ */
 export function createAgentMailGateway(remote: ClientRemote['agentMail']): AgentMailGateway {
   const snapshots = new Map<string, Snapshot>()
   const authorizations = new Set<() => void>()
