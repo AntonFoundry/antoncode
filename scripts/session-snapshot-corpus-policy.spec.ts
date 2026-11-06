@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
-import { assertSnapshotCorpusPolicy } from './session-snapshot-corpus-policy.ts'
+import { assertSnapshotAdapterInventory, assertSnapshotCorpusPolicy } from './session-snapshot-corpus-policy.ts'
 
 const completeV0 = {
   key: 'session/v0',
@@ -142,5 +142,34 @@ describe('recorded-session corpus policy', () => {
     expect(() => assertSnapshotCorpusPolicy([
       { ...baseline, selectedVersions: [3] }, completeV0, ...adjacent,
     ])).toThrow(`Session corpus requires a baseline/current majority; baseline=1, current=0, retained=${1 + adjacent.length}`)
+  })
+})
+
+describe('recorded-session adapter inventory', () => {
+  const adapter = 'snapshots/session/headless.snapshot.ts'
+  const assembled = [
+    'apps/web/tests/agent-mail-local.snapshot.ts',
+    'apps/web/tests/prompt-rejection.snapshot.ts',
+  ]
+
+  it('accepts exactly the registered adapters regardless of discovery order', () => {
+    const web = 'apps/web/tests/code-language.snapshot.ts'
+    expect(() => { assertSnapshotAdapterInventory([web, adapter], [adapter, web]) }).not.toThrow()
+  })
+
+  it.each(assembled)('rejects non-session assembled output using the snapshot suffix: %s', (path) => {
+    expect(() => { assertSnapshotAdapterInventory([adapter, path], [adapter]) })
+      .toThrow(`unregistered [${path}]`)
+  })
+
+  it('rejects a registered adapter missing from disk', () => {
+    expect(() => { assertSnapshotAdapterInventory([], [adapter]) }).toThrow(`missing [${adapter}]`)
+  })
+
+  it.each([
+    { actual: [adapter, adapter], registered: [adapter] },
+    { actual: [adapter], registered: [adapter, adapter] },
+  ])('rejects duplicate inventory paths', ({ actual, registered }) => {
+    expect(() => { assertSnapshotAdapterInventory(actual, registered) }).toThrow('duplicate paths')
   })
 })

@@ -134,6 +134,12 @@ const pwshCoverageExclusions = spawnSync(resolvePwshPath(), ['-NoLogo', '-NoProf
       'packages/shell/pwsh-sandbox/src/**/*.ts',
     ]
 
+// These assembled-client cases need built browser artifacts and belong only to test:web.
+const webOnlyTests = [
+  'apps/web/tests/agent-mail-local.web.spec.ts',
+  'apps/web/tests/prompt-rejection.web.spec.ts',
+]
+
 const testIncludes = [
   'packages/*/*/tests/**/*.spec.{ts,tsx}',
   'apps/*/tests/**/*.spec.{ts,tsx}',
@@ -207,7 +213,7 @@ export default defineConfig({
     ],
     // .tsx: client component specs (jsdom via per-file @vitest-environment pragma).
     include: testIncludes,
-    exclude: platformUnsupportedTests,
+    exclude: [...platformUnsupportedTests, ...webOnlyTests],
     // One coverage invocation aggregates both projects. Every suite forks for
     // Node stability; process-bound suites stay separate for inventory control.
     projects: [
@@ -228,6 +234,7 @@ export default defineConfig({
           include: testIncludes,
           exclude: [
             ...platformUnsupportedTests,
+            ...webOnlyTests,
             ...processBoundTests,
             ...coverageExemptExcludes,
           ],
@@ -247,6 +254,7 @@ export default defineConfig({
           include: processBoundTests,
           exclude: [
             ...platformUnsupportedTests,
+            ...webOnlyTests,
             ...coverageExemptExcludes,
           ],
         },

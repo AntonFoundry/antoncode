@@ -26,6 +26,8 @@ export default defineConfig({
     include: [
       'apps/web/tests/**/*.e2e.ts',
       'apps/web/tests/**/*.snapshot.ts',
+      'apps/web/tests/agent-mail-local.web.spec.ts',
+      'apps/web/tests/prompt-rejection.web.spec.ts',
       'packages/experimental/inspector/tests/client-browser.e2e.ts',
     ],
     // Local and record runs stay serial. CI runs workspace-mutating HMR and

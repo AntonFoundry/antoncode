@@ -17,7 +17,7 @@ import {
   sessionFixtureNames,
   type SnapshotManifest,
 } from '@deepseek-ai/dsh-session-snapshot'
-import { assertSnapshotCorpusPolicy } from './session-snapshot-corpus-policy.ts'
+import { assertSnapshotAdapterInventory, assertSnapshotCorpusPolicy } from './session-snapshot-corpus-policy.ts'
 
 const repoRoot = resolve(import.meta.dirname, '..')
 const corpusRoot = join(repoRoot, 'snapshots')
@@ -104,7 +104,7 @@ async function snapshotNamedTests(): Promise<string[]> {
 }
 
 it('reserves the snapshot test suffix for recorded-session adapters', async () => {
-  expect(await snapshotNamedTests()).toEqual([...snapshotAdapters])
+  assertSnapshotAdapterInventory(await snapshotNamedTests(), snapshotAdapters)
 })
 
 it('keeps every recorded session owned, pinned, redacted, and header-scrubbed', async () => {

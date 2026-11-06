@@ -112,3 +112,21 @@ export function assertSnapshotCorpusPolicy(
   }
   return { currentRoles, baselineRoles, retainedRoles, retainedScenarios }
 }
+
+/**
+ * Require every snapshot-suffixed test to be a registered recorded-session adapter.
+ * @param actual - Discovered test paths with the snapshot suffix.
+ * @param adapters - Exact paths whose tests replay recorded Sessions.
+ */
+export function assertSnapshotAdapterInventory(actual: readonly string[], adapters: readonly string[]): void {
+  const discovered = new Set(actual)
+  const registered = new Set(adapters)
+  const unregistered = actual.filter(path => !registered.has(path))
+  const missing = adapters.filter(path => !discovered.has(path))
+  if (unregistered.length > 0 || missing.length > 0) {
+    throw new Error(`recorded-session adapter inventory: unregistered [${unregistered.join(', ')}]; missing [${missing.join(', ')}]`)
+  }
+  if (discovered.size !== actual.length || registered.size !== adapters.length) {
+    throw new Error('recorded-session adapter inventory contains duplicate paths')
+  }
+}
