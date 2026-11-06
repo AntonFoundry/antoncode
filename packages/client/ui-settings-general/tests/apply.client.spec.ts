@@ -23,6 +23,7 @@ import type { SettingsDocumentActionInjected } from '../src/client/SettingsDocum
 
 const SELF = '@deepseek-ai/dsh-client-ui-settings-general'
 const SIDEBAR = '@deepseek-ai/dsh-client-ui-sidebar'
+const LAYOUT = '@deepseek-ai/dsh-client-ui-layout'
 const it = createClientTest({ roster: webApp })
 /** The whole roster's first boot pays the cold module transform of every plugin package. */
 const COLD_BOOT_TIMEOUT_MS = 60_000
@@ -306,6 +307,13 @@ describe('ui-settings-general apply', () => {
     const { c, settings } = await client(mock, start)
     const before = SEATS.map(([name]) => ownEntries(c, name)[0])
     await c.reload(SIDEBAR)
+    await c.flush()
+    expectSeated(c)
+    expect(ownEntries(c, 'settings.trigger')[0]).not.toBe(before[0])
+    SEATS.slice(1).forEach(([name], index) => {
+      expect(ownEntries(c, name)[0]).toBe(before[index + 1])
+    })
+    await c.reload(LAYOUT)
     await c.flush()
     expectSeated(c)
     SEATS.forEach(([name], index) => {

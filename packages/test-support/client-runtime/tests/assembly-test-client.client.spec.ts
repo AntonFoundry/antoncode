@@ -262,12 +262,14 @@ describe('TestClient (jsdom)', () => {
   })
 
   it('reports the log when the connection never becomes ready', async () => {
-    // No fixtures: workspace-controller's follow has no rule, so the proxy dispatches it as a unary call the mock
-    // logs as unmatched, while $events never sends ready.
+    // No fixtures: Workspace follow and worktree reads stay unmatched while $events never sends ready.
     const roster = webApp.closure(['@deepseek-ai/dsh-api-workspace-controller'])
     const mock = RemoteMock.create().stream('$events', openStream([]))
     await expect(TestClient.start({ roster }, mock, { connectTimeoutMs: 300 }))
-      .rejects.toThrow(/connection state is \S+ after 300ms; unmatched: \[unary workspace\/follow\]; streams: \[.*\$events \(open\).*\]/)
+      .rejects.toThrow(new RegExp(
+        String.raw`connection state is \S+ after 300ms; unmatched: \[unary worktree/list, unary workspace/follow\]; `
+        + String.raw`streams: \[.*\$events \(open\).*\]`,
+      ))
     expect(globals.EventSource).toBeUndefined()
   })
 })

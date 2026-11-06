@@ -19,6 +19,25 @@ describe('TestClient (node environment)', () => {
     await client.flush()
   }, 60_000)
 
+  it('answers the Workspace controller worktree reads at boot and reconnect without scripting mutations', async () => {
+    const mock = RemoteMock.create().load(remoteDefaultResponses)
+    const roster = webApp.closure(['@deepseek-ai/dsh-api-workspace-controller'])
+    const client = await TestClient.start({ roster }, mock)
+    onTestFinished(() => client.dispose())
+    await vi.waitFor(() => { expect(mock.log.calls('worktree/list').length).toBeGreaterThan(0) })
+    await client.ctx.workspaces.refreshWorktrees()
+    expect(client.ctx.workspaces.list.getSnapshot().worktrees).toEqual({
+      byRepo: {}, prefs: {}, namesByWorkspaceId: {},
+    })
+    const reads = mock.log.calls('worktree/list').length
+    client.connection.reconnect()
+    await vi.waitFor(() => { expect(mock.log.calls('worktree/list').length).toBeGreaterThan(reads) })
+    expect(mock.log.calls('worktree/list').map(call => call.args)).toEqual(
+      mock.log.calls('worktree/list').map(() => [{}]),
+    )
+    expect(mock.endpoints().filter(endpoint => endpoint.startsWith('worktree/'))).toEqual(['worktree/list'])
+  })
+
   it('closes the client even when the plugin tree fails to dispose, and still rethrows', async () => {
     const mock = RemoteMock.create().load(remoteDefaultResponses)
     const client = await TestClient.start({ roster: API_ROSTER }, mock)

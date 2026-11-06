@@ -8,7 +8,7 @@
  * access Hooks are the renderer's bindings over one non-owner snapshot.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, screen } from '@testing-library/react'
 import type { TypertResourceKind } from '@deepseek-ai/dsh-api-remote-access/client'
 import { ClientAccessState } from '@deepseek-ai/dsh-api-remote-access/src/client/state.ts'
 import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
@@ -88,6 +88,7 @@ describe('Workspace header actions under the page access snapshot', () => {
     const runtime = await bench(access)
     try {
       runtime.renderRoot()
+      fireEvent.click(await screen.findByRole('button', { name: '已归档工作区（1）' }))
       const header = await screen.findByRole('treeitem')
       expect(screen.queryByRole('button', { name: '在“Project”中新建会话' })).toBeNull()
       expect(screen.queryByRole('button', { name: '工作区“Project”的操作' })).toBeNull()

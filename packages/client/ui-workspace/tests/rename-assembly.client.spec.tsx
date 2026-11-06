@@ -123,6 +123,7 @@ describe('session rename through the assembled browser', () => {
     registerAction('export', 500, -1, 'Export action')
     registerAction('last', 600, -2, 'Last action')
     const view = runtime.renderRoot()
+    fireEvent.click(await view.findByRole('button', { name: '已归档工作区（1）' }))
 
     const row = (await view.findByText('Persisted title')).closest('[role="treeitem"]')!
     const trigger = within(row as HTMLElement).getByLabelText('会话“Persisted title”的操作')

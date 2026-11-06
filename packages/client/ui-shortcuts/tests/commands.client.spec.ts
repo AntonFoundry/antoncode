@@ -1,16 +1,15 @@
 // @vitest-environment jsdom
 import { describe, expect, onTestFinished, vi } from 'vitest'
-import { createElement, Fragment, useSyncExternalStore } from 'react'
-import { act, cleanup, render } from '@testing-library/react'
+import { act, cleanup } from '@testing-library/react'
 import { createClientTest, webApp } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
-import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { DesktopKeyboardApi, DesktopShortcutInput, ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/protocol'
-import type { createSettingsShellStore } from '../../ui-settings-general/src/client/shell-store.ts'
+import type { SettingsWindowInjected } from '../../ui-settings-general/src/client/shell-contract.ts'
 import type { ReferenceInjected } from '../src/client/Reference.tsx'
 import type { createShortcutsStore } from '../src/client/store.ts'
 
 const it = createClientTest({ roster: webApp })
+const mounted = createClientTest({ roster: webApp }, { mount: true })
 
 describe('assembled shortcut command owners', () => {
   it('keeps desktop defaults out of Web and removes commands on owner unload', async ({ start }) => {
@@ -50,7 +49,7 @@ describe('assembled shortcut command owners', () => {
     expect(shortcuts.fixedCatalog.getSnapshot().some(row => row.id.startsWith('fixed.'))).toBe(false)
   }, 60_000)
 
-  it('toggles foreground dialogs, permits shortcuts above settings, and blocks settings behind shortcuts', async ({ start }) => {
+  mounted('toggles settings panes and shortcut dialogs while blocking commands behind unrelated modals', async ({ start }) => {
     const previous = document.documentElement.dataset.platform
     const previousBridge = Object.getOwnPropertyDescriptor(window, 'dshDesktop')
     const listeners = new Set<(input: DesktopShortcutInput) => void>()
@@ -73,19 +72,9 @@ describe('assembled shortcut command owners', () => {
     })
     const client = await start()
     const shortcuts = client.ctx.shortcuts
-    const settings = (client.ctx.slots.entries('sidebar.settings')[0]!.store as ReturnType<typeof createSettingsShellStore>).create()
+    const settings = client.ctx.slots.entries('settings.view')[0]!.inject!() as SettingsWindowInjected
     const reference = (client.ctx.slots.entries('shell.overlay').find(entry => entry.options.id === 'shortcuts')!.store as ReturnType<typeof createShortcutsStore>).create()
     const toggleSidebar = vi.spyOn(client.ctx.layout, 'toggleSidebar')
-    function Dialogs() {
-      const settingsState = useSyncExternalStore(listener => settings.subscribe(listener), () => settings.getSnapshot())
-      const referenceState = useSyncExternalStore(listener => reference.subscribe(listener), () => reference.getSnapshot())
-      return createElement(Fragment, null,
-        createElement(Modal, { open: settingsState.open, title: 'Settings', closeLabel: 'Close settings',
-          shortcutModal: 'settings', onClose: settings.actions.close }),
-        createElement(Modal, { open: referenceState.open, title: 'Shortcuts', closeLabel: 'Close shortcuts',
-          shortcutModal: 'shortcuts', onClose: reference.actions.close }))
-    }
-    render(createElement(Dialogs))
     const press = (code: string, repeat = false): void => {
       act(() => {
         for (const listener of listeners) listener({ kind: 'keyboard', revision: shortcuts.config.getSnapshot().revision,
@@ -93,40 +82,43 @@ describe('assembled shortcut command owners', () => {
       })
     }
     press('Comma')
-    expect(settings.getSnapshot().open).toBe(true)
-    const opened = settings.getSnapshot()
+    expect(client.ctx.layout.settingsOpen()).toBe(true)
     press('Comma', true)
-    expect(settings.getSnapshot()).toBe(opened)
+    expect(client.ctx.layout.settingsOpen()).toBe(true)
     press('Comma')
-    expect(settings.getSnapshot().open).toBe(false)
+    expect(client.ctx.layout.settingsOpen()).toBe(false)
     press('Comma')
-    act(() => { settings.actions.select('general') })
-    const selected = settings.getSnapshot()
+    act(() => { settings.setActiveSection('general') })
+    const selected = settings.hooks.activeSection.getSnapshot()
     press('Slash')
     expect(reference.getSnapshot().open).toBe(true)
     act(() => { reference.actions.search('session') })
     const searched = reference.getSnapshot()
     press('Slash', true)
     press('Comma')
-    expect(settings.getSnapshot()).toBe(selected)
+    expect(client.ctx.layout.settingsOpen()).toBe(true)
+    expect(settings.hooks.activeSection.getSnapshot()).toBe(selected)
     expect(reference.getSnapshot()).toBe(searched)
 
     document.body.append(modal)
     press('Comma')
     press('Slash')
-    expect(settings.getSnapshot()).toBe(selected)
+    expect(client.ctx.layout.settingsOpen()).toBe(true)
+    expect(settings.hooks.activeSection.getSnapshot()).toBe(selected)
     expect(reference.getSnapshot()).toBe(searched)
     modal.remove()
 
     press('Slash')
     expect(reference.getSnapshot()).toMatchObject({ open: false, query: '' })
-    expect(settings.getSnapshot()).toBe(selected)
+    expect(client.ctx.layout.settingsOpen()).toBe(true)
+    expect(settings.hooks.activeSection.getSnapshot()).toBe(selected)
     press('Comma')
-    expect(settings.getSnapshot()).toEqual({ open: false, activeId: undefined })
+    expect(client.ctx.layout.settingsOpen()).toBe(false)
+    expect(settings.hooks.activeSection.getSnapshot()).toBe(selected)
     press('Slash')
     expect(reference.getSnapshot().open).toBe(true)
     press('Comma')
-    expect(settings.getSnapshot().open).toBe(false)
+    expect(client.ctx.layout.settingsOpen()).toBe(false)
     press('KeyB')
     expect(toggleSidebar).toHaveBeenCalledTimes(1)
     press('Slash')
@@ -141,13 +133,13 @@ describe('assembled shortcut command owners', () => {
       })
     }
     menu('settings.open' as ShortcutCommandId)
-    expect(settings.getSnapshot().open).toBe(true)
+    expect(client.ctx.layout.settingsOpen()).toBe(true)
     menu('settings.open' as ShortcutCommandId)
-    expect(settings.getSnapshot().open).toBe(false)
+    expect(client.ctx.layout.settingsOpen()).toBe(false)
     menu('shortcuts.open' as ShortcutCommandId)
     expect(reference.getSnapshot().open).toBe(true)
     menu('settings.open' as ShortcutCommandId)
-    expect(settings.getSnapshot().open).toBe(false)
+    expect(client.ctx.layout.settingsOpen()).toBe(false)
     menu('shortcuts.open' as ShortcutCommandId)
     expect(reference.getSnapshot().open).toBe(false)
   })

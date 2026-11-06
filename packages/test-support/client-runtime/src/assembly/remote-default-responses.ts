@@ -13,6 +13,8 @@ export const remoteDefaultResponses: RemoteTable = {
   unary: {
     // api-session-controller `sessions.handleConnected()` on `connection/reset`.
     'session/list': ok({ items: [] }),
+    // api-workspace-controller at apply and on `connection/reset`.
+    'worktree/list': ok({ items: [], prefs: {} }),
     // ui-workspace startup with no entries; first-use initialization is ineligible.
     'workspace/initializeDefault': ok(undefined),
     // ui-settings `mirror.ensure()` at apply and again on `connection/reset`.

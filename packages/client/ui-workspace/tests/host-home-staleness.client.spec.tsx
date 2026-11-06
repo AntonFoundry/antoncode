@@ -74,6 +74,7 @@ describe('Host home in the assembled browsing region', () => {
     const { runtime, remote } = await bench()
     remote.$host = { home: undefined, isLoopback: true }
     runtime.renderRoot()
+    fireEvent.click(screen.getByRole('button', { name: '已归档工作区（1）' }))
     vi.useFakeTimers()
     try {
       openHoverCard()
