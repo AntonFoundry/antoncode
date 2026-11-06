@@ -53,6 +53,61 @@ function reminders(agent: Agent): { text: string; source: unknown }[] {
     }))
 }
 
+describe('schema-rejected calls', () => {
+  it.each([
+    { label: 'identical arguments', args: [{ wrong: 'same' }, { wrong: 'same' }], summary: 'required × 2', text: 'repeating the exact same tool call' },
+    { label: 'varying arguments', args: [{ wrong: 'first' }, { wrong: 'second' }], summary: 'required failed × 2', text: 'Do not guess argument values again' },
+  ])('logs the $label advisory and sends it in the next request without dispatch', async ({ args, summary, text }) => {
+    const ctx = await harness(summary.includes('failed')
+      ? { thresholds: [8], failureThreshold: 2 }
+      : { thresholds: [2], failureThreshold: 3 })
+    try {
+      let bodyCalls = 0
+      const policyStages: string[] = []
+      ctx.tools.register(defineContentToolFixture({
+        name: 'required', description: 'Requires a target.',
+        parameters: { target: { type: 'string', required: true } },
+        async execute() { bodyCalls++; return [{ type: 'text', text: 'unreachable' }] },
+      }))
+      ctx.on('tools/pre-execute', async (_exec, next) => { policyStages.push('pre'); return next() })
+      ctx.tools.guard(() => { policyStages.push('guard'); return undefined })
+      ctx.on('tools/execute', async (_exec, next) => { policyStages.push('execute'); return next() })
+      const adapter = new MockAdapter([
+        ...args.map((arguments_, index) => toolCallResponse(`invalid-${index}`, 'required', arguments_)),
+        textResponse('done'),
+      ])
+      ctx.llm.registerAdapter(['mock'], adapter)
+      const agent = await ctx.agentLoop.create(SessionId('invalid-args'), { provider: 'mock', model: 'mock' })
+      const idle = waitForIdle(ctx, agent)
+      agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+      await idle
+
+      expect(bodyCalls).toBe(0)
+      expect(policyStages).toEqual([])
+      const events = agent.session.snapshotEvents()
+      const results = events.flatMap(event => event.type === 'tool/result' ? [event.data.message] : [])
+      expect(results).toHaveLength(2)
+      expect(results.every(result => result.isError)).toBe(true)
+      for (const result of results) {
+        expect(result.content).toEqual([{ type: 'text', text: 'Error: invalid arguments: missing required property "target"' }])
+      }
+      const logged = events.flatMap(event => event.type === 'user/message' && event.data.source.kind === 'repeat-tool-reminder' ? [event.data] : [])
+      expect(logged).toHaveLength(1)
+      expect(logged[0]!.source).toMatchObject({ summary })
+      expect(logged[0]!.content).toHaveLength(1)
+      expect(logged[0]!.content[0]).toMatchObject({ type: 'text' })
+      expect(logged[0]!.content[0]?.type === 'text' ? logged[0]!.content[0].text : undefined).toContain(text)
+      expect(adapter.requests).toHaveLength(3)
+      expect(adapter.requests[1]!.messages.some(message => message.source?.kind === 'repeat-tool-reminder')).toBe(false)
+      expect(adapter.requests[2]!.messages.filter(message => message.source?.kind === 'repeat-tool-reminder')).toEqual(logged)
+      const finalHistory = adapter.requests[2]!.messages
+      expect(finalHistory.findIndex(message => message.id === logged[0]!.id)).toBeGreaterThan(finalHistory.findIndex(message => message.role === 'tool' && message.toolCallId === 'invalid-1'))
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+})
+
 describe('guessing advisory (consecutive failed calls)', () => {
   it('advises discovery or asking after the failure threshold is reached with varying arguments', async () => {
     const ctx = await harness({ failureThreshold: 2 })
@@ -67,7 +122,7 @@ describe('guessing advisory (consecutive failed calls)', () => {
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
     await waitForIdle(ctx, agent)
 
-    const found = reminders(agent).filter(entry => String((entry.source as { summary?: string }).summary ?? '').includes('failed ×'))
+    const found = reminders(agent).filter(entry => ((entry.source as { summary?: string }).summary ?? '').includes('failed ×'))
     expect(found).toHaveLength(1)
     expect(found[0]!.text).toContain('Do not guess argument values again')
     expect(found[0]!.text).toContain('ask_user_question')
@@ -87,7 +142,7 @@ describe('guessing advisory (consecutive failed calls)', () => {
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
     await waitForIdle(ctx, agent)
 
-    expect(reminders(agent).filter(entry => String((entry.source as { summary?: string }).summary ?? '').includes('failed ×'))).toHaveLength(0)
+    expect(reminders(agent).filter(entry => ((entry.source as { summary?: string }).summary ?? '').includes('failed ×'))).toHaveLength(0)
   })
 
   it('rejects a non-integer or too-small failureThreshold at load', async () => {

@@ -28,14 +28,15 @@ declare module '@deepseek-ai/cordis' {
      */
     'tools/execute'(this: Scoped<ToolsService>, exec: ToolDispatchExecution, next: () => Promise<ToolExecutionResult>): Promise<ToolExecutionResult>
     /**
-     * Accept, replace, enrich, or block a normalized dispatch result. `next()`
-     * accepts it unchanged; thrown tools still reach this waterfall as errors. Async
+     * Accept, replace, enrich, or block a normalized call result. `next()` accepts
+     * it unchanged; thrown tools and calls rejected for invalid arguments reach
+     * this waterfall as errors, even when the tool body was not invoked. Async
      * listeners must observe `exec.signal`; after they settle, caller
      * cancellation replaces only a successful accepted outcome with the code
      * selected by whether the tool body was invoked.
      * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent's calls.
-     * @param exec - the call that just ran (name, parsed arguments, caller agent).
-     * @param result - the dispatch outcome a listener may accept, replace, or block.
+     * @param exec - the completed or rejected call (name, parsed arguments, caller agent).
+     * @param result - the call outcome a listener may accept, replace, or block.
      * @mode waterfall
      */
     'tools/post-execute'(this: Scoped<ToolsService>, exec: ToolExecution, result: Readonly<ToolExecutionResult>, next: () => Promise<PostToolDecision>): Promise<PostToolDecision>

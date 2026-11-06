@@ -1,0 +1,8 @@
+version: 1
+scenario: repeat-tool-invalid-args
+profile: headless
+composition: repeat-tool-invalid-args
+recording: authored
+header:
+  class: repeat-tool-invalid-args
+  pin: true

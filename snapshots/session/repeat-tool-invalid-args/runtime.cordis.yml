@@ -1,0 +1,4 @@
+- id: repeat-tool-reminder
+  config:
+    thresholds: [3, 5, 8]
+    failureThreshold: 4
