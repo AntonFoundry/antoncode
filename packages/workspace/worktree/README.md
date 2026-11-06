@@ -1,12 +1,24 @@
+---
+description: "Create and track Git worktrees, inspect repository status, and retain repository workspace-mode preferences."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-worktree
 
-Git worktree registry for the DeepSeek Harness: per-repository worktree lifecycle, live repo status, and the per-repository default workspace-mode preference.
+English
 
-## Model Experience
+## Summary
 
-- **Token cost:** none. The registry is host-side infrastructure; nothing it does enters a model request, and it registers no system-prompt section.
-- **User-visible behavior:** the `worktree.*` wire domain backs the web UI's workspace-mode selector (Current checkout / New worktree / Previous worktree) and repo-status chip (branch + stash count). Sessions opened in a worktree run with the worktree directory as their cwd — and therefore as their sandbox workspace boundary — so parallel sessions in separate worktrees never write to the same checkout.
-- **KV cache:** no interaction with model requests.
+Create and track separate Git worktrees, inspect repository status, and retain a repository default for future workspace selection. Created worktrees register as workspaces and survive restarts. Creation rolls back Git and workspace registration if durable storage fails; removing a worktree keeps its branch for later merging.
+
+## Table of Contents
+
+- [Service](#service)
+- [Config](#config)
+- [Durability](#durability)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 ## Service
 
@@ -30,9 +42,29 @@ Git worktree registry for the DeepSeek Harness: per-repository worktree lifecycl
 
 Domain `worktree` (version 1): one `worktrees` table keyed by `WorktreeId`; the table is the registry — display order derives from record timestamps, so a single row write is the whole mutation. The global singleton holds only the per-repository mode preferences.
 
+## Model Experience
+
+### Worktree-backed workspaces
+
+#### What the model sees
+
+The `worktreeRegistry` service adds no model tool or prompt. Consumers choose a worktree as a Session working directory; the [working-directory owner](../../session/working-directory/README.md) supplies its model-visible directory context.
+
+#### Token effect
+
+Registry operations consume no model tokens by themselves. Tools and directory-context consumers own any rendered result or context costs.
+
+#### KV Cache effect
+
+Creating or inspecting a worktree does not rewrite model history. Selecting another directory can change the consuming Session's directory context.
+
 ## Known Limitations and Deferred Work
 
 - Untracked files (`.env`, build outputs, `node_modules`) do not appear in fresh worktrees; callers surface this as a UI hint when offering New worktree.
 - `node_modules` per worktree costs disk and install time; no sharing or symlink strategy exists yet.
 - Worktree creation does not fetch from remotes — the default base is only as fresh as the local `origin/main`.
 - Merge conflicts between agents remain a merge-time concern; isolation removes concurrent-edit corruption, not semantic conflicts.
+
+### Dev Note
+
+None.

@@ -1,5 +1,5 @@
 ---
-description: "English"
+description: "Inspect and control Anton runtime health through its out-of-process supervisor."
 kind: "package-reference"
 ---
 
@@ -9,16 +9,19 @@ English
 
 ## Summary
 
-English
+Inspect Anton runtime health and request start, stop, or restart through the Anton Bridge supervisor. Each operation has a bounded HTTP request and reports transport failures. Stop and restart terminate the calling runtime when accepted, so they may end the model turn without a normal result.
 
 ## Table of Contents
 
 - [Understand the implementation](#understand-the-implementation)
+- [What it does](#what-it-does)
+- [Configuration](#configuration)
+- [Export shape](#export-shape)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
 
 ## Understand the implementation
-
-English
 
 Model-facing lifecycle controls for an Anton deployment. The plugin registers `anton_status`, `anton_start`, `anton_stop`, and `anton_restart`; each makes a bounded HTTP request to the out-of-process Anton Bridge supervisor.
 
@@ -86,6 +89,6 @@ Tool calls append after the stable request prefix. A restart creates a new runti
 - The bundled c0ntext engine still requires a compatible Docker/Compose runtime when the Anton Bridge is configured to start it. The lifecycle tools report that dependency's failure but do not install Docker or container images.
 - Stop and restart are self-terminating operations. They cannot provide a normal post-action result to the process they terminate; use `anton_status` after the application is available again.
 
-## Dev Note
+### Dev Note
 
 - See the module JSDoc for the owning contract and its rationale.

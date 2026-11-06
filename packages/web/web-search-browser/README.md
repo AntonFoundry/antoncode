@@ -1,5 +1,5 @@
 ---
-description: "A scrape-backed `WebSearchProvider` for the harness [web capability seam](../web/README.md) (`ctx.web`). It requires no API key: results come from pub"
+description: "Search public engines without an API key, with optional page-content snippets and browser fallback."
 kind: "package-reference"
 ---
 
@@ -14,6 +14,10 @@ A scrape-backed `WebSearchProvider` for the harness [web capability seam](../web
 ## Table of Contents
 
 - [Understand the implementation](#understand-the-implementation)
+- [Config](#config)
+- [Mapping](#mapping)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
 
 ## Understand the implementation
@@ -45,11 +49,19 @@ Each engine result maps to a `WebSearchSource`: `url` ← `url`, `title` ← `ti
 
 ## Model Experience
 
-Indirectly, through [`dsh-tool-web`](../tool-web/README.md), which retains this provider's URLs, titles, snippets, and its exact `Browser search failed: <error>` failure under the consumer's error wrapper while engine diagnostics remain outside context.
+### Search result consumer
+
+#### What the model sees
+
+The provider registers no model tool. The [web tools](../tool-web/README.md) present its URLs, titles, snippets, and `Browser search failed: <error>` failures under the consumer's error wrapper; engine diagnostics stay outside model context.
+
+#### Token effect
+
+Only consumer-rendered result pages and errors add model tokens. Enabling `fetchContent` can increase snippet content up to the configured `snippetLength` bound.
 
 #### KV Cache effect
 
-No direct invalidation; the named consumer owns any request-prefix changes.
+The provider adds no request prefix. The web-tool consumer owns schemas and appended result content.
 
 ## Known Limitations and Deferred Work
 
@@ -57,6 +69,6 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 - **Cancellation is cooperative at the provider layer only** — a torn-down browser stops the current work, but an in-flight axios request completes unobserved.
 - **Engine availability shifts** — Bing/Brave markup selectors break without notice; DuckDuckGo is the stable last resort.
 
-## Dev Note
+### Dev Note
 
 - See the module JSDoc for the owning contract and its rationale.

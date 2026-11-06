@@ -1,6 +1,26 @@
+---
+description: "Search the web through Z.AI with bounded results and domain or recency filters."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-web-search-zai
 
 English
+
+## Summary
+
+Search the web through Z.AI with bounded result counts and optional domain or recency filters. Results provide citation URLs, titles, snippets, and available publication dates rather than a generated answer. Choose this backend when Z.AI credentials are available; the web service owns provider selection and the model-facing tools.
+
+## Table of Contents
+
+- [Understand the implementation](#understand-the-implementation)
+- [Config](#config)
+- [Mapping](#mapping)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+## Understand the implementation
 
 A [Z.AI](https://docs.z.ai/)-backed `WebSearchProvider` for the harness [web capability seam](../web/README.md) (`ctx.web`). It calls Z.AI's `POST /web_search` endpoint (`search-prime` engine by default) with the same API key as Z.AI chat completions and maps the flat `search_result[]` into the seam's normalized `WebSearchResult`.
 
@@ -43,3 +63,7 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 - **Only `searchEngine`/`count`/domain/recency filters are exposed** — Z.AI's other controls (`content_size`, `custom` recency windows with start/end dates) wait on provider-neutral Service Definition fields ([seam Agent Note](../../../.agents/notes/implemented/architecture/2026-06-24-web-capability-seam.md)).
 - **No dedicated client settings card** — configuration goes through cordis.yml / user-settings layers; the existing web-search settings card is DeepSeek-namespaced.
 - **Abort classification is error-shape-based** — only a `DOMException` named `AbortError` maps to `WEB_ABORTED`; an abort carrying a custom reason (e.g. `dsh-timeout`'s `TimeoutReason`) surfaces as `WEB_PROVIDER_ERROR`.
+
+### Dev Note
+
+None.

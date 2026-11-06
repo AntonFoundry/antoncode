@@ -141,19 +141,15 @@ The package-level contract is enough for most consumers; read these when you nee
 
 #### What the model sees
 
-First-party sections render the harness identity, deployment persona prefix (including the model-name introduction), reusable instructions (including the generated tools SDK and structured-output guidance), then the environment-bearing suffix: harness source (`10000`), Web surface (`10100`), and deployment persona suffix (`10200`). External section orders and assembly listeners remain authoritative. `includeHarnessIdentity: false` omits only that fixed opener. Empty sections disappear; scoped sections and variables can shadow globals for one agent. The `system-prompt/assemble` waterfall determines the delivered prompt unless one effective section declares itself complete — that exact section then becomes the whole system prompt while the waterfall's contexts and variables remain. Tool declarations stay provider-owned. The rendered prompt reaches the model as a system-role message of derived history — surface node 0, or the latest system node after an in-history update — neither the loop request nor `request/header` carries a separate `system` field. If the complete rendering is empty, the loop clears every active system node through logged empty replacements, so no older prompt remains in model history. Ordered dynamic contexts are separate from sections and become sourced user-role snapshots only when present; `includeRuntimeContext: false` or a scoped suppressor removes optional contributions while required operational context remains.
+First-party sections render the harness identity, deployment persona prefix (including the model-name introduction), reusable instructions (including the generated tools SDK and structured-output guidance), then the environment-bearing suffix: harness source (`10000`), Web surface (`10100`), and deployment persona suffix (`10200`). External section orders and assembly listeners remain authoritative. `includeHarnessIdentity: false` omits only that fixed opener. Empty sections disappear; scoped sections and variables can shadow globals for one agent. The `system-prompt/assemble` waterfall determines the delivered prompt unless one effective section declares itself complete — that exact section then becomes the whole system prompt while the waterfall's contexts and variables remain. Tool declarations stay provider-owned. The rendered prompt reaches the model as a system-role message of derived history — surface node 0, or the latest system node after an in-history update — neither the loop request nor `request/header` carries a separate `system` field. If the complete rendering is empty, the loop clears every active system node through logged empty replacements, so no older prompt remains in model history. The independent `harness:commit-discipline` section remains active even when identity is disabled. Ordered dynamic contexts are separate from sections and become sourced user-role snapshots only when present; `includeRuntimeContext: false` or a scoped suppressor removes optional contributions while required operational context remains.
 
 ##### Harness identity
 
 ```markdown
 You are an AI agent powered by Anton Code.
-
-Commit discipline: when a feature or bug fix passes its narrow checks, commit it immediately with a deliberate conventional message — never wait to be asked. Do not end a turn with finished, verified work left uncommitted; survey the working tree and group unrelated pending changes into logical feature commits when found. Keep each commit atomic: one concern per commit.
 ```
 
 ##### Commit discipline
-
-The `harness:commit-discipline` section renders the same paragraph on its own, also when `includeHarnessIdentity: false`:
 
 ```markdown
 Commit discipline: when a feature or bug fix passes its narrow checks, commit it immediately with a deliberate conventional message — never wait to be asked. Do not end a turn with finished, verified work left uncommitted; survey the working tree and group unrelated pending changes into logical feature commits when found. Keep each commit atomic: one concern per commit.

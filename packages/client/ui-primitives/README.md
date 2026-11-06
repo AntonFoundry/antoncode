@@ -11,10 +11,6 @@ English
 
 Use `dsh-client-ui-primitives` to build web-client controls and render agent output with shared React UI. It includes standard controls, icons, anchored overlays, and renderers for Markdown with TeX, terminal output, file reads, diffs, search, web retrieval, and JSON. The renderers handle untrusted model output by dropping raw HTML, restricting links, and parsing ANSI escape sequences. The components import no Cordis runtime; callers supply localized labels, and theme-facing colors use `--dsw-*` design tokens.
 
-`FishLogo` and `BrandWordmark` render the Anton mark tiles (`/anton-mark.png`, `/anton-header.png`). `FishLogoAnimated` reveals the hero mark with a randomly selected TTFX character effect per conversation session, cycles through the other effects on pointer entry, and respects `prefers-reduced-motion`; `ProviderLogo` renders the [web app's local provider artwork](../../../apps/web/provider-assets.md) for known route IDs and an initial for custom routes. `mermaid` fences render as diagrams once settled, and Janet and Bender fences highlight through client-defined grammars (`src/markdown/lisp-dialect-grammar.ts`). `Menu` accepts an optional static `header` node for filter inputs.
-
-Fixed-position surfaces that measure the anchor (`Menu` portal lists, `Tooltip` bubbles, `useAnchoredMaxHeight`) divide measured viewport coordinates by `fixedInsetScale` (`src/zoom-scale.ts`): the interface zooms through CSS `zoom`, the engine multiplies a zoomed subtree's fixed insets by its zoom factor, and uncompensated placement draws menus and bubbles away from their anchors whenever a font-size zoom is active.
-
 ## Table of Contents
 
 - [Use this package](#use-this-package)
@@ -138,6 +134,10 @@ The atoms cannot read the application locale, so every piece of user-facing copy
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
+
+`FishLogo` and `BrandWordmark` render the Anton mark tiles (`/anton-mark.png`, `/anton-header.png`). `FishLogoAnimated` reveals the hero mark with a randomly selected TTFX character effect per conversation session, cycles through the other effects on pointer entry, and respects `prefers-reduced-motion`; `ProviderLogo` renders the [web app's local provider artwork](../../../apps/web/provider-assets.md) for known route IDs and an initial for custom routes. `mermaid` fences render as diagrams once settled, and Janet and Bender fences highlight through client-defined grammars (`src/markdown/lisp-dialect-grammar.ts`). `Menu` accepts an optional static `header` node for filter inputs.
+
+Fixed-position surfaces that measure the anchor (`Menu` portal lists, `Tooltip` bubbles, `useAnchoredMaxHeight`) divide measured viewport coordinates by `fixedInsetScale` (`src/zoom-scale.ts`): the interface zooms through CSS `zoom`, the engine multiplies a zoomed subtree's fixed insets by its zoom factor, and uncompensated placement draws menus and bubbles away from their anchors whenever a font-size zoom is active.
 
 `Button` uses H36/R12 for `md` and H28/R8 for `sm`, including outlined controls. The `outline` variant preserves a transparent 0.5px layout border and paints its stroke with an inset shadow. The stroke reads ui-theme's DPR-aware `--dsh-hairline-width`, with a 0.5px fallback outside the theme. Feature classes customize its color through `--dsh-button-outline-color` and preserve the border width, transparent border color, and box-shadow. Menus and cards follow the [shared radius rules](../../../docs/web-styling.md#corner-radii-and-settings-cards); feature classes preserve control geometry.
 

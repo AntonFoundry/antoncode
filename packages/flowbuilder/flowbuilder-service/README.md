@@ -1,5 +1,5 @@
 ---
-description: "flowbuilder-service package."
+description: "Persist and execute validated workflow graphs and manage a reusable block library."
 kind: "package-reference"
 ---
 
@@ -7,16 +7,16 @@ kind: "package-reference"
 
 ## Summary
 
-English
+Save and retrieve workflow graphs, organize reusable blocks, and run saved workflows with durable execution records. Invalid graphs are rejected before storage changes. Each node requires its execution service, and unavailable executors produce explicit node failures.
 
 ## Table of Contents
 
 - [Understand the implementation](#understand-the-implementation)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
 
 ## Understand the implementation
-
-English
 
 The flowbuilder capability seam: the injectable `ctx.flowBuilder` service — the durable store for workflow definitions and the reusable block library over the `flowbuilder` storage domain, plus the wave scheduler that executes saved graphs into durable run records — and the `flowbuilder/flow-changed`, `flowbuilder/library-changed`, and `flowbuilder/run-*` lifecycle events.
 
@@ -44,6 +44,6 @@ Independent: writes land in the storage domain, never in a session log, so nothi
 - **Executor service availability is loud** — code/condition nodes need `ctx.codeRuntime`, llm nodes `ctx.llm`, http nodes `ctx.web`, shell nodes `ctx.shell`; a composition missing one fails those nodes with a message naming the service.
 - **Library identity is name-or-id** — a save without `id` replaces the same-name entry (the model's iterate path); renaming mints a new entry. Versioned blocks and folders are deferred with the domain's library limitations.
 
-## Dev Note
+### Dev Note
 
 - See the module JSDoc for the owning contract and its rationale.

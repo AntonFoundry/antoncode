@@ -1,5 +1,5 @@
 ---
-description: "English"
+description: "Use Z.AI vision, search, page-reading, and repository tools without persistent MCP servers."
 kind: "package-reference"
 ---
 
@@ -9,16 +9,19 @@ English
 
 ## Summary
 
-English
+Give an agent Z.AI vision, search, page-reading, and repository tools without persistent MCP server processes. The enabled tools retain the original MCP names and use HTTPS backends. Credentials resolve for each call, and an allowlist controls which tool schemas are visible.
 
 ## Table of Contents
 
 - [Understand the implementation](#understand-the-implementation)
+- [Why this exists instead of `mcp-client` entries](#why-this-exists-instead-of-mcp-client-entries)
+- [Config](#config)
+- [Services consumed](#services-consumed)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
 
 ## Understand the implementation
-
-English
 
 Native Z.AI tools: the exact behavior of the four ZAI MCP servers
 (`zai-vision`, `zai-web-search`, `zai-web-reader`, `zai-read-github`) as
@@ -68,7 +71,7 @@ per-tool toggles) binds this plugin's settings namespace.
 
 #### What the model sees
 
-Thirteen native tools with the MCP originals' names, descriptions, and parameter shapes; results arrive as text (remote-trio blocks joined with newlines, vision message content verbatim).
+The [Z.AI tool schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-zai) expose thirteen native tools with the MCP originals' names, descriptions, and parameter fields; results arrive as text (remote-trio blocks joined with newlines, vision message content verbatim).
 
 #### Token effect
 
@@ -84,6 +87,6 @@ Prefix-stable while the enabled set and schemas are unchanged.
 - **Z.AI quota errors surface as tool failures** — exhausted plan quota (e.g. code 1310) throws like any backend error; the plugin does not distinguish billing from breakage.
 - **No image persistence** — vision results are text; image blocks never enter `ctx.attachments`, unlike the MCP bridge path.
 
-## Dev Note
+### Dev Note
 
 - See the module JSDoc for the owning contract and its rationale.

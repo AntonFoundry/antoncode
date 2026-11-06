@@ -1,5 +1,5 @@
 ---
-description: "agent-queue package."
+description: "Exchange durable, addressed messages within a workspace or across authorized workspaces."
 kind: "package-reference"
 ---
 
@@ -7,16 +7,18 @@ kind: "package-reference"
 
 ## Summary
 
-English
+Exchange durable messages between authorized agents without sharing their transcripts. Workspace mail supports explicit recipients and opt-in broadcasts; a separate direct mailbox reaches live agents in other workspaces. Reads do not acknowledge messages, and sends do not wake recipients. Bounded backlogs reject new messages rather than discarding unread mail.
 
 ## Table of Contents
 
 - [Understand the implementation](#understand-the-implementation)
+- [Service API and delivery](#service-api-and-delivery)
+- [Cross-workspace direct mailbox (`ctx.agentDirectQueue`)](#cross-workspace-direct-mailbox-ctxagentdirectqueue)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
 
 ## Understand the implementation
-
-English
 
 Host-owned durable mailbox for agents in one registered workspace. A workspace stream is addressed by `WorkspaceId`, while individual agents are addressed by their durable `SessionId` (never an activation/run id). The service validates the exact live calling Agent, its immutable header working directory through `workspaceRegistry.resolveByPath`, and filtered workspace membership before every operation. Neither knowing a session id nor supplying a different workspace id grants access.
 
@@ -31,22 +33,6 @@ Host-owned durable mailbox for agents in one registered workspace. A workspace s
 - `ack(agent, workspaceId, throughSeq)` → the caller's durable acknowledged cursor. It advances monotonically and cannot move beyond the committed workspace stream head; acknowledging another session is not supported.
 
 Direct publication creates a durable per-recipient cursor without opting that recipient into broadcasts. A cold or resumed addressee can therefore read and acknowledge its direct mail before subscribing, or subscribe later and still read unacknowledged historical direct mail. All queue write operations serialize; per-workspace sequence, bounded-message compaction, and each new message land in one durable workspace-domain write. Live listeners receive advisory post-commit sequence notifications and can replay via `read`; publishing never injects inbox input, wakes an agent, or interrupts an inference.
-
-## Model Experience
-
-### Addressed mailbox data
-
-#### What the model sees
-
-The service itself adds no prompt text or model tool schema. A separate `@deepseek-ai/dsh-tool-agent-queue` package exposes `agent_queue_*` tools and a bounded unread notice at a later natural model step. Through those tools, an authorized agent can inspect its own workspace address, publish selected text, read addressed messages, and explicitly acknowledge processed sequences; the service never exposes sibling transcripts or another workspace's queue.
-
-#### Token effect
-
-No tokens are consumed merely by storing or notifying about a message. Tool calls, returned bounded message pages, and an optional natural-step digest consume tokens only when a model-facing integration actually presents them. An unread digest can recur until explicit acknowledgement; no message is inserted into an in-flight inference.
-
-#### KV Cache effect
-
-The host service does not alter a cached model prefix. Queue-related tool definitions are governed by the separate tool package; new tool results or a changed natural-step notice append variable suffix content and may reduce reuse of that suffix, while previously stable conversation context remains unchanged.
 
 ## Cross-workspace direct mailbox (`ctx.agentDirectQueue`)
 
@@ -80,6 +66,24 @@ Every candidate ledger is verified at the single commit point before it reaches 
 
 A durable acknowledgement by every frozen addressee is the **only** way a message leaves this ledger. There is no age ceiling: unacknowledged mail is never silently destroyed, matching the durable-delivery guarantee the v1 queue already makes. Growth is therefore bounded by rejecting the send, never by discarding mail — 512 retained messages, 2,048 inbox cursors, and an 8 MiB cap on the complete encoded record, the last checked at the single commit point where the final size is known. Because 512 maximum-length bodies would reach about 32 MiB, the byte bound — not the message count — is the binding limit for large mail, and a sender hitting either receives a `RangeError`.
 
+The Web profile mounts `@deepseek-ai/dsh-agent-queue/mail-remote` to expose the owner-only Agent Mail tab. Its generated Remote methods resolve a Session to the exact live Agent before delegating to the two queue services. Mail response types are exported separately through `./mail-types` so browser packages do not import Host queue implementation code.
+
+## Model Experience
+
+### Addressed mailbox data
+
+#### What the model sees
+
+The service itself adds no prompt text or model tool schema. A separate `@deepseek-ai/dsh-tool-agent-queue` package exposes `agent_queue_*` tools and a bounded unread notice at a later natural model step. Through those tools, an authorized agent can inspect its own workspace address, publish selected text, read addressed messages, and explicitly acknowledge processed sequences; the service never exposes sibling transcripts or another workspace's queue.
+
+#### Token effect
+
+No tokens are consumed merely by storing or notifying about a message. Tool calls, returned bounded message pages, and an optional natural-step digest consume tokens only when a model-facing integration actually presents them. An unread digest can recur until explicit acknowledgement; no message is inserted into an in-flight inference.
+
+#### KV Cache effect
+
+The host service does not alter a cached model prefix. Queue-related tool definitions are governed by the separate tool package; new tool results or a changed natural-step notice append variable suffix content and may reduce reuse of that suffix, while previously stable conversation context remains unchanged.
+
 ## Known Limitations and Deferred Work
 
 - **Direct mail is cross-workspace only** — the direct ledger deliberately refuses an addressee in the sender's own workspace, so an agent that wants both local and remote delivery makes two calls (`agent_queue_send` and the direct send). Unifying the two surfaces behind one call is deferred.
@@ -93,8 +97,6 @@ A durable acknowledgement by every frozen addressee is the **only** way a messag
 - **Replay is retention-limited** — a caller may request an earlier explicit read cursor, but fully acknowledged messages can be compacted on a subsequent publication. This is a mailbox, not a permanent transcript archive.
 - **No autonomous model interruption** — live notifications are for subscribers outside inference. A model sees messages through explicit reads or a later natural step when the tool integration is mounted; a queued message does not wake a parked agent.
 
-## Dev Note
+### Dev Note
 
 - See the module JSDoc for the owning contract and its rationale.
-
-The Web profile mounts `@deepseek-ai/dsh-agent-queue/mail-remote` to expose the owner-only Agent Mail tab. Its generated Remote methods resolve a Session to the exact live Agent before delegating to the two queue services. Mail response types are exported separately through `./mail-types` so browser packages do not import Host queue implementation code.

@@ -9,7 +9,7 @@ English
 
 ## Summary
 
-This package helps a model escape loops in which it calls the same tool with identical arguments without making progress. At configured repeat counts, it asks the model to inspect the previous result and change approach or finish. It also detects two calls that alternate and undo each other, and a run of failed calls to one tool. Repeat and failure reminders are advisory; only an alternation that continues after its advisory is refused, when `escalateToBlock` is on. Repeats are tracked separately for each agent and cleared by a new user message. The `dsh` base bundle enables the package with reminders at 3, 5, and 8 repeats.
+Help a model escape repeated tool calls with identical arguments that make no progress. At configured repeat counts, it asks the model to inspect the previous result and change approach or finish. It also detects two calls that alternate and undo each other, and a run of failed calls to one tool. Repeat and failure reminders are advisory; only an alternation that continues after its advisory is refused, when `escalateToBlock` is on. Repeats are tracked separately for each agent and cleared by a new user message. The `dsh` base bundle enables reminders at 3, 5, and 8 repeats.
 
 ## Table of Contents
 

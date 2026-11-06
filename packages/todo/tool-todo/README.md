@@ -9,7 +9,7 @@ English
 
 ## Summary
 
-`dsh-tool-todo` gives the agent a structured task tree to plan with: break multi-step work into concrete tasks nested up to three levels, mark the task you are working on, and check tasks off as they finish. The list survives across turns and reopened sessions, so the agent and the UI always see the latest plan. One configuration flag decides whether several tasks may be in progress at once, for agents that run work in parallel. Use it wherever an agent should keep a visible task list; each update replaces the whole tree, and only the owning agent session can change it.
+`dsh-tool-todo` gives the agent a structured task tree to plan with: break multi-step work into concrete tasks nested up to three levels, mark the active task, and check tasks off as they finish. The list survives across turns and reopened sessions, so the agent and the UI always see the latest plan. One configuration flag decides whether several tasks may be in progress at once, for agents that run work in parallel. Use it wherever an agent should keep a visible task list; each update replaces the whole tree, and only the owning agent session can change it.
 
 ## Table of Contents
 

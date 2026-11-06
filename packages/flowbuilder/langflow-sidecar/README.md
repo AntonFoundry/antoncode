@@ -1,5 +1,5 @@
 ---
-description: "langflow-sidecar package."
+description: "Start and stop a local LangFlow server and report readiness and startup failures."
 kind: "package-reference"
 ---
 
@@ -7,18 +7,19 @@ kind: "package-reference"
 
 ## Summary
 
-English
+Start a local LangFlow server for the Workflows editor, wait for readiness, and stop it when requested. The configured launcher controls how LangFlow is obtained, while the working directory retains its database and logs. A failed start reports the launcher error, early exit, or readiness timeout.
 
 ## Table of Contents
 
 - [Understand the implementation](#understand-the-implementation)
+- [Configuration](#configuration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
 
 ## Understand the implementation
 
-English
-
-LangFlow sidecar service: spawns a local [LangFlow](https://github.com/langflow-ai/langflow) server (`langflow run` through the configured launcher), polls it to readiness, and exposes it to the Workflows tab embed. Published as `ctx.langflow`; the `langflow.*` wire domain in `dsh-host-apiproxy` is the browser's only consumer.
+LangFlow sidecar service: spawns a local [LangFlow](https://github.com/langflow-ai/langflow) server (`langflow run` through the configured launcher), polls it to readiness, and exposes it to the Workflows tab embed. Published as `ctx.langflow`; the generated `langflow` Remote exposes status, start, and stop to the browser.
 
 ## Configuration
 
@@ -51,6 +52,6 @@ Independent: sidecar state never touches request prefixes.
 - **Health is any-HTTP-response** — readiness counts any answered HTTP request as up; a LangFlow deployment whose UI is broken while `/health` answers would still report `running`.
 - **No multi-instance support** — one sidecar per process at a fixed configured port; a port already taken by another process surfaces as a startup error rather than port rotation.
 
-## Dev Note
+### Dev Note
 
 - See the module JSDoc for the owning contract and its rationale.

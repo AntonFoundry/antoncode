@@ -1,5 +1,5 @@
 ---
-description: "flowbuilder-domain package."
+description: "Validate durable workflow definitions, reusable blocks, and run records."
 kind: "package-reference"
 ---
 
@@ -7,16 +7,16 @@ kind: "package-reference"
 
 ## Summary
 
-English
+Store workflow definitions, reusable blocks, and run records with shared validation rules. Graph validation rejects duplicate ids, unresolved edges, multiple edges into one input, and cycles before a save proceeds. Runtime values remain JSON; port types do not enforce value types.
 
 ## Table of Contents
 
 - [Understand the implementation](#understand-the-implementation)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
 
 ## Understand the implementation
-
-English
 
 Durable vocabulary for the flowbuilder capability family: workflow definitions, block library entries, and run records as zod-validated records, the `defineDomain` spec the service opens, and the pure graph validator (`validateFlowStructure`) every save path calls.
 
@@ -41,6 +41,6 @@ Independent: domain records never touch request prefixes.
 - **Port types are hints, not enforcement** — `FlowPortType` drives canvas rendering and executor coercion hints; values at runtime stay plain JSON data. Typed-port enforcement at connect time is deferred to the client canvas.
 - **No library namespacing or versioning** — the library keys blocks by id with display-name overwrite; versioned blocks and folders are deferred until a second consumer needs them.
 
-## Dev Note
+### Dev Note
 
 - See the module JSDoc for the owning contract and its rationale.

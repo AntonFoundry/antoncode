@@ -1,5 +1,5 @@
 ---
-description: "gate-policy package."
+description: "Apply deployment-configured tool-call checklists, confirmations, and plan-first requirements."
 kind: "package-reference"
 ---
 
@@ -7,16 +7,17 @@ kind: "package-reference"
 
 ## Summary
 
-English
+Block tool calls that match deployment-configured command rules and return the checklist required before retrying. Rules can instead require human approval through the shared approval pipeline. An optional plan gate requires a todo tree and, above a configured size, a recorded implementation plan. Empty rules leave command calls ungated.
 
 ## Table of Contents
 
 - [Understand the implementation](#understand-the-implementation)
+- [Config](#config)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
 
 ## Understand the implementation
-
-English
 
 A deny-with-question gate on the tool-execution path. Each configured rule pairs a trigger (tool-name patterns plus anchored regexes over the call's `command` argument) with a checklist. When a call matches, the gate denies it and the checklist becomes the denial reason — the model reads it as the tool result, performs the checks, states their outcome, and retries the same call. A gate never approves anything; it can only block a call until the checks are stated. Decision record: [the guidebook-gates-and-recipes Agent Note](../../../.agents/notes/proposed/feature/2026-09-13-guidebook-gates-and-recipes.md).
 
@@ -82,7 +83,19 @@ Misconfiguration fails loud at plugin load: an invalid regex, an empty rule name
 
 ## Model Experience
 
-Gated calls add one denied tool result (`Error: Gate '<name>' blocked this call. … retry this exact call.`), typically followed by the check outputs and a successful retry — a bounded, one-time cost per gated action. Ungated calls are untouched: the guard returns `undefined` and no text, state, or latency is added.
+### Tool-call denials
+
+#### What the model sees
+
+A matched plain rule returns `Gate '<name>' blocked this call` followed by its configured checklist and retry instruction. Optional cached guidebook matches append recipe guidance. A confirm rule asks through the approval pipeline; denied approval or approval failure returns the checklist denial. The optional todo-plan gate returns a teaching denial until the required logged planning facts exist.
+
+#### Token effect
+
+Denied results and any subsequent checks/retry add transcript tokens. Ungated calls add no model-facing text. Checklist and recipe lengths depend on deployment configuration.
+
+#### KV Cache effect
+
+Denials append after the existing request history. Changing a rule does not add schemas or rewrite an earlier request prefix; a later denial has variable suffix content.
 
 ## Known Limitations and Deferred Work
 
@@ -90,6 +103,6 @@ Gated calls add one denied tool result (`Error: Gate '<name>' blocked this call.
 - Only the `command` argument is inspected; tools whose dangerous arguments live elsewhere need their own gate surface.
 - Guidebook matching is deliberately naive token overlap between the gate text and recipe intents: it may miss relevant recipes (synonyms) or surface loose ones (shared generic words). Relevance ranking belongs to the c0ntext engine; the guard only narrows its cached inventory.
 
-## Dev Note
+### Dev Note
 
 - See the module JSDoc for the owning contract and its rationale.
