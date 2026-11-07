@@ -18,6 +18,15 @@
   --shiki-token-link: #1971c2;
 }
 
+/* Resolve prose inks on the same element that owns the dark syntax palette. */
+body {
+  --dsw-alias-markdown-heading-primary: var(--shiki-token-function);
+  --dsw-alias-markdown-heading-secondary: var(--shiki-token-link);
+  --dsw-alias-markdown-emphasis: var(--shiki-token-function);
+  --dsw-alias-markdown-code-foreground: var(--shiki-token-function);
+  --dsw-alias-markdown-table-heading: var(--shiki-token-link);
+}
+
 body[data-ds-dark-theme] {
   --shiki-token-constant: #4dabf7;
   --shiki-token-string: #69db7c;

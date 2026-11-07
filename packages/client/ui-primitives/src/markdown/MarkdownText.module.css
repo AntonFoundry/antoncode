@@ -11,6 +11,15 @@
 
 .markdown strong {
   font-weight: 600;
+  color: var(--dsw-alias-markdown-emphasis);
+}
+
+.markdown :where(h1, h2) {
+  color: var(--dsw-alias-markdown-heading-primary);
+}
+
+.markdown :where(h3, h4, h5, h6) {
+  color: var(--dsw-alias-markdown-heading-secondary);
 }
 
 .markdown h1 {
@@ -40,6 +49,7 @@
 
 .markdown :where(h1, h2, h3, h4, h5, h6) strong {
   font-weight: inherit;
+  color: inherit;
 }
 
 .markdown p {
@@ -175,6 +185,7 @@
   font: var(--dsw-font-markdown-code);
   font-family: var(--ds-font-family-code);
   font-size: 0.875em !important;
+  color: var(--dsw-alias-markdown-code-foreground);
   background-color: var(--dsw-alias-markdown-inline-code);
   border: 0.5px solid var(--dsw-alias-border-l1);
   border-radius: var(--dsw-radius-sm);
@@ -184,6 +195,11 @@
 .markdown :where(h1, h2, h3, h4, h5, h6) code {
   font: inherit;
   font-family: var(--ds-font-family-code);
+}
+
+.markdown a :is(strong, code),
+.markdown .fileLink :is(strong, code) {
+  color: inherit;
 }
 
 .markdown :global(.katex-display) {
@@ -256,6 +272,7 @@
 }
 
 .tableScroll th {
+  color: var(--dsw-alias-markdown-table-heading);
   text-align: start;
   padding: 10px 16px;
   border-bottom: 0.5px solid var(--dsw-alias-border-l3);
@@ -360,6 +377,12 @@
   margin: 8px 0 4px;
   font: inherit;
   font-weight: 600;
+  color: inherit;
+}
+
+.compact strong,
+.compact :not(pre) > code,
+.compact th {
   color: inherit;
 }
 
