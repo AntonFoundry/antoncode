@@ -168,7 +168,7 @@ describe('native row drag previews', () => {
       ? <ProjectRowItem group={{
         key: 'workspace', workspaceId: wid('workspace'), cwd: '/workspace', createdAt: 0,
         label: 'Draggable row', sessionCount: 0, expanded: true, containsCurrent: false, sessions: [],
-      }} onToggle={vi.fn()} onCreate={vi.fn()} drag={drag} t={t} />
+      }} onToggle={vi.fn()} onCreate={vi.fn()} drag={{ ...drag, start: () => { drag.start(true) } }} t={t} />
       : <SessionNodeItem node={{
         id: sid('session'), title: 'Draggable row', blank: false, running: false,
         runningSubagentCount: 0, runningJobCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false,
@@ -1182,7 +1182,8 @@ describe('workspace browser rows', () => {
     try {
       const node: SessionNode = {
         id: sid(pendingInteraction), title: 'Needs input', blank: false,
-        pendingInteraction, running: true, runningSubagentCount: 0, runningJobCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false,
+        pendingInteraction, running: true, runningSubagentCount: 0, runningJobCount: 0,
+        completed: false, updatedAt: 0, pinned: false, archived: false,
       }
       const view = render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()} t={t} />)
       const row = screen.getByRole('treeitem')
@@ -1215,7 +1216,8 @@ describe('workspace browser rows', () => {
   ] as const)('uses the compact English %s row label', (pendingInteraction, compactLabel) => {
     const node: SessionNode = {
       id: sid(pendingInteraction), title: 'Needs input', blank: false,
-      pendingInteraction, running: false, runningSubagentCount: 0, runningJobCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false,
+      pendingInteraction, running: false, runningSubagentCount: 0, runningJobCount: 0,
+      completed: false, updatedAt: 0, pinned: false, archived: false,
     }
     render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()} t={tEn} />)
     const row = screen.getByRole('treeitem')

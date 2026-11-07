@@ -361,6 +361,17 @@ export class UiSession extends Service {
   }
 
   /**
+   * Read current Session access during an event handler without retaining the Session.
+   * Rendered affordances use `useSessionAccess` instead so access changes trigger a render.
+   * @param sessionId - Session resource whose permission is checked.
+   * @param action - endpoint action the caller would invoke.
+   * @returns the latest access answer; the Host still authorizes every request.
+   */
+  canAccess(sessionId: SessionId, action: RemoteEndpoint): boolean {
+    return this.ctx.remoteAccess.source('session', sessionId, action).getSnapshot()
+  }
+
+  /**
    * Keep `callback`'s effects installed while the current Peer may call
    * `action` on one Session resource, with the semantics of
    * `ctx.remoteAccess.whenAccess`: `useSessionAccess` answers the same

@@ -69,6 +69,8 @@ async function bench(access: 'fake' | 'static' = 'fake') {
     catalog: createSnapshotStore([]),
   })
   ctx.provide('uiConversation', {})
+  const canAccess = vi.fn(() => true)
+  ctx.provide('uiSession', { canAccess })
   await ctx.plugin(SlotRegistry).await()
   const accessSource = vi.fn((_kind: string, _id: string, _action: string): HostObservable<boolean> => ALLOWED)
   const stopGuard = vi.fn()
@@ -129,6 +131,7 @@ async function bench(access: 'fake' | 'static' = 'fake') {
   const subscribe = () => () => {}
   const workspacesSubscribe = vi.fn(subscribe)
   const initializeDefault = vi.fn(async (): Promise<WorkspaceView | undefined> => undefined)
+  const moveSession = vi.fn(async () => {})
   ctx.provide('workspaces', {
     list: { getSnapshot: () => workspaceSnapshot, subscribe: workspacesSubscribe },
     create,
@@ -141,7 +144,7 @@ async function bench(access: 'fake' | 'static' = 'fake') {
     pinSession,
     unpinSession,
     insertSessionBefore: vi.fn(async () => ({})),
-    moveSession: vi.fn(async () => {}),
+    moveSession,
   } as never)
   ctx.provide('sessions', {
     list: { getSnapshot: () => sessionSnapshot, subscribe },
@@ -170,7 +173,7 @@ async function bench(access: 'fake' | 'static' = 'fake') {
   return {
     ctx, slots: ctx.get('slots') as SlotRegistry, locale, create, rename, commands, accessSource, whenResourceAccess, stopGuard,
     retain, using, selectPanel, search, renameSession, binding, fork, pickDirectory, pinSession, unpinSession,
-    workspacesSubscribe, initializeDefault, history, scope, sessionOf,
+    workspacesSubscribe, initializeDefault, history, scope, sessionOf, moveSession, canAccess,
     setWorkspaces: (snapshot: WorkspaceSnapshot): void => { workspaceSnapshot = snapshot },
     setSessions: (snapshot: SessionListState): void => { sessionSnapshot = snapshot },
   }
@@ -225,7 +228,7 @@ describe('ui-workspace apply', () => {
 
   it('declares the services it drives', () => {
     expect(inject).toEqual([
-      'slots', 'sessions', 'workspaces', 'locale', 'remote', 'remote.directoryPicker', 'layout', 'shortcuts', 'remoteAccess',
+      'slots', 'sessions', 'workspaces', 'locale', 'remote', 'remote.directoryPicker', 'layout', 'shortcuts', 'remoteAccess', 'uiSession',
     ])
   })
 
@@ -258,6 +261,59 @@ describe('ui-workspace apply', () => {
     expect(dispose).not.toHaveBeenCalled()
     await caller.dispose()
     expect(dispose).toHaveBeenCalledOnce()
+  })
+
+  it('checks current Session and both Workspace access answers at drag and drop time', async () => {
+    const b = await bench()
+    onTestFinished(() => b.ctx.fiber.dispose())
+    declare(b.slots, 'sidebar.workspaces')
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const browser = faceOf(b.slots.entries('sidebar.workspaces')[0]!) as WorkspaceBrowserInjected
+    b.setWorkspaces(workspaceState([workspace('source', ['session']), workspace('destination', [])]))
+    expect(browser.canMoveSession(sid('session'), 'destination' as WorkspaceId)).toBe(true)
+    expect(b.canAccess).toHaveBeenCalledWith(sid('session'), 'workspace/moveSession')
+    expect(b.accessSource).toHaveBeenCalledWith('workspace', 'source', 'workspace/moveSession')
+    expect(b.accessSource).toHaveBeenCalledWith('workspace', 'destination', 'workspace/moveSession')
+    b.canAccess.mockReturnValue(false)
+    expect(browser.canMoveSession(sid('session'), null)).toBe(false)
+    b.canAccess.mockReturnValue(true)
+    b.accessSource.mockImplementation((kind, id) => createSnapshotStore(kind !== 'workspace' || id !== 'source'))
+    expect(browser.canMoveSession(sid('session'), null)).toBe(false)
+    b.accessSource.mockImplementation((kind, id) => createSnapshotStore(kind !== 'workspace' || id !== 'destination'))
+    expect(browser.canMoveSession(sid('session'), 'destination' as WorkspaceId)).toBe(false)
+    expect(browser.canMoveSession(sid('session'), null)).toBe(true)
+    b.setWorkspaces(workspaceState([workspace('destination', [])]))
+    expect(browser.canMoveSession(sid('session'), null)).toBe(true)
+  })
+
+  it('reports move settlement through the overlay without optimistically removing a source', async () => {
+    const b = await bench()
+    onTestFinished(() => b.ctx.fiber.dispose())
+    b.setWorkspaces(workspaceState([workspace('source', ['session'])]))
+    b.setSessions(sessionState([summary('session', 1)]))
+    declare(b.slots, 'sidebar.workspaces', 'shell.overlay')
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const browser = faceOf(b.slots.entries('sidebar.workspaces')[0]!) as WorkspaceBrowserInjected
+    const toast = faceOf(entry(b.slots, 'shell.overlay', 'workspace.row-toast')) as RowToastInjected
+    await settled()
+    const retainedBeforeMove = b.retain.mock.calls.length
+    let finish: (() => void) | undefined
+    b.moveSession.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve }))
+    const moving = browser.moveSession(sid('session'), null)
+    expect(toast.hooks.toast.getSnapshot()).toBeNull()
+    expect(b.ctx.workspaces.list.getSnapshot().items[0]?.sessionIds).toEqual([sid('session')])
+    finish!()
+    await moving
+    expect(b.moveSession).toHaveBeenCalledExactlyOnceWith(sid('session'), null)
+    expect(toast.hooks.toast.getSnapshot()).toMatchObject({ kind: 'sessionMoved' })
+    b.moveSession.mockRejectedValueOnce(new Error('offline'))
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    onTestFinished(() => { warning.mockRestore() })
+    await browser.moveSession(sid('session'), 'destination' as WorkspaceId)
+    expect(toast.hooks.toast.getSnapshot()).toMatchObject({ kind: 'sessionMoveFailed' })
+    expect(b.ctx.workspaces.list.getSnapshot().items[0]?.sessionIds).toEqual([sid('session')])
+    expect(b.selectPanel).not.toHaveBeenCalled()
+    expect(b.retain).toHaveBeenCalledTimes(retainedBeforeMove)
   })
 
   it('reports a default Workspace creation failure through the shared notice overlay', async () => {
@@ -335,7 +391,7 @@ describe('ui-workspace apply', () => {
     const rowToastEntry = entry(b.slots, 'shell.overlay', 'workspace.row-toast')
     expect(rowToastEntry.store).toBeUndefined()
     expect(b.slots.entries('workspace.toast').map(row => row.options.key)).toEqual([
-      'sessionIdCopied', 'sessionIdCopyFailed', 'pinFailed', 'unpinFailed', 'archivedNotOpenable',
+      'sessionMoved', 'sessionMoveFailed', 'sessionIdCopied', 'sessionIdCopyFailed', 'pinFailed', 'unpinFailed', 'archivedNotOpenable',
       'defaultWorkspaceFailed', 'shortcutForkFailed', 'createFailed', 'forkRequiresOpen', 'archived', 'stoppedAndArchived',
     ])
     for (const registration of b.slots.entries('workspace.toast')) {

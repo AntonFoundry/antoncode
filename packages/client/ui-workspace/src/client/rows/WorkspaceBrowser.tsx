@@ -210,6 +210,10 @@ interface DragState {
   sessionId: SessionNode['id']
   /** Source row was pinned at drag start; drop targets share the pinned block. */
   pinned: boolean
+  /** Move-only access never changes the local Session order. */
+  reorderable?: boolean
+  /** Workspace assignment hover; never committed by dragend. */
+  overGroup?: string | null
   /** Row the marker sits on and which half (insert above/below it). */
   over: { id: SessionNode['id']; half: 'before' | 'after' } | null
 }
@@ -253,7 +257,7 @@ function workspaceGroupHalf(e: { clientY: number; currentTarget: HTMLElement }):
 type SessionTreeProps = Pick<
   WorkspaceBrowserProps,
   'useSessionStatus' | 'startSession' | 'open'
-  | 'insertWorkspaceBefore' | 't' | 'usePanelInfo'
+  | 'insertWorkspaceBefore' | 'moveSession' | 'canMoveSession' | 't' | 'usePanelInfo'
   | 'useRemoteAccess' | 'useSessionAccess' | 'useWorkspaceAccess'
 > & PropsRenderSlots<
   | 'sidebar.workspaces.session.menu.item'
@@ -330,7 +334,7 @@ function SessionTree({
   workspaceReady, animationResetKey, usePanelInfo, useRemoteAccess, useSessionAccess, useWorkspaceAccess,
   onRenameRequest, onDeleteRequest, onSessionRenameRequest,
   renderSlot,
-  insertWorkspaceBefore,
+  insertWorkspaceBefore, moveSession, canMoveSession,
   nestWorkspaces, groupExpansion, setGroupExpanded,
   setSessionOrder, home, t,
   revealSessionId, onSessionRevealed, shortcuts,
@@ -382,13 +386,25 @@ function SessionTree({
     return [...workspaces.map(workspace => workspace.workspaceId), UNGROUPED_KEY]
       .filter(key => groupExpansion[key] ?? ancestorKeys.has(key))
   }, [groupExpansion, parents, workspaces])
-  const groups = useMemo(
+  const derivedGroups = useMemo(
     () => deriveGroups(list, workspaces, rowState, statuses, {
       expandedGroups,
       ungroupedOrder: ungroupedSessionIds,
     }),
     [list, workspaces, rowState, statuses, expandedGroups, ungroupedSessionIds],
   )
+  // Empty Ungrouped is a destination only while a grouped Session is dragged.
+  const groups: GroupNode[] = drag !== null && drag.accountKey !== UNGROUPED_KEY
+    && !derivedGroups.some(group => group.key === UNGROUPED_KEY)
+    ? [...derivedGroups, { key: UNGROUPED_KEY, workspaceId: undefined, cwd: undefined,
+      createdAt: undefined, label: '', sessionCount: 0, expanded: false, containsCurrent: false, sessions: [] }]
+    : derivedGroups
+  useEffect(() => {
+    if (drag === null) return
+    const cancel = (event: KeyboardEvent): void => { if (event.key === 'Escape') setDrag(null) }
+    document.addEventListener('keydown', cancel)
+    return () => { document.removeEventListener('keydown', cancel) }
+  }, [drag !== null])
   useEffect(() => {
     for (let key = revealGroup; key !== undefined; key = parents.get(key)) {
       if (groupExpansion[key] === false || (key === revealGroup && groupExpansion[key] !== true)) {
@@ -426,7 +442,7 @@ function SessionTree({
   }
   const now = Date.now()
   const commitSessionDrag = (activeDrag: DragState, over: NonNullable<DragState['over']>): void => {
-    if (sessionDropCommitted.current) return
+    if (sessionDropCommitted.current || activeDrag.reorderable === false) return
     sessionDropCommitted.current = true
     setDrag(null)
     const group = groups.find(candidate => candidate.key === activeDrag.accountKey)
@@ -439,6 +455,19 @@ function SessionTree({
     const renderedSessions = watermarkRows(group.sessions, sessionWatermarks[group.key] ?? SESSION_WATERMARK_BASE).rows
     const nextOrder = sessionDragOrder(accountSessionIds, renderedSessions, activeDrag, over)
     if (nextOrder !== undefined) setSessionOrder(activeDrag.accountKey, nextOrder)
+  }
+  const canDropSession = (group: GroupNode): boolean => drag !== null
+    && workspaceReady && list.byId[drag.sessionId] !== undefined
+    && !list.byId[drag.sessionId]?.blank
+    && !rowState.archivedSessionIds.includes(drag.sessionId)
+    && owningGroupKey(workspaces, drag.sessionId) === drag.accountKey
+    && group.key !== drag.accountKey
+    && canMoveSession(drag.sessionId, group.workspaceId ?? null)
+  const dropSession = (group: GroupNode): void => {
+    if (drag === null || sessionDropCommitted.current || !canDropSession(group)) return
+    sessionDropCommitted.current = true
+    setDrag(null)
+    void moveSession(drag.sessionId, group.workspaceId ?? null)
   }
   const commitWorkspaceDrag = (
     activeDrag: WorkspaceDragState,
@@ -539,10 +568,21 @@ function SessionTree({
         style={{ '--dsh-workspace-indent': `${depth * 12}px` } as CSSProperties}
         className={clsx(
           css.groupSection,
+          drag?.overGroup === group.key && css.sessionMoveTarget,
           workspaceMarker === 'before' && css.workspaceDropBefore,
           workspaceMarker === 'after' && css.workspaceDropAfter,
         )}
-        onDragOver={workspaceDrag === null
+        onDragLeave={drag === null ? undefined : (e) => {
+          if (e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return
+          setDrag(active => active === null ? null : { ...active, overGroup: null })
+        }}
+        onDragOver={drag !== null ? (e) => {
+          e.stopPropagation()
+          const allowed = canDropSession(group)
+          e.dataTransfer.dropEffect = allowed ? 'move' : 'none'
+          if (allowed) e.preventDefault()
+          setDrag(active => active === null ? null : { ...active, over: null, overGroup: allowed ? group.key : null })
+        } : workspaceDrag === null
           ? undefined
           : (e) => {
             e.preventDefault()
@@ -556,7 +596,12 @@ function SessionTree({
               hoverWorkspace(workspaceGroupHalf(e))
             }
           }}
-        onDrop={workspaceDrag === null
+        onDrop={drag !== null ? (e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          dropSession(group)
+          setDrag(null)
+        } : workspaceDrag === null
           ? undefined
           : (e) => {
             e.preventDefault()
@@ -609,23 +654,24 @@ function SessionTree({
           </div>
         )}
         {sessions.map((node) => {
-        // Session drag never leaves its browser-local account, and pinned
-        // rows reorder only within their leading pinned block.
+        // Reordering stays within the pinned partition; membership drops bubble to the section.
           const sameGroupDrag = drag !== null && drag.accountKey === group.key
-          const compatibleTarget = sameGroupDrag && drag.pinned === node.pinned
+          const compatibleTarget = sameGroupDrag && drag.reorderable !== false && drag.pinned === node.pinned
           const normalizeHalf = (half: 'before' | 'after'): 'before' | 'after' =>
             node.blank ? 'after' : half
           const dragProps = {
-            start: () => {
+            move: true,
+            start: (reorderable: boolean) => {
+              if (!reorderable && !canMoveSession(node.id, group.workspaceId ?? null)) return
               sessionDropCommitted.current = false
-              setDrag({ accountKey: group.key, sessionId: node.id, pinned: node.pinned, over: null })
+              setDrag({ accountKey: group.key, sessionId: node.id, pinned: node.pinned, reorderable, over: null })
             },
             active: compatibleTarget,
             marker: sameGroupDrag && drag.over?.id === node.id ? drag.over.half : null,
             hover: (half: 'before' | 'after') => {
             /* v8 ignore next -- narrowing guard: Rows gates hover on `active`, which is false while the drag state is null. */
               setDrag(d => (d === null ? d : {
-                ...d, over: { id: node.id, half: normalizeHalf(half) },
+                ...d, overGroup: null, over: { id: node.id, half: normalizeHalf(half) },
               }))
             },
             drop: (half: 'before' | 'after') => {
@@ -964,6 +1010,7 @@ export function WorkspaceBrowser({
   renameWorkspace,
   deleteWorkspace,
   insertWorkspaceBefore,
+  moveSession, canMoveSession,
   unarchiveSession,
   createWorkspace,
   searchSessions,
@@ -1544,6 +1591,8 @@ export function WorkspaceBrowser({
                 startSession={startSession}
                 open={guardedOpen}
                 insertWorkspaceBefore={insertWorkspaceBefore}
+                moveSession={moveSession}
+                canMoveSession={canMoveSession}
                 revealSessionId={revealSessionId}
                 onSessionRevealed={acknowledgeSessionReveal}
                 home={home}

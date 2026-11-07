@@ -698,3 +698,9 @@
     transition: none;
   }
 }
+
+.sessionMoveTarget {
+  outline: 1px solid var(--dsw-alias-state-business-primary);
+  outline-offset: -1px;
+  border-radius: var(--dsw-radius-sm);
+}

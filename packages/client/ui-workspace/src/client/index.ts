@@ -102,7 +102,7 @@ const NS = 'workspace'
  * declaration through `slots.inject()` instead of assuming order.
  */
 export const inject = [
-  'slots', 'sessions', 'workspaces', 'locale', 'remote', 'remote.directoryPicker', 'layout', 'shortcuts', 'remoteAccess',
+  'slots', 'sessions', 'workspaces', 'locale', 'remote', 'remote.directoryPicker', 'layout', 'shortcuts', 'remoteAccess', 'uiSession',
 ]
 
 /**
@@ -285,6 +285,25 @@ export function apply(ctx: Context): void {
     deleteWorkspace: async (workspaceId) => { await workspaces.delete(workspaceId) },
     insertWorkspaceBefore: async (workspaceId, beforeWorkspaceId) => {
       await workspaces.insertBefore(workspaceId, beforeWorkspaceId)
+    },
+    canMoveSession: (sessionId, workspaceId) => {
+      const snapshot = workspaces.list.getSnapshot()
+      if (snapshot.phase !== 'ready' || snapshot.state === 'loading'
+        || (workspaceId !== null && !snapshot.items.some(item => item.workspaceId === workspaceId))) return false
+      const source = snapshot.items.find(item => item.sessionIds.includes(sessionId))
+      return ctx.uiSession.canAccess(sessionId, 'workspace/moveSession')
+        && (source === undefined || ctx.remoteAccess.source('workspace', source.workspaceId, 'workspace/moveSession').getSnapshot())
+        && (workspaceId === null || ctx.remoteAccess.source('workspace', workspaceId, 'workspace/moveSession').getSnapshot())
+    },
+    moveSession: async (sessionId, workspaceId) => {
+      try {
+        await workspaces.moveSession(sessionId, workspaceId)
+      } catch (reason) {
+        console.warn('session drag move rejected:', reason)
+        notify({ kind: 'sessionMoveFailed' })
+        return
+      }
+      notify({ kind: 'sessionMoved' })
     },
     unarchiveSession: async (sessionId) => { await uiWorkspace.unarchiveSession(sessionId) },
     createWorkspace: input => workspaces.create(input),

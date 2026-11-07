@@ -710,6 +710,29 @@ describe('UiSession pending interactions', () => {
 })
 
 describe('ui-session apply', () => {
+  it('reads current event-time access without retaining a Session or sharing answers across identities', () => {
+    const ctx = new Context()
+    const bench = createSessionsBench(ctx)
+    ctx.provide('sessions', bench.sessions)
+    ctx.provide('slots', { provideRoot: vi.fn(), installScope: vi.fn(), bindStoreScope: vi.fn() } as never)
+    const allowed = createSnapshotStore(false)
+    const source = vi.fn((kind: string, id: string, action: string): HostObservable<boolean> =>
+      kind === 'session' && id === 's1' && action === 'workspace/moveSession' ? allowed : createSnapshotStore(false))
+    ctx.provide('remoteAccess', { source } as never)
+    apply(ctx)
+    const before = bench.sessions.list.getSnapshot()
+    expect(ctx.uiSession.canAccess(sessionId('s1'), 'workspace/moveSession')).toBe(false)
+    allowed.set(true)
+    expect(ctx.uiSession.canAccess(sessionId('s1'), 'workspace/moveSession')).toBe(true)
+    expect(ctx.uiSession.canAccess(sessionId('s2'), 'workspace/moveSession')).toBe(false)
+    expect(ctx.uiSession.canAccess(sessionId('s1'), 'session/fork')).toBe(false)
+    allowed.set(false)
+    expect(ctx.uiSession.canAccess(sessionId('s1'), 'workspace/moveSession')).toBe(false)
+    expect(bench.sessions.list.getSnapshot()).toBe(before)
+    expect(bench.resolveBinding).not.toHaveBeenCalled()
+    expect(bench.createSession).not.toHaveBeenCalled()
+  })
+
   it('provides the root sources and installs the Session scope adapter', () => {
     const ctx = new Context()
     const bench = createSessionsBench(ctx)

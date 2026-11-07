@@ -57,7 +57,7 @@ type RowRenderSlots = PropsRenderSlots<
  * Row display title: blank rows show the localized New Session label; a
  * worktree-owned session prefixes the worktree's directory name.
  */
-function displayTitle(node: SessionNode, t: RowTranslate, worktreeName?: string | undefined): string {
+function displayTitle(node: SessionNode, t: RowTranslate, worktreeName?: string): string {
   const base = node.blank ? t('session.new') : (node.title || t('session.untitled'))
   return worktreeName === undefined ? base : `${worktreeName}/${base}`
 }
@@ -192,7 +192,9 @@ function WorkspaceHoverContent({ label, cwd, createdAt, t }: {
  */
 export interface RowDragProps {
   /** Start dragging this row. */
-  start: () => void
+  start: (reorderable: boolean) => void
+  /** Allow membership moves as well as reordering. */
+  move?: boolean
   /** A compatible row drag is in flight. */
   active: boolean
   /** Current marker on this row: insert line above, below, or none. */
@@ -285,7 +287,8 @@ function WorkspaceProjectRow({ workspaceId, ...props }: ProjectRowItemProps & { 
 }
 
 function ProjectRow({
-  group, containsCurrentDescendant = false, activityActive = false, onToggle, onCreate, actions, drag: offeredDrag, home, newShortcut, t, access,
+  group, containsCurrentDescendant = false, activityActive = false, onToggle, onCreate, actions,
+  drag: offeredDrag, home, newShortcut, t, access,
 }: ProjectRowItemProps & { access: ProjectRowAccess }) {
   const drag = access.reorder ? offeredDrag : undefined
   const row = group
@@ -635,7 +638,8 @@ export function SearchResultItem({
  * its leading and trailing decorations, and its hover-card section.
  * @param props.onReveal - scroll this row into view after search navigation, then acknowledge it.
  * @param props.drag - optional row-drag target wiring; blank rows, and rows whose access excludes
- * `workspace/insertSessionBefore`, cannot start a drag; neither can any row in selection mode.
+ * both `workspace/insertSessionBefore` and `workspace/moveSession`, cannot start a grouped drag;
+ * neither can any row in selection mode.
  * @param props.worktreeName - owning worktree's directory name, prefixed to the row title.
  * @param props.selectionMode - rows toggle selection membership instead of opening, and hide
  * status dots, trailing details, and the menu.
@@ -693,7 +697,8 @@ export function SessionNodeItem({
   const renamable = useSessionAccess(node.id, 'session/rename')
   const reorderable = useSessionAccess(node.id, 'workspace/insertSessionBefore')
   // Selection mode is not a browsing mode: rows toggle membership and never start a drag.
-  const draggable = drag !== undefined && reorderable && !row.blank && !row.archived && !selectionMode
+  const movable = useSessionAccess(node.id, 'workspace/moveSession')
+  const draggable = drag !== undefined && (reorderable || (drag.move === true && movable)) && !row.blank && !row.archived && !selectionMode
   const [menuOpen, setMenuOpen] = useState(false)
   const dragPreview = useRowDragPreview(css.dragPreview as string, DRAG_PREVIEW_PROPERTIES)
   // The menu's open state, bound into the row entries' `useMenuOpenState` hook.
@@ -744,7 +749,7 @@ export function SessionNodeItem({
         : (e) => {
           e.dataTransfer.effectAllowed = 'move'
           e.dataTransfer.setData('text/plain', node.id)
-          drag.start()
+          drag.start(reorderable)
           dragPreview.start(e)
         }}
       onDragEnd={() => { if (dragPreview.clear()) drag?.end() }}
@@ -754,6 +759,7 @@ export function SessionNodeItem({
           if (!drag.active) return
           e.preventDefault()
           e.dataTransfer.dropEffect = 'move'
+          e.stopPropagation()
           drag.hover(rowHalf(e))
         }}
       onDrop={drag === undefined
@@ -761,6 +767,7 @@ export function SessionNodeItem({
         : (e) => {
           if (!drag.active) return
           e.preventDefault()
+          e.stopPropagation()
           drag.drop(rowHalf(e))
         }}
     >

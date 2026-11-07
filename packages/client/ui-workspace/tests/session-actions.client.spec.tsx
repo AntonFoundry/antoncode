@@ -680,6 +680,14 @@ describe('RowActionToast', () => {
 
   it.each([t, tEn])('reports clipboard success and failure through the global toast', async (translate) => {
     const { notify } = await toastSurface(undefined, translate)
+    notify({ kind: 'sessionMoved' })
+    expect(screen.getByRole('alert').textContent).toBe(translate('move.succeeded'))
+    if (translate === tEn) expect(screen.getByRole('alert').textContent).toMatchInlineSnapshot('"Session moved"')
+    notify({ kind: 'sessionMoveFailed' })
+    expect(screen.getByRole('alert').textContent).toBe(translate('move.failed'))
+    if (translate === tEn) expect(screen.getByRole('alert').textContent).toMatchInlineSnapshot(
+      '"Could not confirm the session move. Check its group before trying again."',
+    )
     notify({ kind: 'sessionIdCopied' })
     expect(screen.getByRole('alert').textContent).toBe(translate('toast.sessionIdCopied'))
     notify({ kind: 'sessionIdCopyFailed' })

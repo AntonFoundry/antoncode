@@ -102,7 +102,7 @@ function fireDrag(row: HTMLElement, kind: 'dragOver' | 'drop', clientY: number):
 /** The draggable workspace section (groupSection) owning the titled row. */
 function sectionOf(title: string): HTMLElement {
   let node = screen.getByText(title).closest('[role="treeitem"]') as HTMLElement | null
-  while (node !== null && !node.className.includes('groupSection')) node = node.parentElement as HTMLElement
+  while (node !== null && !node.className.includes('groupSection')) node = node.parentElement
   if (node === null) throw new Error(`no groupSection for ${title}`)
   return node
 }
@@ -152,6 +152,8 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     deleteWorkspace: vi.fn(async () => {}),
     unarchiveSession: vi.fn(async () => {}),
     insertWorkspaceBefore: vi.fn(async () => {}),
+    moveSession: vi.fn(async () => {}),
+    canMoveSession: vi.fn(() => true),
     createWorkspace: vi.fn(async () => workspace('created', [])),
     useDirectoryFlow: bindSnapshotSelector({ getSnapshot: () => true, subscribe: () => () => {} }),
     useHostInfo: selector => selector({ home: undefined, isLoopback: true }),
@@ -172,6 +174,140 @@ function rerender(b: ReturnType<typeof mount>, overrides: Partial<WorkspaceBrows
 }
 
 describe('WorkspaceBrowser', () => {
+  it.each(['header', 'body', 'row'] as const)('moves a pinned running Session on an explicit cross-Workspace %s drop only', (targetKind) => {
+    const list = sessionState([summary('one', 10, { running: true, cwd: '/original' }), summary('two', 5)])
+    const b = mount({ useSessions: hook(list), useWorkspaces: hook(workspaceState([
+      workspace('source', ['one']), workspace('destination', ['two']),
+    ], [], [sid('one')])) })
+    fireEvent.click(screen.getByText('source'))
+    fireEvent.click(screen.getByText('destination'))
+    const source = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
+    const target = targetKind === 'body' ? sectionOf('destination')
+      : screen.getByText(targetKind === 'header' ? 'destination' : 'two').closest('[role="treeitem"]') as HTMLElement
+    fireEvent.dragStart(source, { dataTransfer: dragData() })
+    fireDrag(target, 'dragOver', 100)
+    expect(b.props.moveSession).not.toHaveBeenCalled()
+    fireDrag(target, 'drop', 100)
+    fireEvent.dragEnd(source)
+    expect(b.props.moveSession).toHaveBeenCalledExactlyOnceWith(sid('one'), wid('destination'))
+    expect(b.props.open).not.toHaveBeenCalled()
+    expect(b.props.startSession).not.toHaveBeenCalled()
+    expect(b.store.getSnapshot().orderBy).toBe('manual')
+    expect(screen.getByText('one')).toBeTruthy()
+    expect(list.byId[sid('one')]).toMatchObject({ running: true, cwd: '/original' })
+  })
+
+  it('offers empty Ungrouped only during a grouped drag and moves with a null destination', () => {
+    const b = mount({ useSessions: hook(sessionState([summary('one', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('source', ['one'])])) })
+    fireEvent.click(screen.getByText('source'))
+    expect(screen.queryByText(t('group.ungrouped'))).toBeNull()
+    const source = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
+    fireEvent.dragStart(source, { dataTransfer: dragData() })
+    fireDrag(sectionOf(t('group.ungrouped')), 'drop', 100)
+    expect(b.props.moveSession).toHaveBeenCalledExactlyOnceWith(sid('one'), null)
+    expect(screen.queryByText(t('group.ungrouped'))).toBeNull()
+  })
+
+  it('moves an Ungrouped Session to a collapsed empty Workspace', () => {
+    const b = mount({ useSessions: hook(sessionState([summary('one', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('destination', [])])) })
+    fireEvent.click(screen.getByText(t('group.ungrouped')))
+    const source = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
+    fireEvent.dragStart(source, { dataTransfer: dragData() })
+    fireDrag(sectionOf('destination'), 'drop', 100)
+    expect(b.props.moveSession).toHaveBeenCalledExactlyOnceWith(sid('one'), wid('destination'))
+  })
+
+  it.each(['outside', 'escape', 'leave'] as const)('never commits a cross-Workspace hover on %s', (cancel) => {
+    const b = mount({ useSessions: hook(sessionState([summary('one', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('source', ['one']), workspace('destination', [])])) })
+    fireEvent.click(screen.getByText('source'))
+    const source = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
+    fireEvent.dragStart(source, { dataTransfer: dragData() })
+    fireDrag(sectionOf('destination'), 'dragOver', 100)
+    if (cancel === 'escape') fireEvent.keyDown(document, { key: 'Escape' })
+    if (cancel === 'leave') fireEvent.dragLeave(sectionOf('destination'))
+    if (cancel === 'outside') fireDrag(document.body, 'drop', 100)
+    fireEvent.dragEnd(source)
+    expect(b.props.moveSession).not.toHaveBeenCalled()
+    expect(b.store.getSnapshot().sessionOrderByAccount).toEqual({})
+  })
+
+  it('ignores external transfer text and rejects revoked, missing, changed-source, and same-group targets', () => {
+    let allowed = true
+    const b = mount({ useSessions: hook(sessionState([summary('one', 1)])),
+      canMoveSession: () => allowed,
+      useWorkspaces: hook(workspaceState([workspace('source', ['one']), workspace('destination', [])])) })
+    fireEvent.click(screen.getByText('source'))
+    const source = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
+    fireDrag(sectionOf('destination'), 'drop', 100)
+    expect(b.props.moveSession).not.toHaveBeenCalled()
+    fireEvent.dragStart(source, { dataTransfer: dragData() })
+    fireDrag(sectionOf('destination'), 'dragOver', 100)
+    allowed = false
+    fireDrag(sectionOf('destination'), 'drop', 100)
+    expect(b.props.moveSession).not.toHaveBeenCalled()
+    allowed = true
+    fireEvent.dragStart(source, { dataTransfer: dragData() })
+    fireDrag(sectionOf('source'), 'drop', 100)
+    expect(b.props.moveSession).not.toHaveBeenCalled()
+    fireEvent.dragStart(source, { dataTransfer: dragData() })
+    rerender(b, { useWorkspaces: hook(workspaceState([workspace('source', []), workspace('destination', ['one'])])) })
+    fireDrag(sectionOf('destination'), 'drop', 100)
+    expect(b.props.moveSession).not.toHaveBeenCalled()
+  })
+
+  it.each(['source', 'destination'] as const)('ignores a drop after its %s disappears', (missing) => {
+    const b = mount({ useSessions: hook(sessionState([summary('one', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('source', ['one']), workspace('destination', [])])) })
+    fireEvent.click(screen.getByText('source'))
+    const source = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
+    const destination = sectionOf('destination')
+    fireEvent.dragStart(source, { dataTransfer: dragData() })
+    fireDrag(destination, 'dragOver', 100)
+    if (missing === 'source') rerender(b, { useSessions: hook(sessionState([])) })
+    else rerender(b, { useWorkspaces: hook(workspaceState([workspace('source', ['one'])])) })
+    fireDrag(destination, 'drop', 100)
+    expect(b.props.moveSession).not.toHaveBeenCalled()
+  })
+
+  it('moves onto the nearest nested Workspace exactly once instead of its ancestor', () => {
+    const root = workspace('root', [])
+    const child = { ...workspace('child', []), path: '/projects/root/child' }
+    const b = mount({ useSessions: hook(sessionState([summary('one', 1)])),
+      useWorkspaces: hook(workspaceState([root, child, workspace('source', ['one'])])) })
+    act(() => { b.store.actions.setGroupBy('workspace-tree') })
+    fireEvent.click(screen.getByText('source'))
+    const source = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
+    fireEvent.dragStart(source, { dataTransfer: dragData() })
+    fireDrag(sectionOf('child'), 'dragOver', 100)
+    fireDrag(sectionOf('child'), 'drop', 100)
+    fireEvent.dragEnd(source)
+    expect(b.props.moveSession).toHaveBeenCalledExactlyOnceWith(sid('one'), wid('child'))
+  })
+
+  it('allows move-only drags without changing same-account order and keeps reorder-only drags local', () => {
+    const b = mount({ useSessions: hook(sessionState([summary('one', 1), summary('two', 2)])),
+      useWorkspaces: hook(workspaceState([workspace('source', ['one', 'two']), workspace('destination', [])])),
+      useSessionAccess: (_id, action) => action !== 'workspace/insertSessionBefore',
+    })
+    fireEvent.click(screen.getByText('source'))
+    const source = screen.getByText('one').closest('[role="treeitem"]') as HTMLElement
+    expect(source.draggable).toBe(true)
+    fireEvent.dragStart(source, { dataTransfer: dragData() })
+    fireDrag(screen.getByText('two').closest('[role="treeitem"]') as HTMLElement, 'drop', 100)
+    expect(b.store.getSnapshot().sessionOrderByAccount).toEqual({})
+    fireEvent.dragStart(source, { dataTransfer: dragData() })
+    fireDrag(sectionOf('destination'), 'drop', 100)
+    expect(b.props.moveSession).toHaveBeenCalledExactlyOnceWith(sid('one'), wid('destination'))
+    vi.mocked(b.props.moveSession).mockClear()
+    rerender(b, { useSessionAccess: (_id, action) => !['workspace/moveSession'].includes(action), canMoveSession: () => false })
+    fireEvent.dragStart(source, { dataTransfer: dragData() })
+    fireDrag(sectionOf('destination'), 'drop', 100)
+    expect(b.props.moveSession).not.toHaveBeenCalled()
+  })
+
   it('sorts active workspaces, tints their folders, and collapses week-idle workspaces', () => {
     vi.spyOn(Date, 'now').mockReturnValue(10 * 24 * 60 * 60 * 1_000)
     mount({

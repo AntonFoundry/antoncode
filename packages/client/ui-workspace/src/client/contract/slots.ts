@@ -284,6 +284,10 @@ export type WorkspaceBrowserInjected = {
    * Omitted anchor appends to the end.
    */
   insertWorkspaceBefore: (workspaceId: WorkspaceId, beforeWorkspaceId?: WorkspaceId) => Promise<void>
+  /** Check current Session, source Workspace, and destination access before a drag or drop. */
+  canMoveSession: (sessionId: SessionId, workspaceId: WorkspaceId | null) => boolean
+  /** Move membership without navigation; report success or failure through the overlay notice. */
+  moveSession: (sessionId: SessionId, workspaceId: WorkspaceId | null) => Promise<void>
   /** Remove a Session from the registry-global archived set (the search results' restore button). */
   unarchiveSession: (sessionId: SessionId) => Promise<void>
   /** Adopt a picked host directory as a real Workspace before targeting a Session. */
@@ -309,6 +313,8 @@ export type SessionRowActionProps<Injected extends object = object> =
 export type RowToast =
   | { kind: 'archived'; sessionId: SessionId }
   | { kind: 'stoppedAndArchived'; sessionId: SessionId }
+  | { kind: 'sessionMoved' }
+  | { kind: 'sessionMoveFailed' }
   | { kind: 'sessionIdCopied' }
   | { kind: 'sessionIdCopyFailed' }
   | { kind: 'pinFailed' }
