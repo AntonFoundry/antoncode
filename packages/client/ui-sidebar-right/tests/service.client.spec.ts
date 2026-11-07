@@ -47,7 +47,9 @@ function harness() {
     title: address => address.slice(address.lastIndexOf('/') + 1),
   })
   const pin = vi.fn<(address: string, signal: AbortSignal) => void>()
+  const reveal = vi.fn()
   const { controller, adopt, show, measure } = createSidebarRightController(tabs, pin, {
+    reveal,
     autoFullscreen: () => false,
     openWithFocus: (_sessionId, open) => { open() },
     closeWithFocus: (_sessionId, _paneId, close) => { close() },
@@ -80,10 +82,35 @@ function harness() {
   const entries = (): number => instance.getSnapshot().bySession[SESSION]?.history.entries.length ?? 0
   // A surface starts empty; expanding seeds the default guide ('seed').
   const expand = (): void => { instance.actions.setExpanded(SESSION, true) }
-  return { controller, adopt, unadopt, show, measure, tabs, instance, pin, publish, titles, tabOf, layout, entries, room, expand }
+  return { controller, adopt, unadopt, show, measure, tabs, instance, pin, publish, titles, tabOf, layout, entries, room, expand, reveal }
 }
 
 describe('SidebarRightController — opening', () => {
+  it('reveals explicit file opens even when tab expansion and selection are unchanged', () => {
+    const h = harness()
+    const release = h.publish()
+    try {
+      h.controller.openResource('dsh-resource://file/session/s-test/one.md')
+      h.reveal.mockClear()
+      h.controller.openResource('dsh-resource://file/session/s-test/one.md')
+      expect(h.reveal).toHaveBeenCalledExactlyOnceWith()
+      expect(h.titles()).toEqual(['one.md'])
+      h.controller.openResource('dsh-resource://file/session/s-test/two.md')
+      expect(h.reveal).toHaveBeenCalledTimes(2)
+      expect(h.titles()).toEqual(['one.md', 'two.md'])
+      h.reveal.mockClear()
+      expect(() => h.controller.openResource('https://example.com')).toThrow()
+      expect(h.reveal).not.toHaveBeenCalled()
+      release()
+      h.controller.openResourceIn(SESSION, 'dsh-resource://file/session/s-test/background.md')
+      expect(h.reveal).not.toHaveBeenCalled()
+    } finally {
+      release()
+      h.unadopt()
+      h.controller.tabDomain.dispose()
+    }
+  })
+
   it('keeps independently opened instances distinct when they return to the same pane', () => {
     const h = harness()
     h.tabs.register({ id: 'test/terminal', kind: 'terminal', multiple: true, title: () => 'terminal' })

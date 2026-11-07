@@ -28,6 +28,7 @@ function harness() {
   for (const kind of ['guide', 'files', 'terminal']) tabs.register({ id: kind, kind, title: () => kind, multiple: kind === 'terminal' })
   const room = { allowed: true, autoFullscreen: false }
   const { controller, adopt, show: showSession, measure } = createSidebarRightController(tabs, vi.fn(), {
+    reveal: vi.fn(),
     autoFullscreen: () => room.autoFullscreen,
     openWithFocus: (_sessionId, open) => { open() },
     closeWithFocus: (_sessionId, _paneId, close) => { close() },

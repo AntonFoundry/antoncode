@@ -64,6 +64,7 @@ it('pins restored records during adoption before the first render or store mutat
   const ctx = new Context()
   const pin = vi.fn()
   const { controller, adopt } = createSidebarRightController(new SidebarRightTabRegistry(ctx), pin, {
+    reveal: vi.fn(),
     autoFullscreen: () => false,
     openWithFocus: (_sessionId, open) => { open() },
     closeWithFocus: (_sessionId, _paneId, close) => { close() },

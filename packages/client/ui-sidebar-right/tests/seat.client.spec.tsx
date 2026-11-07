@@ -71,7 +71,7 @@ function transition(property = 'transform') {
 async function mountSeat(viewportWidth = 1440, canShow = true, entryCount = 0, opener = false, keepMounted = false) {
   const runtime = await SlotTestRuntime.create()
   runtimes.push(runtime)
-  const frame = { openRightbar: vi.fn(), closeRightbar: vi.fn(), panelInfo: runtime.panelInfo }
+  const frame = { openRightbar: vi.fn(), closeRightbar: vi.fn(), revealRightbar: vi.fn(), panelInfo: runtime.panelInfo }
   const pin = vi.fn<(address: string, signal: AbortSignal) => void>()
   runtime.ctx.provide('layout', frame as never)
   runtime.ctx.provide('resources', { pin } as never)
@@ -167,6 +167,17 @@ async function mountSeat(viewportWidth = 1440, canShow = true, entryCount = 0, o
     openerView: () => openerView!,
   }
 }
+
+it('reveals an already-expanded host on repeated file activation without replacing other document tabs', async () => {
+  const h = await mountSeat()
+  const first = h.open('one.md')
+  h.open('two.md')
+  h.frame.revealRightbar.mockClear()
+  const reused = h.open('one.md')
+  expect(reused.id).toBe(first.id)
+  expect(h.frame.revealRightbar).toHaveBeenCalledExactlyOnceWith()
+  expect(Object.values(h.layout().tabs).map(tab => tab.title)).toEqual(['one.md', 'two.md'])
+})
 
 it('keeps duplicate Session Tabs independent and preserves a body through docking and float focus', async () => {
   const h = await mountSeat()

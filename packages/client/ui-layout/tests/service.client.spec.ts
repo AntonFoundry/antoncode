@@ -86,6 +86,42 @@ describe('LayoutController', () => {
     expect(fresh.toggleSidebar).toHaveBeenCalledTimes(1)
   })
 
+  it('reveals the details buffer again after its window was closed while the Sidebar remained expanded', () => {
+    const panels = fakePanels()
+    const service = new LayoutController(panels)
+    const wm = fakeWm()
+    service.attachWm(wm)
+    service.openRightbar(true, false)
+    service.closeDetails()
+    expect(findLeaf(wm.state.tree, 'details')).toBeUndefined()
+    service.openRightbar(false, true)
+    expect(findLeaf(wm.state.tree, 'details')).toBeUndefined()
+    const reports = vi.mocked(panels.openRightbar).mock.calls.length
+    service.revealRightbar()
+    expect(panels.openRightbar).toHaveBeenCalledTimes(reports)
+    expect(findLeaf(wm.state.tree, 'details')?.buffer).toBe('details')
+  })
+
+  it('restores a replaced details buffer without duplicating a moved details window', () => {
+    const service = new LayoutController(fakePanels())
+    const wm = fakeWm()
+    service.attachWm(wm)
+    wm.state.tree = { kind: 'split', id: 'windows', dir: 'row', weights: [0.5, 0.5], children: [
+      { kind: 'leaf', id: 'conversation', buffer: 'buffer:session' },
+      { kind: 'leaf', id: 'details', buffer: 'buffer:session' },
+    ] }
+    service.revealRightbar()
+    expect(findLeaf(wm.state.tree, 'details')?.buffer).toBe('details')
+    wm.state.tree = { kind: 'split', id: 'windows', dir: 'row', weights: [0.5, 0.5], children: [
+      { kind: 'leaf', id: 'conversation', buffer: 'buffer:session' },
+      { kind: 'leaf', id: 'moved-details', buffer: 'details' },
+    ] }
+    const moved = wm.state.tree
+    service.revealRightbar()
+    expect(wm.state.tree).toBe(moved)
+    expect(wm.state.focusedLeafId).toBe('moved-details')
+  })
+
   it('openFile splits the focused leaf into a file buffer and reports handled', () => {
     const service = new LayoutController()
     const wm = fakeWm()

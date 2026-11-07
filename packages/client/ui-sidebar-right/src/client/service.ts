@@ -127,6 +127,8 @@ export function createSidebarRightController(tabs: SidebarRightTabRegistry, pin:
 
 /** What the controller needs from the page around it: the viewport rule and focus continuity. */
 export interface SidebarRightHost {
+  /** Reveal the host window after an explicit foreground open, even if the tab was already selected. */
+  readonly reveal: () => void
   /**
    * Whether the viewport is narrow enough that an expanded panel is presented fullscreen.
    * @returns the rule's verdict for the frame width the seats last rendered at.
@@ -434,15 +436,18 @@ export class SidebarRightController implements ISidebarRight {
       && dockPaneIds(surface.layout).length < 2
       && this.mounted.getSnapshot() === sessionId
       && this.canSplitPane(sessionId, target.id)
-    const commit = (): void => { actions.openContent(sessionId, {
-      kind: claim.kind,
-      contentId: claim.contentId,
-      title: claim.title,
-      ...placement.paneId === undefined ? {} : { paneId: placement.paneId },
-      ...preferNewPane ? { preferNewPane: true } : {},
-      ...placement.replaceTab === undefined ? {} : { replaceTab: placement.replaceTab },
-      ...placement.revealIfOpened === undefined ? {} : { revealIfOpened: placement.revealIfOpened },
-    }, (tabId) => { this.tabDomain.navigate(sessionId, tabId, { address, params }) }) }
+    const commit = (): void => {
+      actions.openContent(sessionId, {
+        kind: claim.kind,
+        contentId: claim.contentId,
+        title: claim.title,
+        ...placement.paneId === undefined ? {} : { paneId: placement.paneId },
+        ...preferNewPane ? { preferNewPane: true } : {},
+        ...placement.replaceTab === undefined ? {} : { replaceTab: placement.replaceTab },
+        ...placement.revealIfOpened === undefined ? {} : { revealIfOpened: placement.revealIfOpened },
+      }, (tabId) => { this.tabDomain.navigate(sessionId, tabId, { address, params }) })
+      if (this.mounted.getSnapshot() === sessionId) this.host.reveal()
+    }
     const layout = surface?.layout
     const replaced = placement.replaceTab === undefined ? undefined : layout?.tabs[placement.replaceTab]
     const replacementPane = replaced === undefined || layout === undefined ? undefined : findTabPane(layout, replaced.id)

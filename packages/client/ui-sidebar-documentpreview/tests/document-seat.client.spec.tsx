@@ -4,7 +4,7 @@ import { byteResult } from './fixtures.client.ts'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
-import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
+import { RemoteError, SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { absoluteFileAddress, sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
@@ -41,7 +41,7 @@ async function boot() {
   rt.ctx.provide('fileDrag', { actions: { prepare: async () => ({ start: () => true, release: () => {} }), reportFailure: () => {} }, read: () => undefined } satisfies import('@deepseek-ai/cordis').Context['fileDrag'])
   runtime = rt
   rt.ctx.provide('configForms', { developerTools: { enabled: createSnapshotStore(true) } } as never)
-  rt.ctx.provide('layout', { openRightbar: vi.fn(), closeRightbar: vi.fn(), panelInfo: rt.panelInfo } as never)
+  rt.ctx.provide('layout', { openRightbar: vi.fn(), closeRightbar: vi.fn(), revealRightbar: vi.fn(), panelInfo: rt.panelInfo } as never)
   rt.ctx.provide('shortcuts', { register: () => () => {}, catalog: { getSnapshot: () => SHORTCUT_CATALOG, subscribe: () => () => {} } } as never)
   const locale = new LocaleRuntime(rt.ctx)
   rt.ctx.provide('locale', locale)
@@ -97,6 +97,108 @@ async function boot() {
 }
 
 describe('document extension seat', () => {
+  it('keeps different full addresses in separate tabs and reveals the same file without replacing another', async () => {
+    const h = await boot()
+    h.read.mockImplementation(async (_sessionId, path, range) => ({
+      ok: true,
+      value: { absolutePath: '/host/' + path, version: 'v1', bytes: path.length, offset: range.offset ?? 1, text: path, lines: 1, eof: true },
+    }))
+    const firstAddress = sessionFileAddress(SESSION, 'first/notes.unknown')
+    const secondAddress = sessionFileAddress(SESSION, 'second/notes.unknown')
+    act(() => { h.rt.ctx.sidebarRight.openResource(firstAddress) })
+    await waitFor(() => { expect(h.view.container.querySelector('[data-textpreview-line]')?.textContent).toContain('first/notes.unknown') })
+    const first = h.rt.ctx.sidebarRight.active()!
+    act(() => { h.rt.ctx.sidebarRight.openResource(secondAddress) })
+    await waitFor(() => { expect(h.view.container.querySelector('[data-textpreview-line]')?.textContent).toContain('second/notes.unknown') })
+    const second = h.rt.ctx.sidebarRight.active()!
+    expect(second.id).not.toBe(first.id)
+    expect(first.title).toBe(second.title)
+    expect(h.rt.ctx.sidebarRight.openTabs.getSnapshot().map(tab => tab.contentId)).toEqual([firstAddress, secondAddress])
+    expect(screen.getAllByRole('tab')).toHaveLength(2)
+
+    act(() => { h.rt.ctx.sidebarRight.toggleExpanded() })
+    expect(h.rt.ctx.sidebarRight.isExpanded()).toBe(false)
+    act(() => { h.rt.ctx.sidebarRight.openResource(firstAddress) })
+    await waitFor(() => {
+      expect(h.rt.ctx.sidebarRight.isExpanded()).toBe(true)
+      expect(h.view.container.querySelector(`[data-dockkit-tab="${first.id}"]`)?.getAttribute('aria-selected')).toBe('true')
+      expect(h.view.container.querySelector('[data-textpreview-line]')?.textContent).toContain('first/notes.unknown')
+    })
+    expect(h.rt.ctx.sidebarRight.active()!.id).toBe(first.id)
+    expect(h.rt.ctx.sidebarRight.openTabs.getSnapshot().map(tab => tab.tabId)).toEqual([first.id, second.id])
+    expect(h.read.mock.calls.map(([sessionId, path]) => [sessionId, path])).toEqual([
+      [SESSION, 'first/notes.unknown'], [SESSION, 'second/notes.unknown'],
+    ])
+
+    fireEvent.click(h.view.container.querySelector(`[data-dockkit-tab-close="${first.id}"]`)!)
+    expect(h.rt.ctx.sidebarRight.openTabs.getSnapshot().map(tab => tab.tabId)).toEqual([second.id])
+    act(() => { h.rt.ctx.sidebarRight.openResource(firstAddress) })
+    await waitFor(() => { expect(h.read).toHaveBeenCalledTimes(3) })
+    const reopened = h.rt.ctx.sidebarRight.active()!
+    expect(reopened.id).not.toBe(first.id)
+    expect(reopened.contentId).toBe(firstAddress)
+    expect(h.rt.ctx.sidebarRight.openTabs.getSnapshot().map(tab => tab.tabId)).toEqual([second.id, reopened.id])
+  })
+
+  it('does not merge the same path addressed through different Sessions', async () => {
+    const h = await boot()
+    const addresses = [sessionFileAddress('first-session', 'notes.unknown'), sessionFileAddress('second-session', 'notes.unknown')]
+    for (const address of addresses) act(() => { h.rt.ctx.sidebarRight.openResource(address) })
+    await waitFor(() => { expect(h.read).toHaveBeenCalledTimes(2) })
+    expect(h.rt.ctx.sidebarRight.openTabs.getSnapshot().map(tab => tab.contentId)).toEqual(addresses)
+    expect(new Set(h.rt.ctx.sidebarRight.openTabs.getSnapshot().map(tab => tab.tabId)).size).toBe(2)
+    expect(h.read.mock.calls.map(([sessionId, path]) => [sessionId, path])).toEqual([
+      ['first-session', 'notes.unknown'], ['second-session', 'notes.unknown'],
+    ])
+    act(() => { h.rt.ctx.sidebarRight.openResource(addresses[0]!) })
+    expect(h.rt.ctx.sidebarRight.active()!.contentId).toBe(addresses[0])
+    expect(h.rt.ctx.sidebarRight.openTabs.getSnapshot()).toHaveLength(2)
+    expect(h.read).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps an unsupported binary file in its own tab without reading it', async () => {
+    const h = await boot()
+    h.open('good.unknown')
+    await waitFor(() => { expect(h.read).toHaveBeenCalledOnce() })
+    const good = h.rt.ctx.sidebarRight.active()!
+    h.open('archive.zip')
+    await waitFor(() => { expect(h.view.container.querySelector('[data-textpreview-state="unsupported"]')).not.toBeNull() })
+    expect(h.rt.ctx.sidebarRight.active()!.id).not.toBe(good.id)
+    expect(h.rt.ctx.sidebarRight.openTabs.getSnapshot()).toHaveLength(2)
+    expect(h.read).toHaveBeenCalledOnce()
+    expect(h.bytes).not.toHaveBeenCalled()
+    fireEvent.click(h.view.container.querySelector(`[data-dockkit-tab="${good.id}"]`)!)
+    await waitFor(() => { expect(h.view.container.querySelectorAll('[data-textpreview-line]')).toHaveLength(2) })
+    expect(h.view.container.querySelector('[data-textpreview-state="unsupported"]')).toBeNull()
+  })
+
+  it.each([
+    new RemoteError('workspace-file/not-found', 'Missing file', { path: 'failed.unknown' }),
+    new RemoteError('workspace-file/not-text', 'Not text', { path: 'failed.unknown' }),
+    new RemoteError('workspace-file/outside-workspace', 'Read refused', { path: 'failed.unknown' }),
+    new RemoteError('gateway/internal', 'Connection failed', {}),
+  ])(
+    'contains $code to its own tab and keeps another file available', async (error) => {
+      const h = await boot()
+      h.open('good.unknown')
+      await waitFor(() => { expect(h.view.container.querySelectorAll('[data-textpreview-line]')).toHaveLength(2) })
+      const good = h.rt.ctx.sidebarRight.active()!
+      h.read.mockResolvedValueOnce({ ok: false, error })
+      h.open('failed.unknown')
+      await waitFor(() => { expect(h.view.container.querySelector('[data-textpreview-failed]')?.getAttribute('data-textpreview-failed')).toBe(error.code) })
+      const failed = h.rt.ctx.sidebarRight.active()!
+      expect(failed.id).not.toBe(good.id)
+      expect(h.rt.ctx.sidebarRight.openTabs.getSnapshot()).toHaveLength(2)
+      fireEvent.click(h.view.container.querySelector(`[data-dockkit-tab="${good.id}"]`)!)
+      await waitFor(() => { expect(h.view.container.querySelectorAll('[data-textpreview-line]')).toHaveLength(2) })
+      expect(h.rt.ctx.sidebarRight.active()!.id).toBe(good.id)
+      expect(h.view.container.querySelector('[data-textpreview-failed]')).toBeNull()
+      expect(h.read).toHaveBeenCalledTimes(2)
+      fireEvent.click(h.view.container.querySelector(`[data-dockkit-tab-close="${failed.id}"]`)!)
+      expect(h.rt.ctx.sidebarRight.openTabs.getSnapshot().map(tab => tab.tabId)).toEqual([good.id])
+    },
+  )
+
   it.each(['notes.unknown', '/other/notes.unknown', 'C:/other/notes.unknown', '//host/share/notes.unknown'])(
     'reads %s through its addressed Session rather than the mounted Tab Session',
     async (path) => {

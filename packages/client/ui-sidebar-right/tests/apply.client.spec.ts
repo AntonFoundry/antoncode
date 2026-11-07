@@ -66,7 +66,7 @@ async function boot(shortcuts: Partial<Shortcuts> = {}) {
     }),
   }
   const layout = {
-    openRightbar: vi.fn(), closeRightbar: vi.fn(),
+    openRightbar: vi.fn(), closeRightbar: vi.fn(), revealRightbar: vi.fn(),
     panelInfo: createSnapshotStore<{ activePanelId: string | null }>({ activePanelId: null }),
   }
   const current = createSnapshotStore<{ key: SessionId | undefined }>({ key: undefined })
@@ -193,6 +193,7 @@ describe('ui-sidebar-right apply', () => {
     expect(injectedOf(seat('conversation.session.header.corner'))).toHaveProperty('hooks.shortcuts')
     current.set({ key: SESSION })
     injected.openTab('guide', { revealIfOpened: false })
+    expect(layout.revealRightbar).toHaveBeenCalledOnce()
     const surface = instance.getSnapshot().bySession[SESSION]
     expect(surface?.layout.expanded).toBe(true)
     expect(Object.values(surface?.layout.tabs ?? {}).map(tab => tab.kind)).toEqual(['guide'])

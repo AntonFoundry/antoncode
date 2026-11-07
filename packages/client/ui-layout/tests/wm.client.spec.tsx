@@ -834,6 +834,43 @@ describe('WmFrame render', () => {
     expect(wm.getSnapshot().focusedLeafId).toBeDefined()
   })
 
+  it('reveals a details leaf inside an inactive nested tab without changing tab-click targets', () => {
+    const tree: WmNode = {
+      kind: 'split', id: 'tabbed-root', dir: 'row', tabbed: true, weights: [0.5, 0.5], children: [
+        { kind: 'leaf', id: WM_LEAF_CONVERSATION, buffer: SESSION_BUFFER_ID },
+        { kind: 'split', id: 'nested-tools', dir: 'column', weights: [0.5, 0.5], children: [
+          { kind: 'leaf', id: 'nested-scratch', buffer: SCRATCH_BUFFER_ID },
+          { kind: 'leaf', id: WM_LEAF_DETAILS, buffer: 'details' },
+        ] },
+      ],
+    }
+    const { container, wm, layout } = mountFrame(tree)
+    const service = new LayoutController(layout.actions)
+    service.attachWm(wm)
+    const tabs = [...container.querySelectorAll<HTMLButtonElement>('[class*="tabStrip"] [role="tab"]')]
+    expect(tabs).toHaveLength(2)
+    const labels = tabs.map(tab => tab.textContent)
+    expect(tabs[0]?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('[data-buffer="details"]')).toBeNull()
+
+    act(() => { service.revealRightbar() })
+    expect(wm.getSnapshot().focusedLeafId).toBe(WM_LEAF_DETAILS)
+    expect(container.querySelector('[data-buffer="details"]')).toBeTruthy()
+    expect(container.querySelector('[data-buffer="scratch"]')).toBeTruthy()
+    expect(container.querySelector('[data-buffer="session"]')).toBeNull()
+    expect(tabs[1]?.getAttribute('aria-selected')).toBe('true')
+    expect(tabs[0]?.hasAttribute('aria-selected')).toBe(false)
+    expect(tabs.map(tab => tab.textContent)).toEqual(labels)
+    expect(wm.getSnapshot().tree).toEqual(tree)
+
+    fireEvent.click(tabs[0]!)
+    expect(wm.getSnapshot().focusedLeafId).toBe(WM_LEAF_CONVERSATION)
+    expect(container.querySelector('[data-buffer="details"]')).toBeNull()
+    fireEvent.click(tabs[1]!)
+    expect(wm.getSnapshot().focusedLeafId).toBe('nested-scratch')
+    expect(container.querySelector('[data-buffer="details"]')).toBeTruthy()
+  })
+
   it('tabbing mode: ⌘⇧L tabs the window onto the neighbor with the drop shade', () => {
     const { container, wm, layout } = mountFrame()
     act(() => { layout.actions.toggleTabbing() })

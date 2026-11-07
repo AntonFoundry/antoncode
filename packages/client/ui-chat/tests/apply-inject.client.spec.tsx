@@ -1,5 +1,7 @@
-import { MessageId } from '@deepseek-ai/dsh-llm/brand'
 // @vitest-environment jsdom
+import { MessageId } from '@deepseek-ai/dsh-llm/brand'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { MarkdownDelegateProvider, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 /** Chat inject factories exercised over independently mounted Conversation and Chat plugins. */
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { describe, expect, it, vi } from 'vitest'
@@ -328,6 +330,46 @@ describe('Chat inject API', () => {
     await injected.openFile('src/a.ts')
     expect(b.sidebarRight.openResource).toHaveBeenLastCalledWith('dsh-resource://file/session/root-1//elsewhere/src/a.ts')
     await b.runtime.dispose()
+  })
+
+  it('routes rendered absolute and relative Markdown links through the viewed Session at click time', async () => {
+    const b = await bench()
+    try {
+      const { injected } = b.chatViewApi(b.rootReference)
+      const view = render(
+        <MarkdownDelegateProvider
+          openFile={(path, options) => { void injected.openFile(path, options) }}
+          openExternalLink={injected.openExternalLink}
+        >
+          <MarkdownText
+            labels={{ code: { copyLabel: 'Copy', copiedLabel: 'Copied' }, footnotes: 'Footnotes' }}
+            text={'[relative](src/My%20Notes.md#L24-L30) [absolute](/proj/src/a.ts#L2) [outside](/tmp/out.txt) [web](https://example.com) [file URI](file:///tmp/out.txt) [resource](dsh-resource://file/session/root-1/src/a.ts)'}
+          />
+        </MarkdownDelegateProvider>,
+      )
+      await b.runtime.sessions.setProjection(ROOT, 'workingDirectory', '/proj/worktree')
+      await act(async () => { fireEvent.click(view.getByRole('button', { name: 'relative' })) })
+      await act(async () => { fireEvent.click(view.getByRole('button', { name: 'absolute' })) })
+      await act(async () => { fireEvent.click(view.getByRole('button', { name: 'outside' })) })
+      expect(b.sidebarRight.openResource.mock.calls).toEqual([
+        ['dsh-resource://file/session/root-1/worktree/src/My%20Notes.md', { params: { line: 24 } }],
+        ['dsh-resource://file/session/root-1/src/a.ts', { params: { line: 2 } }],
+        ['dsh-resource://file/session/root-1//tmp/out.txt'],
+      ])
+      expect(view.container.textContent).toContain('file URI')
+      expect(view.container.textContent).toContain('resource')
+      expect(view.getAllByRole('button')).toHaveLength(3)
+      expect(view.getAllByRole('link')).toHaveLength(1)
+      const web = view.getByRole('link', { name: 'web' })
+      expect(fireEvent.click(web, { ctrlKey: true })).toBe(true)
+      expect(b.sidebarRight.openTab).not.toHaveBeenCalled()
+      expect(fireEvent.click(web)).toBe(false)
+      expect(b.sidebarRight.openTab).toHaveBeenCalledExactlyOnceWith('browser', { params: { url: 'https://example.com' } })
+      expect(b.openWorkspacePath).not.toHaveBeenCalled()
+    } finally {
+      cleanup()
+      await b.runtime.dispose()
+    }
   })
 
   it('opens message HTTP(S) links in Sidebar Browser tabs', async () => {

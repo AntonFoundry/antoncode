@@ -695,12 +695,9 @@ function NodeView(props: NodeRenderProps & { node: WmNode }) {
   if (node.tabbed === true) {
     const tabIdOf = (child: WmNode): string | undefined =>
       child.kind === 'leaf' ? child.id : firstLeafId(child)
-    const firstChild = node.children[0]
-    const active = node.children.some(child => tabIdOf(child) === focusedId)
-      ? focusedId
-      : firstChild !== undefined
-        ? tabIdOf(firstChild)
-        : undefined
+    const activeChild = (focusedId === undefined
+      ? undefined
+      : node.children.find(child => findLeaf(child, focusedId) !== undefined)) ?? node.children[0]
     const titleOf = (child: WmNode): string => {
       const id = tabIdOf(child)
       const leaf = id !== undefined ? findLeaf(node, id) : undefined
@@ -710,7 +707,6 @@ function NodeView(props: NodeRenderProps & { node: WmNode }) {
       if (leafBuffer !== undefined) return bufferDisplayTitle(leafBuffer, props.sessionsById)
       return bufferTitle({ id: leaf?.buffer ?? '', kind: leafKind })
     }
-    const activeChild = node.children.find(child => tabIdOf(child) === active)
     return (
       <div className={css.tabbed}>
         <div className={css.tabStrip} role="tablist" aria-label="Tabbed group">
@@ -722,7 +718,7 @@ function NodeView(props: NodeRenderProps & { node: WmNode }) {
                 type="button"
                 role="tab"
                 className={css.tab}
-                aria-selected={id === active || undefined}
+                aria-selected={child === activeChild || undefined}
                 title={titleOf(child)}
                 onClick={() => { if (id !== undefined) onFocus(id) }}
               >

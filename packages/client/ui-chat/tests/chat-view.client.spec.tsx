@@ -742,7 +742,7 @@ describe('Chat node rendering', () => {
       resolve: (value) => {
         if (value !== 'report.html') return undefined
         return {
-          open: () => { void h.openFile(`for-seq-${String(owner.seq)}/site/report.html`) },
+          open: () => { owner.openFile(`for-seq-${String(owner.seq)}/site/report.html`) },
           label: '打开 site/report.html',
           title: 'site/report.html',
         }
@@ -3932,6 +3932,51 @@ describe('ChatView', () => {
     expect(openFile).toHaveBeenCalledTimes(2)
     expect(openFile).toHaveBeenNthCalledWith(1, 'src/a.ts')
     expect(openFile).toHaveBeenNthCalledWith(2, 'src/a.ts')
+  })
+
+  it('retries a refused Markdown line link at the same line', async () => {
+    const openFile = vi.fn<ChatViewSlotProps['openFile']>()
+      .mockRejectedValueOnce(new Error('sidebar unavailable'))
+      .mockResolvedValueOnce(undefined)
+    const h = makeHarness({
+      nodes: [user(1, 'explain'), assistant(2, '[source](src/index.ts#L24-L30)', 1)],
+      turnEnds: new Map([[1, 2]]),
+    })
+    h.props.openFile = openFile
+    const view = render(<h.ChatView {...h.props} />)
+    await act(async () => { fireEvent.click(view.getByRole('button', { name: 'source' })) })
+    expect(view.getByRole('dialog', { name: '无法打开文件' }).textContent).toContain('sidebar unavailable')
+    await act(async () => { fireEvent.click(view.getByRole('button', { name: '重试' })) })
+    expect(view.queryByRole('dialog')).toBeNull()
+    expect(openFile.mock.calls).toEqual([
+      ['src/index.ts', { line: 24 }],
+      ['src/index.ts', { line: 24 }],
+    ])
+  })
+
+  it('keeps the latest line link retry when an earlier file open settles later', async () => {
+    let rejectFirst!: (error: Error) => void
+    const openFile = vi.fn<ChatViewSlotProps['openFile']>()
+      .mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { rejectFirst = reject }))
+      .mockRejectedValueOnce(new Error('latest refusal'))
+      .mockResolvedValueOnce(undefined)
+    const h = makeHarness({
+      nodes: [user(1, 'explain'), assistant(2, '[first](src/a.ts#L4) [latest](src/b.ts#L8)', 1)],
+      turnEnds: new Map([[1, 2]]),
+    })
+    h.props.openFile = openFile
+    const view = render(<h.ChatView {...h.props} />)
+    await act(async () => { fireEvent.click(view.getByRole('button', { name: 'first' })) })
+    await act(async () => { fireEvent.click(view.getByRole('button', { name: 'latest' })) })
+    await act(async () => { rejectFirst(new Error('stale refusal')) })
+    expect(view.getByRole('dialog', { name: '无法打开文件' }).textContent).toContain('latest refusal')
+    await act(async () => { fireEvent.click(view.getByRole('button', { name: '重试' })) })
+    expect(openFile.mock.calls).toEqual([
+      ['src/a.ts', { line: 4 }],
+      ['src/b.ts', { line: 8 }],
+      ['src/b.ts', { line: 8 }],
+    ])
+    expect(view.queryByRole('dialog')).toBeNull()
   })
 
   it('keeps a non-Error Host refusal visible and dismisses it on cancel', async () => {

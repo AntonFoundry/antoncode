@@ -9,6 +9,7 @@
 import { renderFileActions } from './file-actions.tsx'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { Context } from '@deepseek-ai/cordis'
+import { MarkdownDelegateProvider, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { cleanup, fireEvent, render, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionLiveEventEntry, SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -783,6 +784,27 @@ describe('ChangedFiles card', () => {
 
 describe('producedFileMentions resolver', () => {
   const label = (path: string) => `打开 ${path}`
+
+  it('activates rendered generated file mentions through their recorded canonical paths', () => {
+    const openFile = vi.fn()
+    const path = '/project/worktree/out/report.html'
+    const mentions = producedFileMentions([path], openFile, label, [{ path, argumentPath: 'out/report.html' }])
+    const view = render(
+      <MarkdownDelegateProvider openFile={openFile}>
+        <MarkdownText
+          labels={{ code: { copyLabel: 'Copy', copiedLabel: 'Copied' }, footnotes: 'Footnotes' }}
+          fileMentions={mentions}
+          text={'Wrote `report.html` at `out/report.html`. [source](/project/worktree/out/report.html#L7) `unknown.html`'}
+        />
+      </MarkdownDelegateProvider>,
+    )
+    const generated = view.getAllByRole('button', { name: label(path) })
+    expect(generated).toHaveLength(2)
+    for (const button of generated) fireEvent.click(button)
+    fireEvent.click(view.getByRole('button', { name: 'source' }))
+    expect(openFile.mock.calls).toEqual([[path], [path], [path, { line: 7 }]])
+    expect(view.container.querySelectorAll('code button')).toHaveLength(2)
+  })
 
   it('does not let a legacy bare path override an ambiguous canonical basename', () => {
     const resolver = producedFileMentions(['report.txt', '/project/child/report.txt'], () => {}, label)

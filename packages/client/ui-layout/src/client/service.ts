@@ -20,7 +20,7 @@ import type { createLayoutStore } from './stores.ts'
 import { opensInline } from './file-view.ts'
 import {
   SIDEBAR_REATTACH_WEIGHT, WM_LEAF_DETAILS, WM_LEAF_SETTINGS, WM_LEAF_SIDEBAR, ensureBuffer, firstLeafId, findLeaf,
-  lastLeafId, removeLeaf, splitLeaf, type WmBuffer, type WmNode,
+  findFirstLeaf, lastLeafId, removeLeaf, setBuffer, splitLeaf, type WmBuffer, type WmNode,
 } from './wm.ts'
 
 /** Identity shared by a sidebar panel entry and its main-slot occupant. */
@@ -86,6 +86,8 @@ export interface ILayout {
    * @param fullscreen - whether the panel covers the frame.
    */
   openRightbar(track: boolean, fullscreen: boolean): void
+  /** Reveal and focus the right panel for explicit navigation without changing its presentation report. */
+  revealRightbar(): void
   /** Report the right panel as hidden; a shown-to-hidden report quits its window. */
   closeRightbar(): void
   /** Toggle the sidebar panel (closed ⟷ contract default width). */
@@ -187,6 +189,15 @@ export class LayoutController implements IWmLayout {
     this.openDetails()
   }
 
+  /** Reveal the details window for an explicit navigation, without changing presentation timing. */
+  revealRightbar(): void {
+    this.openDetails()
+    const wm = this.#wm
+    if (wm === undefined) return
+    const details = findFirstLeaf(wm.getSnapshot().tree, buffer => buffer === 'details')
+    if (details !== undefined) wm.actions.setFocus(details.id)
+  }
+
   /** Record the hidden report; collapsing quits the window showing its buffer. */
   closeRightbar(): void {
     this.#require().closeRightbar()
@@ -250,7 +261,10 @@ export class LayoutController implements IWmLayout {
   openDetails(): void {
     if (this.#wm !== undefined) {
       const { tree } = this.#wm.getSnapshot()
-      if (findLeaf(tree, WM_LEAF_DETAILS) === undefined) {
+      if (findFirstLeaf(tree, buffer => buffer === 'details') !== undefined) return
+      if (findLeaf(tree, WM_LEAF_DETAILS) !== undefined) {
+        this.#write(t => setBuffer(t, WM_LEAF_DETAILS, 'details'))
+      } else {
         const anchor = lastLeafId(tree)
         if (anchor !== undefined) this.#write(t => splitLeaf(t, anchor, 'row', 'details', WM_LEAF_DETAILS, 'after'))
       }
