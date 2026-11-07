@@ -980,14 +980,17 @@ describe('provider profile lifecycle', () => {
   })
 
   it('omits unsupported or unresolved image input gracefully instead of failing', async () => {
-    const adapter = adapterOf({ openai: {}, deepseek: {} })
+    const server = await mockServer(Array.from({ length: 3 }, () => ({
+      status: 401, body: JSON.stringify({ error: { message: 'expected mock failure' } }),
+    })))
+    const adapter = adapterOf({ openai: { baseURL: server.url }, deepseek: { baseURL: server.url } })
     const drain = async (options: Parameters<PiAiAdapter['stream']>[0]): Promise<void> => {
       for await (const _chunk of adapter.stream(options)) { /* drain */ }
     }
 
     // A model without image input, an unresolvable attachment, and a nested
-    // tool-result image all degrade to the omitted placeholder: the step
-    // completes text-only instead of failing.
+    // tool-result image all degrade to the omitted placeholder before dispatch;
+    // the local server then reports the scripted transport rejection.
     await expect(drain({
       provider: 'deepseek',
       model: 'deepseek-v4-pro',
@@ -1013,6 +1016,7 @@ describe('provider profile lifecycle', () => {
         isError: false,
       })],
     })).resolves.toBeUndefined()
+    expect(server.requests).toHaveLength(3)
   })
 
   it('validates profiles at the shared resolver boundary', () => {

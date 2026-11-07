@@ -31,14 +31,11 @@ export function mapUsage(usage: PiUsage): TokenUsage {
   }
 }
 
-// XXX(pi-ai upstream): pi-ai flattens the caught error to `error.message`
-// (api/anthropic-messages.js: `errorMessage = error instanceof Error ?
-// error.message : JSON.stringify(error)`), discarding the original Error and its
-// `cause` chain before it reaches us. undici carries the actionable transport
-// detail on `cause` (e.g. `SocketError: other side closed`) but hands the fetch
-// wrapper a bare `terminated`, so we are left pattern-matching terse words here.
-// If pi-ai ever forwards the original Error (or a fetch/dispatcher hook that lets
-// us capture the cause ourselves), classify on `code`/`cause` instead of text.
+// XXX(pi-ai upstream): terminal events retain only errorMessage, not SDK errors
+// or cause chains. This legacy fallback covers protocols and events without
+// observable structured facts; the adapter's per-request observer overrides it
+// when HTTP or parsed SSE facts are available. Mid-body transport causes can
+// still be lost upstream (for example undici's bare `terminated`).
 function classifyPiAiError(message: string): string {
   if (/\b(?:401|403)\b/.test(message)) return 'AUTH'
   if (isQuotaExceededError(message)) return QUOTA_EXCEEDED_CODE

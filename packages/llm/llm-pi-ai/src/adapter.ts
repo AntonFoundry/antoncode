@@ -64,6 +64,7 @@ import { requestImageTarget, toPiContext } from './context.ts'
 import { conversationUpdates, createModels, getSupportedThinkingLevels } from './models.ts'
 import { displayModelName, displayProviderName } from './presentation.ts'
 import { toStreamChunks } from './stream.ts'
+import { PiAiErrorObserver } from './provider-error.ts'
 
 /**
  * Initially active declaration added to an Anthropic request whose projected
@@ -436,7 +437,8 @@ export class PiAiAdapter extends LlmAdapter {
               maxBytes: profile.requestImageMaxBytes,
             },
           }, onReplayDegrade, updates.systemPromptUpdate === 'in-history')
-        const events = snapshot.models.streamSimple(model, context, {
+        const errorObserver = new PiAiErrorObserver()
+        const events = snapshot.models.streamSimple(model, context, errorObserver.options(model.api, {
           ...profileOptions(profile, reasoning, apiKey),
           ...options.temperature === undefined ? {} : { temperature: options.temperature },
           ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
@@ -445,7 +447,7 @@ export class PiAiAdapter extends LlmAdapter {
           // Profile headers are deployment-owned; attribution names are
           // Harness-owned and therefore win collisions.
           headers: requestHeaders(profile.headers),
-        })
+        }))
         const iterator = toStreamChunks(events, model.contextWindow, options.signal, model.id)[Symbol.asyncIterator]()
         let exhausted = false
         try {
@@ -455,7 +457,7 @@ export class PiAiAdapter extends LlmAdapter {
               exhausted = true
               return
             }
-            yield result.value
+            yield errorObserver.chunk(result.value)
           }
         } finally {
           if (!exhausted) {
