@@ -198,7 +198,7 @@ describe('request-level dynamic profile', () => {
   ])('prioritizes HTTP %i structured code %s over type %s as %s', async (status, code, type, expected) => {
     const dir = await home()
     const codexDir = await codexHome(dir)
-    const server = await codexServer({ httpError: { status, code, type } })
+    const server = await codexServer({ httpError: { status, ...code === undefined ? {} : { code }, type } })
     const ctx = await boot(dir, { providers: { codex: { codexHome: codexDir, baseURL: server.url } } })
     expect(await streamFinish(ctx, 'gpt-5.6-luna')).toMatchObject({ kind: 'error', failure: { code: expected } })
   })

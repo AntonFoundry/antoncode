@@ -202,7 +202,7 @@ describe('translate: terminal states', () => {
   it.each([undefined, 'unrecognized'])('does not infer availability from SSE display text for code %s', async (code) => {
     await expect(collect(translate(feed({
       type: 'response.failed',
-      response: { id: 'r', status: 'failed', error: { code, message: 'model unavailable: overloaded server' } },
+      response: { id: 'r', status: 'failed', error: { ...code === undefined ? {} : { code }, message: 'model unavailable: overloaded server' } },
     })))).rejects.toMatchObject({ code: 'TRANSPORT' })
   })
 
