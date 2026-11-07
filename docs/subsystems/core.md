@@ -1135,7 +1135,8 @@ Handle one failed model-request attempt before the loop retries or closes its st
  * @param payload.provider - the provider selected for the failed request.
  * @param payload.model - the model selected for the failed request.
  * @param payload.modelSelection - the failed effective route and effort; preparation failures have no adapter-resolved defaults.
- * @param payload.pendingMessages - immutable accepted input awaiting initial admission; empty after admission or when no input is pending.
+ * @param payload.pendingMessages - immutable accepted input awaiting initial admission;
+ * empty after admission or when no input is pending.
  * @param payload.failure - serializable facts normalized at the final adapter boundary.
  * @param payload.retryPolicy - the policy of the adapter registration that served the failed request.
  * @param payload.signal - the turn abort signal.
@@ -1166,7 +1167,8 @@ Run preflight after route and header logging, before messages are frozen. Listen
  * @param payload.model - resolved provider model id.
  * @param payload.contextWindow - adapter-reported capacity, when available.
  * @param payload.messages - derived messages for the pending request.
- * @param payload.routeRecovery - true for an automatic route alternative; listeners must not compact admitted input. Absent permits ordinary preflight surface changes.
+ * @param payload.routeRecovery - true for an automatic route alternative; listeners must not compact admitted input.
+ * Absent permits ordinary preflight surface changes.
  * @param payload.signal - the current turn's explicit abort signal.
  * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
  * @mode serial
