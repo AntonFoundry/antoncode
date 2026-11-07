@@ -114,10 +114,15 @@ describe('Chat apply wiring', () => {
       vi.spyOn(reference.binding.session, 'getSnapshot').mockReturnValue({ ...snapshot, running: true })
     }
     const row = b.runtime.slots.entries('conversation.chat.node').find(entry => entry.options.key === 'user')!
-    const injected = row.inject as (id: SessionId) => SentMessageActionsInjected
+    const injected = row.inject!(SID as never)
+    const removeFrom = injected.removeFrom as SentMessageActionsInjected['removeFrom']
     const overlay = b.runtime.slots.entries('shell.overlay').find(entry => entry.options.id === 'chat.message-action-notice')!
-    const notice = (overlay.inject as () => MessageActionNoticeInjected)()
-    await injected(SID).removeFrom(7)
+    const face = overlay.inject!()
+    const notice = {
+      hooks: face.hooks as MessageActionNoticeInjected['hooks'],
+      dismissMessageActionNotice: face.dismissMessageActionNotice as MessageActionNoticeInjected['dismissMessageActionNotice'],
+    }
+    await removeFrom(7)
     if (outcome === 'running') expect(fork).not.toHaveBeenCalled()
     else expect(fork).toHaveBeenCalledWith(expect.objectContaining({ sessionId: SID, atSeq: 6, increaseTitle: true }))
     expect(notice.hooks.messageActionNotice.getSnapshot()?.outcome).toBe(outcome === 'running' ? 'failed' : outcome)

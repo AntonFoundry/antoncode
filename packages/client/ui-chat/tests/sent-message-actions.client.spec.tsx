@@ -5,6 +5,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import type { ChatNodeViewProps } from '../src/client/contract/slots.ts'
 import { SentMessageActions } from '../src/client/chat/SentMessageActions.tsx'
+import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import { en } from '../src/client/locale.ts'
 
 afterEach(cleanup)
@@ -12,12 +13,18 @@ const t: ChatNodeViewProps['t'] = makeTranslate(en, commonEn)
 
 function fixture({ running = false, allowed = true, durable = true } = {}) {
   const removeFrom = vi.fn(async (_seq: number) => {})
-  const props = {
-    node: { data: { seq: 7, time: 1000, ...(durable ? { messageId: 'sent-message' } : {}) } },
+  const props: Parameters<typeof SentMessageActions>[0] = {
+    node: {
+      key: 'sent-message', id: 'sent-message', kind: 'user', target: 'chat', anchorSeq: 7,
+      location: { kind: 'session' }, visibility: 'visible',
+      data: { kind: 'user', seq: 7, time: 1000, content: [], source: { kind: 'user' },
+        ...(durable ? { messageId: 'sent-message' as MessageId } : {}),
+      },
+    },
     text: 'Replace this request', t, removeFrom, reportRemoveFailure: vi.fn(),
-    useSession: (select: (snapshot: { running: boolean; removed: boolean }) => unknown) => select({ running, removed: false }),
+    useSession: select => select({ running, removed: false } as never),
     useAccess: () => allowed,
-  } as Parameters<typeof SentMessageActions>[0]
+  }
   return { props, removeFrom }
 }
 
