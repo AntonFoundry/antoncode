@@ -413,6 +413,7 @@ export function normalizeSessionLog(
       if ('durationMs' in data) data.durationMs = 0
     }
     normalizeFeedbackClocks(record)
+    normalizeFailoverClocks(record)
     if ((record.type === 'job/registered' || record.type === 'job/settled')
       && record.data !== null && typeof record.data === 'object') {
       const data = record.data as Record<string, unknown>
@@ -605,8 +606,17 @@ export function scrubSessionSnapshot(rawLog: string): string {
       record.sourceEventSeqs = decodeSeqRanges(record.sourceEventSeqs)
     }
     normalizeFeedbackClocks(record)
+    normalizeFailoverClocks(record)
     return JSON.stringify(record)
   }).join('\n')
+}
+
+/** Normalize automatic recovery clocks without changing route or policy values. */
+function normalizeFailoverClocks(record: Record<string, unknown>): void {
+  if (record.data === null || typeof record.data !== 'object') return
+  const data = record.data as Record<string, unknown>
+  if (record.type === 'llm/failover-attempt' && 'startedAt' in data) data.startedAt = 0
+  if (record.type === 'llm/failover' && 'cooldownUntil' in data) data.cooldownUntil = 0
 }
 
 /** Normalize service-owned feedback clocks without touching user-authored payloads. */

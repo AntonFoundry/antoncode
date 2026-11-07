@@ -145,8 +145,20 @@ export type PreStepDecision =
     startsRequestSeries?: true
   }
 
-/** Action returned by a listener that owns model-request recovery. */
-export type RequestErrorAction = { kind: 'retry' } | undefined
+/** Recovery for the same admitted input: retry the current route, select a fresh route, or leave the failure terminal. */
+export type RequestErrorAction =
+  | {
+    kind: 'retry'
+    /** Absolute epoch-millisecond deadline; omission retains an existing recovery deadline or leaves it unbounded. */
+    expiresAt?: number
+  }
+  | {
+    kind: 'retry-route'
+    selection: Readonly<ModelSelection>
+    /** Absolute epoch-millisecond deadline; omission retains an existing recovery deadline or leaves it unbounded. */
+    expiresAt?: number
+  }
+  | undefined
 
 /** Why a session lifecycle began; seeded creates are `startup`, while persisted loads are `resume`. */
 export type SessionStartSource = 'startup' | 'resume' | 'clear' | 'compact'
@@ -366,11 +378,13 @@ declare module '@deepseek-ai/cordis' {
      * @param payload.agent - the agent making the model call.
      * @param payload.turn - the open turn number.
      * @param payload.step - the step whose request this is.
+     * @param payload.routeRecovery - true for an automatic route alternative;
+     * listeners must preserve admitted input rather than compact it. Absent permits ordinary request preparation.
      * @param payload.signal - the current turn's explicit abort signal.
      * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
      * @mode waterfall
     */
-    'agent/request'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; signal: AbortSignal }, next: () => Promise<LlmCallConfig>): Promise<LlmCallConfig>
+    'agent/request'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; signal: AbortSignal; routeRecovery?: true }, next: () => Promise<LlmCallConfig>): Promise<LlmCallConfig>
     /**
      * Run preflight after route and header logging, before messages are frozen.
      * Listeners may update durable state; the loop derives messages again after they settle.
@@ -381,27 +395,55 @@ declare module '@deepseek-ai/cordis' {
      * @param payload.model - resolved provider model id.
      * @param payload.contextWindow - adapter-reported capacity, when available.
      * @param payload.messages - derived messages for the pending request.
+     * @param payload.routeRecovery - true for an automatic route alternative; listeners must not compact admitted input.
+     * Absent permits ordinary preflight surface changes.
      * @param payload.signal - the current turn's explicit abort signal.
      * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
      * @mode serial
      */
-    'agent/request-prepared'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; model: string; contextWindow?: number; messages: readonly Message[]; signal: AbortSignal }): Promise<void>
+    'agent/request-prepared'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; model: string; contextWindow?: number; messages: readonly Message[]; signal: AbortSignal; routeRecovery?: true }): Promise<void>
+    /**
+     * Resolve an effective model before admitting route-dependent tools and prompt sections.
+     * Does not record a manual model choice. The fallback returns the requested candidate unchanged.
+     * @param payload.agent - the agent preparing a step.
+     * @param payload.turn - the turn containing the proposed step.
+     * @param payload.step - the proposed step number.
+     * @param payload.requestedSelection - current model candidate, which may be the last-used route.
+     * @param payload.messages - immutable claimed user input not yet admitted to the durable surface.
+     * @param payload.signal - the turn abort signal.
+     * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
+     * @mode waterfall
+     */
+    'agent/model-selection'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; requestedSelection: Readonly<ModelSelection>; messages: readonly UserMessage[]; signal: AbortSignal }, next: () => Promise<Readonly<ModelSelection>>): Promise<Readonly<ModelSelection>>
     /**
      * Handle one failed model-request attempt before the loop retries or closes
-     * its step. A listener returns `{ kind: 'retry' }` without calling `next()`
-     * when it owns recovery, or calls `next()` to delegate. The default
-     * `undefined` leaves the failure terminal.
+     * its step. A listener returns `{ kind: 'retry' }` to repeat the effective route,
+     * or `{ kind: 'retry-route', selection }` to prepare that route with fresh tool and
+     * prompt admission without admitting accepted user input again. Neither action
+     * records a manual model choice. Call `next()` to delegate; the default
+     * `undefined` leaves the failure terminal. Failed partial output is log-only and
+     * its tool calls are never executed. Exact `MODEL_UNAVAILABLE` failures from
+     * adapter call preparation also enter recovery before input admission, without
+     * a stream attempt or serving retry policy. Other preparation and middleware
+     * errors remain terminal. Either action may supply `expiresAt`, an absolute
+     * epoch-millisecond deadline retained through later recovery attempts in this
+     * step; omission preserves an existing deadline or leaves recovery unbounded.
+     * Expiry fails with `RECOVERY_EXPIRED`; user cancellation retains its abort cause.
      * @param payload.agent - the agent whose request failed.
      * @param payload.turn - the turn containing the failed request.
      * @param payload.step - the step containing the failed request attempt.
      * @param payload.provider - the provider selected for the failed request.
+     * @param payload.model - the model selected for the failed request.
+     * @param payload.modelSelection - the failed effective route and effort; preparation failures have no adapter-resolved defaults.
+     * @param payload.pendingMessages - immutable accepted input awaiting initial admission;
+     * empty after admission or when no input is pending.
      * @param payload.failure - serializable facts normalized at the final adapter boundary.
      * @param payload.retryPolicy - the policy of the adapter registration that served the failed request.
      * @param payload.signal - the turn abort signal.
      * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
      * @mode waterfall
      */
-    'agent/request-error'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; failure: LlmFailure; retryPolicy: ResolvedRetryPolicy | undefined; signal: AbortSignal }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>
+    'agent/request-error'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; model: string; modelSelection: Readonly<ModelSelection>; pendingMessages: readonly UserMessage[]; failure: LlmFailure; retryPolicy: ResolvedRetryPolicy | undefined; signal: AbortSignal }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>
     /**
      * Process-local assistant-stream publication. Chunk frames are transient;
      * the loop appends one final v2 `assistant/message` or `assistant/attempt`

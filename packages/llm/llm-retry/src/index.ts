@@ -14,6 +14,8 @@ import type { LlmFailure, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import { RetryId } from './brand.ts'
 import type { LlmRetryEventData } from './types.ts'
+import { installFailover } from './failover.ts'
+import { resolveFailoverConfig, type FailoverConfig } from './failover-config.ts'
 
 export type { LlmRetryEventData, LlmRetryStartedEventData } from './types.ts'
 export { RetryId } from './brand.ts'
@@ -21,14 +23,31 @@ export { RetryId } from './brand.ts'
 export const name = 'llm-retry'
 export const inject = ['agents', 'sessionProjections']
 
-/** This policy executor has no config; providers own `retryPolicy`. */
-export type Config = Readonly<Record<string, never>>
+/** Host recovery settings; providers continue to own same-route `retryPolicy`. */
+export interface Config {
+  /** Optional ordered route recovery; omission disables automatic failover. */
+  failover?: FailoverConfig
+}
 
-/** Runtime schema for {@link Config}. */
-export const Config = z.object({}) as unknown as z<Config>
+/** Runtime schema for Host recovery settings and ordered exact route chains. */
+export const Config = z.object({
+  failover: z.object({
+    enabled: z.boolean().default(false),
+    chains: z.array(z.object({
+      primary: z.object({ provider: z.string().required(), model: z.string().required() }).required(),
+      fallbacks: z.array(z.object({ provider: z.string().required(), model: z.string().required() })).min(1).max(32).required(),
+    })).max(64).default([]),
+    cooldownMs: z.number().step(1).min(1).max(2_147_483_647).default(300_000),
+    sameRouteRetries: z.number().step(1).min(0).max(10).default(1),
+    retryDelayMs: z.number().step(1).min(1).max(60_000).default(500),
+    maxAttempts: z.number().step(1).min(1).max(64).default(8),
+    maxElapsedMs: z.number().step(1).min(1).max(2_147_483_647).default(120_000),
+    contextHeadroomTokens: z.number().step(1).min(0).max(1_000_000).default(8192),
+  }),
+})
 
 function validateConfig(config: Config): void {
-  const [key] = Object.keys(config)
+  const [key] = Object.keys(config).filter(key => key !== 'failover')
   if (key === undefined) return
   if (key === 'retryPolicy') {
     throw new Error('llm-retry: retryPolicy belongs under each provider configuration')
@@ -119,6 +138,10 @@ const llmRetryStateSchema: zod.ZodType<LlmRetryState> = zod.record(zod.string(),
  */
 export async function apply(ctx: Context, config: Config = {}, internals: RetryInternals = {}): Promise<void> {
   validateConfig(config)
+  const failoverConfig = resolveFailoverConfig(config.failover)
+  if (failoverConfig.enabled && ctx.get('llm') === undefined) {
+    throw new Error('llm-retry: enabled failover requires the llm service')
+  }
   const projectionReady = ctx.sessionProjections.register({
     key: 'llmRetry',
     stateVersion: 1,
@@ -136,6 +159,9 @@ export async function apply(ctx: Context, config: Config = {}, internals: RetryI
   const random = internals.random ?? Math.random
   const lifetime = new AbortController()
   const active = new Set<Promise<RequestErrorAction>>()
+  const failoverReady = failoverConfig.enabled
+    ? installFailover(ctx, failoverConfig, lifetime.signal, cancellableDelay)
+    : undefined
 
   function track(operation: Promise<RequestErrorAction>): Promise<RequestErrorAction> {
     const tracked = operation.finally(() => active.delete(tracked))
@@ -206,7 +232,7 @@ export async function apply(ctx: Context, config: Config = {}, internals: RetryI
           downstream.error,
         )
       }
-      if (downstream.type === 'decision' && downstream.decision?.kind === 'retry') {
+      if (downstream.type === 'decision' && downstream.decision !== undefined) {
         return downstream.decision
       }
     } else if (!policy.retryableCodes.includes(failure.code)) {
@@ -245,7 +271,14 @@ export async function apply(ctx: Context, config: Config = {}, internals: RetryI
     // removed. Lifetime cancellation must prevent that stale callback from
     // entering a downstream policy after disposal.
     if (lifetime.signal.aborted) return Promise.resolve<RequestErrorAction>(undefined)
-    return track(recover(payload, next))
+    return track((async () => {
+      const failover = await failoverReady
+      if (lifetime.signal.aborted || payload.signal.aborted) return
+      const decision = await failover?.(payload)
+      if (decision !== undefined) return decision
+      if (AbortSignal.any([lifetime.signal, payload.signal]).aborted) return
+      return recover(payload, next)
+    })())
   })
 
   ctx.effect(() => async () => {
@@ -254,4 +287,5 @@ export async function apply(ctx: Context, config: Config = {}, internals: RetryI
     await Promise.allSettled([...active])
   }, 'llm-retry: abort and drain active recovery')
   await projectionReady
+  await failoverReady
 }

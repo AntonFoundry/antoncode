@@ -1934,7 +1934,7 @@ describe('automatic listener and loader composition', () => {
     const turn = owner.session.snapshotEvents().findLast(event => event.type === 'turn/start')?.data.turn ?? 1
     return agentEvents(ctx, owner).waterfall(
       'agent/request-error',
-      { turn, step: 1, provider: 'test', failure, retryPolicy: undefined, signal },
+      { turn, step: 1, provider: 'test', model: 'mock', modelSelection: { provider: 'test', model: 'mock' }, pendingMessages: [], failure, retryPolicy: undefined, signal },
       next,
     ).then(action => action?.kind === 'retry')
   }

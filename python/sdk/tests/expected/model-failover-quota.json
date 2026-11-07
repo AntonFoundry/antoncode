@@ -1,0 +1,42 @@
+{
+  "final_response": "FALLBACK_COMPLETED",
+  "finish_reason": "completed",
+  "attempts": [
+    {
+      "selection": {
+        "provider": "deepseek-official",
+        "model": "deepseek-v4-flash"
+      },
+      "code": "QUOTA"
+    }
+  ],
+  "switches": [
+    {
+      "primary": {
+        "provider": "deepseek-official",
+        "model": "deepseek-v4-flash"
+      },
+      "from": {
+        "provider": "deepseek-official",
+        "model": "deepseek-v4-flash"
+      },
+      "to": {
+        "provider": "snapshot-fallback",
+        "model": "fallback-chat"
+      },
+      "reason": "failure",
+      "failureCode": "QUOTA"
+    }
+  ],
+  "notices": [
+    "[automatic model switch: deepseek-official/deepseek-v4-flash \u2192 snapshot-fallback/fallback-chat; QUOTA]"
+  ],
+  "assistant_sources": [
+    {
+      "kind": "model",
+      "provider": "snapshot-fallback",
+      "model": "fallback-chat"
+    }
+  ],
+  "manual_selections": []
+}

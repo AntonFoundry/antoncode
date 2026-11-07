@@ -4964,6 +4964,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'payload', description: '.message - the inserted message. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
   },
   {
+    name: 'agent/model-selection',
+    mode: 'waterfall',
+    signature: '\'agent/model-selection\'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; requestedSelection: Readonly<ModelSelection>; messages: readonly UserMessage[]; signal: AbortSignal }, next: () => Promise<Readonly<ModelSelection>>): Promise<Readonly<ModelSelection>>',
+    summary: 'Resolve an effective model before admitting route-dependent tools and prompt sections.',
+    description: 'Resolve an effective model before admitting route-dependent tools and prompt sections. Does not record a manual model choice. The fallback returns the requested candidate unchanged.',
+    parameters: [{ name: 'payload', description: '.signal - the turn abort signal. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+  },
+  {
     name: 'agent/pre-step',
     mode: 'waterfall',
     signature: '\'agent/pre-step\'(this: Scoped<Agent>, payload: { agent: Agent; messages: UserMessage[]; turn: number; step: number; signal: AbortSignal; modelSelection: Readonly<ModelSelection> }, next: () => Promise<PreStepDecision>): Promise<PreStepDecision>',
@@ -4974,15 +4982,15 @@ export const EVENT_API: readonly EventApiEntry[] = [
   {
     name: 'agent/request-error',
     mode: 'waterfall',
-    signature: '\'agent/request-error\'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; failure: LlmFailure; retryPolicy: ResolvedRetryPolicy | undefined; signal: AbortSignal }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>',
+    signature: '\'agent/request-error\'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; model: string; modelSelection: Readonly<ModelSelection>; pendingMessages: readonly UserMessage[]; failure: LlmFailure; retryPolicy: ResolvedRetryPolicy | undefined; signal: AbortSignal }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>',
     summary: 'Handle one failed model-request attempt before the loop retries or closes its step.',
-    description: 'Handle one failed model-request attempt before the loop retries or closes its step. A listener returns `{ kind: \'retry\' }` without calling `next()` when it owns recovery, or calls `next()` to delegate. The default `undefined` leaves the failure terminal.',
+    description: 'Handle one failed model-request attempt before the loop retries or closes its step. A listener returns `{ kind: \'retry\' }` to repeat the effective route, or `{ kind: \'retry-route\', selection }` to prepare that route with fresh tool and prompt admission without admitting accepted user input again. Neither action records a manual model choice. Call `next()` to delegate; the default `undefined` leaves the failure terminal. Failed partial output is log-only and its tool calls are never executed. Exact `MODEL_UNAVAILABLE` failures from adapter call preparation also enter recovery before input admission, without a stream attempt or serving retry policy. Other preparation and middleware errors remain terminal. Either action may supply `expiresAt`, an absolute epoch-millisecond deadline retained through later recovery attempts in this step; omission preserves an existing deadline or leaves recovery unbounded. Expiry fails with `RECOVERY_EXPIRED`; user cancellation retains its abort cause.',
     parameters: [{ name: 'payload', description: '.signal - the turn abort signal. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
   },
   {
     name: 'agent/request-prepared',
     mode: 'serial',
-    signature: '\'agent/request-prepared\'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; model: string; contextWindow?: number; messages: readonly Message[]; signal: AbortSignal }): Promise<void>',
+    signature: '\'agent/request-prepared\'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; model: string; contextWindow?: number; messages: readonly Message[]; signal: AbortSignal; routeRecovery?: true }): Promise<void>',
     summary: 'Run preflight after route and header logging, before messages are frozen.',
     description: 'Run preflight after route and header logging, before messages are frozen. Listeners may update durable state; the loop derives messages again after they settle.',
     parameters: [{ name: 'payload', description: '.signal - the current turn\'s explicit abort signal. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
@@ -8213,7 +8221,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RequestErrorAction',
-    declaration: 'export type RequestErrorAction = {\n    kind: \'retry\';\n} | undefined;',
+    declaration: 'export type RequestErrorAction = {\n    kind: \'retry\';\n    expiresAt?: number;\n} | {\n    kind: \'retry-route\';\n    selection: Readonly<ModelSelection>;\n    expiresAt?: number;\n} | undefined;',
   },
   {
     name: 'RequestHeaderReason',

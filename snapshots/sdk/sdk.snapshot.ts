@@ -130,6 +130,7 @@ interface SdkAssertions {
 }
 
 const SDK_ASSERTIONS: Readonly<Record<string, SdkAssertions>> = {
+  'model-failover-quota': { expectedFinalResponse: 'FALLBACK_COMPLETED' },
   'approval': {
     approvalOutcomes: ['allowed-once', 'rejected'],
     environment: { DSH_PERMISSION_MODE: 'workspace-write' },
@@ -1014,6 +1015,21 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
       )
       reconcileCatalogCreationTimes(ordered.map(log => log.content), 'validate')
       const actualContext = contextOf(ordered, cwd)
+      if (scenario.name === 'model-failover-quota') {
+        const events = results.flatMap(result => result.events)
+        expect(events.filter(event => event.type.startsWith('llm/failover'))
+          .map(event => event.type)).toEqual(['llm/failover-attempt', 'llm/failover'])
+        expect(events.find(event => event.type === 'assistant/message')).toMatchObject({ data: {
+          message: { source: { kind: 'model', provider: 'snapshot-fallback', model: 'fallback-chat' } },
+        } })
+        const notices = events.filter(event => event.type === 'user/message'
+          && event.data.source.kind === 'model-failover')
+        expect(notices).toHaveLength(1)
+        expect(notices[0]).toMatchObject({ surfaceOp: 'append', data: {
+          content: [{ type: 'text', text:
+            '[automatic model switch: deepseek-official/deepseek-v4-flash → snapshot-fallback/fallback-chat; QUOTA]' }],
+        } })
+      }
       if (scenario.name === 'ptc-cancel') {
         const events = results.flatMap(result => result.events)
         expect(events.find(event => event.type === 'tool/result')).toMatchObject({ data: {

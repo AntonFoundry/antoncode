@@ -2960,11 +2960,49 @@ export interface ReplayModelConfig {
 ## `@deepseek-ai/dsh-llm-retry`
 
 - `inject`: `agents` · `sessionProjections`
-- `source`: [`packages/llm/llm-retry/src/index.ts:25`](../packages/llm/llm-retry/src/index.ts)
+- `source`: [`packages/llm/llm-retry/src/index.ts:27`](../packages/llm/llm-retry/src/index.ts)
 
 ```ts config-catalog
-/** This policy executor has no config; providers own `retryPolicy`. */
-export type Config = Readonly<Record<string, never>>
+/** Host recovery settings; providers continue to own same-route `retryPolicy`. */
+export interface Config {
+  /** Optional ordered route recovery; omission disables automatic failover. */
+  failover?: FailoverConfig
+}
+
+/** Optional failover policy; omission preserves the provider's existing retry behavior. */
+export interface FailoverConfig {
+  /** Enable automatic route recovery; omission is false. */
+  enabled?: boolean
+  /** Exact ordered alternatives per primary; enabled policies require at least one chain. */
+  chains?: Array<{
+    /** Primary route whose failures activate these ordered alternatives. */
+    primary: {
+      /** Registered provider ID. */
+      provider: string
+      /** Exact model ID within the provider. */
+      model: string
+    }
+    /** Ordered alternatives; each chain requires one through 32 distinct routes. */
+    fallbacks: Array<{
+      /** Registered provider ID. */
+      provider: string
+      /** Exact model ID within the provider. */
+      model: string
+    }>
+  }>
+  /** Session-local fallback duration in milliseconds; default 300000. */
+  cooldownMs?: number
+  /** Same-route transient retries before switching; default 1, maximum 10. */
+  sameRouteRetries?: number
+  /** Minimum same-route retry delay in milliseconds; default 500. */
+  retryDelayMs?: number
+  /** Maximum failed requests and rejected candidates per step; default 8, maximum 64. */
+  maxAttempts?: number
+  /** Recovery budget through target admission, preparation and streaming in milliseconds; default 120000. */
+  maxElapsedMs?: number
+  /** Additional conservative request-capacity reserve; default 8192 tokens. */
+  contextHeadroomTokens?: number
+}
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-llm-retry -->
 

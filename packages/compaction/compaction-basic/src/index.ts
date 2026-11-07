@@ -155,9 +155,9 @@ export class BasicCompactionEngine extends CompactionEngine {
     }
 
     ctx.on('agent/request-prepared', async (
-      { agent, provider, model, contextWindow, messages, signal },
+      { agent, provider, model, contextWindow, messages, signal, routeRecovery },
     ) => {
-      if (signal.aborted) return
+      if (signal.aborted || routeRecovery === true) return
       try {
         const result = await this.compactIfNeeded(agent, 'pressure', signal, { provider, model, ...(contextWindow === undefined ? {} : { contextWindow }), messages })
         if (result !== null) logResult(result, 'request pressure')
@@ -177,8 +177,9 @@ export class BasicCompactionEngine extends CompactionEngine {
 
     // Prepend wraps routing listeners: await their final selection while the
     // committed header still identifies the model that can summarize the history.
-    ctx.on('agent/request', async ({ agent, signal }, next) => {
+    ctx.on('agent/request', async ({ agent, signal, routeRecovery }, next) => {
       const config = await next()
+      if (routeRecovery === true) return config
       const previous = agent.session.requestHeader()
       if (signal.aborted || previous === undefined || config.provider === '' || config.model === ''
         || (previous.config.provider === config.provider && previous.config.model === config.model)) return config

@@ -1357,6 +1357,36 @@ describe('headless recorded-session snapshots', () => {
           },
           inspect: async (cwd) => {
             actualLogs = await persistedSessions(cwd)
+            if (scenario.name === 'model-failover-quota') {
+              const events = parseSessionLog(actualLogs[0]!.content)
+              const primary = { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
+              const fallback = { provider: 'snapshot-fallback', model: 'fallback-chat' }
+              expect(events.filter(event => event.type === 'request/header')
+                .map(event => event.data.header.config)).toEqual([
+                  { ...primary, maxTokens: 8192 }, { ...fallback, maxTokens: 8192 },
+                ])
+              const attempts = events.filter(event => event.type === 'llm/failover-attempt')
+              const switches = events.filter(event => event.type === 'llm/failover')
+              expect(attempts).toMatchObject([{ data: { primary, attempt: { selection: primary, code: 'QUOTA' }, turn: 1, step: 1 } }])
+              expect(switches).toMatchObject([{ data: { primary, from: primary, to: fallback, reason: 'failure', failureCode: 'QUOTA', turn: 1, step: 1 } }])
+              expect(switches[0]!.data.cooldownUntil - attempts[0]!.data.startedAt).toBeGreaterThanOrEqual(300000)
+              expect(switches[0]!.data.cooldownUntil).toBeGreaterThan(switches[0]!.time)
+              for (const event of [...attempts, ...switches]) {
+                expect(event).not.toHaveProperty('ignorable')
+                expect(event).not.toHaveProperty('surfaceOp')
+              }
+              expect(events.filter(event => event.type === 'user/message'
+                && event.data.source.kind === 'model-failover')).toMatchObject([{
+                surfaceOp: 'append', data: { content: [{ type: 'text', text:
+                  '[automatic model switch: deepseek-official/deepseek-v4-flash → snapshot-fallback/fallback-chat; QUOTA]' }],
+                source: { kind: 'model-failover', form: 'notice' } },
+              }])
+              expect(events.filter(event => event.type === 'model/selection' || event.type === 'llm/failover-exhausted')).toEqual([])
+              expect(events.find(event => event.type === 'assistant/message')).toMatchObject({ data: {
+                message: { source: { kind: 'model', ...fallback }, content: [{ type: 'text', text: 'FALLBACK_COMPLETED' }] },
+              } })
+              expect(events.at(-1)).toMatchObject({ type: 'turn/end', data: { reason: { kind: 'completed' } } })
+            }
             if (scenario.name === 'empty-response-retry-current') {
               const events = parseSessionLog(actualLogs[0]!.content)
               expect(events.filter(event => event.type === 'assistant/attempt' || event.type === 'llm/retry'

@@ -1,0 +1,35 @@
+# Keyless exact-route failover through the shipped profile.
+- id: llm-deepseek
+  disabled: true
+- id: plugin-package-inventory-deepseek
+  disabled: true
+- id: time-context
+  disabled: true
+- id: llm-retry
+  config:
+    failover:
+      enabled: true
+      cooldownMs: 300000
+      sameRouteRetries: 0
+      maxAttempts: 4
+      chains:
+        - primary: {provider: deepseek-official, model: deepseek-v4-flash}
+          fallbacks:
+            - {provider: snapshot-fallback, model: fallback-chat}
+- insert:
+    - id: llm-replay
+      name: '@deepseek-ai/dsh-llm-replay'
+      config:
+        providers:
+          - id: deepseek-official
+            name: Primary
+            models:
+              - id: deepseek-v4-flash
+                contextWindow: 1000000
+                defaultMaxTokens: 8192
+          - id: snapshot-fallback
+            name: Fallback
+            models:
+              - id: fallback-chat
+                contextWindow: 1000000
+                defaultMaxTokens: 8192

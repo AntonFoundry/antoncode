@@ -265,6 +265,52 @@ describe('CBR-001: a real-loop checkpoint is a valid boundary on both sides', ()
     }
   })
 
+  it.each(['retry', 'preselection'] as const)('preserves accepted history without automatic compaction on %s route recovery', async (mode) => {
+    class RecoveryAdapter extends RoutedCapacityAdapter {
+      override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+        if (options.provider === 'large') {
+          yield { type: 'finish', reason: { kind: 'error', failure: { code: 'SERVER', message: 'primary overloaded' } } }
+          return
+        }
+        yield* super.stream(options)
+      }
+    }
+    const ctx = new Context()
+    const adapter = new RecoveryAdapter()
+    await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(AgentLoop, { agents: [] })
+    await ctx.plugin(TokenMeter)
+    ctx.llm.registerAdapter(['large', 'small'], adapter)
+    await ctx.plugin(BasicCompactionEngine, { thresholdRatio: 0.5, retainTokens: 50, compactionRetries: 1 })
+    try {
+      const seed = Session.create(SessionId(`automatic-route-${mode}`))
+      seed.append('request/header', { header: { config: { provider: 'large', model: 'shared-id' } }, reason: 'initial' })
+      seed.append('request/context', { provider: 'large', model: 'shared-id', contextWindow: 10_000 })
+      seed.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: 'PRESERVED ORIGINAL HISTORY '.repeat(80) }], source: { kind: 'user' },
+      }), { surfaceOp: 'append' })
+      const { agent } = await ctx.agentLoop.createAgent(ctx, {
+        sessionId: seed.id, seed: seed.snapshotEvents(), agentOptions: { provider: 'large', model: 'shared-id' },
+      })
+      if (mode === 'preselection') {
+        ctx.on('agent/model-selection', async () => ({ provider: 'small', model: 'shared-id' }))
+      } else {
+        ctx.on('agent/request-error', async () => ({ kind: 'retry-route', selection: { provider: 'small', model: 'shared-id' } }))
+      }
+      const preparedMarkers: (true | undefined)[] = []
+      ctx.on('agent/request-prepared', async ({ routeRecovery }) => { preparedMarkers.push(routeRecovery) })
+      agent.followup(createUserMessage({ content: [{ type: 'text', text: 'keep input intact' }], source: { kind: 'user' } }))
+      await agent.whenIdle()
+      expect(adapter.summaryRequests).toEqual([])
+      expect(adapter.conversationRequests).toHaveLength(1)
+      expect(JSON.stringify(adapter.conversationRequests[0]?.messages)).toContain('PRESERVED ORIGINAL HISTORY')
+      expect(agent.session.snapshotEvents().some(event => event.type === 'compaction/summary')).toBe(false)
+      expect(preparedMarkers).toEqual(mode === 'retry' ? [undefined, true] : [true])
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('uses the final smaller model capacity after request routing and before dispatch', async () => {
     const ctx = new Context()
     const adapter = new RoutedCapacityAdapter()

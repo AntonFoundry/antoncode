@@ -19,7 +19,7 @@ import type {
   RequestErrorAction,
 } from '@deepseek-ai/dsh-agent'
 import { AgentModel, agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
-import type { GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, LlmCallConfig, LlmFailure, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
 import {
   LlmError,
   createAssistantMessage,
@@ -70,6 +70,8 @@ type PreparedStep =
     startsRequestSeries?: true
     assembly: PromptAssembly
     selection: Readonly<ModelSelection>
+    routeRecovery?: true
+    recovery?: { expiresAt: number; signal: AbortSignal; dispose(): void }
     /** Admission shared by the step's declarations and dispatch; the turn disposes it after the step. */
     toolSet: ResolvedToolSet
   }
@@ -285,13 +287,19 @@ export class ReactLoopAgent implements Agent {
     if (this.phase.kind !== 'running') throw new Error(`agent "${this.id}": pre-step outside running phase`)
     const signal = this.phase.abort.signal
     const claimed = this.inbox.claim(target, position.turn)
-    const selection = this.model.current()
-    if (selection === undefined) {
+    const requestedSelection = this.model.current()
+    if (requestedSelection === undefined) {
       throw new Error(`agent "${this.id}" has no provider/model: set AgentOptions.provider and AgentOptions.model or record a model selection`)
     }
-    const toolSet = await this.loopCtx.tools.resolve({ agent: this, modelSelection: selection, signal })
+    const requested = deepFreeze(structuredClone(requestedSelection))
+    const effective = await this.dispatch.waterfall(
+      'agent/model-selection', { ...position, requestedSelection: requested, messages: deepFreeze(structuredClone(claimed)), signal },
+      () => Promise.resolve(requested),
+    )
+    signal.throwIfAborted()
+    const selection = deepFreeze(structuredClone(effective))
+    const { assembly, toolSet } = await this.assembleRoute(selection, signal)
     try {
-      const assembly = await this.loopCtx.systemPrompt.assemble({ ...assembleContextFor(this, signal), modelSelection: selection, toolSet })
       signal.throwIfAborted()
       const decision = await this.dispatch.waterfall(
         'agent/pre-step', { messages: claimed, ...position, signal, modelSelection: selection },
@@ -309,7 +317,25 @@ export class ReactLoopAgent implements Agent {
         toolSet.dispose()
         return decision
       }
-      return { ...decision, assembly, selection, toolSet }
+      const routeRecovery = selection.provider !== requested.provider || selection.model !== requested.model
+        || selection.reasoningEffort !== requested.reasoningEffort
+      return { ...decision, assembly, selection, toolSet, ...routeRecovery ? { routeRecovery: true as const } : {} }
+    } catch (error: unknown) {
+      toolSet.dispose()
+      throw error
+    }
+  }
+
+  /** Resolve route-dependent admission, releasing it if prompt assembly fails. */
+  private async assembleRoute(
+    selection: Readonly<ModelSelection>,
+    signal: AbortSignal,
+  ): Promise<{ assembly: PromptAssembly; toolSet: ResolvedToolSet }> {
+    const toolSet = await this.loopCtx.tools.resolve({ agent: this, modelSelection: selection, signal })
+    try {
+      const assembly = await this.loopCtx.systemPrompt.assemble({ ...assembleContextFor(this, signal), modelSelection: selection, toolSet })
+      signal.throwIfAborted()
+      return { assembly, toolSet }
     } catch (error: unknown) {
       toolSet.dispose()
       throw error
@@ -390,6 +416,7 @@ export class ReactLoopAgent implements Agent {
         } finally {
           // Admission closes once the step's tool batch settles or no step opens.
           decision.toolSet.dispose()
+          decision.recovery?.dispose()
         }
         signal.throwIfAborted()
         if (turnEnds && this.inbox.nextStep.length === 0) {
@@ -433,18 +460,45 @@ export class ReactLoopAgent implements Agent {
   }
 
   private async step(decision: Extract<PreparedStep, { kind: 'enter' }>): Promise<StepEndReason | null> {
+    try {
+      return await this.runStep(decision)
+    } catch (error: unknown) {
+      if (this.phase.kind === 'running' && !this.phase.abort.signal.aborted && decision.recovery?.signal.aborted) {
+        throw new LlmError('Model request recovery exceeded its deadline', 'RECOVERY_EXPIRED', { cause: error })
+      }
+      throw error
+    }
+  }
+
+  private async runStep(decision: Extract<PreparedStep, { kind: 'enter' }>): Promise<StepEndReason | null> {
     /* v8 ignore next -- private callers establish the running phase before executing a step */
     if (this.phase.kind !== 'running') throw new Error(`agent "${this.id}": step outside running phase`)
-    const { turn, step, abort: { signal } } = this.phase
-    signal.throwIfAborted()
+    const { turn, step, abort: { signal: turnSignal } } = this.phase
+    turnSignal.throwIfAborted()
 
-    const { assembly } = decision
-    const renderedPrompt = renderPrompt(assembly)
     let firstAttempt = true
     while (true) {
-      const { config, preparedCall } = await this.prepareRequest(turn, step, decision.selection, signal)
+      const signal = decision.recovery?.signal ?? turnSignal
+      signal.throwIfAborted()
+      const { assembly, selection } = decision
+      const renderedPrompt = renderPrompt(assembly)
+      const prepared = await this.prepareRequest(turn, step, selection, signal, decision.routeRecovery)
+      if (prepared.kind === 'unavailable') {
+        const action = await this.dispatch.waterfall(
+          'agent/request-error', {
+            turn, step, provider: selection.provider, model: selection.model,
+            modelSelection: selection,
+            pendingMessages: deepFreeze(structuredClone(firstAttempt ? decision.messages : [])),
+            failure: prepared.failure, retryPolicy: undefined, signal,
+          },
+          () => Promise.resolve<RequestErrorAction>(undefined),
+        )
+        await this.recoverRequest(action, decision, prepared.failure, signal)
+        continue
+      }
+      const { config, preparedCall } = prepared
       const currentContext = this.loopCtx.systemPrompt.refreshContext(assembly, {
-        ...assembleContextFor(this, signal), modelSelection: decision.selection,
+        ...assembleContextFor(this, signal), modelSelection: selection,
       })
       const sections = renderContextSections(currentContext)
       const context = this.runtimeContext.project(joinContextSections(sections), sections)
@@ -476,7 +530,9 @@ export class ReactLoopAgent implements Agent {
         this.session.append('user/message', context, { surfaceOp: 'append' })
       }
       firstAttempt = false
-      const request = await this.buildRequest(config, preparedCall, assembly.tools, { turn, step }, startsRequestSeries, signal)
+      const request = await this.buildRequest(
+        config, preparedCall, assembly.tools, { turn, step }, startsRequestSeries, signal, decision.routeRecovery,
+      )
       const live = new AssistantStreamAttempt(
         this.session.id,
         ++this.assistantAttemptCounter,
@@ -499,7 +555,7 @@ export class ReactLoopAgent implements Agent {
       } catch (error: unknown) {
         if (!started) throw error
         try {
-          if (signal.aborted) {
+          if (turnSignal.aborted) {
             const content = live.interruptedBlocks()
             if (content.length > 0) {
               live.settle('assistant/message', () => this.session.append('assistant/message', {
@@ -550,16 +606,20 @@ export class ReactLoopAgent implements Agent {
               turn,
               step,
               provider: request.provider,
+              model: request.model,
+              modelSelection: deepFreeze({
+                provider: request.provider,
+                model: request.model,
+                ...request.reasoningEffort === undefined ? {} : { reasoningEffort: request.reasoningEffort },
+              }),
+              pendingMessages: Object.freeze([]),
               failure: finish.failure,
               retryPolicy: preparedCall?.retryPolicy,
               signal,
             },
             () => Promise.resolve<RequestErrorAction>(undefined),
           )
-          signal.throwIfAborted()
-          if (action?.kind !== 'retry') {
-            throw new LlmError(finish.failure.message, finish.failure.code, finish.failure)
-          }
+          await this.recoverRequest(action, decision, finish.failure, signal)
           continue
         }
 
@@ -609,13 +669,59 @@ export class ReactLoopAgent implements Agent {
     }
   }
 
+  /** Apply recovery only after cancellation checks, replacing admission after successful target assembly. */
+  private async recoverRequest(
+    action: RequestErrorAction,
+    decision: Extract<PreparedStep, { kind: 'enter' }>,
+    failure: LlmFailure,
+    signal: AbortSignal,
+  ): Promise<void> {
+    signal.throwIfAborted()
+    if (action === undefined) throw new LlmError(failure.message, failure.code, failure)
+    if (action.expiresAt !== undefined && (decision.recovery === undefined || action.expiresAt < decision.recovery.expiresAt)) {
+      decision.recovery?.dispose()
+      const controller = new AbortController()
+      const remaining = action.expiresAt - Date.now()
+      if (remaining <= 0) throw new LlmError('Model request recovery exceeded its deadline', 'RECOVERY_EXPIRED')
+      const timer = setTimeout(() => controller.abort(), Math.min(remaining, 2_147_483_647))
+      timer.unref()
+      decision.recovery = {
+        expiresAt: action.expiresAt,
+        signal: AbortSignal.any([signal, controller.signal]),
+        dispose: () => clearTimeout(timer),
+      }
+    }
+    const recoverySignal = decision.recovery?.signal ?? signal
+    recoverySignal.throwIfAborted()
+    switch (action.kind) {
+      case 'retry':
+        return
+      case 'retry-route': {
+        const selection = deepFreeze(structuredClone(action.selection))
+        const admitted = await this.assembleRoute(selection, recoverySignal)
+        decision.toolSet.dispose()
+        decision.toolSet = admitted.toolSet
+        decision.assembly = admitted.assembly
+        decision.selection = selection
+        decision.routeRecovery = true
+        return
+      }
+      default:
+        return assertNever(action)
+    }
+  }
+
   /** Resolve request config for the step's selection and bind its adapter before admitting model-visible input. */
   private async prepareRequest(
     turn: number,
     step: number,
     selection: Readonly<ModelSelection>,
     signal: AbortSignal,
-  ): Promise<{ config: LlmCallConfig; preparedCall?: PreparedLlmCall }> {
+    routeRecovery?: true,
+  ): Promise<
+    | { kind: 'prepared'; config: LlmCallConfig; preparedCall?: PreparedLlmCall }
+    | { kind: 'unavailable'; failure: LlmFailure }
+  > {
     const { session } = this
 
     // A loop instance seeds output controls from its options until it logs its
@@ -628,7 +734,7 @@ export class ReactLoopAgent implements Agent {
     const { provider: _provider, model: _model, reasoningEffort: _effort, ...controls } = persisted
     const seedConfig = deepFreeze(structuredClone({ ...controls, ...selection }))
     const proposedConfig = await this.dispatch.waterfall(
-      'agent/request', { turn, step, signal },
+      'agent/request', { turn, step, signal, ...routeRecovery === true ? { routeRecovery } : {} },
       () => Promise.resolve(seedConfig),
     )
     signal.throwIfAborted()
@@ -644,12 +750,13 @@ export class ReactLoopAgent implements Agent {
       preparedCall = await this.loopCtx.llm.prepareCall(proposedConfig, signal)
       config = preparedCall.config
     } catch (error: unknown) {
+      if (error instanceof LlmError && error.code === 'MODEL_UNAVAILABLE') return { kind: 'unavailable', failure: error.failure }
       // Middleware may serve an unregistered route; terminal dispatch still requires an adapter.
       if (!(error instanceof LlmError) || error.code !== 'NO_ADAPTER') throw error
       config = proposedConfig
     }
     signal.throwIfAborted()
-    return { config, ...preparedCall === undefined ? {} : { preparedCall } }
+    return { kind: 'prepared', config, ...preparedCall === undefined ? {} : { preparedCall } }
   }
 
   /**
@@ -663,6 +770,7 @@ export class ReactLoopAgent implements Agent {
     position: { turn: number; step: number },
     startsRequestSeries: boolean,
     signal: AbortSignal,
+    routeRecovery?: true,
   ): Promise<GenerateOptions> {
     const { session } = this
     const surfaceGeneration = session.surface.contentGeneration
@@ -731,6 +839,7 @@ export class ReactLoopAgent implements Agent {
       provider: config.provider,
       model: config.model,
       ...(contextWindow === undefined ? {} : { contextWindow }),
+      ...routeRecovery === true ? { routeRecovery } : {},
       messages,
       signal,
     })

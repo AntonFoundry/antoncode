@@ -18,7 +18,7 @@ The prior boundary left three narrower gaps.
 - Retry ownership differs by adapter. The hand-written DeepSeek adapter makes one attempt, while pi-ai profiles can enable opaque library retries. Combining hidden transport retries with an `agent/request-error` listener would multiply attempts and omit intermediate failures from the session log.
 - A recovered failure has no durable status fact. The failed step and chunks remain reconstructable, but an observer cannot tell whether the agent is deliberately backing off, for how long, or why. A long silent wait looks like a stalled loop.
 
-The default policy provides bounded recovery from transient failures of the same explicit provider/model request. Provider or model failover, response splicing, and semantic output repair are different problems and have no current consumer.
+The default policy provides bounded recovery from transient failures of the same explicit provider/model request. [Host-owned automatic model failover](../feature/2026-10-26-automatic-model-failover.md) partially supersedes this note's exclusion of cross-route recovery; this note retains ownership of structured failures, separate attempts and same-route retry. Response splicing and semantic output repair remain outside its scope.
 
 ## Decision
 
@@ -88,7 +88,7 @@ If recovery is exhausted, the final failure is stored once on `turn/end.reason` 
 
 ## Out of scope
 
-- Automatic provider or model failover. Requests already select one explicit provider and model, and the provider registry deliberately has one adapter owner per provider.
+- Automatic provider or model failover belongs to the [Host failover policy](../feature/2026-10-26-automatic-model-failover.md), not the default same-route policy.
 - Retrying or continuing after a successful terminal finish, or splicing chunks from two attempts into one assistant message.
 - Repairing malformed tool arguments, refusals, content filters, or other semantic model output.
 - Circuit breakers, shared provider health, or cross-agent retry budgets.
@@ -98,7 +98,7 @@ If recovery is exhausted, the final failure is stored once on `turn/end.reason` 
 
 - **Retry inside `llm/stream` or the provider SDK** — rejected because a raw stream has no durable attempt boundary after emitting chunks, hidden SDK retries multiply budgets, and neither path can record each failed attempt consistently.
 - **Add response start, interrupted, discarded, failed, and committed events to `dsh-llm`** — rejected because the agent log already separates raw chunks, successful messages, and numbered attempts. A second state machine would duplicate ownership without enabling the bounded same-route retry.
-- **Add logical routes, capability matrices, and failover selection** — rejected because current requests already name provider and model explicitly, one adapter owns each provider, and no current consumer requires automatic fallback or can prove semantic compatibility.
+- **Add logical routes, capability matrices, and failover selection** — the [Host failover decision](../feature/2026-10-26-automatic-model-failover.md) supersedes this rejection for explicit opt-in route chains; provider/model routing and one adapter owner per provider remain unchanged.
 - **Put `retryable` or `failover` on `LlmFailure`** — rejected because adapters report facts while deployment policy decides action. The same 429 may be retried in an interactive bundle and rejected in a cost-capped batch.
 - **Retry forever while the caller remains active** — the [per-provider policy](../../archived/feature/2026-07-24-provider-retry-policies.md) supersedes this rejection for explicit `always` entries while retaining bounded normal mode as the default.
 - **Log retry status only through the process logger** — rejected because process logs do not reconstruct session behavior and cannot drive replayed UI state.

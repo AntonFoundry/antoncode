@@ -329,8 +329,8 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'LLM adapter registry',
     mode: 'seam',
     implementations: ['llm-deepseek', 'llm-pi-ai', 'llm-replay'],
-    consumers: ['agent-loop', 'compaction-basic'],
-    note: 'Adapters register provider implementations; the loop and compaction call the provider-neutral stream service.',
+    consumers: ['agent-loop', 'compaction-basic', 'llm-retry'],
+    note: 'Adapters register provider implementations; the loop and compaction stream requests, while retry policy resolves route metadata.',
   },
   {
     key: 'deepseekLlmApiExtensions',
@@ -354,8 +354,8 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'token-meter',
     title: 'Replay token measurement',
     mode: 'core',
-    consumers: ['compaction-basic'],
-    note: 'Owns isolated per-session replay folds; pressure consumers share immutable revisioned measurements.',
+    consumers: ['compaction-basic', 'llm-retry'],
+    note: 'Owns isolated per-session replay folds; pressure and optional failover-fit checks share immutable revisioned measurements.',
   },
   {
     key: 'toolResultPruner',

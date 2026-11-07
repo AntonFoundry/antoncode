@@ -379,7 +379,9 @@ Pre-step decisions use the same identified `UserMessage` type as durable user-ro
 
 Source: [`packages/core/agent/src/types.ts`](../../packages/core/agent/src/types.ts)
 
-`agent/pre-step` receives one payload carrying the exclusive claimed batch (`messages`), the proposed step's coordinates (`turn`, `step`), and the current turn's cancellation `signal`. The initial proposal runs inside an open turn before any step; a tool continuation may submit an empty claimed batch between steps:
+`agent/model-selection` resolves the effective route before route-aware tool and prompt admission. Its payload carries `agent`, `turn`, `step`, `requestedSelection: Readonly<ModelSelection>`, `messages: readonly UserMessage[]`, and `signal`; its fallback returns `requestedSelection`. `messages` is an immutable clone of claimed user input not yet admitted to the durable surface; alternate-fit policies must include it alongside retained history. The candidate comes from the current Session choice, which can be the last-used route. A listener returns the effective selection without changing `AgentModel` selection precedence. Cancellation prevents admission after the waterfall settles.
+
+`agent/pre-step` receives one payload carrying the exclusive claimed batch (`messages`), the proposed step's coordinates (`turn`, `step`), the effective `modelSelection`, and the current turn's cancellation `signal`. The initial proposal runs inside an open turn before any step; a tool continuation may submit an empty claimed batch between steps:
 
 It returns a `PreStepDecision`. Reject opens no step. Enter supplies the complete message batch appended after `step/start`; claimed messages omitted by the final decision remain removed, while input inserted after the claim stays pending:
 
@@ -395,14 +397,32 @@ type PreStepDecision =
   }
 ```
 
-`agent/request-error` runs after a failed model step closes and before its turn closes. Listeners can repair durable state or await policy work while the failed turn's signal is still live. A handling listener returns `{ kind: 'retry' }` without calling `next()`; the default `undefined` leaves the failure terminal.
+`agent/request-error` handles a failed model-request attempt before its step closes, or an exact `LlmError` with code `MODEL_UNAVAILABLE` thrown by `llm.prepareCall()` before input admission. Its `provider`, `model`, and `modelSelection` identify the failed route and effective effort; a precommit rejection has no resolved adapter defaults. Required `pendingMessages: readonly UserMessage[]` contains an immutable accepted-but-not-admitted batch for first-attempt preparation failure and is empty for streamed failures. Alternate-fit policies must include that batch alongside durable history.
+
+Listeners can repair durable state or await policy work while the turn's signal is still live. A handling listener returns `{ kind: 'retry' }` to reuse the selection and assembly, or `{ kind: 'retry-route', selection }` to use another complete selection, without calling `next()`; the default `undefined` leaves the failure terminal. A route retry reassembles target tools and prompt, binds a fresh prepared call, and applies ordinary capability checks and request logging without repeating `agent/pre-step` or user admission. A precommit route retry keeps first admission pending and commits accepted users once on the target. The unavailable route creates neither a request header nor an `assistant/attempt`, because no dispatch occurred; the recovery policy logs its failover fact. Only that `prepareCall()` failure enters recovery: middleware failures and other preparation errors, including authentication and context failures, remain terminal. Neither retry action records a manual model choice.
+
+Both recovery actions accept optional `expiresAt`, an absolute epoch-millisecond deadline for the logical recovery chain. The step owns a cancellable timer fused with turn cancellation across target admission, preparation, preflight, streaming, and later same-route retries. Expiry before target I/O fails with `RECOVERY_EXPIRED`; user cancellation retains aborted attribution. Expired partial output cannot become a committed assistant message.
+
+The loop marks `agent/request` and `agent/request-prepared` with `routeRecovery?: true` for route-retry attempts and when effective preselection differs from the requested selection. Listeners must preserve admitted input on marked requests rather than compact it; an absent marker permits ordinary request preparation. Automatic compaction skips pressure and model-switch condensation for marked requests; rerouting does not authorize shrinking accepted input. A preselection policy must admit its alternate with that history intact. Failed partial output remains an `assistant/attempt` and cannot dispatch tools. Cancellation wins over either retry action.
 
 ```ts type-equiv
-/** Action returned by a listener that owns model-request recovery. */
-type RequestErrorAction = { kind: 'retry' } | undefined
+/** Recovery for the same admitted input: retry the current route, select a fresh route, or leave the failure terminal. */
+type RequestErrorAction =
+  | {
+    kind: 'retry'
+    /** Absolute epoch-millisecond deadline; omission retains an existing recovery deadline or leaves it unbounded. */
+    expiresAt?: number
+  }
+  | {
+    kind: 'retry-route'
+    selection: Readonly<ModelSelection>
+    /** Absolute epoch-millisecond deadline; omission retains an existing recovery deadline or leaves it unbounded. */
+    expiresAt?: number
+  }
+  | undefined
 ```
 
-`agent/pre-step` is the serial admission chain before a step opens. After `agent/request` resolves the final route and the loop logs the canonical header and adapter capacity, serial `agent/request-prepared` runs before request messages are derived and frozen. Listeners may compact the durable surface; the loop re-derives messages after they settle. `agent/turn-stopping` runs when a turn has no tool or steering continuation, before one final steering drain.
+`agent/pre-step` is the serial admission chain before a step opens. After `agent/request` adjusts controls without changing the effective selection and the loop logs the canonical header and adapter capacity, serial `agent/request-prepared` runs before request messages are derived and frozen. Listeners may compact the durable surface; the loop re-derives messages after they settle. `agent/turn-stopping` runs when a turn has no tool or steering continuation, before one final steering drain.
 
 `agent/created` carries a `SessionStartSource` (why the session lifecycle began; a bridge keys its SessionStart matcher on it):
 
@@ -1036,6 +1056,32 @@ Types: [Scoped](scope.md) · [UserMessage](session.md)
 
 Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
 
+<a id="agentmodel-selection--waterfall"></a>
+
+#### `agent/model-selection` — waterfall
+
+Resolve an effective model before admitting route-dependent tools and prompt sections. Does not record a manual model choice. The fallback returns the requested candidate unchanged.
+
+```ts cordis-catalog
+/**
+ * Resolve an effective model before admitting route-dependent tools and prompt sections.
+ * Does not record a manual model choice. The fallback returns the requested candidate unchanged.
+ * @param payload.agent - the agent preparing a step.
+ * @param payload.turn - the turn containing the proposed step.
+ * @param payload.step - the proposed step number.
+ * @param payload.requestedSelection - current model candidate, which may be the last-used route.
+ * @param payload.messages - immutable claimed user input not yet admitted to the durable surface.
+ * @param payload.signal - the turn abort signal.
+ * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
+ * @mode waterfall
+ */
+'agent/model-selection'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; requestedSelection: Readonly<ModelSelection>; messages: readonly UserMessage[]; signal: AbortSignal }, next: () => Promise<Readonly<ModelSelection>>): Promise<Readonly<ModelSelection>>
+```
+
+Types: [Scoped](scope.md) · [UserMessage](session.md)
+
+Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
+
 <a id="agentpre-step--waterfall"></a>
 
 #### `agent/pre-step` — waterfall
@@ -1066,28 +1112,40 @@ Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/s
 
 #### `agent/request-error` — waterfall
 
-Handle one failed model-request attempt before the loop retries or closes its step. A listener returns `{ kind: 'retry' }` without calling `next()` when it owns recovery, or calls `next()` to delegate. The default `undefined` leaves the failure terminal.
+Handle one failed model-request attempt before the loop retries or closes its step. A listener returns `{ kind: 'retry' }` to repeat the effective route, or `{ kind: 'retry-route', selection }` to prepare that route with fresh tool and prompt admission without admitting accepted user input again. Neither action records a manual model choice. Call `next()` to delegate; the default `undefined` leaves the failure terminal. Failed partial output is log-only and its tool calls are never executed. Exact `MODEL_UNAVAILABLE` failures from adapter call preparation also enter recovery before input admission, without a stream attempt or serving retry policy. Other preparation and middleware errors remain terminal. Either action may supply `expiresAt`, an absolute epoch-millisecond deadline retained through later recovery attempts in this step; omission preserves an existing deadline or leaves recovery unbounded. Expiry fails with `RECOVERY_EXPIRED`; user cancellation retains its abort cause.
 
 ```ts cordis-catalog
 /**
  * Handle one failed model-request attempt before the loop retries or closes
- * its step. A listener returns `{ kind: 'retry' }` without calling `next()`
- * when it owns recovery, or calls `next()` to delegate. The default
- * `undefined` leaves the failure terminal.
+ * its step. A listener returns `{ kind: 'retry' }` to repeat the effective route,
+ * or `{ kind: 'retry-route', selection }` to prepare that route with fresh tool and
+ * prompt admission without admitting accepted user input again. Neither action
+ * records a manual model choice. Call `next()` to delegate; the default
+ * `undefined` leaves the failure terminal. Failed partial output is log-only and
+ * its tool calls are never executed. Exact `MODEL_UNAVAILABLE` failures from
+ * adapter call preparation also enter recovery before input admission, without
+ * a stream attempt or serving retry policy. Other preparation and middleware
+ * errors remain terminal. Either action may supply `expiresAt`, an absolute
+ * epoch-millisecond deadline retained through later recovery attempts in this
+ * step; omission preserves an existing deadline or leaves recovery unbounded.
+ * Expiry fails with `RECOVERY_EXPIRED`; user cancellation retains its abort cause.
  * @param payload.agent - the agent whose request failed.
  * @param payload.turn - the turn containing the failed request.
  * @param payload.step - the step containing the failed request attempt.
  * @param payload.provider - the provider selected for the failed request.
+ * @param payload.model - the model selected for the failed request.
+ * @param payload.modelSelection - the failed effective route and effort; preparation failures have no adapter-resolved defaults.
+ * @param payload.pendingMessages - immutable accepted input awaiting initial admission; empty after admission or when no input is pending.
  * @param payload.failure - serializable facts normalized at the final adapter boundary.
  * @param payload.retryPolicy - the policy of the adapter registration that served the failed request.
  * @param payload.signal - the turn abort signal.
  * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
  * @mode waterfall
  */
-'agent/request-error'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; failure: LlmFailure; retryPolicy: ResolvedRetryPolicy | undefined; signal: AbortSignal }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>
+'agent/request-error'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; model: string; modelSelection: Readonly<ModelSelection>; pendingMessages: readonly UserMessage[]; failure: LlmFailure; retryPolicy: ResolvedRetryPolicy | undefined; signal: AbortSignal }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>
 ```
 
-Types: [LlmFailure](llm-streaming.md) · [ResolvedRetryPolicy](llm-streaming.md) · [Scoped](scope.md)
+Types: [LlmFailure](llm-streaming.md) · [ResolvedRetryPolicy](llm-streaming.md) · [Scoped](scope.md) · [UserMessage](session.md)
 
 Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
 
@@ -1108,11 +1166,12 @@ Run preflight after route and header logging, before messages are frozen. Listen
  * @param payload.model - resolved provider model id.
  * @param payload.contextWindow - adapter-reported capacity, when available.
  * @param payload.messages - derived messages for the pending request.
+ * @param payload.routeRecovery - true for an automatic route alternative; listeners must not compact admitted input. Absent permits ordinary preflight surface changes.
  * @param payload.signal - the current turn's explicit abort signal.
  * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
  * @mode serial
  */
-'agent/request-prepared'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; model: string; contextWindow?: number; messages: readonly Message[]; signal: AbortSignal }): Promise<void>
+'agent/request-prepared'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; model: string; contextWindow?: number; messages: readonly Message[]; signal: AbortSignal; routeRecovery?: true }): Promise<void>
 ```
 
 Types: [Message](llm-streaming.md) · [Scoped](scope.md)

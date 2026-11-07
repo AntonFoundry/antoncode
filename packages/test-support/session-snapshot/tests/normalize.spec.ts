@@ -572,6 +572,26 @@ describe('normalizeSessionLog', () => {
     expect(normalized[6]?.data).toEqual({ startedAt: 300, finishedAt: 400 })
   })
 
+  it('normalizes only failover-owned clocks in comparisons and authored fixtures', () => {
+    const input = [
+      header({}),
+      { type: 'llm/failover-attempt', data: { startedAt: 100, attempt: { code: 'QUOTA' } } },
+      { type: 'llm/failover', data: { cooldownUntil: 300100, reason: 'failure' } },
+      { type: 'llm/failover', data: {} },
+      { type: 'llm/failover-attempt', data: null },
+      { type: 'tool/result', data: { startedAt: 100, cooldownUntil: 300100 } },
+    ].map(value => typeof value === 'string' ? value : JSON.stringify(value)).join('\n') + '\n'
+    for (const output of [normalizeSessionLog(input, ctx), scrubSessionSnapshot(input)]) {
+      const normalized = output.trim().split('\n').map(line => JSON.parse(line) as { data?: unknown })
+      expect(normalized.slice(1).map(record => record.data)).toEqual([
+        { startedAt: 0, attempt: { code: 'QUOTA' } },
+        { cooldownUntil: 0, reason: 'failure' },
+        {}, null,
+        { startedAt: 100, cooldownUntil: 300100 },
+      ])
+    }
+  })
+
   it('normalizes subagent catalog child creation clocks', () => {
     const catalog = JSON.stringify({
       type: 'subagent/catalog',
