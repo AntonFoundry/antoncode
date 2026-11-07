@@ -76,8 +76,10 @@ reuse it and deliberately refuses to kill a process it does not own.
 | `ANTON_NODE_BINARY` | `node` | Node executable used to launch Harness. |
 | `ANTON_CONTEXT_ENDPOINT` | `http://127.0.0.1:8090` | Memory-service health endpoint. |
 | `ANTON_CONTEXT_PLUGIN_ROOT` | sibling checkout or bundled plugin | Memory-plugin package linked into the Harness profile. |
-| `ANTON_BRIDGE_CONFIG` | `~/.anton/bridge.json` | Persistent Bridge preferences, including the memory-service endpoint. |
+| `ANTON_BRIDGE_CONFIG` | `~/.anton/bridge.json` | Persistent Bridge preferences, including the memory-service endpoint and LAN access. |
 | `ANTON_AUTO_START` | `true` | Set to `false` to start Harness only from the control page. |
+| `ANTON_BRIDGE_LAN` | `false` | Set to `true` to bind every interface and require the LAN token (see [LAN access](#lan-access)). |
+| `ANTON_BRIDGE_LAN_TOKEN` | *(none)* | Shared secret for LAN clients; at least 16 characters. |
 
 ## Build a local executable
 
@@ -117,11 +119,23 @@ service implementation of its own.
 
 ## Security boundary
 
-The bridge listens only on `127.0.0.1`. Its start/stop endpoints are under
-`/bridge/api` and reject cross-origin browser requests. This is local
-development plumbing, not the final remote-control protocol: the browser
-extension and hosted `antoncode.dev` flow will add device pairing, scoped
-workspace capabilities, request signing, and user approvals.
+The bridge listens only on `127.0.0.1` unless LAN access is enabled. Its start/stop endpoints are under `/bridge/api` and reject cross-origin browser requests, and they stay loopback-only even with LAN access on. This is local development plumbing, not the final remote-control protocol: the browser extension and hosted `antoncode.dev` flow will add device pairing, scoped workspace capabilities, request signing, and user approvals.
+
+## LAN access
+
+Other machines can reach the app through the bridge; Harness itself never leaves loopback, so every remote request is relayed. Enable it in `~/.anton/bridge.json`:
+
+```json
+{ "lanAccess": { "enabled": true, "token": "<at least 16 characters>" } }
+```
+
+The environment overrides the file with `ANTON_BRIDGE_LAN=true` and `ANTON_BRIDGE_LAN_TOKEN`. Enabling access without a usable token stops the bridge at startup instead of binding an unauthenticated door.
+
+A remote client opens `http://<machine>:3742/?token=<token>` once. The bridge trades that token for an `HttpOnly; SameSite=Lax` cookie and redirects to the same URL without it, so the token does not stay in history or logs. A query token is accepted only on `GET`/`HEAD`; writes need the cookie, which a link cannot set. Rotate the token by changing it and restarting the bridge — every existing cookie stops matching.
+
+Two consequences to weigh before enabling it. The app runs tools (shell, file edits, approvals) as your user, so the token is the only thing between the network and that capability; treat it like a password and keep LAN access off on untrusted networks. And the desktop surface — the control page, harness start/stop/restart, browser automation, notifications and consent endpoints — answers `404` to every non-loopback client regardless of token.
+
+For a permanent setup prefer a tunnel over exposing the port: `ssh -L 3080:127.0.0.1:3080 you@mac` reaches Harness directly, and Tailscale reaches the bridge without opening the LAN.
 
 ## Agent tools: browser and notifications
 

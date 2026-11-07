@@ -4,6 +4,7 @@ import { dirname, basename, join, resolve } from 'node:path'
 import { getChromeManager } from './chrome.ts'
 import { readNativeConsentKey } from './consent-key.ts'
 import { credentialRef } from './context-credentials.ts'
+import { isDesktopPath, lanChallengeResponse, lanDecision, readLanAccess } from './lan-access.ts'
 import { removeObsoleteToolsRow, upsertDesktopToolsRow } from './profile-migration.ts'
 import { NativeChallengeInbox } from './consent-challenges.ts'
 import { signForwardedMailRequest } from './consent-forward.ts'
@@ -76,27 +77,46 @@ function normalizeContextEndpoint(value: string): string {
   return endpoint.href.replace(/\/$/, '')
 }
 
-function readBridgeConfig(): BridgeConfig {
+/** The raw config document; unreadable or malformed files read as empty. */
+function readBridgeDocument(): unknown {
   try {
-    const parsed: unknown = JSON.parse(readFileSync(configPath, 'utf8'))
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {}
-    const endpoint = (parsed as BridgeConfig).contextEndpoint
-    return typeof endpoint === 'string' ? { contextEndpoint: normalizeContextEndpoint(endpoint) } : {}
+    return JSON.parse(readFileSync(configPath, 'utf8')) as unknown
   } catch {
     return {}
   }
 }
 
+function readBridgeConfig(): BridgeConfig {
+  const parsed = readBridgeDocument()
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {}
+  const endpoint = (parsed as BridgeConfig).contextEndpoint
+  return typeof endpoint === 'string' ? { contextEndpoint: normalizeContextEndpoint(endpoint) } : {}
+}
+
+/**
+ * Write one config change while preserving the rest of the document: other
+ * keys (`lanAccess`) are hand-written and must survive an endpoint save.
+ */
 function writeBridgeConfig(config: BridgeConfig): void {
+  const existing = readBridgeDocument()
+  const document = typeof existing === 'object' && existing !== null && !Array.isArray(existing)
+    ? { ...existing, ...config }
+    : config
   mkdirSync(dirname(configPath), { recursive: true })
   const temporary = `${configPath}.${process.pid}.tmp`
-  writeFileSync(temporary, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 })
+  writeFileSync(temporary, `${JSON.stringify(document, null, 2)}\n`, { mode: 0o600 })
   renameSync(temporary, configPath)
 }
 
 let contextEndpoint = normalizeContextEndpoint(
   process.env.ANTON_CONTEXT_ENDPOINT ?? readBridgeConfig().contextEndpoint ?? 'http://127.0.0.1:8090',
 )
+
+/**
+ * Optional LAN exposure. Parsed at startup so a half-configured door (enabled
+ * without a token) fails here instead of binding every interface open.
+ */
+const lanAccess = readLanAccess(readBridgeDocument())
 
 /** First candidate that exists on disk, else the last defined one. */
 function firstDefined(candidates: readonly string[], exists: (candidate: string) => boolean = existsSync): string {
@@ -678,7 +698,8 @@ async function status() {
       status: 'ok',
       started_at: startedAt,
       url: bridgeUrl,
-      listening_on: `127.0.0.1:${bridgePort}`,
+      listening_on: `${lanAccess.enabled ? '0.0.0.0' : '127.0.0.1'}:${bridgePort}`,
+      lan_enabled: lanAccess.enabled,
     },
     harness: {
       running: harness,
@@ -756,9 +777,27 @@ function loopbackControlAllowed(request: Request): boolean {
   return request.headers.get('origin') === null && sameOrigin(request)
 }
 
-function allowedHost(request: Request): boolean {
-  const hostname = new URL(request.url).hostname
-  return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === 'antoncode.localhost'
+/**
+ * Read a LAN gate decision as a terminal response, or undefined to continue.
+ * Desktop paths (the control page and every control API) never leave this
+ * machine: a remote client that proved the token still gets the app only.
+ */
+function lanRefusal(request: Request, pathname: string): Response | undefined {
+  const decision = lanDecision(request, lanAccess)
+  if (decision.kind === 'challenge') return lanChallengeResponse(request, lanAccess)
+  if (decision.kind === 'granted') {
+    return isDesktopPath(pathname) ? new Response('Not found', { status: 404 }) : undefined
+  }
+  if (decision.kind === 'denied') {
+    // Access off: an unknown authority, exactly as before LAN support existed.
+    // Access on: the door is real, so name what opens it instead of a bare 404.
+    if (!lanAccess.enabled) return new Response('Not found', { status: 404 })
+    return new Response(
+      'LAN access requires the token: open this address once with ?token=<ANTON_BRIDGE_LAN_TOKEN>\n',
+      { status: 401, headers: { 'cache-control': 'no-store' } },
+    )
+  }
+  return undefined
 }
 
 function controlPage(): Response {
@@ -897,13 +936,14 @@ async function serveWithPortRetry<T>(start: () => T, attempts = 10, delayMs = 50
 }
 
 const server = await serveWithPortRetry(() => Bun.serve<BridgeSocketData>({
-  hostname: '127.0.0.1',
+  hostname: lanAccess.enabled ? '0.0.0.0' : '127.0.0.1',
   port: bridgePort,
   // Harness keeps its event downlinks open for the lifetime of a page.
   idleTimeout: 255,
   async fetch(request, server) {
-    if (!allowedHost(request)) return new Response('Not found', { status: 404 })
     const { pathname, search } = new URL(request.url)
+    const refusal = lanRefusal(request, pathname)
+    if (refusal !== undefined) return refusal
 
     if (isDownlink(request)) {
       if (!sameOrigin(request)) return new Response('cross-origin request rejected', { status: 403 })
