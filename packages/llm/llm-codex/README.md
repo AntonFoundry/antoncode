@@ -31,6 +31,10 @@ The plugin resolves request connection settings and authentication for the `code
 
 [`src/serialize.ts`](src/serialize.ts) maps system text to Responses `instructions`, conversation blocks to input items, and offered tools to function definitions. User images resolve through the attachment store as `input_image` parts. Tool-result images become a following user-image item because function outputs carry text. [`src/auth.ts`](src/auth.ts) owns shared-login resolution and refresh; the stream translator returns text, reasoning, tool-call, and usage chunks to the Harness. Function-call arguments stay associated with their Responses item id, while execution and subsequent tool outputs use the separate `call_id`. Sequential and interleaved calls retain their own names and arguments; an argument or completion event without a matching opened item fails with `INVALID_RESPONSE` rather than dispatching an untrusted call.
 
+### Request failures
+
+HTTP and Responses SSE failures normalize explicit provider codes to the same stable classes: exhausted quota or inactive billing becomes `QUOTA`, overload becomes `OVERLOADED`, and `model_unavailable` or `model_not_found` becomes `MODEL_UNAVAILABLE`. HTTP 401/403 and explicit authentication facts remain `AUTH`; context overflow remains `CONTEXT_WINDOW_EXCEEDED`. Otherwise the explicit error code precedes its generic type, so `model_not_found` inside an `invalid_request_error` wrapper still identifies model availability. Unknown SSE codes remain `TRANSPORT`; unknown HTTP failures retain their status-derived class. Availability classification does not inspect display text. HTTP failures retain status, positive Retry-After delay and request ID when supplied. The adapter reports these facts without choosing another route or retrying them; request recovery belongs to the Host policy.
+
 ## Model Experience
 
 ### Codex request

@@ -65,7 +65,11 @@ const HELLO_EVENTS = [
 
 /** Codex backend stand-in: records each request, answers the one scripted generation. */
 async function codexServer(
-  options: { expireFirst?: boolean; events?: readonly string[] } = {},
+  options: {
+    expireFirst?: boolean
+    events?: readonly string[]
+    httpError?: { status: number; code?: string; type?: string; message?: string }
+  } = {},
 ): Promise<{ url: string; requests: RecordedRequest[] }> {
   const requests: RecordedRequest[] = []
   const server = createServer((request: IncomingMessage, response: ServerResponse) => {
@@ -81,6 +85,13 @@ async function codexServer(
       if (options.expireFirst === true && requests.length === 1) {
         response.writeHead(401, { 'content-type': 'application/json' })
         response.end(JSON.stringify({ error: { code: 'token_expired', message: 'expired' } }))
+        return
+      }
+      if (options.httpError !== undefined) {
+        response.writeHead(options.httpError.status, {
+          'content-type': 'application/json', 'retry-after': '2', 'x-request-id': 'req-classification',
+        })
+        response.end(JSON.stringify({ error: { message: 'opaque provider failure', ...options.httpError } }))
         return
       }
       response.writeHead(200, { 'content-type': 'text/event-stream' })
@@ -146,6 +157,86 @@ describe('resolveAdapterOptions', () => {
 })
 
 describe('request-level dynamic profile', () => {
+  it.each([
+    [429, 'insufficient_quota', 'QUOTA'],
+    [429, 'billing_not_active', 'QUOTA'],
+    [429, 'usage_limit_reached', 'QUOTA'],
+    [503, 'overloaded_error', 'OVERLOADED'],
+    [503, 'server_overloaded', 'OVERLOADED'],
+    [404, 'model_unavailable', 'MODEL_UNAVAILABLE'],
+    [404, 'model_not_found', 'MODEL_UNAVAILABLE'],
+    [429, 'rate_limit_exceeded', 'RATE_LIMIT'],
+    [401, 'model_unavailable', 'AUTH'],
+    [403, 'insufficient_quota', 'AUTH'],
+    [400, 'context_length_exceeded', 'CONTEXT_WINDOW_EXCEEDED'],
+    [400, 'invalid_request_error', 'INVALID_REQUEST'],
+    [503, 'unknown_error', 'SERVER'],
+  ])('normalizes HTTP %i / %s with transport facts', async (status, code, expected) => {
+    const dir = await home()
+    const codexDir = await codexHome(dir)
+    const server = await codexServer({ httpError: { status, code } })
+    const ctx = await boot(dir, { providers: { codex: { codexHome: codexDir, baseURL: server.url } } })
+    expect(await streamFinish(ctx, 'gpt-5.6-luna')).toEqual({
+      kind: 'error', failure: {
+        code: expected, message: 'opaque provider failure', status,
+        providerRetryAfterMs: 2000, requestId: 'req-classification',
+      },
+    })
+    expect(server.requests).toHaveLength(1)
+  })
+
+  it.each([
+    [404, 'model_not_found', 'invalid_request_error', 'MODEL_UNAVAILABLE'],
+    [503, undefined, 'overloaded_error', 'OVERLOADED'],
+    [404, undefined, 'model_unavailable', 'MODEL_UNAVAILABLE'],
+    [400, undefined, 'invalid_request_error', 'INVALID_REQUEST'],
+    [400, 'invalid_api_key', 'model_unavailable', 'AUTH'],
+    [400, 'invalid_request_error', 'model_unavailable', 'INVALID_REQUEST'],
+    [400, 'model_unavailable', 'authentication_error', 'AUTH'],
+    [400, 'model_unavailable', 'context_length_exceeded', 'CONTEXT_WINDOW_EXCEEDED'],
+    [403, 'model_not_found', 'invalid_request_error', 'AUTH'],
+  ])('prioritizes HTTP %i structured code %s over type %s as %s', async (status, code, type, expected) => {
+    const dir = await home()
+    const codexDir = await codexHome(dir)
+    const server = await codexServer({ httpError: { status, code, type } })
+    const ctx = await boot(dir, { providers: { codex: { codexHome: codexDir, baseURL: server.url } } })
+    expect(await streamFinish(ctx, 'gpt-5.6-luna')).toMatchObject({ kind: 'error', failure: { code: expected } })
+  })
+
+  it.each([
+    ['insufficient_quota', 'QUOTA'],
+    ['billing_not_active', 'QUOTA'],
+    ['usage_limit_reached', 'QUOTA'],
+    ['overloaded_error', 'OVERLOADED'],
+    ['model_unavailable', 'MODEL_UNAVAILABLE'],
+    ['authentication_error', 'AUTH'],
+    ['context_length_exceeded', 'CONTEXT_WINDOW_EXCEEDED'],
+    ['invalid_request_error', 'INVALID_REQUEST'],
+  ])('normalizes SSE %s through the runtime as %s', async (code, expected) => {
+    const dir = await home()
+    const codexDir = await codexHome(dir)
+    const server = await codexServer({ events: [JSON.stringify({
+      type: 'response.failed', response: { id: 'r', status: 'failed', error: { code, message: 'opaque provider failure' } },
+    })] })
+    const ctx = await boot(dir, { providers: { codex: { codexHome: codexDir, baseURL: server.url } } })
+    expect(await streamFinish(ctx, 'gpt-5.6-luna')).toEqual({
+      kind: 'error', failure: { code: expected, message: 'opaque provider failure' },
+    })
+    expect(server.requests).toHaveLength(1)
+  })
+
+  it('retains context overflow diagnostics inside a generic invalid-request wrapper', async () => {
+    const dir = await home()
+    const codexDir = await codexHome(dir)
+    const server = await codexServer({ httpError: {
+      status: 400, type: 'invalid_request_error', message: 'maximum context length exceeded',
+    } })
+    const ctx = await boot(dir, { providers: { codex: { codexHome: codexDir, baseURL: server.url } } })
+    expect(await streamFinish(ctx, 'gpt-5.6-luna')).toMatchObject({
+      kind: 'error', failure: { code: 'CONTEXT_WINDOW_EXCEEDED' },
+    })
+  })
+
   it('mounts bare and dormant, with the declared route addressed inside the providers dict', async () => {
     const dir = await home()
     const ctx = await boot(dir, {})

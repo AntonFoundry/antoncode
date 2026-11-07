@@ -30,6 +30,7 @@ import { serializeRequest } from './serialize.ts'
 import type { RequestDefaults } from './serialize.ts'
 import { parseSse } from './sse.ts'
 import { translate } from './translate.ts'
+import { codexErrorCode } from './error.ts'
 import type { WireError } from './types.ts'
 
 /** One optional model entry advertised by the Codex adapter. */
@@ -188,13 +189,14 @@ function requestId(headers: Headers): ReturnType<typeof ProviderRequestId> | und
 export function httpErrorCode(status: number, error?: WireError): string {
   if (status === 401 || status === 403) return 'AUTH'
   const body = error?.error
+  const structured = codexErrorCode(body)
   const detail = [body?.code, body?.type, body?.message, error?.detail].filter(Boolean).join(' ')
+  if (structured === 'AUTH') return structured
+  if (status === 400 && isContextWindowExceededError(detail)) return CONTEXT_WINDOW_EXCEEDED_CODE
+  if (structured !== undefined) return structured
   if (isQuotaExceededError(detail)) return QUOTA_EXCEEDED_CODE
   if (status === 429) return 'RATE_LIMIT'
-  if (status === 400) {
-    if (isContextWindowExceededError(detail)) return CONTEXT_WINDOW_EXCEEDED_CODE
-    return 'INVALID_REQUEST'
-  }
+  if (status === 400) return 'INVALID_REQUEST'
   if (status >= 500) return 'SERVER'
   return `HTTP_${status}`
 }

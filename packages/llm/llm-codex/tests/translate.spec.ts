@@ -179,6 +179,33 @@ describe('translate: terminal states', () => {
     })
   })
 
+  it.each([
+    ['insufficient_quota', 'QUOTA'],
+    ['billing_not_active', 'QUOTA'],
+    ['usage_limit_reached', 'QUOTA'],
+    ['overloaded_error', 'OVERLOADED'],
+    ['server_overloaded', 'OVERLOADED'],
+    ['model_unavailable', 'MODEL_UNAVAILABLE'],
+    ['model_not_found', 'MODEL_UNAVAILABLE'],
+    ['authentication_error', 'AUTH'],
+    ['invalid_api_key', 'AUTH'],
+    ['context_length_exceeded', 'CONTEXT_WINDOW_EXCEEDED'],
+    ['invalid_request_error', 'INVALID_REQUEST'],
+    ['unknown_error', 'TRANSPORT'],
+  ])('classifies structured SSE code %s as %s without reading its message', async (code, expected) => {
+    await expect(collect(translate(feed({
+      type: 'response.failed',
+      response: { id: 'r', status: 'failed', error: { code, message: 'opaque provider failure' } },
+    })))).rejects.toMatchObject({ code: expected, message: 'opaque provider failure' })
+  })
+
+  it.each([undefined, 'unrecognized'])('does not infer availability from SSE display text for code %s', async (code) => {
+    await expect(collect(translate(feed({
+      type: 'response.failed',
+      response: { id: 'r', status: 'failed', error: { code, message: 'model unavailable: overloaded server' } },
+    })))).rejects.toMatchObject({ code: 'TRANSPORT' })
+  })
+
   it('throws a structured LlmError on response.failed', async () => {
     await expect(collect(translate(feed(
       { type: 'response.failed', response: { id: 'r', status: 'failed', error: { code: 'rate_limit_exceeded', message: 'slow down' } } },

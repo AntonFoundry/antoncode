@@ -13,6 +13,7 @@
 import { ToolCallId, EMPTY_RESPONSE_CODE, LlmError } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, FinishReason, StreamChunk, TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { WireEvent, WireUsage } from './types.ts'
+import { codexErrorCode } from './error.ts'
 
 /** One open block under assembly. */
 interface OpenBlock {
@@ -63,20 +64,6 @@ export function mapUsage(usage: WireUsage): TokenUsage {
     outputTokens: usage.output_tokens,
     ...cacheRead !== undefined ? { cacheReadTokens: cacheRead } : {},
     ...reasoning !== undefined ? { reasoningTokens: reasoning } : {},
-  }
-}
-
-/** Map a Codex stream error code to a harness LlmError code. */
-function streamErrorCode(code: string | undefined): string {
-  switch (code) {
-    case 'authentication_error':
-    case 'invalid_api_key': return 'AUTH'
-    case 'rate_limit_exceeded': return 'RATE_LIMIT'
-    case 'insufficient_quota':
-    case 'billing_not_active': return 'QUOTA_EXCEEDED'
-    case 'context_length_exceeded': return 'CONTEXT_WINDOW_EXCEEDED'
-    case 'invalid_request_error': return 'INVALID_REQUEST'
-    default: return 'TRANSPORT'
   }
 }
 
@@ -215,7 +202,7 @@ export async function* translate(events: AsyncIterable<WireEvent>): AsyncGenerat
       case 'response.failed':
         throw new LlmError(
           event.response.error?.message ?? 'OpenAI Codex response failed',
-          streamErrorCode(event.response.error?.code),
+          codexErrorCode(event.response.error) ?? 'TRANSPORT',
         )
       default:
         break
