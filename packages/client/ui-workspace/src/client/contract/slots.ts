@@ -413,6 +413,39 @@ export interface RenameSessionInjected {
   requestSessionRename: (sessionId: SessionId, currentTitle: string) => void
 }
 
+/** Move action share: request an overlay without changing the selected Session. */
+export interface MoveSessionInjected {
+  /** Open the destination picker for this row. */
+  requestSessionMove: (sessionId: SessionId, displayTitle: string) => void
+}
+
+/** The row identity retained while its move dialog is open. */
+export interface SessionMoveTarget {
+  /** Session whose identity remains unchanged by the move. */
+  sessionId: SessionId
+  /** Display title named in the dialog. */
+  displayTitle: string
+}
+
+/** Move dialog share: Host mutation failures remain visible in the dialog. */
+export interface SessionMoveDialogInjected {
+  hooks: {
+    /** Pending move until it succeeds or is cancelled. */
+    moveRequest: HostObservable<SessionMoveTarget | null>
+  }
+  /** Close the pending move dialog. */
+  settleSessionMove: () => void
+  /** Move the existing Session to a Workspace or Ungrouped without navigation. */
+  moveSession: (sessionId: SessionId, workspaceId: WorkspaceId | null) => Promise<void>
+}
+
+/** Props for the persistent move dialog entry in `shell.overlay`. */
+export type SessionMoveDialogProps =
+  PropsRuntime<'shell.overlay'>
+  & PropsLocale<'workspace'>
+  & Omit<SessionMoveDialogInjected, 'hooks'>
+  & PropsHooks<SessionMoveDialogInjected['hooks']>
+
 /** Session ID action share; copying does not open the Session. */
 export interface SessionIdInjected {
   /** Copy the complete id and report acceptance or failure through the global toast. */

@@ -23,7 +23,7 @@ import type { WorkspaceDomainState, WorkspaceRecord } from '../src/index.ts'
 import { defaultWorkspaceTitle, fullyQualifiedWorkspacePath } from '../src/paths.ts'
 import * as workspacePaths from '../src/paths.ts'
 
-const DOMAIN_VERSION = 2
+const DOMAIN_VERSION = 3
 
 const header = (id: string, cwd?: string, createdAt = 0): SessionHeader => ({
   version: SESSION_FORMAT_VERSION,
@@ -205,7 +205,9 @@ describe('WorkspaceRegistry lifecycle and bootstrap', () => {
     await fiber.await()
     expect(ctx.workspaceRegistry.list()).toEqual([])
     expect(list).toHaveBeenCalledTimes(1)
-    expect(storedState(pool)).toEqual({ initialized: true, workspaceIds: [], archivedSessionIds: [], pinnedSessionIds: [] })
+    expect(storedState(pool)).toEqual({
+      initialized: true, workspaceIds: [], archivedSessionIds: [], pinnedSessionIds: [], sessionAssignments: [],
+    })
   })
 
   it('bootstraps once from list headers only, in workspace/session createdAt order', async () => {
@@ -240,6 +242,7 @@ describe('WorkspaceRegistry lifecycle and bootstrap', () => {
       workspaceIds: result.registry.list().map(workspace => workspace.id),
       archivedSessionIds: [],
       pinnedSessionIds: [],
+      sessionAssignments: [],
     })
   })
 
@@ -268,7 +271,9 @@ describe('WorkspaceRegistry lifecycle and bootstrap', () => {
     const second = await harness({ pool, sessions: [header('late', late, 100)] })
     expect(second.list).not.toHaveBeenCalled()
     expect(second.registry.list()).toEqual([])
-    expect(storedState(pool)).toEqual({ initialized: true, workspaceIds: [], archivedSessionIds: [], pinnedSessionIds: [] })
+    expect(storedState(pool)).toEqual({
+      initialized: true, workspaceIds: [], archivedSessionIds: [], pinnedSessionIds: [], sessionAssignments: [],
+    })
   })
 
   it('reuses partial records after a bootstrap record write fails', async () => {
@@ -522,7 +527,9 @@ describe('WorkspaceRegistry create and lookup', () => {
     await expect(result.registry.delete(workspace.id)).resolves.toBe(false)
     expect(result.registry.get(workspace.id)).toBeUndefined()
     expect(result.registry.list()).toEqual([])
-    expect(storedState(result.pool)).toEqual({ initialized: true, workspaceIds: [], archivedSessionIds: [], pinnedSessionIds: [] })
+    expect(storedState(result.pool)).toEqual({
+      initialized: true, workspaceIds: [], archivedSessionIds: [], pinnedSessionIds: [], sessionAssignments: [],
+    })
     expect(result.pool.media.get('workspace')!.tables.get('workspaces')!.has(workspace.id)).toBe(false)
     await expect(realpath(dir)).resolves.toBe(dir)
     expect(result.list).toHaveBeenCalledTimes(1)
@@ -567,6 +574,7 @@ describe('WorkspaceRegistry create and lookup', () => {
       workspaceIds: [],
       archivedSessionIds: [],
       pinnedSessionIds: [],
+      sessionAssignments: [],
       pendingMutation: { operation: 'delete', workspaceId: workspace.id },
     })
     const reregistered = await first.registry.create(dir)
@@ -576,6 +584,7 @@ describe('WorkspaceRegistry create and lookup', () => {
       workspaceIds: [reregistered.id],
       archivedSessionIds: [],
       pinnedSessionIds: [],
+      sessionAssignments: [],
     })
     await first.fiber.dispose()
 
@@ -763,6 +772,134 @@ describe('Workspace session ordering', () => {
     expect(workspace.sessionIds).toEqual(['s1'])
   })
 
+})
+
+describe('explicit Session grouping', () => {
+  it('reads a version 2 account without rewriting it and stamps version 3 on the first move', async () => {
+    const dir = await makeDir('grouping-version-two')
+    const id = WorkspaceId('version-two-workspace')
+    const pool = storedPool([[id, record(dir, ['kept'])]], { initialized: true, workspaceIds: [id] })
+    pool.versions.set('workspace', 2)
+    const result = await harness({ pool, sessions: [header('kept', dir)] })
+    onTestFinished(() => result.ctx.fiber.dispose())
+
+    expect(result.registry.get(id)!.sessionIds).toEqual(['kept'])
+    expect(result.initChanges).toEqual([])
+    expect(pool.versions.get('workspace')).toBe(2)
+    expect(storedState(pool)).not.toHaveProperty('sessionAssignments')
+    await result.registry.moveSession(SessionId('kept'), null)
+    expect(pool.versions.get('workspace')).toBe(DOMAIN_VERSION)
+    expect(storedState(pool).sessionAssignments).toEqual([{ sessionId: 'kept', workspaceId: null }])
+    await result.ctx.fiber.dispose()
+    const older = new MemoryStorageBackend(pool)
+    onTestFinished(() => older.close())
+    await expect(older.kv.open({ name: 'workspace', version: 2, tables: ['workspaces'], hasGlobal: true }))
+      .rejects.toMatchObject({ code: 'version-mismatch' })
+  })
+
+  it('moves across different directories and into Ungrouped without changing headers or raw accounts', async () => {
+    const origin = await makeDir('grouping-origin')
+    const elsewhere = await makeDir('grouping-destination')
+    const sessions = [header('moving', origin, 1)]
+    const originalHeaders = structuredClone(sessions)
+    const result = await harness({ sessions })
+    onTestFinished(() => result.ctx.fiber.dispose())
+    const source = result.registry.list()[0]!
+    const destination = await result.registry.create(elsewhere)
+    const originalAccount = structuredClone(storedRecord(result.pool, source.id))
+    result.changes.length = 0
+
+    await result.registry.moveSession(SessionId('moving'), destination.id)
+    expect(source.sessionIds).toEqual([])
+    expect(destination.sessionIds).toEqual(['moving'])
+    expect(storedRecord(result.pool, source.id)).toEqual(originalAccount)
+    expect(storedRecord(result.pool, destination.id).sessionIds).toEqual([])
+    expect(result.changes.map(change => [change.table, change.operation])).toEqual([['', 'put']])
+    await result.registry.moveSession(SessionId('moving'), null)
+    expect(source.sessionIds).toEqual([])
+    expect(destination.sessionIds).toEqual([])
+    expect(storedState(result.pool).sessionAssignments).toEqual([{ sessionId: 'moving', workspaceId: null }])
+    expect(sessions).toEqual(originalHeaders)
+    expect(result.open).not.toHaveBeenCalled()
+    expect(result.stat).not.toHaveBeenCalled()
+
+    await result.ctx.fiber.dispose()
+    const restarted = await harness({ pool: result.pool, sessions })
+    onTestFinished(() => restarted.ctx.fiber.dispose())
+    expect(restarted.registry.list().flatMap(workspace => workspace.sessionIds)).toEqual([])
+  })
+
+  it('rejects unknown identities and a failed durability write without changing grouping', async () => {
+    const origin = await makeDir('grouping-refusal-origin')
+    const elsewhere = await makeDir('grouping-refusal-destination')
+    const result = await harness({ sessions: [header('moving', origin)] })
+    onTestFinished(() => result.ctx.fiber.dispose())
+    const source = result.registry.list()[0]!
+    const destination = await result.registry.create(elsewhere)
+    const before = structuredClone(storedState(result.pool))
+    result.changes.length = 0
+
+    await expect(result.registry.moveSession(SessionId('unknown'), destination.id)).rejects.toThrow(/no such session/)
+    await expect(result.registry.moveSession(SessionId('moving'), WorkspaceId('unknown')))
+      .rejects.toBeInstanceOf(WorkspaceOrderInvalidError)
+    result.pool.failNextWrites = 1
+    await expect(result.registry.moveSession(SessionId('moving'), destination.id)).rejects.toThrow('injected write failure')
+    expect(storedState(result.pool)).toEqual(before)
+    expect(source.sessionIds).toEqual(['moving'])
+    expect(destination.sessionIds).toEqual([])
+    expect(result.changes).toEqual([])
+
+    await result.registry.moveSession(SessionId('moving'), destination.id)
+    const writes = result.changes.length
+    await result.registry.moveSession(SessionId('moving'), destination.id)
+    expect(result.changes).toHaveLength(writes)
+  })
+
+  it('preserves effective manual order through restart without reviving a raw source account', async () => {
+    const origin = await makeDir('grouping-reorder-origin')
+    const elsewhere = await makeDir('grouping-reorder-destination')
+    const sessions = [header('moving', origin), header('resident', elsewhere)]
+    const result = await harness({ sessions })
+    onTestFinished(() => result.ctx.fiber.dispose())
+    const source = result.registry.list().find(workspace => workspace.path === origin)!
+    const destination = result.registry.list().find(workspace => workspace.path === elsewhere)!
+
+    await result.registry.moveSession(SessionId('moving'), destination.id)
+    expect(destination.sessionIds).toEqual(['resident', 'moving'])
+    await destination.insertSessionBefore(SessionId('moving'), SessionId('resident'))
+    expect(destination.sessionIds).toEqual(['moving', 'resident'])
+    expect(storedRecord(result.pool, destination.id).sessionIds).toEqual(['moving', 'resident'])
+    expect(storedRecord(result.pool, source.id).sessionIds).toEqual(['moving'])
+    await result.ctx.fiber.dispose()
+
+    const restarted = await harness({ pool: result.pool, sessions })
+    onTestFinished(() => restarted.ctx.fiber.dispose())
+    expect(restarted.registry.get(source.id)!.sessionIds).toEqual([])
+    expect(restarted.registry.get(destination.id)!.sessionIds).toEqual(['moving', 'resident'])
+  })
+
+  it('keeps a moved Session Ungrouped when its destination is removed and registered again', async () => {
+    const origin = await makeDir('grouping-deletion-origin')
+    const elsewhere = await makeDir('grouping-deletion-destination')
+    const sessions = [header('moving', origin)]
+    const result = await harness({ sessions })
+    onTestFinished(() => result.ctx.fiber.dispose())
+    const source = result.registry.list()[0]!
+    const destination = await result.registry.create(elsewhere)
+
+    await result.registry.moveSession(SessionId('moving'), destination.id)
+    await result.registry.delete(destination.id)
+    expect(source.sessionIds).toEqual([])
+    expect(storedState(result.pool).sessionAssignments).toEqual([{ sessionId: 'moving', workspaceId: null }])
+    const replacement = await result.registry.create(elsewhere)
+    expect(replacement.id).not.toBe(destination.id)
+    expect(replacement.sessionIds).toEqual([])
+    await result.ctx.fiber.dispose()
+
+    const restarted = await harness({ pool: result.pool, sessions })
+    onTestFinished(() => restarted.ctx.fiber.dispose())
+    expect(restarted.registry.list().flatMap(workspace => workspace.sessionIds)).toEqual([])
+  })
 })
 
 describe('header-validated membership projection', () => {
@@ -999,7 +1136,9 @@ describe('header-validated membership projection', () => {
     const createRecovery = await harness({ pool: interruptedCreate })
     expect(createRecovery.registry.list()).toEqual([])
     expect(interruptedCreate.media.get('workspace')!.tables.get('workspaces')!.has(createId)).toBe(false)
-    expect(storedState(interruptedCreate)).toEqual({ initialized: true, workspaceIds: [], archivedSessionIds: [], pinnedSessionIds: [] })
+    expect(storedState(interruptedCreate)).toEqual({
+      initialized: true, workspaceIds: [], archivedSessionIds: [], pinnedSessionIds: [], sessionAssignments: [],
+    })
 
     const interruptedDelete = storedPool(
       [[deleteId, record(deleteDir, [])]],
@@ -1012,7 +1151,9 @@ describe('header-validated membership projection', () => {
     const deleteRecovery = await harness({ pool: interruptedDelete })
     expect(deleteRecovery.registry.list()).toEqual([])
     expect(interruptedDelete.media.get('workspace')!.tables.get('workspaces')!.has(deleteId)).toBe(false)
-    expect(storedState(interruptedDelete)).toEqual({ initialized: true, workspaceIds: [], archivedSessionIds: [], pinnedSessionIds: [] })
+    expect(storedState(interruptedDelete)).toEqual({
+      initialized: true, workspaceIds: [], archivedSessionIds: [], pinnedSessionIds: [], sessionAssignments: [],
+    })
 
     const corruptPending = storedPool(
       [[deleteId, record(deleteDir, [])]],

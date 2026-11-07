@@ -174,3 +174,14 @@ export type WorkspaceFollowIncrement =
 export type WorkspaceFollowFrame =
   | { readonly type: 'baseline'; readonly value: WorkspaceBaseline }
   | WorkspaceFollowIncrement
+
+/** Explicit Session grouping change; null names the synthetic Ungrouped bucket. */
+export interface WorkspaceMoveSessionRequest {
+  readonly sessionId: SessionId
+  readonly workspaceId: WorkspaceId | null
+}
+
+/** Complete Workspace rows after an atomic grouping change. */
+export interface WorkspaceMoveSessionValue {
+  readonly items: readonly WorkspaceView[]
+}

@@ -2,7 +2,7 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-api-remote-access'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { WorkspaceCommands } from './commands.ts'
@@ -23,6 +23,8 @@ import type {
   WorkspaceInsertBeforeRequest,
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
+  WorkspaceMoveSessionRequest,
+  WorkspaceMoveSessionValue,
   WorkspacePinSessionRequest,
   WorkspacePinValue,
   WorkspaceRenameRequest,
@@ -156,6 +158,29 @@ export class WorkspaceController extends TypertRemoteService {
   }
 
   /**
+   * Move a Session's sidebar grouping without changing history or working directory.
+   * @param request - Session identity and existing destination, or null for Ungrouped.
+   * @returns complete Workspace rows after the assignment is durable.
+   */
+  @Remote({ resources: {
+    session: (request: WorkspaceMoveSessionRequest) => request.sessionId,
+    workspace: (request: WorkspaceMoveSessionRequest) => request.workspaceId === null ? undefined : request.workspaceId,
+  } })
+  async moveSession(request: WorkspaceMoveSessionRequest): Promise<WorkspaceMoveSessionValue> {
+    const source = this.ctx.workspaceRegistry.list().find(workspace => workspace.sessionIds.includes(request.sessionId))
+    if (source !== undefined && !this.ctx.remoteAccess.allows({ kind: 'workspace', id: source.id })) {
+      throw new RemoteError('remote-access/denied', 'Session move is not allowed from this Workspace', {
+        action: 'workspace/moveSession', reason: 'no-allow',
+      })
+    }
+    const result = await this.commands.moveSession(request)
+    return {
+      items: result.items.filter(workspace => this.ctx.remoteAccess.allows({ kind: 'workspace', id: workspace.workspaceId }))
+        .map(workspace => ({ ...workspace, sessionIds: workspace.sessionIds.filter(id => this.ctx.remoteAccess.allows({ kind: 'session', id })) })),
+    }
+  }
+
+  /**
    * Hide one known Session from Workspace grouping surfaces.
    * @param request - Session identity to archive.
    * @returns the complete resulting archive set.
@@ -227,6 +252,9 @@ export class WorkspaceController extends TypertRemoteService {
     }
     for await (const frame of this.feed.follow(signal)) {
       switch (frame.type) {
+        case 'replace':
+          yield { type: 'replace', value: filtered(frame.value) }
+          break
         case 'baseline':
           yield { type: 'baseline', value: filtered(frame.value) }
           break

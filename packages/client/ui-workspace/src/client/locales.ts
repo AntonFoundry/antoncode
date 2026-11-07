@@ -6,6 +6,12 @@
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
+  'menu.moveSession': '移动会话…',
+  'move.session.title': '移动会话',
+  'move.session.description': '将“{title}”移至现有工作区或未分组。会话 ID 保持不变。',
+  'move.destination': '选择目标工作区',
+  'move.pending': '正在移动会话…',
+  'move.failed': '无法确认会话是否已移动，请检查其分组后再重试',
   'defaultWorkspace.failed': '无法创建默认工作区，请通过“选择工作区”选择文件夹',
   'draft.workspaceRequired': '请先选择工作区',
   'draft.initializationFailed': '暂时无法填入草稿，请稍后重试',
@@ -140,6 +146,12 @@ export type WorkspaceKey = keyof typeof zh
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
+  'menu.moveSession': 'Move session…',
+  'move.session.title': 'Move session',
+  'move.session.description': 'Move “{title}” to an existing workspace or Ungrouped. Its session ID stays the same.',
+  'move.destination': 'Choose destination',
+  'move.pending': 'Moving session…',
+  'move.failed': 'Could not confirm the session move. Check its group before trying again.',
   'defaultWorkspace.failed': 'Unable to create default workspace. Use Choose workspace to select a folder.',
   'draft.workspaceRequired': 'Choose a workspace first.',
   'draft.initializationFailed': 'Could not fill the draft. Please try again shortly.',
@@ -271,6 +283,12 @@ export const en = {
 
 /** Japanese copy, checked against the English keys. */
 export const ja = {
+  'menu.moveSession': 'セッションを移動…',
+  'move.session.title': 'セッションを移動',
+  'move.session.description': '「{title}」を既存のワークスペースまたは未分類に移動します。セッション ID は変わりません。',
+  'move.destination': '移動先を選択',
+  'move.pending': 'セッションを移動中…',
+  'move.failed': '移動を確認できませんでした。グループを確認してから再試行してください。',
   'defaultWorkspace.failed': 'デフォルトのワークスペースを作成できません。ワークスペースを選択してフォルダーを選んでください。',
   'draft.workspaceRequired': '先にワークスペースを選択してください。',
   'draft.initializationFailed': '下書きを埋め込めませんでした。しばらくしてからもう一度お試しください。',
@@ -402,6 +420,12 @@ export const ja = {
 
 /** Spanish dictionary, checked against the English keys. */
 export const es = {
+  'menu.moveSession': 'Mover sesión…',
+  'move.session.title': 'Mover sesión',
+  'move.session.description': 'Mueve «{title}» a un espacio existente o Sin agrupar. Su ID no cambia.',
+  'move.destination': 'Elegir destino',
+  'move.pending': 'Moviendo sesión…',
+  'move.failed': 'No se pudo confirmar el traslado. Comprueba el grupo antes de volver a intentarlo.',
   'defaultWorkspace.failed': 'No se puede crear el espacio de trabajo predeterminado. Utilice Elegir espacio de trabajo para seleccionar una carpeta.',
   'draft.workspaceRequired': 'Elija un espacio de trabajo primero.',
   'draft.initializationFailed': 'No se pudo completar el borrador. Inténtelo de nuevo en breve.',
@@ -533,6 +557,12 @@ export const es = {
 
 /** French dictionary, checked against the English keys. */
 export const fr = {
+  'menu.moveSession': 'Déplacer la session…',
+  'move.session.title': 'Déplacer la session',
+  'move.session.description': 'Déplacez « {title} » vers un espace existant ou Non groupé. Son identifiant reste inchangé.',
+  'move.destination': 'Choisir la destination',
+  'move.pending': 'Déplacement de la session…',
+  'move.failed': 'Impossible de confirmer le déplacement. Vérifiez le groupe avant de réessayer.',
   'defaultWorkspace.failed': 'Impossible de créer un espace de travail par défaut. Utilisez Choisir un espace de travail pour sélectionner un dossier.',
   'draft.workspaceRequired': "Choisissez d'abord un espace de travail.",
   'draft.initializationFailed': 'Impossible de remplir le projet. Veuillez réessayer sous peu.',
@@ -664,6 +694,12 @@ export const fr = {
 
 /** German dictionary, checked against the English keys. */
 export const de = {
+  'menu.moveSession': 'Sitzung verschieben…',
+  'move.session.title': 'Sitzung verschieben',
+  'move.session.description': 'Verschieben Sie „{title}“ in einen vorhandenen Arbeitsbereich oder nach Ungruppiert. Die ID bleibt gleich.',
+  'move.destination': 'Ziel auswählen',
+  'move.pending': 'Sitzung wird verschoben…',
+  'move.failed': 'Das Verschieben konnte nicht bestätigt werden. Prüfen Sie die Gruppe vor einem erneuten Versuch.',
   'defaultWorkspace.failed': 'Der Standardarbeitsbereich kann nicht erstellt werden. Verwenden Sie „Arbeitsbereich auswählen“, um einen Ordner auszuwählen.',
   'draft.workspaceRequired': 'Wählen Sie zunächst einen Arbeitsbereich.',
   'draft.initializationFailed': 'Der Entwurf konnte nicht ausgefüllt werden. Bitte versuchen Sie es in Kürze noch einmal.',
@@ -795,6 +831,12 @@ export const de = {
 
 /** Russian dictionary, checked against the English keys. */
 export const ru = {
+  'menu.moveSession': 'Переместить сеанс…',
+  'move.session.title': 'Переместить сеанс',
+  'move.session.description': 'Переместите «{title}» в существующее пространство или без группы. ID сеанса не изменится.',
+  'move.destination': 'Выбрать назначение',
+  'move.pending': 'Перемещение сеанса…',
+  'move.failed': 'Не удалось подтвердить перемещение. Проверьте группу перед повторной попыткой.',
   'defaultWorkspace.failed': 'Невозможно создать рабочую область по умолчанию. Используйте «Выбрать рабочее пространство», чтобы выбрать папку.',
   'draft.workspaceRequired': 'Сначала выберите рабочее место.',
   'draft.initializationFailed': 'Не удалось заполнить черновик. Пожалуйста, повторите попытку в ближайшее время.',
@@ -926,6 +968,12 @@ export const ru = {
 
 /** Portuguese dictionary, checked against the English keys. */
 export const pt = {
+  'menu.moveSession': 'Mover sessão…',
+  'move.session.title': 'Mover sessão',
+  'move.session.description': 'Mova “{title}” para um espaço existente ou Desagrupado. O ID permanece igual.',
+  'move.destination': 'Escolher destino',
+  'move.pending': 'Movendo sessão…',
+  'move.failed': 'Não foi possível confirmar a mudança. Verifique o grupo antes de tentar novamente.',
   'defaultWorkspace.failed': 'Não foi possível criar o espaço de trabalho padrão. Use Escolher espaço de trabalho para selecionar uma pasta.',
   'draft.workspaceRequired': 'Escolha um espaço de trabalho primeiro.',
   'draft.initializationFailed': 'Não foi possível preencher o rascunho. Por favor, tente novamente em breve.',

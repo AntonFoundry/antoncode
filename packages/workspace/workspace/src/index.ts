@@ -49,7 +49,7 @@ export class WorkspaceUnknownSessionError extends Error {
    * @param sessionId - The unknown session id.
    * @param verb - The registry operation that named the session.
    */
-  constructor(readonly sessionId: SessionId, verb: 'archive' | 'pin') {
+  constructor(readonly sessionId: SessionId, verb: 'archive' | 'pin' | 'move') {
     super(`cannot ${verb} session '${sessionId}': live sessions and session persistence hold no such session`)
     this.name = 'WorkspaceUnknownSessionError'
   }
@@ -182,6 +182,7 @@ export class WorkspaceRegistry extends Service {
 
   private readonly host: WorkspaceEntityHost = {
     table: () => this.requireTable(),
+    projectSessionIds: (id, candidates) => this.projectSessionIds(id, candidates),
     candidateMatches: (id, path) => this.sessionPaths.get(id) === path || this.missingSessionPaths.has(id),
     readSessionHeader: id => this.readSessionHeader(id),
     rememberSessionPath: (id, path) => {
@@ -332,6 +333,46 @@ export class WorkspaceRegistry extends Service {
       if (sameIds(workspaceIds, state.workspaceIds)) return state.workspaceIds
       await this.setState({ ...state, workspaceIds })
       return workspaceIds
+    })
+  }
+
+  /**
+   * Project explicit grouping over a Workspace's cwd-derived candidate account.
+   * @param workspaceId - Workspace whose visible membership is requested.
+   * @param candidates - Stored manual account, including an incoming write for feed consumers.
+   * @returns effective Session identities; explicit assignments append when absent from the account.
+   */
+  projectSessionIds(workspaceId: WorkspaceId, candidates: readonly SessionId[]): readonly SessionId[] {
+    const assignments = this.requireState().sessionAssignments
+    const overrides = new Map(assignments.map(entry => [entry.sessionId, entry.workspaceId]))
+    const workspace = this.requireTable().get(workspaceId)
+    if (workspace === undefined) return []
+    const members = candidates.filter(id => overrides.has(id)
+      ? overrides.get(id) === workspaceId
+      : this.host.candidateMatches(id, workspace.path))
+    for (const entry of assignments) {
+      if (entry.workspaceId === workspaceId && !members.includes(entry.sessionId)) members.push(entry.sessionId)
+    }
+    return members
+  }
+
+  /**
+   * Move grouping without changing the Session's identity, log, cwd, or execution roots.
+   * Missing identities reject before writing; one global write commits the move.
+   * @param sessionId - Existing live or persisted Session, including an Ungrouped Session.
+   * @param workspaceId - Existing destination Workspace, or null for Ungrouped.
+   * @returns resolution after durability; a failed write leaves grouping unchanged.
+   */
+  moveSession(sessionId: SessionId, workspaceId: WorkspaceId | null): Promise<void> {
+    return this.enqueueOperation(async () => {
+      if (workspaceId !== null && !this.entities.has(workspaceId)) throw new WorkspaceOrderInvalidError(workspaceId)
+      if (!await this.sessionKnown(sessionId)) throw new WorkspaceUnknownSessionError(sessionId, 'move')
+      const state = this.requireState()
+      if (state.sessionAssignments.some(entry => entry.sessionId === sessionId && entry.workspaceId === workspaceId)) return
+      await this.setState({
+        ...state,
+        sessionAssignments: [...state.sessionAssignments.filter(entry => entry.sessionId !== sessionId), { sessionId, workspaceId }],
+      })
     })
   }
 
@@ -591,6 +632,8 @@ export class WorkspaceRegistry extends Service {
       pendingMutation: undefined,
       initialized: true,
       workspaceIds: state.workspaceIds.filter(workspaceId => workspaceId !== id),
+      sessionAssignments: state.sessionAssignments.map(entry => entry.workspaceId === id
+        ? { ...entry, workspaceId: null } : entry),
     }
     await this.setState({
       ...nextState,
@@ -731,6 +774,7 @@ export class WorkspaceRegistry extends Service {
         workspaceIds,
         archivedSessionIds: state.archivedSessionIds,
         pinnedSessionIds: state.pinnedSessionIds,
+        sessionAssignments: state.sessionAssignments,
       })
     }
     await this.setState({
@@ -738,6 +782,7 @@ export class WorkspaceRegistry extends Service {
       workspaceIds,
       archivedSessionIds: state.archivedSessionIds,
       pinnedSessionIds: state.pinnedSessionIds,
+      sessionAssignments: state.sessionAssignments,
     })
   }
 
@@ -760,6 +805,14 @@ export class WorkspaceRegistry extends Service {
       )
     }
 
+    const assigned = new Set<SessionId>()
+    for (const entry of state.sessionAssignments) {
+      if (assigned.has(entry.sessionId)) throw new Error(`workspace domain repeats assignment for Session ${entry.sessionId}`)
+      if (entry.workspaceId !== null && !order.has(entry.workspaceId)) {
+        throw new Error(`workspace domain assignment references missing Workspace ${entry.workspaceId}`)
+      }
+      assigned.add(entry.sessionId)
+    }
     const paths = new Map<string, WorkspaceId>()
     const accounted = new Map<SessionId, WorkspaceId>()
     for (const [id, record] of table.entries()) {
@@ -772,6 +825,7 @@ export class WorkspaceRegistry extends Service {
       }
       paths.set(record.path, id)
       for (const sessionId of record.sessionIds) {
+        if (assigned.has(sessionId)) continue
         const holder = accounted.get(sessionId)
         if (holder !== undefined) {
           throw new Error(
@@ -883,7 +937,7 @@ export class WorkspaceRegistry extends Service {
 
   private requireState(): WorkspaceDomainState {
     if (this.state === undefined) throw new Error('workspace registry is not started yet')
-    return this.state
+    return this.global?.get() ?? this.state
   }
 
   private async setState(state: WorkspaceDomainState): Promise<void> {

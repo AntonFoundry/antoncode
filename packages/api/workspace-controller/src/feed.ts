@@ -15,8 +15,8 @@ import type {
   WorkspaceView,
 } from './types.ts'
 
-/** The frames the feed produces: every follow frame except `replace`, which only access filtering sends. */
-type WorkspaceFeedFrame = Exclude<WorkspaceFollowFrame, { readonly type: 'replace' }>
+/** Complete baselines and committed Workspace changes. */
+type WorkspaceFeedFrame = WorkspaceFollowFrame
 
 /**
  * Project one authoritative Workspace entity into its Remote value.
@@ -53,6 +53,7 @@ export class WorkspaceFeed {
   private order: readonly string[]
   private archived: readonly string[]
   private pinned: readonly string[]
+  private assignments = JSON.stringify([])
 
   /** @param ctx - Host context containing the authoritative Workspace registry. */
   constructor(private readonly ctx: Context) {
@@ -103,6 +104,11 @@ export class WorkspaceFeed {
     if (change.table === '') {
       if (change.operation !== 'put') return
       const state = workspaceDomainState.parse(change.value)
+      const assignments = JSON.stringify(state.sessionAssignments)
+      if (assignments !== this.assignments) {
+        this.assignments = assignments
+        this.publish({ type: 'replace', value: this.baseline() })
+      }
       const nextOrder = state.workspaceIds.map(String)
       const orderChanged = !sameStrings(this.order, nextOrder)
       for (const id of state.workspaceIds) {
@@ -135,9 +141,13 @@ export class WorkspaceFeed {
       return
     }
     if (!this.knownIds.has(change.key)) return
+    const workspace = changedWorkspaceView(change.key, change.value)
     this.publish({
       type: 'upsert',
-      workspace: changedWorkspaceView(change.key, change.value),
+      workspace: {
+        ...workspace,
+        sessionIds: this.ctx.workspaceRegistry.projectSessionIds(workspace.workspaceId, workspace.sessionIds),
+      },
     })
   }
 

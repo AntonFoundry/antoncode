@@ -259,6 +259,26 @@ export class TestWorkspaces implements IWorkspaces {
   }
 
   /**
+   * Move Session grouping (recorded), retaining all other Session state.
+   * @param sessionId - Existing Session to move.
+   * @param workspaceId - Destination Workspace or null for Ungrouped.
+   */
+  async moveSession(sessionId: SessionId, workspaceId: WorkspaceId | null): Promise<void> {
+    this.calls.push({ method: 'moveSession', args: [sessionId, workspaceId] })
+    const stub = this.stubs.get('moveSession')
+    if (stub !== undefined) {
+      await (stub(sessionId, workspaceId) as Promise<void>)
+      return
+    }
+    await this.update((draft) => {
+      draft.items = draft.items.map(workspace => ({
+        ...workspace,
+        sessionIds: [...workspace.sessionIds.filter(id => id !== sessionId), ...(workspace.workspaceId === workspaceId ? [sessionId] : [])],
+      }))
+    })
+  }
+
+  /**
    * Move an accounted session (recorded). The default echoes a minimal view.
    * @param workspaceId - target workspace.
    * @param sessionId - session to move.

@@ -38,6 +38,9 @@ export interface WorkspaceEntityHost {
    */
   table(): KvTable<WorkspaceId, WorkspaceRecord>
 
+  /** Project explicit grouping over the stored cwd account. */
+  projectSessionIds(id: WorkspaceId, candidates: readonly SessionId[]): readonly SessionId[]
+
   /**
    * Validate an already-accounted session, preserving ownership when its fully
    * qualified cwd cannot resolve because a path component is missing.
@@ -100,7 +103,7 @@ export class WorkspaceEntity implements Workspace {
   }
 
   get sessionIds(): readonly SessionId[] {
-    return this.record.sessionIds.filter(id => this.host.candidateMatches(id, this.record.path))
+    return this.host.projectSessionIds(this.id, this.record.sessionIds)
   }
 
   async setTitle(title: string): Promise<void> {
@@ -151,19 +154,20 @@ export class WorkspaceEntity implements Workspace {
 
   async insertSessionBefore(sessionId: SessionId, beforeSessionId?: SessionId): Promise<void> {
     await this.mutate((record) => {
-      if (!record.sessionIds.includes(sessionId)) {
+      const members = this.host.projectSessionIds(this.id, record.sessionIds)
+      if (!members.includes(sessionId)) {
         throw new WorkspaceMoveInvalidError(
           `cannot move session '${sessionId}' in workspace '${record.path}': the session is not accounted`,
         )
       }
-      if (beforeSessionId !== undefined && !record.sessionIds.includes(beforeSessionId)) {
+      if (beforeSessionId !== undefined && !members.includes(beforeSessionId)) {
         throw new WorkspaceMoveInvalidError(
           `cannot move session '${sessionId}' before '${beforeSessionId}' in workspace '${record.path}': `
           + 'the anchor session is not accounted',
         )
       }
       if (beforeSessionId === sessionId) return record
-      const without = record.sessionIds.filter(id => id !== sessionId)
+      const without = members.filter(id => id !== sessionId)
       const at = beforeSessionId === undefined ? without.length : without.indexOf(beforeSessionId)
       const sessionIds = [...without.slice(0, at), sessionId, ...without.slice(at)]
       return sessionIds.every((id, index) => id === record.sessionIds[index])
@@ -205,9 +209,8 @@ export class WorkspaceEntity implements Workspace {
     try {
       next = await this.host.table().update(this.id, (current) => {
         const changed = fn(current)
-        const sessionIds = changed.sessionIds.filter(
-          id => this.host.candidateMatches(id, changed.path),
-        )
+        const effective = new Set(this.host.projectSessionIds(this.id, changed.sessionIds))
+        const sessionIds = changed.sessionIds.filter(id => effective.has(id))
         if (changed === current && sessionIds.length === current.sessionIds.length) {
           throw unchangedSentinel
         }

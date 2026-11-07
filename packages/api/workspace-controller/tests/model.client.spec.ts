@@ -13,6 +13,8 @@ import type {
   WorkspaceInsertBeforeRequest,
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
+  WorkspaceMoveSessionRequest,
+  WorkspaceMoveSessionValue,
   WorkspacePinSessionRequest,
   WorkspacePinValue,
   WorkspaceRenameRequest,
@@ -86,6 +88,8 @@ class FakeWorkspaceRemote implements WorkspaceRemote {
   ) => Promise<RemoteResult<WorkspaceValue>> = request => Promise.resolve(remoteOk({
     workspace: workspace(String(request.workspaceId), [request.sessionId]),
   }))
+  onMoveSession: (request: WorkspaceMoveSessionRequest) => Promise<RemoteResult<WorkspaceMoveSessionValue>> = () =>
+    Promise.resolve(remoteOk({ items: [] }))
   onArchiveSession: (
     request: WorkspaceArchiveSessionRequest,
   ) => Promise<RemoteResult<WorkspaceArchiveValue>> = request =>
@@ -126,6 +130,11 @@ class FakeWorkspaceRemote implements WorkspaceRemote {
   insertSessionBefore(request: WorkspaceInsertSessionBeforeRequest): Promise<RemoteResult<WorkspaceValue>> {
     this.record('insertSessionBefore', request)
     return this.onInsertSessionBefore(request)
+  }
+
+  moveSession(request: WorkspaceMoveSessionRequest): Promise<RemoteResult<WorkspaceMoveSessionValue>> {
+    this.record('moveSession', request)
+    return this.onMoveSession(request)
   }
 
   archiveSession(request: WorkspaceArchiveSessionRequest): Promise<RemoteResult<WorkspaceArchiveValue>> {
@@ -568,5 +577,38 @@ describe('ClientWorkspaceModel', () => {
     expect(model.getSnapshot().items).toEqual([])
     model.removeView(wid('gone'))
     expect(model.getSnapshot().items).toEqual([])
+  })
+})
+
+
+describe('Session grouping moves', () => {
+  it('moves an Ungrouped Session and clears it to Ungrouped without changing archive or pins', async () => {
+    const remote = new FakeWorkspaceRemote()
+    const model = modelFor(remote)
+    model.replaceBaseline({ items: [workspace('a')], archivedSessionIds: [sid('archived')], pinnedSessionIds: [sid('s')] })
+    remote.onMoveSession = async request => remoteOk({ items: [workspace('a', request.workspaceId === null ? [] : [request.sessionId])] })
+    await model.moveSession(sid('s'), wid('a'))
+    expect(model.getSnapshot().items[0]?.sessionIds).toEqual([sid('s')])
+    await model.moveSession(sid('s'), null)
+    expect(model.getSnapshot().items[0]?.sessionIds).toEqual([])
+    expect(model.getSnapshot().archivedSessionIds).toEqual([sid('archived')])
+    expect(model.getSnapshot().pinnedSessionIds).toEqual([sid('s')])
+    expect(remote.calls).toContainEqual({ method: 'moveSession', request: { sessionId: sid('s'), workspaceId: null } })
+  })
+
+  it('retains grouping on refusal and ignores row echoes older than a pushed move', async () => {
+    const remote = new FakeWorkspaceRemote()
+    const model = modelFor(remote)
+    model.replaceBaseline({ items: [workspace('a', [sid('s')]), workspace('b')], archivedSessionIds: [], pinnedSessionIds: [] })
+    remote.onMoveSession = async () => workspaceError(new RemoteError('workspace/not-found', 'missing', { workspaceId: wid('gone') }))
+    await model.moveSession(sid('s'), wid('gone'))
+    expect(model.getSnapshot().items[0]?.sessionIds).toEqual([sid('s')])
+    const delayed = deferred<RemoteResult<WorkspaceValue>>()
+    remote.onRename = () => delayed.promise
+    const rename = model.rename(wid('a'), 'renamed')
+    model.replaceBaseline({ items: [workspace('a'), workspace('b', [sid('s')])], archivedSessionIds: [], pinnedSessionIds: [] })
+    delayed.resolve(remoteOk({ workspace: workspace('a', [sid('s')]) }))
+    await rename
+    expect(model.getSnapshot().items.find(row => row.workspaceId === wid('a'))?.sessionIds).toEqual([])
   })
 })

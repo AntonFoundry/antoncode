@@ -7,7 +7,7 @@
  * own `single` directory-flow child hole for the composed picker package's
  * client half. WorkspaceBrowser additionally declares the two Session row
  * action lists, and this apply registers the shipped actions — pin, rename,
- * fork, archive, copy ID — into them the way any client plugin would, each
+ * fork, move, archive, copy ID — into them the way any client plugin would, each
  * with its own behavior, plus the dialogs and the row-action notice into
  * `shell.overlay` (see the contract module doc). It also declares two
  * Session-row seats: the leading decoration a row renders only while its own
@@ -40,6 +40,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import {
   type ArchiveSessionInjected, type ForkSessionInjected, menuOpenStateFactory, type PinSessionInjected,
   type SessionArchiveConfirmInjected, type SessionArchiveConfirmRequest,
+  type MoveSessionInjected, type SessionMoveDialogInjected, type SessionMoveTarget,
   type RenameSessionInjected, type RowToast, type RowToastInjected, type RowToastState, type SessionRenameDialogInjected,
   type SessionIdInjected, type WorkspaceBrowserInjected, type WorkspacePickerInjected,
 } from './contract/slots.ts'
@@ -51,6 +52,7 @@ import { ArchiveSessionMenuItem, ArchiveSessionRowButton, SessionArchiveConfirmD
 import { derive } from './session-actions/derived.ts'
 import { ForkSessionMenuItem } from './session-actions/ForkSession.tsx'
 import { PinSessionMenuItem, PinSessionRowButton } from './session-actions/PinSession.tsx'
+import { MoveSessionMenuItem, SessionMoveDialog } from './session-actions/MoveSession.tsx'
 import { RenameSessionMenuItem, SessionRenameDialog } from './session-actions/RenameSession.tsx'
 import { RowActionToast } from './session-actions/RowActionToast.tsx'
 import { registerToasts } from './toast/register.ts'
@@ -164,6 +166,15 @@ export function apply(ctx: Context): void {
   // writes through its own injected callback and the surface reads through
   // its bound hook.
   const renameRequest = derive(shortcutControls.state, state => state.renameTarget)
+  const moveRequest = createSnapshotStore<SessionMoveTarget | null>(null)
+  const moveInjected = (): MoveSessionInjected => ({
+    requestSessionMove: (sessionId, displayTitle) => { moveRequest.set({ sessionId, displayTitle }) },
+  })
+  const moveDialogInjected = (): SessionMoveDialogInjected => ({
+    hooks: { moveRequest },
+    settleSessionMove: () => { moveRequest.set(null) },
+    moveSession: (sessionId, workspaceId) => workspaces.moveSession(sessionId, workspaceId),
+  })
   const archiveRequest = createSnapshotStore<SessionArchiveConfirmRequest | null>(null)
   const requestSessionRename = shortcutControls.rename
   const unarchiveSession = (sessionId: SessionId): void => {
@@ -318,6 +329,7 @@ export function apply(ctx: Context): void {
     yield ctx.slots.register({ name: 'sidebar.workspaces.session.menu.item', id: 'pin', order: 100, locale: NS, inject: pinInjected }, PinSessionMenuItem)
     yield ctx.slots.register({ name: 'sidebar.workspaces.session.menu.item', id: 'rename', order: 200, locale: NS, inject: renameInjected }, RenameSessionMenuItem)
     yield ctx.slots.register({ name: 'sidebar.workspaces.session.menu.item', id: 'fork', order: 300, locale: NS, inject: forkInjected }, ForkSessionMenuItem)
+    yield ctx.slots.register({ name: 'sidebar.workspaces.session.menu.item', id: 'move', order: 350, locale: NS, inject: moveInjected }, MoveSessionMenuItem)
     yield ctx.slots.register({ name: 'sidebar.workspaces.session.menu.item', id: 'archive', order: 400, locale: NS, inject: archiveInjected }, ArchiveSessionMenuItem)
     yield ctx.slots.register({ name: 'sidebar.workspaces.session.menu.item', id: 'session-id', order: 450, locale: NS, inject: sessionIdInjected }, SessionIdMenuItem)
   })
@@ -328,6 +340,9 @@ export function apply(ctx: Context): void {
   // The surfaces the actions raise live in the frame-wide layer: they must
   // outlive the row menu the action sat in.
   ctx.slots.inject('shell.overlay', function* () {
+    yield ctx.slots.register({
+      name: 'shell.overlay', id: 'workspace.session-move', locale: NS, inject: moveDialogInjected,
+    }, SessionMoveDialog)
     yield ctx.slots.register({
       name: 'shell.overlay', id: 'workspace.session-rename', locale: NS, inject: renameDialogInjected,
     }, SessionRenameDialog)

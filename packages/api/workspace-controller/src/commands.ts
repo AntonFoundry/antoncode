@@ -22,6 +22,8 @@ import type {
   WorkspaceInsertBeforeRequest,
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
+  WorkspaceMoveSessionRequest,
+  WorkspaceMoveSessionValue,
   WorkspacePinSessionRequest,
   WorkspacePinValue,
   WorkspaceRenameRequest,
@@ -224,6 +226,24 @@ export class WorkspaceCommands {
   async unpinSession(request: WorkspaceUnpinSessionRequest): Promise<WorkspacePinValue> {
     await this.ctx.workspaceRegistry.unpinSession(request.sessionId)
     return { pinnedSessionIds: [...this.ctx.workspaceRegistry.pinnedSessionIds] }
+  }
+
+  /**
+   * Change grouping independently of the Session's original directory.
+   * @param request - Session and nullable destination Workspace.
+   * @returns complete effective Workspace rows after durability.
+   */
+  async moveSession(request: WorkspaceMoveSessionRequest): Promise<WorkspaceMoveSessionValue> {
+    try {
+      await this.ctx.workspaceRegistry.moveSession(request.sessionId, request.workspaceId)
+    } catch (error) {
+      if (error instanceof WorkspaceUnknownSessionError) {
+        throw new RemoteError('session/not-found', error.message, { sessionId: request.sessionId }, { cause: error })
+      }
+      if (error instanceof WorkspaceOrderInvalidError) throw workspaceNotFound(error.workspaceId)
+      throw error
+    }
+    return { items: this.ctx.workspaceRegistry.list().map(workspaceView) }
   }
 
   private requireWorkspace(workspaceId: WorkspaceId): Workspace {

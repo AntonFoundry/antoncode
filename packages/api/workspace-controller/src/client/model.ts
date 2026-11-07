@@ -1,6 +1,7 @@
 /** Client-side Workspace state model shared by Remote transport and UI projection. */
 
 import { notifySubscribers } from '@deepseek-ai/dsh-client-store'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/remote'
 import { isRemoteFailure } from '@deepseek-ai/dsh-api-gateway/client'
 import type { RemoteFailure, RemoteResult, TypertClientRemote } from '@deepseek-ai/dsh-typert-protocol'
@@ -14,6 +15,7 @@ import type {
   WorkspaceDeleteValue,
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
+  WorkspaceMoveSessionValue,
   WorkspacePinSessionRequest,
   WorkspacePinValue,
   WorkspaceUnarchiveSessionRequest,
@@ -81,6 +83,8 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
   private orderRequestGeneration = 0
   /** Increments on stream orders so a later remote commit outranks an older unary echo. */
   private orderFrameGeneration = 0
+  /** Grouping replacements fence older row echoes, whose timestamps may be unchanged. */
+  private viewGeneration = 0
   /** Last complete order accepted from a baseline, increment, or current unary echo. */
   private committedOrder: WorkspaceId[] = []
   /** Latest archive-set request; a later request or a pushed set supersedes it. */
@@ -175,8 +179,9 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
    * @returns generated Remote result.
    */
   async create(input: WorkspaceCreateRequest): Promise<RemoteResult<WorkspaceCreateValue>> {
+    const generation = this.viewGeneration
     const result = await this.remote.create(input)
-    if (result.ok) this.upsert(result.value.workspace)
+    if (result.ok && generation === this.viewGeneration) this.upsert(result.value.workspace)
     return result
   }
 
@@ -186,8 +191,9 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
    * @returns generated Remote result.
    */
   async initializeDefault(signal?: AbortSignal): Promise<RemoteResult<WorkspaceValue | undefined>> {
+    const generation = this.viewGeneration
     const result = await this.remote.initializeDefault(signal)
-    if (result.ok && result.value !== undefined) this.upsert(result.value.workspace)
+    if (result.ok && result.value !== undefined && generation === this.viewGeneration) this.upsert(result.value.workspace)
     return result
   }
 
@@ -198,8 +204,9 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
    * @returns generated Remote result.
    */
   async rename(workspaceId: WorkspaceId, title: string): Promise<RemoteResult<WorkspaceValue>> {
+    const generation = this.viewGeneration
     const result = await this.remote.rename({ workspaceId, title })
-    if (result.ok) this.upsert(result.value.workspace)
+    if (result.ok && generation === this.viewGeneration) this.upsert(result.value.workspace)
     return result
   }
 
@@ -251,12 +258,29 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
     sessionId: WorkspaceInsertSessionBeforeRequest['sessionId'],
     beforeSessionId?: WorkspaceInsertSessionBeforeRequest['beforeSessionId'],
   ): Promise<RemoteResult<WorkspaceValue>> {
+    const generation = this.viewGeneration
     const result = await this.remote.insertSessionBefore({
       workspaceId,
       sessionId,
       ...beforeSessionId === undefined ? {} : { beforeSessionId },
     })
-    if (result.ok) this.upsert(result.value.workspace)
+    if (result.ok && generation === this.viewGeneration) this.upsert(result.value.workspace)
+    return result
+  }
+
+  /**
+   * Move grouping and install committed rows unless a newer frame arrived.
+   * @param sessionId - Existing Session to group.
+   * @param workspaceId - Existing Workspace or null for Ungrouped.
+   * @returns generated Remote result; failures retain the previous grouping.
+   */
+  async moveSession(sessionId: SessionId, workspaceId: WorkspaceId | null): Promise<RemoteResult<WorkspaceMoveSessionValue>> {
+    const generation = ++this.viewGeneration
+    const result = await this.remote.moveSession({ sessionId, workspaceId })
+    if (result.ok && generation === this.viewGeneration) {
+      this.installViews(result.value.items)
+      this.invalidate()
+    }
     return result
   }
 
@@ -341,6 +365,7 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
    * @param baseline - complete Workspace and archive projection.
    */
   replaceBaseline(baseline: WorkspaceBaseline): void {
+    this.viewGeneration++
     this.orderFrameGeneration++
     this.archiveRequestSeq++
     this.pinRequestSeq++

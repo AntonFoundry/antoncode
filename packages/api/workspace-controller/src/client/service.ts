@@ -46,6 +46,13 @@ export interface WorkspaceSource {
 
 /** Workspace Controller's Client service face. */
 export interface IWorkspaces {
+  /**
+   * Change grouping without opening or rewriting the Session.
+   * @param sessionId - Session to move, including an Ungrouped Session.
+   * @param workspaceId - Existing destination, or null for Ungrouped.
+   * @returns resolution after durability; rejects to the requesting UI on failure.
+   */
+  moveSession(sessionId: SessionId, workspaceId: WorkspaceId | null): Promise<void>
   /** Host-authoritative Workspace rows, order, archive set, and follow lifecycle. */
   readonly list: WorkspaceSource
   /** Reload worktree records and preferences from the Host. */
@@ -215,6 +222,11 @@ export class WorkspaceController extends Service implements IWorkspaces {
   async unpinSession(sessionId: SessionId): Promise<void> {
     const result = await this.model.unpinSession(sessionId)
     if (!result.ok) throw commandError('session unpin', result.error)
+  }
+
+  async moveSession(sessionId: SessionId, workspaceId: WorkspaceId | null): Promise<void> {
+    const result = await this.model.moveSession(sessionId, workspaceId)
+    if (!result.ok) throw commandError('move', result.error)
   }
 
   async insertSessionBefore(

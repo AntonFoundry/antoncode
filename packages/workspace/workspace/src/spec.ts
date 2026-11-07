@@ -62,6 +62,8 @@ export const workspaceDomainState = z.object({
   archivedSessionIds: z.array(sessionId).default([]),
   pinnedSessionIds: z.array(sessionId).default([]),
   pendingMutation: workspacePendingMutation.optional(),
+  /** Explicit grouping overrides; null keeps a Session under Ungrouped. */
+  sessionAssignments: z.array(z.object({ sessionId, workspaceId: workspaceId.nullable() })).default([]),
 })
 
 /** Durable registry state inferred from {@link workspaceDomainState}. */
@@ -75,10 +77,11 @@ export type WorkspaceDomainState = z.infer<typeof workspaceDomainState>
  */
 export const workspaceDomainSpec = defineDomain({
   name: 'workspace',
-  version: 2,
+  version: 3,
+  compatibleVersions: [2],
   global: {
     schema: workspaceDomainState,
-    initial: { initialized: false, workspaceIds: [], archivedSessionIds: [], pinnedSessionIds: [] },
+    initial: { initialized: false, workspaceIds: [], archivedSessionIds: [], pinnedSessionIds: [], sessionAssignments: [] },
   },
   tables: { workspaces: domainTable<WorkspaceId, WorkspaceRecord>(workspaceRecord) },
 })

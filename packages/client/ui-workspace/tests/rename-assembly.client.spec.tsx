@@ -116,7 +116,7 @@ describe('session rename through the assembled browser', () => {
         },
       )
     }
-    // `order` places plugin rows after the shipped rows (100/200/300/400/450)
+    // `order` places plugin rows after the shipped rows (100/200/300/350/400/450)
     // even when the later registration has the lower shadowing priority
     // assigned to dynamic browser packages; the first plugin row opens the
     // plugin group with a hairline.
@@ -129,7 +129,7 @@ describe('session rename through the assembled browser', () => {
     const trigger = within(row as HTMLElement).getByLabelText('会话“Persisted title”的操作')
     fireEvent.click(trigger)
     expect(view.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
-      '置顶会话', '重命名', '分叉会话', '归档会话', '复制 Session ID', 'Export action', 'Last action',
+      '置顶会话', '重命名', '分叉会话', '移动会话…', '归档会话', '复制 Session ID', 'Export action', 'Last action',
     ])
     expect(view.getAllByRole('separator')).toHaveLength(1)
     const last = view.getByRole('menuitem', { name: 'Last action' })
@@ -158,6 +158,44 @@ describe('session rename through the assembled browser', () => {
     expect(view.queryByRole('menu')).toBeNull()
     expect(writeText).toHaveBeenCalledExactlyOnceWith(SID)
     await view.findByText('Session ID 已复制')
+    await runtime.dispose()
+  })
+
+  it('moves a Session through the persistent picker without selecting another view', async () => {
+    const runtime = await createRuntime()
+    await runtime.sessions.add({
+      id: SID,
+      summary: { title: 'Move this session', displayTitle: 'Move this session', cwd: '/w/alpha', updatedAt: Date.now() },
+    })
+    await runtime.sessions.retainFor(runtime.ctx, SID, { source: 'mainView' }).ready
+    await seedWorkspace(runtime)
+    await runtime.workspaces.update((draft) => {
+      draft.items = [...draft.items, {
+        workspaceId: 'w2' as WorkspaceId, title: 'beta', path: '/w/beta', sessionIds: [],
+        createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+      }]
+    })
+    await declareFrame(runtime)
+    await runtime.mount({ inject: [...inject], apply })
+    const selectPanel = vi.spyOn(runtime.ctx.layout, 'selectPanel')
+    const move = vi.spyOn(runtime.workspaces, 'moveSession')
+    const view = runtime.renderRoot()
+    const archiveToggle = await view.findByRole('button', { name: '已归档工作区（1）' })
+    fireEvent.click(archiveToggle)
+    const row = (await view.findByText('Move this session')).closest('[role="treeitem"]')!
+    fireEvent.click(within(row as HTMLElement).getByLabelText('会话“Move this session”的操作'))
+    fireEvent.click(view.getByRole('menuitem', { name: '移动会话…' }))
+    expect(view.queryByRole('menu')).toBeNull()
+    expect(view.getByRole('dialog', { name: '移动会话' })).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: '选择目标工作区' }))
+    fireEvent.click(view.getByRole('menuitem', { name: 'beta' }))
+    await runtime.flush()
+    await waitFor(() => { expect(view.queryByRole('dialog')).toBeNull() })
+    expect(move).toHaveBeenCalledExactlyOnceWith(SID, 'w2')
+    const items = runtime.workspaces.list.getSnapshot().items
+    expect(items.find(item => item.workspaceId === 'w1')?.sessionIds).toEqual([])
+    expect(items.find(item => item.workspaceId === 'w2')?.sessionIds).toEqual([SID])
+    expect(selectPanel).not.toHaveBeenCalled()
     await runtime.dispose()
   })
 

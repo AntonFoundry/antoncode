@@ -135,6 +135,7 @@ export const VIEWER_ENDPOINT_CLASSES = {
   'workspace/delete': 'owner-only', // owner deletes a Workspace
   'workspace/initializeDefault': 'owner-only', // owner initializes the default Workspace
   'workspace/insertBefore': 'owner-only', // owner reorders Workspaces
+  'workspace/moveSession': 'owner-only', // owner changes Session grouping
   'workspace/insertSessionBefore': 'owner-only', // owner reorders Sessions
   'workspace/pinSession': 'owner-only', // owner pins a Session
   'workspace/rename': 'owner-only', // owner renames a Workspace
