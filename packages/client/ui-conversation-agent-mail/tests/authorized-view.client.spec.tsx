@@ -10,10 +10,10 @@ import { en } from '../src/client/locales.ts'
 afterEach(cleanup)
 beforeEach(() => { setAgentMailChannel('self', 'local') })
 const t = (key: string): string => en[key as keyof typeof en] ?? key
-const chat = { nodes: { values: () => [] } }
-const useChat = ((selector: (snapshot: unknown) => unknown) => selector(chat)) as unknown as AgentMailConversationViewProps['useChat']
+const conversation = { views: { get: () => [] } }
+const useConversation = ((selector: (snapshot: unknown) => unknown) => selector(conversation)) as unknown as AgentMailConversationViewProps['useConversation']
 const props = (gateway?: AgentMailGateway, sessionId = 'self'): AgentMailConversationViewProps =>
-  ({ t, sessionId, gateway, useChat }) as unknown as AgentMailConversationViewProps
+  ({ t, sessionId, gateway, useConversation }) as unknown as AgentMailConversationViewProps
 
 function fakeGateway() {
   let state: ReturnType<AgentMailGateway['authorization']> = { state: 'unpaired' }
@@ -97,6 +97,22 @@ describe('authorized Agent Mail view', () => {
     fireEvent.click(screen.getByRole('button', { name: 'direct' }))
     expect(screen.getByText('Direct mail')).toBeTruthy()
     expect(screen.queryByText('Local mail')).toBeNull()
+  })
+
+  it('renders both directions from the Mail target without touching queue acknowledgements', async () => {
+    const fake = fakeGateway()
+    const rows = [
+      { key: 'call:send', direction: 'outgoing', peer: 'child', body: 'Keep working', at: 1000 },
+      { key: 'message:reply', direction: 'incoming', peer: 'child', body: 'Agent child sent a message: \nProgress report', at: 2000 },
+    ]
+    const relayConversation = ((selector: (snapshot: unknown) => unknown) => selector({ views: { get: () => rows } })) as AgentMailConversationViewProps['useConversation']
+    render(<AgentMailConversationView {...props(fake.gateway)} useConversation={relayConversation} />)
+    await waitFor(() => { expect(screen.getByText('Keep working')).toBeTruthy() })
+    expect(screen.getByText('Agent child sent a message: Progress report')).toBeTruthy()
+    expect(fake.acknowledge).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'direct' }))
+    expect(screen.queryByText('Keep working')).toBeNull()
+    expect(screen.queryByText('Agent child sent a message: Progress report')).toBeNull()
   })
 
   it('uses the resident composer instead of an internal form', async () => {

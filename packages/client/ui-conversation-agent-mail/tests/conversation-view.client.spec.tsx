@@ -45,7 +45,7 @@ function props(
 
 describe('Agent Mail read-only conversation view', () => {
   it('registers slots, composer routing, and the mention source', async () => {
-    expect(inject).toEqual(['slots', 'locale', 'conversation', 'inputTriggers', 'remote', 'remote.agentMail'])
+    expect(inject).toEqual(['slots', 'locale', 'conversation', 'uiConversation', 'inputTriggers', 'remote', 'remote.agentMail'])
     const ctx = new Context()
     await ctx.plugin(SlotRegistry).await()
     const locale = new LocaleRuntime(ctx)
@@ -53,6 +53,9 @@ describe('Agent Mail read-only conversation view', () => {
     ctx.provide('conversation', {
       composerRoutes: { register: () => () => {} },
       activeView: () => null,
+    } as never)
+    ctx.provide('uiConversation', {
+      events: { register: () => () => {} }, views: { register: () => () => {} },
     } as never)
     ctx.provide('inputTriggers', { registerSource: () => () => {} } as never)
     ctx.provide('remote', { agentMail: { address: async () => ({ ok: false, error: { message: 'unavailable' } }) } } as never)

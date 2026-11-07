@@ -17,6 +17,7 @@ import { agentMailChannel } from './composer-targets.ts'
 import type { AgentMailGateway } from './gateway.ts'
 import { agentMentionToken, resolveMentions } from './mentions.ts'
 import { recordAgentMailSent } from './sent-log.ts'
+import { registerAgentMailRelays } from './relay-projection.ts'
 import { en, zh, type AgentMailLocaleKey } from './locales.ts'
 
 export type { AgentMailConversationViewProps } from './AgentMailConversationView.tsx'
@@ -36,7 +37,7 @@ declare module '@deepseek-ai/cordis' {
 const NS = 'conversation.agentMail'
 
 /** Required services: conversation view slot, composer routing, `@` source, and localized copy. */
-export const inject = ['slots', 'locale', 'conversation', 'inputTriggers', 'remote', 'remote.agentMail']
+export const inject = ['slots', 'locale', 'conversation', 'uiConversation', 'inputTriggers', 'remote', 'remote.agentMail']
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -46,6 +47,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** Register Agent Mail with the owner-only Host Remote gateway. */
 export function apply(ctx: Context): void {
+  registerAgentMailRelays(ctx)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-conversation-agent-mail: dictionaries')
   const t = ctx.locale.bind(NS)
   const gateway = createAgentMailGateway(ctx.remote.agentMail)

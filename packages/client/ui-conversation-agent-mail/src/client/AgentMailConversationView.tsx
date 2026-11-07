@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { CSSProperties } from 'react'
-import type { ChatSnapshot, ToolCallBlock } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AgentMailGateway } from './gateway.ts'
@@ -9,6 +8,7 @@ import {
   agentMailChannel, setAgentMailChannel, subscribeAgentMailChannel, type AgentMailChannel,
 } from './composer-targets.ts'
 import { agentMailSent, subscribeAgentMailSent } from './sent-log.ts'
+import { EMPTY_AGENT_MAIL_RELAYS } from './relay-projection.ts'
 import styles from './AgentMailConversationView.module.css'
 
 export type AgentMailConversationViewProps = ConvViewProps & PropsLocale<'conversation.agentMail'> & {
@@ -121,45 +121,7 @@ function clockText(at: number): string {
   return new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 }
 
-/** One call head from a running or settled tool row. */
-function callHead(block: ToolCallBlock): { callId: string; name: string; argsRaw: string; at: number } | undefined {
-  if ('kind' in block) {
-    const call = block.call
-    if (call === null || !('argsRaw' in call)) return undefined
-    return { callId: block.callId, name: call.name, argsRaw: call.argsRaw, at: block.callTime ?? block.time }
-  }
-  if (!('argsRaw' in block)) return undefined
-  return { callId: block.callId, name: block.name, argsRaw: block.argsRaw, at: block.time }
-}
-
-/**
- * Project the current agent's `send_message` tool calls into feed rows. The
- * recipient answers through a subagent report, which already lands in Agent
- * Mail, so one thread holds both directions without exposing the tool call as
- * opaque JSON.
- * @param chat - active session chat snapshot.
- * @param from - the current agent session id.
- * @returns outgoing relay rows in call order.
- */
-function collectRelays(chat: ChatSnapshot, from: string): readonly FeedEntry[] {
-  const entries: FeedEntry[] = []
-  for (const node of chat.nodes.values()) {
-    if (node.kind !== 'tool-call') continue
-    const root = (node.data as { root?: ToolCallBlock }).root
-    if (root === undefined) continue
-    const head = callHead(root)
-    if (head === undefined || head.name !== 'send_message') continue
-    let args: unknown
-    try { args = JSON.parse(head.argsRaw) } catch { continue }
-    if (typeof args !== 'object' || args === null) continue
-    const { subagent_id: to, message } = args as { subagent_id?: unknown; message?: unknown }
-    if (typeof to !== 'string' || typeof message !== 'string' || message === '') continue
-    entries.push({ key: `relay:${head.callId}`, from, to: [to], workspaceId: '', body: message, at: head.at })
-  }
-  return entries
-}
-
-function AuthorizedMail({ gateway, sessionId, workspaceId, t, useChat }: AgentMailConversationViewProps & {
+function AuthorizedMail({ gateway, sessionId, workspaceId, t, useConversation }: AgentMailConversationViewProps & {
   gateway: AgentMailGateway
   sessionId: NonNullable<AgentMailConversationViewProps['sessionId']>
   workspaceId: string
@@ -180,8 +142,7 @@ function AuthorizedMail({ gateway, sessionId, workspaceId, t, useChat }: AgentMa
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
-  const chat = useChat(snapshot => snapshot)
-  const relays = useMemo(() => collectRelays(chat, sessionId), [chat, sessionId])
+  const relays = useConversation(snapshot => snapshot.views.get('agent-mail')) ?? EMPTY_AGENT_MAIL_RELAYS
   useEffect(() => {
     const refresh = (): void => { setInbox({ ...gateway.inbox(sessionId) }) }
     const unsubscribe = gateway.subscribeInbox(refresh)
@@ -204,9 +165,14 @@ function AuthorizedMail({ gateway, sessionId, workspaceId, t, useChat }: AgentMa
       .map(entry => ({
         key: entry.key, from: entry.from, to: entry.to, workspaceId: '', body: entry.body, at: entry.at,
       }))
-    return [...rows, ...(channel === 'local' ? relays : []), ...sentRows]
+    const relayRows: FeedEntry[] = channel === 'local' ? relays.map(relay => ({
+      key: relay.key, from: relay.direction === 'incoming' ? relay.peer : sessionId,
+      to: [relay.direction === 'incoming' ? sessionId : relay.peer],
+      workspaceId: '', body: relay.body, at: relay.at,
+    })) : []
+    return [...rows, ...relayRows, ...sentRows]
       .sort((left, right) => left.at - right.at)
-  }, [channel, messages, relays, sent])
+  }, [channel, messages, relays, sent, sessionId])
   const ready = (): boolean => gateway.authorization(sessionId).state === 'authorized'
     && gateway.authorization(sessionId).workspaceId === workspaceId
 
@@ -284,6 +250,7 @@ function AuthorizedMail({ gateway, sessionId, workspaceId, t, useChat }: AgentMa
           {feed.map((message, index) => {
             const previous = feed[index - 1]
             const grouped = previous !== undefined && previous.from === message.from
+              && previous.to?.join('\0') === message.to?.join('\0')
               && message.at - previous.at < 5 * 60_000
             return (
               <li key={message.key} className={grouped ? styles.grouped : styles.message}>

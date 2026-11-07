@@ -9,7 +9,7 @@ English
 
 ## Summary
 
-Read workspace mail and cross-workspace direct messages from a Session tab, discover peers, and send through the resident composer. Local messages can address selected peers or broadcast to subscribed workspace members. Opening the tab does not acknowledge messages, and queue sends do not wake an Agent or enter its model inbox.
+Read workspace mail, cross-workspace direct messages, and ongoing parent-child `send_message` communications from a Session tab, discover peers, and send queue mail through the resident composer. Local messages can address selected peers or broadcast to subscribed workspace members. Opening the tab does not acknowledge messages, and queue sends do not wake an Agent or enter its model inbox.
 
 ## Table of Contents
 
@@ -36,6 +36,8 @@ The Client uses the generated `agentMail` Remote namespace. The Host adapter is 
 
 The local channel addresses peers in the sender's workspace and can broadcast to subscribed workspace members. The direct channel addresses peers in other registered workspaces. Each channel has its own read and acknowledgement cursor. Queue sends do not wake an Agent or alter its model inbox.
 
+The general channel also reads the registered `agent-mail` Conversation target. Successful native `send_message` call/result pairs use the shipped `agent_id` argument; successful nested PTC dispatch settlements carry their own arguments. Incoming rows use admitted `user/message` events with `agent-message` attribution, preserving the logged text blocks and sender identity. Inbox insertion and admission do not create separate rows. Failed or unfinished sends, initial task prompts, and runtime-owned `subagent-settled` notices are not represented as authored mail. The projection neither delivers messages nor creates Session events.
+
 </details>
 
 -----
@@ -60,7 +62,9 @@ None; browser presentation does not change provider requests or their reusable p
 
 - Agent Mail endpoints are owner-only; browser presentation state does not authorize access.
 - Direct messages require at least one peer mention, and image attachments are not supported.
-- Sending does not wake recipients or acknowledge their inboxes; recipients control queue reads and acknowledgements.
+- Queue sends do not wake recipients or acknowledge their inboxes; recipients control queue reads and acknowledgements. Subagent `send_message` retains its separate waking/steering semantics.
+- Parent-child rows cover only the loaded Session window. Incoming messages appear after model admission, not while pending in the durable Agent inbox; outgoing native calls require their loaded call head and successful result. Older-window loading and replay reconstruct these rows from existing events.
+- Browser-composed queue sends retain the existing browser-local outbox; queue history and parent-child traffic are separate delivery mechanisms. Runtime settlement notices and initial delegation prompts remain in the transcript.
 
 ### Dev Note
 
