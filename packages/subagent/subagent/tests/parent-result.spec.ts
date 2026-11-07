@@ -32,6 +32,7 @@ it.each(['absent', 'unused'] as const)('returns the closing answer when send_mes
   })
   try {
     await ctx.subagents.waitForChildren(parent)
+    expect((await activation.result).diagnostic).toBeUndefined()
     await parent.whenIdle()
     expect(adapter.requests).toHaveLength(2)
     expect(adapter.requests[0]!.tools?.some(tool => tool.name === 'send_message') ?? false).toBe(availability === 'unused')
@@ -66,7 +67,7 @@ it('delivers structured output to the parent when the child has send_message', a
     },
   })
   try {
-    await activation.result
+    expect((await activation.result).diagnostic).toBeUndefined()
     await parent.whenIdle()
     expect(adapter.requests[0]!.tools?.some(tool => tool.name === 'send_message')).toBe(true)
     const notices = adapter.requests[1]!.messages.filter(message => message.role === 'user')
@@ -74,5 +75,37 @@ it('delivers structured output to the parent when the child has send_message', a
     expect(JSON.stringify(notices)).not.toContain('Its closing message:')
   } finally {
     await activation.dispose()
+  }
+})
+
+it('delivers the child’s durable failure cause separately from closing output', async () => {
+  const ctx = new Context()
+  await mountLocalActivations(ctx)
+  await mountAgentLoopTestDependencies(ctx)
+  await ctx.plugin(AgentLoop, { agents: [] })
+  await mountWorkingDirectoryFixture(ctx)
+  await ctx.plugin(SubagentRuntime)
+  await ctx.plugin(Spawn, { providerName: 'spawn' })
+  const adapter = new MockAdapter([
+    [{ type: 'finish', reason: { kind: 'error', failure: { code: 'QUOTA', message: 'Account quota exhausted; select another provider.' } } }],
+    textResponse('Parent received the failure.'),
+  ])
+  ctx.llm.registerAdapter(['mock'], adapter)
+  const parent = await ctx.agentLoop.create(SessionId('parent'), { provider: 'mock', model: 'mock' })
+  const activation = await ctx.subagents.startActivation({
+    provider: 'spawn', label: 'Compute the answer', delivery: 'parent', signal: new AbortController().signal,
+    request: { parent, prompt: [{ type: 'text', text: 'Find the answer.' }] },
+  })
+  try {
+    const result = await activation.result
+    await parent.whenIdle()
+    expect(result.stopReason).toBe('error')
+    expect(result.diagnostic).toBe('Child failure: Account quota exhausted; select another provider.')
+    const notices = adapter.requests[1]!.messages.filter(message => message.role === 'user')
+    expect(notices.flatMap(message => message.content)).toContainEqual({ type: 'text', text: result.diagnostic })
+    expect(JSON.stringify(notices)).toContain('It left no closing message.')
+  } finally {
+    await activation.dispose()
+    await ctx.fiber.dispose()
   }
 })

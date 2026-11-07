@@ -6,7 +6,8 @@ import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
 import type { SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import { finalAssistantOutput } from './assistant-output.ts'
-import { epochStopReason } from './lifecycle.ts'
+import { epochFailureDetail, epochStopReason } from './stop-reason.ts'
+import { localFailureDiagnostic } from './failure-diagnostic.ts'
 import type { ActivationObserver } from './lifecycle.ts'
 import { SubagentError } from './error.ts'
 import type { StructuredAttachment } from './structured.ts'
@@ -149,22 +150,26 @@ export function observeLocalFailure(activation: LocalActivation, wake: () => voi
 }
 
 /**
- * Capture local output and retain failures without a later committed turn ending.
+ * Capture local output and bounded, credential-filtered durable failure detail.
+ * Live failures without a later committed turn ending retain their error status,
+ * but have no durable cause to forward.
  * @param activation - the settled local execution and any structured result.
- * @returns final output, stop reason, and committed structured value.
+ * @returns final output, stop reason, optional safe failure diagnostic, and committed structured value.
  */
 export function captureLocalResult(activation: LocalActivation): SubagentResult {
   // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
   const events = activation.handle.agent.session.snapshotEvents(activation.outputStart)
   const output = finalAssistantOutput(events) ?? []
   const stopReason = activation.failureAt === undefined ? epochStopReason(events) : 'error'
+  const failure = activation.failureAt === undefined && stopReason === 'error' ? epochFailureDetail(events) : undefined
+  const diagnostic = failure === undefined ? {} : { diagnostic: localFailureDiagnostic(failure) }
   const structured = activation.structured
   if (structured !== undefined) {
     const captured = structured.captured()
-    if (captured !== undefined) return { output, stopReason, structured: captured.value }
+    if (captured !== undefined) return { output, stopReason, ...diagnostic, structured: captured.value }
     if (stopReason === 'completed') return { output, stopReason: 'error' }
   }
-  return { output, stopReason }
+  return { output, stopReason, ...diagnostic }
 }
 
 /** Serialize each durable child's delivery, release, and disposal. */
