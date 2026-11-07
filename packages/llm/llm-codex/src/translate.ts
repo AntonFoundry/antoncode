@@ -100,12 +100,13 @@ function closeBlock(block: OpenBlock): ContentBlock {
  * @param events - parsed event objects from the Codex backend.
  * @returns deltas as they arrive; `block-end`s, `usage`, and `finish` are deferred to the terminal event.
  *   A `completed` response with no opened blocks maps to an `EMPTY_RESPONSE` error finish.
+ * @throws LlmError `INVALID_RESPONSE` when tool arguments or completion cannot be associated with an opened item; no calls are dispatched.
  */
 export async function* translate(events: AsyncIterable<WireEvent>): AsyncGenerator<StreamChunk> {
   let nextIndex = 0
   let textBlock: OpenBlock | undefined
   let reasoningBlock: OpenBlock | undefined
-  let toolBlock: OpenBlock | undefined
+  const toolBlocks = new Map<string, OpenBlock>()
   const order: OpenBlock[] = []
   let sawToolCall = false
   let pendingUsage: TokenUsage | undefined
@@ -119,12 +120,16 @@ export async function* translate(events: AsyncIterable<WireEvent>): AsyncGenerat
   for await (const event of events) {
     switch (event.type) {
       case 'response.output_item.added':
-        if (event.item.type === 'function_call' && !toolBlock) {
+        if (event.item.type === 'function_call') {
           sawToolCall = true
-          toolBlock = open('tool-call')
-          toolBlock.callId = event.item.id
+          let toolBlock = toolBlocks.get(event.item.id)
+          if (!toolBlock) {
+            toolBlock = open('tool-call')
+            toolBlocks.set(event.item.id, toolBlock)
+            yield { type: 'block-start', index: toolBlock.index, blockType: 'tool-call' }
+          }
+          toolBlock.callId = event.item.call_id
           if (typeof event.item.name === 'string') toolBlock.name = event.item.name
-          yield { type: 'block-start', index: toolBlock.index, blockType: 'tool-call' }
         }
         break
       case 'response.content_part.added':
@@ -156,28 +161,34 @@ export async function* translate(events: AsyncIterable<WireEvent>): AsyncGenerat
         yield { type: 'reasoning-delta', index: reasoningBlock.index, text: event.delta }
         break
       case 'response.function_call_arguments.delta':
-        sawToolCall = true
+      case 'response.function_call_arguments.done': {
+        const toolBlock = toolBlocks.get(event.item_id)
         if (!toolBlock) {
-          toolBlock = open('tool-call')
-          toolBlock.callId = event.item_id
-          yield { type: 'block-start', index: toolBlock.index, blockType: 'tool-call' }
+          throw new LlmError('Codex tool arguments arrived without a matching function-call item', 'INVALID_RESPONSE')
         }
-        toolBlock.text += event.delta
-        yield {
-          type: 'tool-call-delta',
-          index: toolBlock.index,
-          id: ToolCallId(toolBlock.callId ?? ''),
-          ...toolBlock.name !== undefined ? { name: toolBlock.name } : {},
-          argumentsDelta: event.delta,
+        if (event.type === 'response.function_call_arguments.done') {
+          toolBlock.text = event.arguments
+        } else {
+          toolBlock.text += event.delta
+          yield {
+            type: 'tool-call-delta',
+            index: toolBlock.index,
+            id: ToolCallId(toolBlock.callId ?? ''),
+            ...toolBlock.name !== undefined ? { name: toolBlock.name } : {},
+            argumentsDelta: event.delta,
+          }
         }
         break
-      case 'response.function_call_arguments.done':
-        if (toolBlock) toolBlock.text = event.arguments
-        break
+      }
       case 'response.output_item.done':
-        // A text item closes here if no explicit output_text.done arrived.
-        if (event.item.type === 'message' && textBlock) {
-          // keep open; the completed event flushes ordering
+        if (event.item.type === 'function_call') {
+          const toolBlock = toolBlocks.get(event.item.id)
+          if (!toolBlock) {
+            throw new LlmError('Codex function-call completion arrived without a matching item', 'INVALID_RESPONSE')
+          }
+          toolBlock.callId = event.item.call_id
+          toolBlock.name = event.item.name
+          if (event.item.arguments !== undefined) toolBlock.text = event.item.arguments
         }
         break
       case 'response.completed':

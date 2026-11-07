@@ -98,13 +98,10 @@ export interface WireOutputItemAdded {
   item: WireItemSummary
 }
 
-/** Identity and optional role/name supplied when a response output item opens. */
-export interface WireItemSummary {
-  type: 'message' | 'function_call'
-  id: string
-  role?: 'user' | 'assistant'
-  name?: string
-}
+/** Responses item identity; function `call_id` correlates tool outputs independently of the item `id`. */
+export type WireItemSummary =
+  | { type: 'message'; id: string; role?: 'user' | 'assistant' }
+  | { type: 'function_call'; id: string; call_id: string; name: string; arguments?: string }
 
 /** `response.content_part.added` — opens an output_text part. */
 export interface WireContentPartAdded {
@@ -161,7 +158,7 @@ export interface WireFunctionCallArgumentsDone {
 export interface WireOutputItemDone {
   type: 'response.output_item.done'
   output_index: number
-  item: { type: 'message' | 'function_call'; id: string; name?: string }
+  item: WireItemSummary
 }
 
 /** `response.completed` — terminal success. */

@@ -64,7 +64,9 @@ const HELLO_EVENTS = [
 ]
 
 /** Codex backend stand-in: records each request, answers the one scripted generation. */
-async function codexServer(options: { expireFirst?: boolean } = {}): Promise<{ url: string; requests: RecordedRequest[] }> {
+async function codexServer(
+  options: { expireFirst?: boolean; events?: readonly string[] } = {},
+): Promise<{ url: string; requests: RecordedRequest[] }> {
   const requests: RecordedRequest[] = []
   const server = createServer((request: IncomingMessage, response: ServerResponse) => {
     let body = ''
@@ -82,7 +84,7 @@ async function codexServer(options: { expireFirst?: boolean } = {}): Promise<{ u
         return
       }
       response.writeHead(200, { 'content-type': 'text/event-stream' })
-      for (const event of HELLO_EVENTS) response.write(`data: ${event}\n\n`)
+      for (const event of options.events ?? HELLO_EVENTS) response.write(`data: ${event}\n\n`)
       response.end()
     })
   })
@@ -186,6 +188,30 @@ describe('request-level dynamic profile', () => {
     expect(server.requests[0]?.authorization).toBe('Bearer fake-access')
     expect(server.requests[0]?.accountId).toBe('acct-1')
     expect(server.requests[0]?.originator).toBe('opencode')
+  })
+
+  it('assembles separate tool calls from Responses SSE with execution call ids', async () => {
+    const dir = await home()
+    const codexDir = await codexHome(dir)
+    const calls = [
+      { name: 'subagent', arguments: '{"description":"Inspect schema","prompt":"Trace tool dispatch"}' },
+      { name: 'ripwire_locate', arguments: '{"task":"sent chat message more actions menu delete message truncate conversation","path":"/repo"}' },
+    ]
+    const events = calls.flatMap((call, index) => [
+      { type: 'response.output_item.added', output_index: index, item: { type: 'function_call', id: `fc-${index}`, call_id: `call-${index}`, name: call.name } },
+      { type: 'response.function_call_arguments.delta', output_index: index, item_id: `fc-${index}`, delta: call.arguments.slice(0, 7) },
+      { type: 'response.function_call_arguments.delta', output_index: index, item_id: `fc-${index}`, delta: call.arguments.slice(7) },
+      { type: 'response.function_call_arguments.done', output_index: index, item_id: `fc-${index}`, arguments: call.arguments },
+    ])
+    const server = await codexServer({ events: [
+      ...events.map(event => JSON.stringify(event)),
+      JSON.stringify({ type: 'response.completed', response: { id: 'resp-1', status: 'completed' } }),
+    ] })
+    const ctx = await boot(dir, { providers: { codex: { codexHome: codexDir, baseURL: server.url } } })
+    const assembler = new BlockAssembler()
+    for await (const chunk of ctx.llm.stream({ provider: 'codex', model: 'gpt-5.5', messages: [] })) assembler.push(chunk)
+    expect(assembler.finish).toEqual({ kind: 'tool-calls' })
+    expect(assembler.blocks()).toEqual(calls.map((call, index) => ({ type: 'tool-call', id: `call-${index}`, ...call })))
   })
 
   it('uses discovered context capacity for cached models without a configured override', async () => {

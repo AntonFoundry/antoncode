@@ -63,20 +63,100 @@ describe('translate: reasoning summary', () => {
 describe('translate: tool calls', () => {
   it('assembles streamed function-call arguments and finishes with tool-calls', async () => {
     const chunks = await collect(translate(feed(
-      { type: 'response.output_item.added', output_index: 0, item: { type: 'function_call', id: 'fc-1', name: 'bash' } },
+      { type: 'response.output_item.added', output_index: 0, item: { type: 'function_call', id: 'fc-1', call_id: 'call-1', name: 'bash' } },
       { type: 'response.function_call_arguments.delta', output_index: 0, item_id: 'fc-1', delta: '{"cmd":' },
       { type: 'response.function_call_arguments.delta', output_index: 0, item_id: 'fc-1', delta: '"ls"}' },
       { type: 'response.function_call_arguments.done', output_index: 0, item_id: 'fc-1', arguments: '{"cmd":"ls"}' },
       completed(),
     )))
     expect(chunks).toContainEqual({ type: 'block-start', index: 0, blockType: 'tool-call' })
-    expect(chunks).toContainEqual({ type: 'tool-call-delta', index: 0, id: 'fc-1', name: 'bash', argumentsDelta: '{"cmd":' })
+    expect(chunks).toContainEqual({ type: 'tool-call-delta', index: 0, id: 'call-1', name: 'bash', argumentsDelta: '{"cmd":' })
     expect(chunks).toContainEqual({
       type: 'block-end',
       index: 0,
-      block: { type: 'tool-call', id: 'fc-1', name: 'bash', arguments: '{"cmd":"ls"}' },
+      block: { type: 'tool-call', id: 'call-1', name: 'bash', arguments: '{"cmd":"ls"}' },
     })
     expect(chunks.at(-1)).toEqual({ type: 'finish', reason: { kind: 'tool-calls' } })
+  })
+})
+
+describe('translate: tool-call identities', () => {
+  it.each(['sequential', 'interleaved'])('keeps names and fragmented arguments paired for %s calls', async (ordering) => {
+    const calls = [
+      { name: 'subagent', arguments: '{"description":"Inspect tools","prompt":"Trace schema dispatch"}' },
+      { name: 'bash', arguments: '{"description":"Inspect status","command":"git status --short"}' },
+      { name: 'ripwire_pack_task', arguments: '{"task":"sent chat message more actions menu delete message truncate conversation","path":"/repo"}' },
+    ]
+    const added = calls.map((call, index): WireEvent => ({
+      type: 'response.output_item.added', output_index: index,
+      item: { type: 'function_call', id: `fc-${index}`, call_id: `call-${index}`, name: call.name },
+    }))
+    const fragments = calls.map((call, index): WireEvent[] => [
+      { type: 'response.function_call_arguments.delta', output_index: index, item_id: `fc-${index}`, delta: call.arguments.slice(0, 10) },
+      { type: 'response.function_call_arguments.delta', output_index: index, item_id: `fc-${index}`, delta: call.arguments.slice(10) },
+      { type: 'response.function_call_arguments.done', output_index: index, item_id: `fc-${index}`, arguments: call.arguments },
+      { type: 'response.output_item.done', output_index: index, item: { type: 'function_call', id: `fc-${index}`, call_id: `call-${index}`, name: call.name } },
+    ])
+    const events = ordering === 'sequential'
+      ? added.flatMap((event, index) => [event, ...fragments[index]!])
+      : [...added, ...[0, 1, 2, 3].flatMap(part => fragments.map(events => events[part]!))]
+    const chunks = await collect(translate(feed(...events, completed())))
+    expect(chunks.filter(chunk => chunk.type === 'block-end')).toEqual(calls.map((call, index) => ({
+      type: 'block-end', index,
+      block: { type: 'tool-call', id: `call-${index}`, name: call.name, arguments: call.arguments },
+    })))
+    for (const [index, call] of calls.entries()) {
+      const deltas = chunks.filter(chunk => chunk.type === 'tool-call-delta' && chunk.index === index)
+      expect(deltas).toEqual([call.arguments.slice(0, 10), call.arguments.slice(10)].map(argumentsDelta => ({
+        type: 'tool-call-delta', index, id: `call-${index}`, name: call.name, argumentsDelta,
+      })))
+    }
+  })
+
+  it.each(['response.function_call_arguments.delta', 'response.function_call_arguments.done'] as const)(
+    'rejects %s for an unknown item rather than attaching it to another call', async (type) => {
+      await expect(collect(translate(feed(
+        { type: 'response.output_item.added', output_index: 0, item: { type: 'function_call', id: 'fc-0', call_id: 'call-0', name: 'bash' } },
+        type === 'response.function_call_arguments.delta'
+          ? { type, output_index: 1, item_id: 'fc-missing', delta: '{}' }
+          : { type, output_index: 1, item_id: 'fc-missing', arguments: '{}' },
+        completed(),
+      )))).rejects.toMatchObject({ code: 'INVALID_RESPONSE' })
+    },
+  )
+
+  it('uses completed metadata and arguments for the same item', async () => {
+    const chunks = await collect(translate(feed(
+      { type: 'response.output_item.added', output_index: 0, item: { type: 'function_call', id: 'fc-0', call_id: 'call-0', name: 'bash' } },
+      { type: 'response.output_item.done', output_index: 0, item: { type: 'function_call', id: 'fc-0', call_id: 'call-0', name: 'bash', arguments: '{"command":"pwd","description":"Show directory"}' } },
+      completed(),
+    )))
+    expect(chunks).toContainEqual({
+      type: 'block-end', index: 0,
+      block: { type: 'tool-call', id: 'call-0', name: 'bash', arguments: '{"command":"pwd","description":"Show directory"}' },
+    })
+  })
+
+  it('rejects completion for an unknown item', async () => {
+    await expect(collect(translate(feed(
+      { type: 'response.output_item.done', output_index: 0, item: { type: 'function_call', id: 'fc-missing', call_id: 'call-0', name: 'bash', arguments: '{}' } },
+      completed(),
+    )))).rejects.toMatchObject({ code: 'INVALID_RESPONSE' })
+  })
+
+  it('preserves malformed model arguments without filling or rerouting them', async () => {
+    const calls = [
+      { name: 'subagent', arguments: '{}' },
+      { name: 'bash', arguments: '{"task":"sent chat message more actions menu delete message truncate conversation","path":"/repo"}' },
+    ]
+    const chunks = await collect(translate(feed(...calls.flatMap((call, index): WireEvent[] => [
+      { type: 'response.output_item.added', output_index: index, item: { type: 'function_call', id: `fc-${index}`, call_id: `call-${index}`, name: call.name } },
+      { type: 'response.function_call_arguments.done', output_index: index, item_id: `fc-${index}`, arguments: call.arguments },
+    ]), completed())))
+    expect(chunks.filter(chunk => chunk.type === 'block-end')).toEqual(calls.map((call, index) => ({
+      type: 'block-end', index,
+      block: { type: 'tool-call', id: `call-${index}`, name: call.name, arguments: call.arguments },
+    })))
   })
 })
 
