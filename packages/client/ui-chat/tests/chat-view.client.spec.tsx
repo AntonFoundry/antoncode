@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type { ChatNodeViewProps } from '../src/client/contract/slots.ts'
 import type { ProcessGroupData } from '../src/client/contract/process-groups.ts'
 import type { InboxState } from '@deepseek-ai/dsh-agent/types'
 import { MessageId } from '@deepseek-ai/dsh-llm/brand'
@@ -74,6 +75,13 @@ function installGroupedSnapshot(
 
 // Every session-scope fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
 const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined })) as GlobalStandardProps['useResource']
+
+const sentActions = {
+  removeFrom: async () => {},
+  reportRemoveFailure: () => {},
+  useSession: (select => select({ running: false, removed: false } as never)) as ChatNodeViewProps['useSession'],
+  useAccess: () => false,
+}
 
 afterEach(() => {
   cleanup()
@@ -330,9 +338,9 @@ function HarnessChatNode({
   const nodeProps = { ...shared, ...owner, ...hooks }
   switch (owner.node.kind) {
     case 'user':
-      return <UserMessageNodeView {...nodeProps} node={owner.node} renderSlotChain={renderUserChain} />
+      return <UserMessageNodeView {...sentActions} {...nodeProps} node={owner.node} renderSlotChain={renderUserChain} />
     case 'steering':
-      return <UserMessageNodeView {...nodeProps} node={owner.node} renderSlotChain={() => null} />
+      return <UserMessageNodeView {...sentActions} {...nodeProps} node={owner.node} renderSlotChain={() => null} />
     case 'context':
       return <ContextMessageNodeView {...nodeProps} node={owner.node} />
     case 'assistant-step':

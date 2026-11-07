@@ -527,6 +527,48 @@ describe('sessions.fork', () => {
     await ctx.fiber.dispose()
   })
 
+  it('forks before steering while keeping earlier messages in the same turn', async () => {
+    const ctx = await composed()
+    try {
+      const source = await liveAgent(ctx, 'session-before-steering', 0, 'open')
+      const steering = source.append('user/message', message('replace this steering'), { surfaceOp: 'append' })
+      source.append('user/message', message('later input'), { surfaceOp: 'append' })
+      const events = source.snapshotEvents()
+      const response = await (await remote(ctx)).fork({ sessionId: source.id, atSeq: steering.seq - 1 })
+      if (!response.ok) throw response.error
+      const child = ctx.sessions.get(response.value.sessionId)
+      expect(child?.deriveMessages().flatMap(item => item.content)).toEqual([{ type: 'text', text: 'open prompt' }])
+      expect(source.snapshotEvents()).toEqual(events)
+      expect(source.deriveMessages()).toHaveLength(3)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('forks before the first user message into an empty model history without modifying the source', async () => {
+    const ctx = await composed()
+    try {
+      const source = await liveAgent(ctx, 'session-first-message', 1)
+      const events = source.snapshotEvents()
+      const firstMessage = events.find(event => event.type === 'user/message')
+      if (firstMessage === undefined) throw new Error('fixture needs a user message')
+      const response = await (await remote(ctx)).fork({ sessionId: source.id, atSeq: firstMessage.seq - 1 })
+      if (!response.ok) throw response.error
+      const child = ctx.sessions.get(response.value.sessionId)
+      expect(child?.deriveMessages()).toEqual([])
+      expect(child?.snapshotEvents().map(event => event.type)).toEqual([
+        'turn/start', 'session/end-seed', 'turn/end',
+      ])
+      expect(child?.snapshotEvents().at(-1)).toMatchObject({ type: 'turn/end', data: { reason: { kind: 'forked' } } })
+      expect(child?.header.cwd).toBe('/proj')
+      expect(child?.inheritedEventCount).toBe(firstMessage.seq)
+      expect(source.snapshotEvents()).toEqual(events)
+      expect(source.deriveMessages()).toHaveLength(1)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('cuts exactly inside a live open turn and preserves the source', async () => {
     const ctx = await composed()
     const source = await liveAgent(ctx, 'session-open', 1, 'open')

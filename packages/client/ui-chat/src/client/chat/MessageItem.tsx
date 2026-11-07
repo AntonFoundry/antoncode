@@ -11,6 +11,7 @@ import type { ModelRetryNode, TurnErrorNode, UserMessageNode } from '../contract
 import { CompactionItem } from './CompactionItem.tsx'
 import { ContextInjectionRow } from './ContextInjectionRow.tsx'
 import { MessageIconActions } from './MessageIconActions.tsx'
+import { SentMessageActions, type SentMessageActionsInjected } from './SentMessageActions.tsx'
 import css from './MessageItem.module.css'
 
 const EMPTY_TEXT_FACTS: Readonly<Partial<UserTextFacts>> = {}
@@ -330,8 +331,8 @@ export function PendingSubmissionBubble({ submission, loadImage, renderFactorySl
  * bubble without asking for it.
  */
 export const UserMessageNodeView = memo(function UserMessageNodeView({
-  node, renderFactorySlot, loadImage, renderSlotChain, t,
-}: ChatNodeViewProps<'user' | 'steering'> & {
+  node, renderFactorySlot, loadImage, renderSlotChain, t, removeFrom, reportRemoveFailure, useSession, useAccess,
+}: SentMessageActionsInjected & ChatNodeViewProps<'user' | 'steering'> & {
   /** Bound by the `user` keyed registration, the only entry that declares the seat. */
   renderSlotChain: PropsRenderSlots<'conversation.chat.user.before'>['renderSlotChain']
 }) {
@@ -348,13 +349,8 @@ export const UserMessageNodeView = memo(function UserMessageNodeView({
       {...data.referenceLabels === undefined ? {} : { referenceLabels: data.referenceLabels }}
       {...data.skillNames === undefined ? {} : { skillNames: data.skillNames }}
       actions={text => (
-        <MessageIconActions
-          text={text}
-          time={data.time}
-          clock="start"
-          className={css.actions}
-          t={t}
-        />
+        <SentMessageActions node={node} text={text} removeFrom={removeFrom} reportRemoveFailure={reportRemoveFailure}
+          useSession={useSession} useAccess={useAccess} className={css.actions} t={t} />
       )}
     />
   )

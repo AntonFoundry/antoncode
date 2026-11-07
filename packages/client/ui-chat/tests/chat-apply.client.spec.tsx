@@ -30,6 +30,7 @@ import { CHAT_SETTINGS_NAMESPACE, type ChatSettings } from '../src/chat-settings
 import { ActivityPill, UsagePill } from '../src/client/chat/StatsPills.tsx'
 import { createFlowMotion, type InputFoldDriver } from '../src/client/chat/flow-motion.ts'
 import { CHAT_FLOW_INJECT, CHAT_NODE_INJECT } from '../src/client/apply.ts'
+import type { SentMessageActionsInjected, MessageActionNoticeInjected } from '../src/client/chat/SentMessageActions.tsx'
 import { UserContent } from '../src/client/chat/UserContent.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
@@ -97,6 +98,38 @@ function storeOf(runtime: SlotTestRuntime, key: 'conversation.session' | 'conver
 }
 
 describe('Chat apply wiring', () => {
+  it.each(['created', 'failed', 'titleFailed', 'running'] as const)('forks before the selected message and publishes %s outside the source panel', async (outcome) => {
+    const b = await bench()
+    onTestFinished(() => b.runtime.dispose())
+    await b.runtime.sessions.add({ id: SID })
+    using reference = b.runtime.sessions.retain(SID)
+    const fork = vi.spyOn(b.runtime.ctx.sessions, 'fork').mockImplementation(async (opts) => {
+      if (outcome === 'failed') throw new Error('fork refused')
+      opts.onCreated?.('child' as SessionId)
+      if (outcome === 'titleFailed') throw new Error('title update refused')
+      return 'child' as SessionId
+    })
+    if (outcome === 'running') {
+      const snapshot = reference.binding.session.getSnapshot()
+      vi.spyOn(reference.binding.session, 'getSnapshot').mockReturnValue({ ...snapshot, running: true })
+    }
+    const row = b.runtime.slots.entries('conversation.chat.node').find(entry => entry.options.key === 'user')!
+    const injected = row.inject as (id: SessionId) => SentMessageActionsInjected
+    const overlay = b.runtime.slots.entries('shell.overlay').find(entry => entry.options.id === 'chat.message-action-notice')!
+    const notice = (overlay.inject as () => MessageActionNoticeInjected)()
+    await injected(SID).removeFrom(7)
+    if (outcome === 'running') expect(fork).not.toHaveBeenCalled()
+    else expect(fork).toHaveBeenCalledWith(expect.objectContaining({ sessionId: SID, atSeq: 6, increaseTitle: true }))
+    expect(notice.hooks.messageActionNotice.getSnapshot()?.outcome).toBe(outcome === 'running' ? 'failed' : outcome)
+    const openSession = b.runtime.ctx.uiWorkspace.openSession
+    if (outcome === 'created' || outcome === 'titleFailed') expect(openSession).toHaveBeenCalledExactlyOnceWith('child')
+    else expect(openSession).not.toHaveBeenCalled()
+    notice.dismissMessageActionNotice()
+    expect(notice.hooks.messageActionNotice.getSnapshot()).toBeNull()
+    await b.chat.dispose()
+    expect(b.runtime.slots.entries('shell.overlay').some(entry => entry.options.id === 'chat.message-action-notice')).toBe(false)
+  })
+
   it('keeps presentation-policy helpers out of the public browser entry', async () => {
     const entry = await import('../src/client/index.ts')
     expect(entry).not.toHaveProperty('derivePresentationPolicy')

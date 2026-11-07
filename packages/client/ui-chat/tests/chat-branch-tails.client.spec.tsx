@@ -26,6 +26,13 @@ import { ActivityPill, UsagePill, type StatPillProps } from '../src/client/chat/
 import { zh } from '../src/client/locale.ts'
 import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
 
+const sentActions = {
+  removeFrom: async () => {},
+  reportRemoveFailure: () => {},
+  useSession: (select => select({ running: false, removed: false } as never)) as ChatNodeViewProps['useSession'],
+  useAccess: () => false,
+}
+
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
@@ -87,9 +94,9 @@ function MessageItem({ node, t: translate, referenceLabels, skillNames }: Messag
   }
   switch (node.kind) {
     case 'user':
-      return <UserMessageNodeView {...props as ChatNodeViewProps<'user'>} {...userSlots} />
+      return <UserMessageNodeView {...sentActions} {...props as ChatNodeViewProps<'user'>} {...userSlots} />
     case 'steering':
-      return <UserMessageNodeView {...props as ChatNodeViewProps<'steering'>} renderSlotChain={() => null} />
+      return <UserMessageNodeView {...sentActions} {...props as ChatNodeViewProps<'steering'>} renderSlotChain={() => null} />
     case 'context':
       return <ContextMessageNodeView {...props as ChatNodeViewProps<'context'>} />
     case 'compaction':

@@ -19,6 +19,13 @@ import { zh } from '../src/client/locale.ts'
 import { createUserContentFixture } from './user-content-component-fixture.tsx'
 import { unusedImageLoader } from './reasoning-component-fixture.tsx'
 
+const sentActions = {
+  removeFrom: async () => {},
+  reportRemoveFailure: () => {},
+  useSession: (select => select({ running: false, removed: false } as never)) as ChatNodeViewProps['useSession'],
+  useAccess: () => false,
+}
+
 afterEach(cleanup)
 
 const t: ChatNodeViewProps['t'] = makeTranslate(zh, commonZh)
@@ -79,7 +86,7 @@ const steeringData: SteeringMessageNode = {
 describe('official user renderer origin seat', () => {
   it('renders the source chain above the bubble and passes the durable source', () => {
     const renderSlotChain = vi.fn(() => <span data-test-origin="">来自会话分享</span>)
-    const view = render(<UserMessageNodeView {...viewProps(userData)} {...userSlots} renderSlotChain={renderSlotChain} />)
+    const view = render(<UserMessageNodeView {...sentActions} {...viewProps(userData)} {...userSlots} renderSlotChain={renderSlotChain} />)
     const row = view.container.firstElementChild as HTMLElement
     const origin = row.querySelector('[data-test-origin]')
     const bubble = row.querySelector('[data-message-bubble]')
@@ -98,7 +105,7 @@ describe('official user renderer origin seat', () => {
     const absent = vi.fn(() => null)
     const occupied = vi.fn(() => <span data-test-origin="">来自会话分享</span>)
     const empty = vi.fn(() => null)
-    const view = render(<UserMessageNodeView {...props} {...userSlots} renderSlotChain={absent} />)
+    const view = render(<UserMessageNodeView {...sentActions} {...props} {...userSlots} renderSlotChain={absent} />)
     const row = view.container.firstElementChild
     const bubble = view.container.querySelector('[data-message-bubble]')
     const text = view.getByText('hello').firstChild
@@ -110,7 +117,7 @@ describe('official user renderer origin seat', () => {
     expect(view.container.querySelector('[data-test-origin]')).toBeNull()
 
     for (const renderSlotChain of [occupied, empty, absent]) {
-      view.rerender(<UserMessageNodeView {...props} {...userSlots} renderSlotChain={renderSlotChain} />)
+      view.rerender(<UserMessageNodeView {...sentActions} {...props} {...userSlots} renderSlotChain={renderSlotChain} />)
       expect(view.container.firstElementChild).toBe(row)
       expect(view.container.querySelector('[data-message-bubble]')).toBe(bubble)
       expect(view.getByText('hello').firstChild).toBe(text)
@@ -123,8 +130,8 @@ describe('official user renderer origin seat', () => {
   it('asks the chain only for the user row beside a steering row', () => {
     const renderSlotChain = vi.fn(() => <span data-test-origin="" />)
     const view = render(<>
-      <UserMessageNodeView {...viewProps(userData)} {...userSlots} renderSlotChain={renderSlotChain} />
-      <UserMessageNodeView {...viewProps(steeringData)} renderSlotChain={() => null} />
+      <UserMessageNodeView {...sentActions} {...viewProps(userData)} {...userSlots} renderSlotChain={renderSlotChain} />
+      <UserMessageNodeView {...sentActions} {...viewProps(steeringData)} renderSlotChain={() => null} />
     </>)
     const steeringRow = view.container.lastElementChild!
     expect(steeringRow.textContent).toContain('steer')

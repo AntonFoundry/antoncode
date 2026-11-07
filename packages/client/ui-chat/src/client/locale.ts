@@ -5,6 +5,15 @@ export const NS = 'chat'
 
 /** Simplified Chinese dictionary and key-set source of truth. */
 export const zh = {
+  'message.more': '更多消息操作',
+  'message.remove.action': '从此处移除',
+  'message.remove.title': '在新对话中继续？',
+  'message.remove.description': '将在新对话中移除此消息及之后的所有内容。原对话保持不变，你可以发送替换消息。',
+  'message.remove.acknowledge': '我了解原对话将保持不变',
+  'message.remove.confirm': '创建分支',
+  'message.remove.created': '已打开新对话，可发送替换消息',
+  'message.remove.failed': '无法创建新对话。原对话保持不变，请重试',
+  'message.remove.titleFailed': '已打开新对话，但未能更新标题',
   'message.stepProcess.thinking': '正在分析请求',
   'message.stepProcess.read': '正在读取文件',
   'message.stepProcess.readImage': '正在读取图片',
@@ -208,6 +217,15 @@ export type ChatKey = keyof typeof zh
 
 /** English dictionary, checked against the Chinese key set. */
 export const en = {
+  'message.more': 'More message actions',
+  'message.remove.action': 'Remove from here',
+  'message.remove.title': 'Continue in a new conversation?',
+  'message.remove.description': 'Continue in a new conversation without this message and everything after it. The original conversation stays unchanged. You can send a replacement message.',
+  'message.remove.acknowledge': 'I understand that the original conversation stays unchanged',
+  'message.remove.confirm': 'Create branch',
+  'message.remove.created': 'New conversation opened. You can send a replacement message.',
+  'message.remove.failed': 'Could not create a new conversation. The original is unchanged. Try again.',
+  'message.remove.titleFailed': 'New conversation opened, but its title could not be updated.',
   'message.stepProcess.thinking': 'Analyzing the request',
   'message.stepProcess.read': 'Reading files',
   'message.stepProcess.readImage': 'Reading images',
@@ -408,6 +426,15 @@ export const en = {
 
 /** Japanese copy, checked against the English keys. */
 export const ja = {
+  'message.more': 'メッセージの操作',
+  'message.remove.action': 'ここから削除',
+  'message.remove.title': '新しい会話で続けますか？',
+  'message.remove.description': 'このメッセージ以降を含まない新しい会話を作成します。元の会話は変更されません。代わりのメッセージを送信できます。',
+  'message.remove.acknowledge': '元の会話が変更されないことを理解しました',
+  'message.remove.confirm': '分岐を作成',
+  'message.remove.created': '新しい会話を開きました。代わりのメッセージを送信できます。',
+  'message.remove.failed': '新しい会話を作成できませんでした。元の会話は変更されていません。再試行してください。',
+  'message.remove.titleFailed': '新しい会話を開きましたが、タイトルを更新できませんでした。',
   'message.stepProcess.thinking': 'リクエストを分析中',
   'message.stepProcess.read': 'ファイルを読み取り中',
   'message.stepProcess.readImage': '画像を読み取り中',
@@ -608,6 +635,15 @@ export const ja = {
 
 /** Spanish dictionary, checked against the English keys. */
 export const es = {
+  'message.more': 'Más acciones del mensaje',
+  'message.remove.action': 'Quitar desde aquí',
+  'message.remove.title': '¿Continuar en una nueva conversación?',
+  'message.remove.description': 'Continúa en una nueva conversación sin este mensaje ni lo que viene después. La conversación original no cambia. Puedes enviar un mensaje de reemplazo.',
+  'message.remove.acknowledge': 'Entiendo que la conversación original no cambia',
+  'message.remove.confirm': 'Crear rama',
+  'message.remove.created': 'Nueva conversación abierta. Puedes enviar un mensaje de reemplazo.',
+  'message.remove.failed': 'No se pudo crear la conversación. La original no ha cambiado. Inténtalo de nuevo.',
+  'message.remove.titleFailed': 'Nueva conversación abierta, pero no se pudo actualizar su título.',
   'message.stepProcess.thinking': 'Analizando la solicitud',
   'message.stepProcess.read': 'Leyendo archivos',
   'message.stepProcess.readImage': 'Leyendo imágenes',
@@ -808,6 +844,15 @@ export const es = {
 
 /** French dictionary, checked against the English keys. */
 export const fr = {
+  'message.more': 'Autres actions du message',
+  'message.remove.action': 'Retirer à partir d’ici',
+  'message.remove.title': 'Continuer dans une nouvelle conversation ?',
+  'message.remove.description': 'Continuez dans une nouvelle conversation sans ce message ni ce qui suit. La conversation originale reste inchangée. Vous pouvez envoyer un message de remplacement.',
+  'message.remove.acknowledge': 'Je comprends que la conversation originale reste inchangée',
+  'message.remove.confirm': 'Créer une branche',
+  'message.remove.created': 'Nouvelle conversation ouverte. Vous pouvez envoyer un message de remplacement.',
+  'message.remove.failed': 'Impossible de créer la conversation. L’originale reste inchangée. Réessayez.',
+  'message.remove.titleFailed': 'Nouvelle conversation ouverte, mais son titre n’a pas pu être mis à jour.',
   'message.stepProcess.thinking': 'Analyser la demande',
   'message.stepProcess.read': 'Lecture de fichiers',
   'message.stepProcess.readImage': 'Lire des images',
@@ -1008,6 +1053,15 @@ export const fr = {
 
 /** German dictionary, checked against the English keys. */
 export const de = {
+  'message.more': 'Weitere Nachrichtenaktionen',
+  'message.remove.action': 'Ab hier entfernen',
+  'message.remove.title': 'In einem neuen Gespräch fortfahren?',
+  'message.remove.description': 'Fahre in einem neuen Gespräch ohne diese Nachricht und alles danach fort. Das Original bleibt unverändert. Du kannst eine Ersatznachricht senden.',
+  'message.remove.acknowledge': 'Ich verstehe, dass das Original unverändert bleibt',
+  'message.remove.confirm': 'Zweig erstellen',
+  'message.remove.created': 'Neues Gespräch geöffnet. Du kannst eine Ersatznachricht senden.',
+  'message.remove.failed': 'Neues Gespräch konnte nicht erstellt werden. Das Original bleibt unverändert. Versuche es erneut.',
+  'message.remove.titleFailed': 'Neues Gespräch geöffnet, aber der Titel konnte nicht aktualisiert werden.',
   'message.stepProcess.thinking': 'Analyse der Anfrage',
   'message.stepProcess.read': 'Dateien lesen',
   'message.stepProcess.readImage': 'Bilder lesen',
@@ -1208,6 +1262,15 @@ export const de = {
 
 /** Russian dictionary, checked against the English keys. */
 export const ru = {
+  'message.more': 'Другие действия с сообщением',
+  'message.remove.action': 'Удалить отсюда',
+  'message.remove.title': 'Продолжить в новом разговоре?',
+  'message.remove.description': 'Продолжите в новом разговоре без этого сообщения и всего после него. Исходный разговор не изменится. Можно отправить заменяющее сообщение.',
+  'message.remove.acknowledge': 'Я понимаю, что исходный разговор не изменится',
+  'message.remove.confirm': 'Создать ветку',
+  'message.remove.created': 'Открыт новый разговор. Можно отправить заменяющее сообщение.',
+  'message.remove.failed': 'Не удалось создать разговор. Исходный разговор не изменён. Повторите попытку.',
+  'message.remove.titleFailed': 'Новый разговор открыт, но его название не удалось обновить.',
   'message.stepProcess.thinking': 'Анализ запроса',
   'message.stepProcess.read': 'Чтение файлов',
   'message.stepProcess.readImage': 'Чтение изображений',
@@ -1408,6 +1471,15 @@ export const ru = {
 
 /** Portuguese dictionary, checked against the English keys. */
 export const pt = {
+  'message.more': 'Mais ações da mensagem',
+  'message.remove.action': 'Remover a partir daqui',
+  'message.remove.title': 'Continuar em uma nova conversa?',
+  'message.remove.description': 'Continue em uma nova conversa sem esta mensagem e tudo o que vem depois. A conversa original permanece inalterada. Você pode enviar uma mensagem substituta.',
+  'message.remove.acknowledge': 'Entendo que a conversa original permanece inalterada',
+  'message.remove.confirm': 'Criar ramificação',
+  'message.remove.created': 'Nova conversa aberta. Você pode enviar uma mensagem substituta.',
+  'message.remove.failed': 'Não foi possível criar a conversa. A original permanece inalterada. Tente novamente.',
+  'message.remove.titleFailed': 'Nova conversa aberta, mas não foi possível atualizar o título.',
   'message.stepProcess.thinking': 'Analisando a solicitação',
   'message.stepProcess.read': 'Lendo arquivos',
   'message.stepProcess.readImage': 'Lendo imagens',

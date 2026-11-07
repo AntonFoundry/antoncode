@@ -2,6 +2,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { PerformanceUsageMode } from '../../chat-settings.ts'
 import type { ChatPresentationPolicy } from '../presentation-policy.ts'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SentMessageActionsInjected } from './SentMessageActions.tsx'
 import { NS } from '../locale.ts'
 import { AssistantNodeView } from './AssistantNodeView.tsx'
 import { CommandNodeView, ManualCompactionNodeView } from './CommandNodeView.tsx'
@@ -22,11 +24,13 @@ import { TurnTriggerNodeView } from './TurnTriggerNodeView.tsx'
  * @param ctx - owning UI Conversation context.
  * @param performanceUsage - live statistics detail preference.
  * @param presentation - live presentation policy.
+ * @param sentActions - Session-bound tail-removal callback.
  */
 export function registerChatNodeRenderers(
   ctx: Context,
   performanceUsage: ObservableSnapshot<PerformanceUsageMode>,
   presentation: ObservableSnapshot<ChatPresentationPolicy>,
+  sentActions: (sessionId: SessionId) => SentMessageActionsInjected,
 ): void {
   ctx.effect(() => ctx.slots.registerFactory({
     name: 'conversation.chat.reasoning.content',
@@ -38,13 +42,13 @@ export function registerChatNodeRenderers(
     priority: 100,
   }, DefaultReasoningBody))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
-    name: 'conversation.chat.node', key: 'user', locale: NS,
+    name: 'conversation.chat.node', key: 'user', locale: NS, inject: sentActions,
     children: { 'conversation.chat.user.before': { kind: 'chain', scope: 'session' } },
   }, UserMessageNodeView))
   // Steering rows share the renderer without owning the message-source seat.
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node', key: 'steering', locale: NS,
-    inject: () => ({ renderSlotChain: () => null }),
+    inject: sessionId => ({ ...sentActions(sessionId), renderSlotChain: () => null }),
   }, UserMessageNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
     { name: 'conversation.chat.node', key: 'context', locale: NS }, ContextMessageNodeView))

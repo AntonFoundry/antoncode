@@ -30,6 +30,7 @@ import type {
 import type { ChatSnapshot } from './contract/snapshot.ts'
 import { EMPTY_CHAT_SNAPSHOT } from './contract/snapshot.ts'
 import { ApprovalCommand } from './chat/ApprovalCommand.tsx'
+import { MessageActionNoticeHost, type MessageActionNotice, type MessageActionNoticeInjected } from './chat/SentMessageActions.tsx'
 import { ChatView } from './chat/ChatView.tsx'
 import { ChatFlow } from './chat/ChatFlow.tsx'
 import { registerChatNodeRenderers } from './chat/register-node-renderers.ts'
@@ -171,7 +172,44 @@ export function apply(ctx: Context): void {
   const performancePolicy = new PerformanceUsagePolicy(chatSettings)
   ctx.effect(() => () => { transcriptView.dispose(); performancePolicy.dispose() })
   const performanceUsage = performancePolicy.mode
-  registerChatNodeRenderers(ctx, performanceUsage, presentation)
+  const messageActionNotice = createSnapshotStore<MessageActionNotice | null>(null)
+  let messageActionNoticeSeq = 0
+  const messageOutcome = (outcome: MessageActionNotice['outcome']): void => {
+    messageActionNotice.set({ seq: ++messageActionNoticeSeq, outcome })
+  }
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay', id: 'chat.message-action-notice', locale: NS,
+    inject: (): MessageActionNoticeInjected => ({
+      hooks: { messageActionNotice },
+      dismissMessageActionNotice: () => { messageActionNotice.set(null) },
+    }),
+  }, MessageActionNoticeHost))
+  registerChatNodeRenderers(ctx, performanceUsage, presentation, sessionId => ({
+    reportRemoveFailure: (error) => {
+      messageOutcome('failed')
+      ctx.logger.warn('ui-chat: sent-message action failed unexpectedly: %s', error)
+    },
+    removeFrom: async (seq) => {
+      const snapshot = ctx.sessions.binding(sessionId)?.session.getSnapshot()
+      if (snapshot === undefined || snapshot.running || snapshot.removed) {
+        messageOutcome('failed')
+        return
+      }
+      let created: SessionId | undefined
+      let outcome: MessageActionNotice['outcome'] = 'created'
+      try {
+        created = await ctx.sessions.fork({ sessionId, atSeq: seq - 1, increaseTitle: true,
+          onCreated: (id) => { created = id },
+        })
+      } catch (error) {
+        // Title failure follows a committed child: open it rather than creating another on retry.
+        outcome = created === undefined ? 'failed' : 'titleFailed'
+        ctx.logger.warn('ui-chat: unable to complete sent-message fork: %s', error)
+      }
+      if (created !== undefined) ctx.uiWorkspace.openSession(created)
+      messageOutcome(outcome)
+    },
+  }))
   ctx.slots.registerFactory({
     name: 'conversation.chat.user.content', scope: 'session', locale: NS,
     children: { 'conversation.chat.user.images': { kind: 'single', scope: 'session' } },

@@ -81,6 +81,8 @@ Preference menus restore focus to their trigger without scrolling before publish
 <a id="completed-turn-footer"></a>
 ## Completed-turn footer
 
+Durable sent user and steering messages expose a More menu with **Remove from here**. After explicit confirmation, Chat forks the exact event prefix before that message and opens the child for a replacement prompt; the original Session remains unchanged. Earlier messages in the same Turn are retained, and the Host closes any inherited open Step or Turn. The action is unavailable while the Session is running and hidden without fork permission. Pending echoes and synthetic messages do not offer removal. A frame-wide notice reports failure without hiding the source; if only the child title update fails, Chat opens the already-created child rather than creating another.
+
 Artifact extensions can subscribe to one Turn and Node kind through `ChatNodeStore.turnDataSource`. The source includes hidden Nodes and exposes their business data in anchor order. Membership updates incrementally; only observed collections materialize ordered arrays, and unrelated Turns or kinds do not notify them.
 
 The completed-turn action footer follows the recorded Turn end. Its action row starts 20px below preceding prose or extension content. Actions remain visible only on the latest Turn when its final visible content is a reply; other endings and historical Turns reveal actions on hover or keyboard focus. Devices without hover keep actions visible. An unavailable branch action opens its explanation on click or tap without creating a branch.
