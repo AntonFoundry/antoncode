@@ -962,33 +962,32 @@ describe('ConversationRoot resident composer', () => {
     Element.prototype.releasePointerCapture = function () { captured.delete(this) }
     Element.prototype.hasPointerCapture = function () { return captured.has(this) }
     try {
-      // Base resolves from the undragged column: 1600 − 176 = 1424, which is
+      // Base resolves from the undragged column: 1600 − 64 = 1536, which is
       // also the window-clamped maximum, so the drag can only narrow.
-      // Moving the right handle inward by 25px narrows by 2×25 = 50 → 1374,
-      // inside both bounds (max = 1600 − 176 = 1424 keeps the handles on-column).
+      // Moving the right handle inward by 25px narrows by 2×25 = 50 → 1486.
       fireEvent.pointerDown(handle, { pointerId: 1, clientX: 800, clientY: 300 })
       fireEvent.pointerMove(handle, { pointerId: 1, clientX: 775, clientY: 300 })
       expect(handle.style.getPropertyValue('--dsh-width-handle-pointer-y')).toBe('300px')
       fireEvent.pointerUp(handle, { pointerId: 1, clientX: 775, clientY: 300 })
       expect(handle.hasAttribute('data-dragging')).toBe(false)
-      expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('1374px')
-      expect(localStorage.getItem('dsh.conversation.contentWidth')).toBe('1374')
-      // Window shrinks: the displayed width re-clamps (900 − 176 = 724) but the
+      expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('1486px')
+      expect(localStorage.getItem('dsh.conversation.contentWidth')).toBe('1486')
+      // Window shrinks: the displayed width re-clamps (900 − 64 = 836) but the
       // preference stays.
       Object.defineProperty(content, 'offsetWidth', { value: 900, configurable: true })
       act(() => { fireResize(content) })
-      expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('724px')
-      expect(localStorage.getItem('dsh.conversation.contentWidth')).toBe('1374')
+      expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('836px')
+      expect(localStorage.getItem('dsh.conversation.contentWidth')).toBe('1486')
       // A press without travel (a real double-click delivers two such
       // press/release rounds) must not commit the clamped display value over
       // the stored preference.
       fireEvent.pointerDown(handle, { pointerId: 1, clientX: 800, clientY: 300 })
       fireEvent.pointerUp(handle, { pointerId: 1, clientX: 800, clientY: 300 })
-      expect(localStorage.getItem('dsh.conversation.contentWidth')).toBe('1374')
-      expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('724px')
+      expect(localStorage.getItem('dsh.conversation.contentWidth')).toBe('1486')
+      expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('836px')
       // No reset affordance on the handle: double-click leaves the preference alone.
       fireEvent.doubleClick(handle)
-      expect(localStorage.getItem('dsh.conversation.contentWidth')).toBe('1374')
+      expect(localStorage.getItem('dsh.conversation.contentWidth')).toBe('1486')
     } finally {
       for (const [name, descriptor] of originals) {
         if (descriptor === undefined) Reflect.deleteProperty(Element.prototype, name)

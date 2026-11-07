@@ -454,14 +454,17 @@
      preference; embedded occurrences override this adaptive axis below.
 
      Until a drag sets --dsh-chat-user-width the column fills the body: the
-     adaptive term is the body width less the drag-handle edge budget
-     (ConversationWidthControls CONTENT_EDGE_BUDGET), so the default is exactly
-     the widest the handles can express, and `100%` caps it against the
-     scroller's own content box on a narrow body. A 680px floor keeps the
-     reading column whole before the first measurement lands. */
+     adaptive term is the body width less the scroller's own side padding
+     (2 x (clearance + 16px) = 64px, reproduced by
+     ConversationWidthControls CONTENT_EDGE_BUDGET), so no gutter is left
+     beyond the transcript's normal inset. A 680px floor keeps the reading
+     column whole before the first measurement lands, and `100%` caps the term
+     against the scroller's content box. A full-bleed column leaves the width
+     handles no room; their strips resolve to zero width by the .widthHandle
+     rule below. */
   --dsh-chat-content-width: var(
     --dsh-chat-user-width,
-    clamp(680px, calc(var(--dsh-conversation-column-width, 0px) - 176px), 100%)
+    clamp(680px, calc(var(--dsh-conversation-column-width, 0px) - 64px), 100%)
   );
   --dsh-composer-card-max-width: calc(var(--dsh-chat-content-width) + 32px);
   --dsh-composer-side-clearance: 16px;

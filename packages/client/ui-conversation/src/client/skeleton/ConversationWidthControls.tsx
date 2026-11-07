@@ -8,8 +8,12 @@ const WIDTH_PREF_KEY = 'dsh.conversation.contentWidth'
 const CONTENT_MIN = 640
 /** Floor of the undragged column; mirrors the CSS clamp's lower bound. */
 const CONTENT_DEFAULT_MIN = 680
-/** Horizontal room reserved for both handles and their safe edge zones. */
-const CONTENT_EDGE_BUDGET = 176
+/**
+ * Horizontal room the scroller's own side padding reserves
+ * (2 x (--dsh-composer-side-clearance + 16px)). The undragged column takes the
+ * whole body less this inset, the same term ConversationRoot.module.css clamps.
+ */
+const CONTENT_EDGE_BUDGET = 64
 const WHEEL_DELTA_LINE = 1
 const WHEEL_DELTA_PAGE = 2
 const FALLBACK_WHEEL_LINE_PX = 16
