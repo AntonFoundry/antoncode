@@ -15,8 +15,7 @@ import { createAgentMailGateway } from './api-gateway.ts'
 import { agentDisplayName } from './agent-names.ts'
 import { agentMailChannel } from './composer-targets.ts'
 import type { AgentMailGateway } from './gateway.ts'
-import { agentMentionToken, resolveMentions } from './mentions.ts'
-import { recordAgentMailSent } from './sent-log.ts'
+import { agentMentionToken, peersForChannel, resolveMentions } from './mentions.ts'
 import { registerAgentMailRelays } from './relay-projection.ts'
 import { en, zh, type AgentMailLocaleKey } from './locales.ts'
 
@@ -89,25 +88,22 @@ function registerComposerRoute(
       const channel = agentMailChannel(sessionId)
       const peers = gateway.peers(sessionId).filter(peer => peer.sessionId !== sessionId)
       const mentions = resolveMentions(body, peers)
+      const compatible = new Set(peersForChannel(peers, sessionId, auth.workspaceId, channel).map(peer => peer.sessionId))
+      if (mentions.some(recipient => !compatible.has(recipient))) throw new Error(t('wrongChannel'))
       if (channel === 'direct') {
         if (mentions.length === 0) throw new Error(t('mentionRequired'))
-        for (const recipient of mentions) {
-          await gateway.sendDirect({ sessionId, workspaceId: auth.workspaceId, recipient, body })
-        }
-        recordAgentMailSent(sessionId, channel, sessionId, mentions, body)
+        await gateway.sendDirect({ sessionId, workspaceId: auth.workspaceId, recipients: mentions, body })
         return
       }
       if (mentions.length > 0) {
         await gateway.sendLocal({
           sessionId, workspaceId: auth.workspaceId, recipients: mentions, body, workspaceWide: false,
         })
-        recordAgentMailSent(sessionId, channel, sessionId, mentions, body)
         return
       }
       await gateway.sendLocal({
         sessionId, workspaceId: auth.workspaceId, recipients: [], body, workspaceWide: true,
       })
-      recordAgentMailSent(sessionId, channel, sessionId, [], body)
     },
   }), 'ui-conversation-agent-mail: composer route')
 }
@@ -126,7 +122,7 @@ function registerMentionSource(ctx: Context, gateway: AgentMailGateway | undefin
     const sessionId = session.sessionId
     const workspaceId = gateway.authorization(sessionId).workspaceId
     if (workspaceId === undefined) return []
-    return gateway.peers(sessionId).filter(peer => peer.sessionId !== sessionId)
+    return peersForChannel(gateway.peers(sessionId), sessionId, workspaceId, agentMailChannel(sessionId))
   }
   const active = (session: ClientSessionContext): boolean =>
     ctx.conversation.activeView(session.sessionId) === 'agent-mail'

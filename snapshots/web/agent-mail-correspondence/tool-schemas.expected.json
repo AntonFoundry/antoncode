@@ -1,0 +1,147 @@
+{
+  "initial": [
+    {
+      "name": "agent_queue_ack",
+      "description": "Advance your durable subscription cursor after reading messages. Does not remove another recipient’s messages or wake agents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Workspace id for your subscription."
+          },
+          "through_seq": {
+            "type": "integer",
+            "description": "Last processed nonnegative stream sequence."
+          }
+        },
+        "required": [
+          "workspace_id",
+          "through_seq"
+        ]
+      }
+    },
+    {
+      "name": "agent_queue_address",
+      "description": "Show your exact session address and available workspace queue identities. Share the session id with agents in the same workspace when addressing a message.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "agent_queue_read",
+      "description": "Read addressed and subscribed workspace messages from a cursor, without waking another agent. Acknowledge only after consuming the results.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Optional workspace id; defaults to your current workspace."
+          },
+          "cursor": {
+            "type": "integer",
+            "description": "Optional nonnegative stream sequence; defaults to your acknowledged cursor."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum messages, from 1 to 100 (default set by service)."
+          }
+        }
+      }
+    },
+    {
+      "name": "agent_queue_send",
+      "description": "Publish a message within your workspace to up to 32 session addresses, the workspace stream, or both. Durable delivery does not wake or interrupt recipients.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Optional workspace id; defaults to your current workspace."
+          },
+          "recipients": {
+            "type": "array",
+            "description": "Optional session ids of recipients in this workspace (maximum 32).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "workspace_wide": {
+            "type": "boolean",
+            "description": "Publish to all subscribed workspace sessions as well as any direct recipients."
+          },
+          "body": {
+            "type": "string",
+            "description": "Message text (maximum 65536 characters)."
+          }
+        },
+        "required": [
+          "body"
+        ]
+      }
+    },
+    {
+      "name": "agent_queue_subscribe",
+      "description": "Subscribe your session to a workspace queue. This stores an independent durable read cursor; it does not wake or interrupt model turns.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "description": "Workspace id from agent_queue_address."
+          }
+        },
+        "required": [
+          "workspace_id"
+        ]
+      }
+    },
+    {
+      "name": "anton_restart",
+      "description": "Restart the agent runtime service so freshly deployed code takes effect. Call this ONLY after a build/deploy step completed (e.g. a plugin or bundle was rebuilt), never mid-task: it terminates this very process, so the CURRENT turn ends immediately and the user starts a new conversation on the restarted app. Do not call it speculatively or more than once per deployment.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "anton_start",
+      "description": "Start the agent runtime service if it is stopped, reporting what it did. When everything already runs, it reports that nothing needed starting — safe to call speculatively while diagnosing.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "anton_status",
+      "description": "Report the health of the Anton application services: the supervisor bridge, the agent runtime process (with PID and port), and the c0ntext memory engine. Use this to diagnose whether a service is down before attempting anton_start or anton_restart.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "anton_stop",
+      "description": "Shut down the agent runtime service. WARNING: you ARE that process — calling this ends your current turn and conversation immediately, and the user brings the app back from its control surface. Call it ONLY when the user explicitly asks to stop or quit the application, never mid-task.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "working_directory",
+      "description": "Read the current working directory, or change it with cd. Relative paths use the current directory. Existing shells and running processes keep their own directories.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cd": {
+            "type": "string",
+            "description": "Existing directory to enter. Omit to read the current directory."
+          }
+        }
+      }
+    }
+  ],
+  "changes": []
+}

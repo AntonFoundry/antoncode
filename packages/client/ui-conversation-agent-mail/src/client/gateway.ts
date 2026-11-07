@@ -7,6 +7,24 @@ export interface AgentMailMessage {
   at: number
 }
 
+/** A committed queue send, independent of whether its browser refresh succeeded. */
+export interface AgentMailSendOutcome {
+  readonly receipt: { readonly seq: number }
+  readonly refreshError?: string
+}
+
+/** Browser-instance outgoing mail; durable history remains owned by the Host queues and Session logs. */
+export interface AgentMailSentEntry {
+  readonly key: string
+  readonly seq: number
+  readonly channel: 'local' | 'direct'
+  readonly workspaceId: string
+  readonly from: string
+  readonly to: readonly string[]
+  readonly body: string
+  readonly at: number
+}
+
 /** Browser-facing Agent Mail operations and local presentation state. */
 export interface AgentMailGateway {
   /**
@@ -39,6 +57,8 @@ export interface AgentMailGateway {
   inbox(sessionId: string): {
     local: { messages: readonly AgentMailMessage[]; cursor: number }
     direct: { messages: readonly AgentMailMessage[]; cursor: number }
+    readonly sent: readonly AgentMailSentEntry[]
+    readonly refreshError?: string
   }
   /**
    * Observe browser mailbox snapshot updates across Sessions.
@@ -67,7 +87,8 @@ export interface AgentMailGateway {
   /**
    * Commit workspace-local mail and refresh the browser mailbox.
    * @param input - Authorized Session and workspace, direct recipients, body, and broadcast selection.
-   * @throws Error on authorization, publication, or refresh failure; a refresh failure does not undo a send.
+   * @returns committed receipt, with a refresh warning when the retained browser inbox is stale.
+   * @throws Error on authorization or publication failure; a committed send never rejects because refresh failed.
    */
   sendLocal(input: {
     sessionId: string
@@ -75,13 +96,14 @@ export interface AgentMailGateway {
     recipients: readonly string[]
     body: string
     workspaceWide: boolean
-  }): Promise<void>
+  }): Promise<AgentMailSendOutcome>
   /**
-   * Commit mail to one live peer in another workspace and refresh the browser mailbox.
-   * @param input - Authorized sender Session and workspace, recipient Session, and body.
-   * @throws Error on authorization, publication, or refresh failure; a refresh failure does not undo a send.
+   * Commit mail atomically to live peers in other workspaces and refresh the browser mailbox.
+   * @param input - Authorized sender Session and workspace, recipient Sessions, and body.
+   * @returns committed receipt, with a refresh warning when the retained browser inbox is stale.
+   * @throws Error on authorization or publication failure; a committed send never rejects because refresh failed.
    */
-  sendDirect(input: { sessionId: string; workspaceId: string; recipient: string; body: string }): Promise<void>
+  sendDirect(input: { sessionId: string; workspaceId: string; recipients: readonly string[]; body: string }): Promise<AgentMailSendOutcome>
   /**
    * Durably advance the selected mailbox cursor and refresh its browser snapshot.
    * @param input - Authorized Session and workspace, mailbox channel, and highest processed sequence.

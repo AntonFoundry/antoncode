@@ -135,29 +135,36 @@
 
 .header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px 12px;
   padding: 10px 16px;
   border-bottom: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 .headerTitle {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 6px;
   min-width: 0;
-  font-weight: 600;
+  font-weight: 500;
   font-size: 14px;
 }
 
 .headerHelp {
-  overflow: hidden;
+  min-width: 0;
   color: var(--dsw-alias-label-tertiary);
   font-weight: 400;
   font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+}
+
+.headerActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .readButton {

@@ -2,13 +2,12 @@ import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 
 import type { CSSProperties } from 'react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import type { AgentMailGateway } from './gateway.ts'
+import type { AgentMailGateway, AgentMailMessage, AgentMailSentEntry } from './gateway.ts'
 import { agentDisplayName, agentInitials, agentNameTag } from './agent-names.ts'
 import {
   agentMailChannel, setAgentMailChannel, subscribeAgentMailChannel, type AgentMailChannel,
 } from './composer-targets.ts'
-import { agentMailSent, subscribeAgentMailSent } from './sent-log.ts'
-import { EMPTY_AGENT_MAIL_RELAYS } from './relay-projection.ts'
+import { EMPTY_AGENT_MAIL_RELAYS, type AgentMailRelay } from './relay-projection.ts'
 import styles from './AgentMailConversationView.module.css'
 
 export type AgentMailConversationViewProps = ConvViewProps & PropsLocale<'conversation.agentMail'> & {
@@ -26,6 +25,38 @@ interface FeedEntry {
   readonly workspaceId: string
   readonly body: string
   readonly at: number
+}
+
+/** Merge queue copies by transport identity while retaining adjacent-Agent rows. */
+function mailFeed({ channel, messages, sent, relays, sessionId }: {
+  channel: AgentMailChannel
+  messages: readonly AgentMailMessage[]
+  sent: readonly AgentMailSentEntry[]
+  relays: readonly AgentMailRelay[]
+  sessionId: string
+}): FeedEntry[] {
+  const rows = new Map<string, FeedEntry>()
+  const queueKey = (senderWorkspace: string, seq: number): string => JSON.stringify([channel, senderWorkspace, seq])
+  for (const message of messages) {
+    const key = queueKey(message.workspaceId, message.seq)
+    rows.set(key, { key, from: message.from, workspaceId: message.workspaceId, body: message.body, at: message.at })
+  }
+  for (const entry of sent) {
+    if (entry.channel !== channel) continue
+    const key = queueKey(entry.workspaceId, entry.seq)
+    rows.set(key, { key, from: entry.from, to: entry.to, workspaceId: entry.workspaceId, body: entry.body, at: entry.at })
+  }
+  for (const relay of relays) {
+    if ((relay.channel ?? 'local') !== channel) continue
+    const key = relay.channel !== undefined && relay.workspaceId !== undefined && relay.seq !== undefined
+      ? queueKey(relay.workspaceId, relay.seq) : relay.key
+    rows.set(key, {
+      key, from: relay.direction === 'incoming' ? relay.peer : sessionId,
+      to: relay.recipients ?? [relay.direction === 'incoming' ? sessionId : relay.peer],
+      workspaceId: relay.workspaceId ?? '', body: relay.body, at: relay.at,
+    })
+  }
+  return [...rows.values()].sort((left, right) => left.at - right.at)
 }
 
 /** The absent, connecting, and unauthorized states deliberately use the original inert DOM. */
@@ -132,12 +163,6 @@ function AuthorizedMail({ gateway, sessionId, workspaceId, t, useConversation }:
   )
   const readChannel = useCallback((): AgentMailChannel => agentMailChannel(sessionId), [sessionId])
   const channel = useSyncExternalStore(subscribeChannel, readChannel)
-  const subscribeSent = useCallback(
-    (listener: () => void) => subscribeAgentMailSent(sessionId, listener),
-    [sessionId],
-  )
-  const readSent = useCallback(() => agentMailSent(sessionId), [sessionId])
-  const sent = useSyncExternalStore(subscribeSent, readSent)
   const [inbox, setInbox] = useState<Inbox>(() => gateway.inbox(sessionId))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -152,27 +177,8 @@ function AuthorizedMail({ gateway, sessionId, workspaceId, t, useConversation }:
 
   const page = inbox[channel]
   const messages = page.messages
-  const feed = useMemo(() => {
-    const rows: FeedEntry[] = messages.map(message => ({
-      key: `mail:${message.seq}`,
-      from: message.from,
-      workspaceId: message.workspaceId,
-      body: message.body,
-      at: message.at,
-    }))
-    const sentRows: FeedEntry[] = sent
-      .filter(entry => entry.channel === channel)
-      .map(entry => ({
-        key: entry.key, from: entry.from, to: entry.to, workspaceId: '', body: entry.body, at: entry.at,
-      }))
-    const relayRows: FeedEntry[] = channel === 'local' ? relays.map(relay => ({
-      key: relay.key, from: relay.direction === 'incoming' ? relay.peer : sessionId,
-      to: [relay.direction === 'incoming' ? sessionId : relay.peer],
-      workspaceId: '', body: relay.body, at: relay.at,
-    })) : []
-    return [...rows, ...relayRows, ...sentRows]
-      .sort((left, right) => left.at - right.at)
-  }, [channel, messages, relays, sent, sessionId])
+  const feed = useMemo(() => mailFeed({ channel, messages, sent: inbox.sent, relays, sessionId }),
+    [channel, inbox.sent, messages, relays, sessionId])
   const ready = (): boolean => gateway.authorization(sessionId).state === 'authorized'
     && gateway.authorization(sessionId).workspaceId === workspaceId
 
@@ -241,10 +247,17 @@ function AuthorizedMail({ gateway, sessionId, workspaceId, t, useConversation }:
             <span className={styles.hash}>#</span>{t(channel === 'local' ? 'channelGeneral' : 'channelDirect')}
             <span className={styles.headerHelp}>{t(channel === 'local' ? 'channelGeneralHelp' : 'channelDirectHelp')}</span>
           </div>
-          <button type="button" className={styles.readButton} disabled={busy || messages.length === 0}
-            onClick={acknowledge}>{t('markRead')}</button>
+          <div className={styles.headerActions}>
+            <button type="button" className={styles.readButton} disabled={busy}
+              onClick={() => { void perform(() => gateway.refresh(sessionId), '') }}>{t('refresh')}</button>
+            <button type="button" className={styles.readButton} disabled={busy || messages.length === 0}
+              onClick={acknowledge}>{t('markRead')}</button>
+          </div>
         </header>
         <p className={styles.composerHint}>{t('composerHint')}</p>
+        {(error || inbox.refreshError !== undefined) && (
+          <p className={styles.error} role="alert">{error || t('sentButRefreshFailed')}</p>
+        )}
         <ol className={styles.feed} aria-label={t(channel === 'local' ? 'localInbox' : 'directInbox')}>
           {feed.length === 0 && <li className={styles.empty}>{t('emptyChannel')}</li>}
           {feed.map((message, index) => {
@@ -282,7 +295,6 @@ function AuthorizedMail({ gateway, sessionId, workspaceId, t, useConversation }:
             )
           })}
         </ol>
-        {error && <p className={styles.error} role="alert">{error}</p>}
         {status && <p className={styles.status} role="status">{status}</p>}
       </section>
     </div>

@@ -1,0 +1,12 @@
+version: 1
+scenario: agent-mail-correspondence
+profile: web
+composition: agent-mail-correspondence
+recording: authored
+replay:
+  override: true
+header:
+  class: agent-mail-native
+  pin: true
+  childSystemPrompts: [1]
+  childToolSchemas: [1]

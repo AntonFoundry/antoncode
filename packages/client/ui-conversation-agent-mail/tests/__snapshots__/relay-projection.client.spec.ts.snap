@@ -1,3 +1,5 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`Agent Mail durable queue sends > projects accepted native workspace mail from the canonical result, including frozen broadcast recipients 1`] = `"[{"key":"queue:local:local-message","direction":"outgoing","channel":"local","peer":"child","recipients":["child","sibling"],"workspaceId":"workspace-a","seq":42,"body":"Accepted local body","at":1234}]"`;
+
 exports[`Agent Mail durable relays > replays successful outgoing agent_id calls and incoming child messages without repeating admission 1`] = `"[{"direction":"outgoing","peer":"child","body":"Keep investigating","at":1000},{"direction":"incoming","peer":"child","body":"Agent child sent a message: \\nEvidence found","at":3000}]"`;

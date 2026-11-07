@@ -23,7 +23,7 @@ Read workspace mail, cross-workspace direct messages, and ongoing parent-child `
 
 ## Use this package
 
-Select Agent Mail in a Session conversation. Choose the local or direct channel; direct messages require a recipient mention, while local messages without mentions broadcast within the workspace. The composer rejects image attachments and sends only while the Session and workspace are authorized.
+Select Agent Mail in a Session conversation. Choose the local or direct channel; mention suggestions include only peers reachable through that channel. Direct messages require a recipient mention and address all selected recipients atomically; local messages without mentions broadcast within the workspace. The composer rejects image attachments and sends only while the Session and workspace are authorized. A send that commits but cannot refresh the mailbox remains successful: its outgoing row stays visible with a refresh warning, so refresh the mailbox rather than sending the message again.
 
 -----
 
@@ -36,7 +36,11 @@ The Client uses the generated `agentMail` Remote namespace. The Host adapter is 
 
 The local channel addresses peers in the sender's workspace and can broadcast to subscribed workspace members. The direct channel addresses peers in other registered workspaces. Each channel has its own read and acknowledgement cursor. Queue sends do not wake an Agent or alter its model inbox.
 
-The general channel also reads the registered `agent-mail` Conversation target. Successful native `send_message` call/result pairs use the shipped `agent_id` argument; successful nested PTC dispatch settlements carry their own arguments. Incoming rows use admitted `user/message` events with `agent-message` attribution, preserving the logged text blocks and sender identity. Inbox insertion and admission do not create separate rows. Failed or unfinished sends, initial task prompts, and runtime-owned `subagent-settled` notices are not represented as authored mail. The projection neither delivers messages nor creates Session events.
+Both channels read the registered `agent-mail` Conversation target. Successful native and nested PTC `agent_queue_send` and `agent_queue_dm_send` settlements contribute outgoing rows to their respective channels. Rows use the accepted result’s message identity, body, timestamp, stream sequence, sender workspace, and frozen recipients, never draft arguments. Inbox and outgoing rows with the same queue identity appear once.
+
+The general channel additionally shows adjacent-Agent correspondence. Successful native `send_message` call/result pairs use the shipped `agent_id` argument; successful nested PTC settlements carry their own arguments. Incoming rows use admitted `user/message` events with `agent-message` attribution, preserving logged text and sender identity. Inbox insertion and admission do not create separate rows. Failed or unfinished sends, initial task prompts, and runtime-owned `subagent-settled` notices are not authored mail. The projection neither delivers messages nor creates Session events.
+
+Browser-composed sends remain in the gateway instance’s per-Session outbox after a committed receipt; later inbox refreshes preserve those rows. A failed send rejects without recording an outgoing row. A refresh failure after a successful send retains its receipt and reports stale mailbox state separately.
 
 </details>
 
@@ -63,8 +67,10 @@ None; browser presentation does not change provider requests or their reusable p
 - Agent Mail endpoints are owner-only; browser presentation state does not authorize access.
 - Direct messages require at least one peer mention, and image attachments are not supported.
 - Queue sends do not wake recipients or acknowledge their inboxes; recipients control queue reads and acknowledgements. Subagent `send_message` retains its separate waking/steering semantics.
-- Parent-child rows cover only the loaded Session window. Incoming messages appear after model admission, not while pending in the durable Agent inbox; outgoing native calls require their loaded call head and successful result. Older-window loading and replay reconstruct these rows from existing events.
-- Browser-composed queue sends retain the existing browser-local outbox; queue history and parent-child traffic are separate delivery mechanisms. Runtime settlement notices and initial delegation prompts remain in the transcript.
+- Session-derived rows cover only the loaded Session window. Incoming parent-child messages appear after model admission, not while pending in the durable Agent inbox; outgoing native calls require their loaded call head and successful result. Older-window loading and replay reconstruct these rows. Nested PTC settlements carry their own result and do not require the enclosing call result.
+- Queue-send projection requires complete canonical JSON in the successful tool result. Queue tools cap rendered results at 16000 characters, so truncated results are excluded rather than reconstructed from call arguments. Queue delivery may have succeeded even when this presentation row is unavailable.
+- The browser-composed outbox belongs to its gateway instance and does not survive a browser reload; durable queue messages and Session-derived rows keep their separate owners. Runtime settlement notices and initial delegation prompts remain in the transcript.
+- Client source changes require rebuilding and activating the client bundle through the supported application workflow; an installed bundle does not change when a checkout source file changes.
 
 ### Dev Note
 

@@ -12,6 +12,22 @@ export interface MentionPeer {
 }
 
 /**
+ * Restrict a discovered roster to the queue reachable through one channel.
+ * @param peers - authorized discovery snapshot.
+ * @param sessionId - sending Session, excluded from suggestions.
+ * @param workspaceId - authorized sending workspace; absence keeps suggestions inert.
+ * @param channel - selected local or cross-workspace delivery channel.
+ * @returns peers whose workspace matches the selected transport.
+ */
+export function peersForChannel(
+  peers: readonly MentionPeer[], sessionId: string, workspaceId: string | undefined, channel: 'local' | 'direct',
+): readonly MentionPeer[] {
+  if (workspaceId === undefined) return []
+  return peers.filter(peer => peer.sessionId !== sessionId
+    && (channel === 'local' ? peer.workspaceId === workspaceId : peer.workspaceId !== workspaceId))
+}
+
+/**
  * Token inserted by the `@` menu and recognized on submit.
  * @param sessionId - durable session id the token resolves to.
  * @returns `Name#tag`.

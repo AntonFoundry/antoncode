@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { agentDisplayName, agentNameTag } from '../src/client/agent-names.ts'
-import { agentMentionToken, resolveMentions } from '../src/client/mentions.ts'
+import { agentMentionToken, peersForChannel, resolveMentions } from '../src/client/mentions.ts'
 
 describe('agent mentions', () => {
   const peer = (sessionId: string, workspaceId = 'w1') => ({ sessionId, workspaceId })
+
+  it('keeps only peers reachable through the selected channel', () => {
+    const peers = [peer('self'), peer('local'), peer('remote', 'w2')]
+    expect(peersForChannel(peers, 'self', 'w1', 'local')).toEqual([peer('local')])
+    expect(peersForChannel(peers, 'self', 'w1', 'direct')).toEqual([peer('remote', 'w2')])
+    expect(peersForChannel(peers, 'self', undefined, 'direct')).toEqual([])
+  })
 
   it('inserts a name and discriminator, never the session id', () => {
     const token = agentMentionToken('session-abc')
