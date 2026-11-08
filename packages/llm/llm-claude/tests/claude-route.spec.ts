@@ -14,8 +14,10 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, { LlmError, MessageId, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { LocalCredentialProvider } from '@deepseek-ai/dsh-credentials-local'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import { authContextFrom, catalogModels, credentialStoreFrom } from '@deepseek-ai/dsh-llm-pi-ai'
+import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import { CLAUDE_CATALOG_PROVIDER } from '../src/claude.ts'
 import * as LlmClaude from '@deepseek-ai/dsh-llm-claude'
 import {
@@ -258,6 +260,80 @@ describe('mounted route', () => {
     expect(failure.code).toBe('MISSING_CREDENTIAL')
     expect(failure.message).toContain('dsh claude-login')
     expect(gateway.requests).toHaveLength(0)
+  })
+})
+
+describe('separate Claude authentication routes', () => {
+  it('keeps API-key and subscription models independent while credentials rotate', async () => {
+    const gateway = await mockGateway()
+    const subscription = JSON.stringify(VALID_STATE)
+    vi.stubEnv('ANTHROPIC_API_KEY', '')
+    vi.stubEnv('ANTHROPIC_AUTH_TOKEN', 'fixture-ambient-bearer')
+    vi.stubEnv('ANTHROPIC_OAUTH_TOKEN', 'fixture-ambient-oauth')
+    const { ctx } = await boot({ CLAUDE_CODE_OAUTH: subscription, ANTHROPIC_API_KEY: 'fixture-api-key' }, gateway.url)
+    try {
+      const store = credentialStoreFrom(ctx)
+      const unrelatedGrant = { type: 'oauth' as const, access: 'fixture-pi-oauth', refresh: 'fixture-pi-refresh', expires: Date.now() + 3_600_000 }
+      await store.modify('anthropic', () => Promise.resolve(unrelatedGrant))
+      await ctx.plugin(LlmPiAi, { providers: { anthropic: {
+        displayName: 'Claude (API key)', apiKeyEnv: 'ANTHROPIC_API_KEY', baseURL: gateway.url,
+      } } })
+      expect(ctx.llm.listProviders()).toEqual([
+        { id: 'claude-code', name: 'Claude Code' }, { id: 'anthropic', name: 'Claude (API key)' },
+      ])
+      const keyed = await ctx.llm.listModels('anthropic')
+      const subscribed = await ctx.llm.listModels('claude-code')
+      expect(keyed.length).toBeGreaterThan(0)
+      expect(keyed.map(model => model.id)).toEqual(subscribed.map(model => model.id))
+      expect(keyed.every(model => model.provider === 'anthropic')).toBe(true)
+      expect(subscribed.every(model => model.provider === 'claude-code')).toBe(true)
+      const model = keyed[0]!.id
+      const keyedFinish = (await collect(ctx.llm.stream({ provider: 'anthropic', model, messages: [userText('key route')] }))).at(-1)
+      expect(keyedFinish).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+      expect(gateway.requests[0]?.headers['x-api-key']).toBe('fixture-api-key')
+      expect(gateway.requests[0]?.headers.authorization).toBeUndefined()
+      const subscriptionFinish = (await collect(ctx.llm.stream({ provider: 'claude-code', model, messages: [userText('subscription route')] }))).at(-1)
+      expect(subscriptionFinish).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+      expect(gateway.requests[1]?.headers.authorization).toBe(`Bearer ${VALID_STATE.access}`)
+      expect(gateway.requests[1]?.headers['x-api-key']).toBeUndefined()
+      await ctx.credentials.set(credentialRef('ANTHROPIC_API_KEY'), 'fixture-api-key-rotated')
+      await collect(ctx.llm.stream({ provider: 'anthropic', model, messages: [userText('rotated key route')] }))
+      expect(gateway.requests).toHaveLength(3)
+      expect(gateway.requests[2]?.headers['x-api-key']).toBe('fixture-api-key-rotated')
+      expect(gateway.requests[2]?.headers.authorization).toBeUndefined()
+      expect(await store.read('anthropic')).toEqual(unrelatedGrant)
+      expect((await ctx.credentials.resolve(credentialRef('CLAUDE_CODE_OAUTH')))?.value).toBe(subscription)
+    } finally { await ctx.fiber.dispose() }
+  })
+
+  it('refuses a missing API key without borrowing stored or ambient OAuth', async () => {
+    const gateway = await mockGateway()
+    const subscription = JSON.stringify(VALID_STATE)
+    vi.stubEnv('ANTHROPIC_API_KEY', '')
+    vi.stubEnv('ANTHROPIC_AUTH_TOKEN', 'fixture-ambient-bearer')
+    vi.stubEnv('ANTHROPIC_OAUTH_TOKEN', 'fixture-ambient-oauth')
+    const { ctx } = await boot({ CLAUDE_CODE_OAUTH: subscription }, gateway.url)
+    try {
+      const store = credentialStoreFrom(ctx)
+      const unrelatedGrant = { type: 'oauth' as const, access: 'fixture-pi-oauth', refresh: 'fixture-pi-refresh', expires: Date.now() + 3_600_000 }
+      await store.modify('anthropic', () => Promise.resolve(unrelatedGrant))
+      await ctx.plugin(LlmPiAi, { providers: { anthropic: {
+        displayName: 'Claude (API key)', apiKeyEnv: 'ANTHROPIC_API_KEY', baseURL: gateway.url,
+      } } })
+      expect(await ctx.llm.listModels('anthropic')).toEqual([])
+      const model = [...catalogModels(CLAUDE_CATALOG_PROVIDER).values()][0]!.id
+      const failure = await collectError(ctx.llm.stream({ provider: 'anthropic', model, messages: [userText('missing key')] }))
+      expect(failure.code).toBe('MISSING_CREDENTIAL')
+      expect(failure.message).toContain('ANTHROPIC_API_KEY')
+      expect(gateway.requests).toHaveLength(0)
+      expect((await ctx.llm.listModels('claude-code')).length).toBeGreaterThan(0)
+      const finish = (await collect(ctx.llm.stream({ provider: 'claude-code', model, messages: [userText('subscription still works')] }))).at(-1)
+      expect(finish).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+      expect(gateway.requests).toHaveLength(1)
+      expect(gateway.requests[0]?.headers.authorization).toBe(`Bearer ${VALID_STATE.access}`)
+      expect(await store.read('anthropic')).toEqual(unrelatedGrant)
+      expect((await ctx.credentials.resolve(credentialRef('CLAUDE_CODE_OAUTH')))?.value).toBe(subscription)
+    } finally { await ctx.fiber.dispose() }
   })
 })
 

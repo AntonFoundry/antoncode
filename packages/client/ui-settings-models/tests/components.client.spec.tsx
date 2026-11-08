@@ -361,6 +361,50 @@ async function mountDeepSeekCard(overrides: Parameters<typeof scriptedFace>[0] =
 }
 
 describe('ModelsSection', () => {
+  it('keeps keyed Claude editing separate from the Claude Code subscription login', async () => {
+    const scripted = scriptedFace()
+    const keyed = piAiNamespaceWith('anthropic', {
+      displayName: 'Claude (API key)', apiKeyEnv: 'ANTHROPIC_API_KEY',
+    })
+    const claude: SettingsNamespaceView = {
+      ns: 'llm-claude',
+      schema: JSON.parse(JSON.stringify(Schema.object({ oauthRef: Schema.string().role('credential-ref') }).toJSON())) as JsonValue,
+      value: { oauthRef: 'CLAUDE_CODE_OAUTH' }, base: { oauthRef: 'CLAUDE_CODE_OAUTH' }, user: {},
+      autoGenerate: true, applies: 'live', secrets: [], revision: 0,
+    }
+    scripted.face.settings.describe.mockResolvedValue(remoteOk({
+      writable: true, hasDocument: false,
+      namespaces: [...wireNamespaces().filter(view => view.ns !== 'llm-pi-ai'), keyed, claude],
+    }))
+    scripted.face.llm.listProviders.mockResolvedValue(remoteOk([
+      { id: 'anthropic', name: 'Claude (API key)' }, { id: 'claude-code', name: 'Claude Code' },
+    ]))
+    scripted.face.llm.listConfigurableProviders.mockResolvedValue(remoteOk([
+      { provider: 'anthropic', displayName: 'Claude (API key)', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'anthropic'],
+        defaultBaseURL: 'https://api.anthropic.com', baseURLEnv: [],
+        nativeAuth: { env: ['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'], oauth: true } },
+      { provider: 'claude-code', displayName: 'Claude Code', settingsNs: 'llm-claude', settingsPath: [] },
+    ]))
+    const { set, mutate, unset } = await mountFace(scripted)
+    const keyedTarget = { provider: 'anthropic', displayName: 'Claude (API key)' }
+    const consoleTarget = { provider: 'claude-code', displayName: 'Claude Code' }
+    const keyEdit = screen.getByRole('button', { name: providerCopy(en.editProvider, keyedTarget) })
+    const keyRow = within(keyEdit.closest('li')!)
+    expect(keyRow.getByText('Claude (API key)')).toBeTruthy()
+    expect(keyRow.queryByRole('button', { name: new RegExp(en.claudeLogin) })).toBeNull()
+    expect(screen.getByRole('button', { name: providerCopy(en.claudeLogin, consoleTarget) })).toBeTruthy()
+    fireEvent.click(keyEdit)
+    const input = screen.getByLabelText<HTMLInputElement>(en.keyInput)
+    expect(input.placeholder).toBe(en.keyPlaceholderFallback.replace('{hint}', 'ANTHROPIC_API_KEY'))
+    expect(authHelpText()).toBe(en.keyHelp.replace('{env}', 'ANTHROPIC_API_KEY'))
+    fireEvent.change(input, { target: { value: 'synthetic-claude-api-key' } })
+    fireEvent.click(screen.getByRole('button', { name: en.apply }))
+    await waitFor(() => { expect(set).toHaveBeenCalledWith('ANTHROPIC_API_KEY', 'synthetic-claude-api-key') })
+    expect(set).toHaveBeenCalledTimes(1)
+    expect(mutate).not.toHaveBeenCalled()
+    expect(unset).not.toHaveBeenCalled()
+  })
+
   it('keeps the credential state unconfirmed when its redacted read fails', async () => {
     const scripted = scriptedFace()
     scripted.face.credentials.describe.mockResolvedValue(remoteFail('credentials unavailable', 'gateway/internal'))

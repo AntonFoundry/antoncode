@@ -71,9 +71,9 @@ On macOS and Linux you get the bash shell tools; on Windows you get the PowerShe
 
 ### Provider ownership
 
-The base composition offers native `openai`, `claude-code`, and `codex` routes. Its `llm-pi-ai.reservedProviders` is `[openai, anthropic, openai-codex]`, so pi-ai omits the duplicate Anthropic and Codex directory entries while unrelated providers such as `kimi-coding` remain configurable. Native Codex reads the console's `codex login` session; its route becomes active when `llm-codex.providers.codex` is configured. Native Claude Code retains its own subscription login and settings.
+The base composition offers native `openai`, `claude-code`, and `codex` routes, plus `anthropic` as **Claude (API key)** through the existing [pi-ai adapter](../../llm/llm-pi-ai/README.md). Its `llm-pi-ai.reservedProviders` is `[openai, openai-codex]`; the configured `providers.anthropic` names `ANTHROPIC_API_KEY` explicitly. The keyed route uses Anthropic API billing, separate from Claude Code subscription billing. Native Claude Code keeps its own subscription login and settings. Native Codex reads the console's `codex login` session; its route becomes active when `llm-codex.providers.codex` is configured.
 
-A configured pi-ai `anthropic` or `openai-codex` profile is refused when that route is reserved; the bundle does not delete configuration or credentials. To retain keyed Anthropic or another intentional pi-ai route, explicitly remove its id from `reservedProviders` in your existing `llm-pi-ai` profile override, retaining the override's complete configuration. A higher-layer override replaces this default rather than merging it. See the [migration and opt-out guide](../../../docs/upgrade-guide/v0.2.2-alpha.2/native-provider-ownership/guide.md).
+Higher-layer `llm-pi-ai` overrides replace the complete default config rather than merging it. An existing override that reserves `anthropic` must remove only that reservation and add the keyed profile if absent, preserving every other provider and setting; the bundle does not delete credentials or change saved model selections. See the [Claude API-key migration](../../../docs/upgrade-guide/v0.2.2-alpha.2/claude-api-key-provider/guide.md) and [native OpenAI/Codex ownership guide](../../../docs/upgrade-guide/v0.2.2-alpha.2/native-provider-ownership/guide.md).
 
 ### Changing the defaults
 

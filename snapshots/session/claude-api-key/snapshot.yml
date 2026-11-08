@@ -1,0 +1,12 @@
+version: 1
+scenario: claude-api-key
+profile: headless
+composition: default
+recording: authored
+replay:
+  override: true
+header:
+  class: claude-api-key
+  pin: true
+environment:
+  ANTHROPIC_API_KEY: fixture-anthropic-api-key

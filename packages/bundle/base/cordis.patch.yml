@@ -152,20 +152,19 @@
       config:
         workdir: !!js dshHomePath('langflow')
 
-    # The pi-ai multi-provider twin, mounted dormant: zero routes (and no extra
-    # models in the picker) until a `llm-pi-ai:` settings section supplies provider
-    # profiles — then those routes register live, keys resolving per request
-    # through their apiKeyEnv references, and drop again when the section empties.
-    # Supplying those profiles is exactly what the web Models page does. Which
-    # adapters exist is composition; which providers run is the user's settings
-    # document.
+    # pi-ai owns the keyed Claude route alongside native Claude Code subscription
+    # inference. Other catalog routes remain dormant until the Models page supplies
+    # their profiles; credentials resolve through named references per request.
     - id: llm-pi-ai
       name: '@deepseek-ai/dsh-llm-pi-ai'
       config:
-        # Native adapters own OpenAI, Claude Code, and Codex authentication.
-        # Reserve pi-ai's duplicate routes; unrelated providers remain available.
-        # Legacy keyed Anthropic deployments can override this list (see README).
-        reservedProviders: [openai, anthropic, openai-codex]
+        # Native adapters own OpenAI and Codex; Claude Code keeps its subscription route.
+        # Anthropic uses only its named API key, never subscription discovery.
+        reservedProviders: [openai, openai-codex]
+        providers:
+          anthropic:
+            displayName: Claude (API key)
+            apiKeyEnv: ANTHROPIC_API_KEY
 
     - id: session-persistence-jsonl
       name: '@deepseek-ai/dsh-session-persistence-jsonl'

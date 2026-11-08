@@ -1,0 +1,19 @@
+# Curate the existing API-key route; native Claude Code remains mounted.
+- id: llm-pi-ai
+  config:
+    reservedProviders: [openai, openai-codex]
+    providers:
+      anthropic:
+        displayName: Claude (API key)
+        apiKeyEnv: ANTHROPIC_API_KEY
+        # An inactive replay must never reach the public provider endpoint.
+        baseURL: http://127.0.0.1:1
+        liveModelDiscovery: false
+        liveModelUnion: false
+        models:
+          - id: claude-sonnet-4-5
+
+# Keep pi-ai route preparation; substitute only the external response stream.
+- id: llm-replay
+  name: '@deepseek-ai/dsh-llm-replay'
+  config: {}

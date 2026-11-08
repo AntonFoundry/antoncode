@@ -49,6 +49,25 @@ describe('dsh-base bundle', () => {
     expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-web-fetch-http')
   })
 
+  it('offers keyed Claude separately from the Claude Code subscription route', () => {
+    const root = fileURLToPath(new URL('..', import.meta.url))
+    const parsed = yaml.load(readFileSync(resolve(root, 'cordis.patch.yml'), 'utf8'), { schema: entryListSchema })
+    if (!Array.isArray(parsed)) throw new TypeError('base patch must parse to a patch list')
+    const rows = parsed.flatMap((patch): Record<string, unknown>[] =>
+      typeof patch === 'object' && patch !== null
+        ? (patch as { insert?: Record<string, unknown>[] }).insert ?? []
+        : [],
+    )
+    expect(rows.find(row => row.id === 'llm-pi-ai')?.config).toMatchObject({
+      reservedProviders: ['openai', 'openai-codex'],
+      providers: {
+        anthropic: { displayName: 'Claude (API key)', apiKeyEnv: 'ANTHROPIC_API_KEY' },
+      },
+    })
+    expect(rows.filter(row => row.id === 'llm-claude')).toHaveLength(1)
+    expect(rows.find(row => row.id === 'llm-claude')?.name).toBe('@deepseek-ai/dsh-llm-claude')
+  })
+
   it('gates each shell stack by platform with a symmetric disabled expression', () => {
     const root = fileURLToPath(new URL('..', import.meta.url))
     const parsed = yaml.load(
