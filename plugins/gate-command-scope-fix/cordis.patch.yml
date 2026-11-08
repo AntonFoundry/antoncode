@@ -1,0 +1,4 @@
+- insert:
+    - id: gate-command-scope-fix
+      name: '@local/gate-command-scope-fix'
+      config: {}

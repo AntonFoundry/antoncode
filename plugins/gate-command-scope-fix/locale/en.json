@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Deploy gate scope correction",
+    "description": "Explicitly scope the existing deployment gate to shell commands while retaining its checks and confirmation."
+  }
+}
