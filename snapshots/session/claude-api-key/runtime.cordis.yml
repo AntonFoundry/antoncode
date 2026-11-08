@@ -4,7 +4,7 @@
     reservedProviders: [openai, openai-codex]
     providers:
       anthropic:
-        displayName: Claude (API key)
+        displayName: Anthropic (API key)
         apiKeyEnv: ANTHROPIC_API_KEY
         # An inactive replay must never reach the public provider endpoint.
         baseURL: http://127.0.0.1:1

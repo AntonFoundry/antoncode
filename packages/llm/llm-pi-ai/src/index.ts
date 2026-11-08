@@ -170,7 +170,7 @@ function directoryEntries(
     const installed = catalogProvider(provider)
     entries.set(provider, {
       provider,
-      displayName,
+      displayName: provider === 'anthropic' && displayName === provider ? 'Anthropic' : displayName,
       settingsNs,
       settingsPath: ['providers', provider],
       // Membership of the installed catalog, not of the settings document:

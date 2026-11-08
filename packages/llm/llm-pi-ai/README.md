@@ -52,7 +52,7 @@ Each profile may set a `retryPolicy`; omission uses normal mode with five retrie
           mode: normal
           maxRetries: 3
       anthropic:
-        displayName: Claude (API key)
+        displayName: Anthropic (API key)
         apiKeyEnv: ANTHROPIC_API_KEY
       acme-gateway:
         displayName: Acme Gateway
@@ -100,7 +100,7 @@ A profile's `models` list replaces the route's installed catalog rather than ext
 
 On a live-refreshed route (`zai`, `moonshotai`, `deepseek`, `nvidia`), the startup catalog read from models.dev, NVIDIA's LLM API reference, or the endpoint listing (`liveModelDiscovery: true`) supplies the served models when no `models` list is set. `liveModelUnion: true` relaxes a `models` list's replacement: discovered ids join configured entries by id, and the installed catalog keeps serving anything neither source named. Without the flag a `models` list is strict curation, and no live fetch runs for the route. The fetch repeats every `modelsDevRefreshMs` (eight hours by default; the mount-time value applies until restart).
 
-Provider and model labels use readable capitalization and spaces; provider and model ids remain unchanged for routing and settings. `reservedProviders` excludes routes from the directory and refuses activation when a configured profile names one. The standalone plugin defaults to no reservations; [base-backed profiles](../../bundle/base/README.md#provider-ownership) reserve `openai` and `openai-codex` in favor of native routes, while configuring `anthropic` as **Claude (API key)** with `apiKeyEnv: ANTHROPIC_API_KEY`. Enter its key through Settings → Models so the credential store, not chat or composition text, holds the secret. The explicit reference must resolve before a request: a miss fails `MISSING_CREDENTIAL` without falling back to ambient OAuth or the separate `claude-code` subscription login. API usage is billed separately from Claude Code subscriptions. Existing full-config overrides need the [keyed-route migration](../../../docs/upgrade-guide/v0.2.2-alpha.2/claude-api-key-provider/guide.md); existing configuration and credentials are not deleted.
+Provider and model labels use readable capitalization and spaces; provider and model ids remain unchanged for routing and settings. The provider directory displays `anthropic` as **Anthropic** unless a profile supplies its own label. `reservedProviders` excludes routes from the directory and refuses activation when a configured profile names one. The standalone plugin defaults to no reservations; [base-backed profiles](../../bundle/base/README.md#provider-ownership) reserve `openai` and `openai-codex` in favor of native routes, while configuring `anthropic` as **Anthropic (API key)** with `apiKeyEnv: ANTHROPIC_API_KEY`. Enter its key through Settings → Models so the credential store, not chat or composition text, holds the secret. The explicit reference must resolve before a request: a miss fails `MISSING_CREDENTIAL` without falling back to ambient OAuth or the separate `claude-code` subscription login. API usage is billed separately from Claude Code subscriptions. Existing full-config overrides need the [keyed-route migration](../../../docs/upgrade-guide/v0.2.2-alpha.2/claude-api-key-provider/guide.md); existing configuration and credentials are not deleted.
 
 ### Run with reasoning and wire compatibility
 

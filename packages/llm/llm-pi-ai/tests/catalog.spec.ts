@@ -1330,6 +1330,24 @@ describe('configurable-provider directory', () => {
     expect(offered).not.toContain('azure-openai-responses')
   })
 
+  it('capitalizes Anthropic in the directory while preserving route ids and configured labels', async () => {
+    const catalog = await harness({})
+    expect(catalog.llm.listConfigurableProviders().find(entry => entry.provider === 'anthropic'))
+      .toMatchObject({ provider: 'anthropic', displayName: 'Anthropic' })
+    expect(catalog.llm.listConfigurableProviders().find(entry => entry.provider === 'azure')?.displayName)
+      .toBe('azure')
+
+    const unlabeled = await harness({ providers: { anthropic: {} } })
+    expect(unlabeled.llm.listConfigurableProviders().find(entry => entry.provider === 'anthropic')?.displayName)
+      .toBe('Anthropic')
+
+    const configured = await harness({ providers: {
+      anthropic: { displayName: 'Anthropic (API key)', apiKeyEnv: KEY_ENV },
+    } })
+    expect(configured.llm.listConfigurableProviders().find(entry => entry.provider === 'anthropic'))
+      .toMatchObject({ provider: 'anthropic', displayName: 'Anthropic (API key)' })
+  })
+
   it('leaves out an installed catalog route that ships no chat model', async () => {
     const ctx = await harness({})
     const offered = ctx.llm.listConfigurableProviders().map(entry => entry.provider)

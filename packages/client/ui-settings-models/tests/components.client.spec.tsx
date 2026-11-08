@@ -364,7 +364,7 @@ describe('ModelsSection', () => {
   it('keeps keyed Claude editing separate from the Claude Code subscription login', async () => {
     const scripted = scriptedFace()
     const keyed = piAiNamespaceWith('anthropic', {
-      displayName: 'Claude (API key)', apiKeyEnv: 'ANTHROPIC_API_KEY',
+      displayName: 'Anthropic (API key)', apiKeyEnv: 'ANTHROPIC_API_KEY',
     })
     const claude: SettingsNamespaceView = {
       ns: 'llm-claude',
@@ -377,20 +377,20 @@ describe('ModelsSection', () => {
       namespaces: [...wireNamespaces().filter(view => view.ns !== 'llm-pi-ai'), keyed, claude],
     }))
     scripted.face.llm.listProviders.mockResolvedValue(remoteOk([
-      { id: 'anthropic', name: 'Claude (API key)' }, { id: 'claude-code', name: 'Claude Code' },
+      { id: 'anthropic', name: 'Anthropic (API key)' }, { id: 'claude-code', name: 'Claude Code' },
     ]))
     scripted.face.llm.listConfigurableProviders.mockResolvedValue(remoteOk([
-      { provider: 'anthropic', displayName: 'Claude (API key)', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'anthropic'],
+      { provider: 'anthropic', displayName: 'Anthropic (API key)', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'anthropic'],
         defaultBaseURL: 'https://api.anthropic.com', baseURLEnv: [],
         nativeAuth: { env: ['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'], oauth: true } },
       { provider: 'claude-code', displayName: 'Claude Code', settingsNs: 'llm-claude', settingsPath: [] },
     ]))
     const { set, mutate, unset } = await mountFace(scripted)
-    const keyedTarget = { provider: 'anthropic', displayName: 'Claude (API key)' }
+    const keyedTarget = { provider: 'anthropic', displayName: 'Anthropic (API key)' }
     const consoleTarget = { provider: 'claude-code', displayName: 'Claude Code' }
     const keyEdit = screen.getByRole('button', { name: providerCopy(en.editProvider, keyedTarget) })
     const keyRow = within(keyEdit.closest('li')!)
-    expect(keyRow.getByText('Claude (API key)')).toBeTruthy()
+    expect(keyRow.getByText('Anthropic (API key)')).toBeTruthy()
     expect(keyRow.queryByRole('button', { name: new RegExp(en.claudeLogin) })).toBeNull()
     expect(screen.getByRole('button', { name: providerCopy(en.claudeLogin, consoleTarget) })).toBeTruthy()
     fireEvent.click(keyEdit)

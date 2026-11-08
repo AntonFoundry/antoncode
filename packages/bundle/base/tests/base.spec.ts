@@ -62,7 +62,7 @@ describe('dsh-base bundle', () => {
     expect(rows.find(row => row.id === 'llm-pi-ai')?.config).toMatchObject({
       reservedProviders: ['openai', 'openai-codex'],
       providers: {
-        anthropic: { displayName: 'Claude (API key)', apiKeyEnv: 'ANTHROPIC_API_KEY' },
+        anthropic: { displayName: 'Anthropic (API key)', apiKeyEnv: 'ANTHROPIC_API_KEY' },
       },
     })
     expect(rows.filter(row => row.id === 'llm-claude')).toHaveLength(1)

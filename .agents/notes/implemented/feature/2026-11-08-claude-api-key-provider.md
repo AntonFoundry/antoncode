@@ -8,7 +8,7 @@ Claude Code subscription login and Anthropic API-key billing authenticate differ
 
 ## Decision
 
-The base composition configures `providers.anthropic` in the existing `llm-pi-ai` plugin, with display name `Claude (API key)` and explicit `apiKeyEnv: ANTHROPIC_API_KEY`. It reserves only `openai` and `openai-codex`. The provider id remains `anthropic`; native `claude-code`, its subscription login, stored session and settings remain unchanged. The installed pi-ai catalog supplies models, so this addition needs no wrapper package, copied catalog or separate wire adapter.
+The base composition configures `providers.anthropic` in the existing `llm-pi-ai` plugin, with display name `Anthropic (API key)` and explicit `apiKeyEnv: ANTHROPIC_API_KEY`. It reserves only `openai` and `openai-codex`. The provider id remains `anthropic`; native `claude-code`, its subscription login, stored session and settings remain unchanged. The installed pi-ai catalog supplies models, so this addition needs no wrapper package, copied catalog or separate wire adapter.
 
 The keyed profile resolves its named reference through the standard credential service. Settings → Models stores the key behind that reference; composition documents contain the reference, not a secret. A missing reference fails `MISSING_CREDENTIAL` before inference rather than falling through to provider-native ambient discovery or a Claude Code session. Anthropic API-credit charges remain separate from Claude Code subscription usage. The change neither migrates credentials nor changes model selections or activates a running installation.
 

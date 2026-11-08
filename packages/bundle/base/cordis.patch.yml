@@ -163,7 +163,7 @@
         reservedProviders: [openai, openai-codex]
         providers:
           anthropic:
-            displayName: Claude (API key)
+            displayName: Anthropic (API key)
             apiKeyEnv: ANTHROPIC_API_KEY
 
     - id: session-persistence-jsonl

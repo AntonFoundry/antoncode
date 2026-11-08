@@ -276,10 +276,10 @@ describe('separate Claude authentication routes', () => {
       const unrelatedGrant = { type: 'oauth' as const, access: 'fixture-pi-oauth', refresh: 'fixture-pi-refresh', expires: Date.now() + 3_600_000 }
       await store.modify('anthropic', () => Promise.resolve(unrelatedGrant))
       await ctx.plugin(LlmPiAi, { providers: { anthropic: {
-        displayName: 'Claude (API key)', apiKeyEnv: 'ANTHROPIC_API_KEY', baseURL: gateway.url,
+        displayName: 'Anthropic (API key)', apiKeyEnv: 'ANTHROPIC_API_KEY', baseURL: gateway.url,
       } } })
       expect(ctx.llm.listProviders()).toEqual([
-        { id: 'claude-code', name: 'Claude Code' }, { id: 'anthropic', name: 'Claude (API key)' },
+        { id: 'claude-code', name: 'Claude Code' }, { id: 'anthropic', name: 'Anthropic (API key)' },
       ])
       const keyed = await ctx.llm.listModels('anthropic')
       const subscribed = await ctx.llm.listModels('claude-code')
@@ -318,7 +318,7 @@ describe('separate Claude authentication routes', () => {
       const unrelatedGrant = { type: 'oauth' as const, access: 'fixture-pi-oauth', refresh: 'fixture-pi-refresh', expires: Date.now() + 3_600_000 }
       await store.modify('anthropic', () => Promise.resolve(unrelatedGrant))
       await ctx.plugin(LlmPiAi, { providers: { anthropic: {
-        displayName: 'Claude (API key)', apiKeyEnv: 'ANTHROPIC_API_KEY', baseURL: gateway.url,
+        displayName: 'Anthropic (API key)', apiKeyEnv: 'ANTHROPIC_API_KEY', baseURL: gateway.url,
       } } })
       expect(await ctx.llm.listModels('anthropic')).toEqual([])
       const model = [...catalogModels(CLAUDE_CATALOG_PROVIDER).values()][0]!.id
