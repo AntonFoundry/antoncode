@@ -24,106 +24,81 @@ function appearance(element: Locator) {
   })
 }
 
-function rowGeometry(control: Locator) {
-  return control.evaluate((node) => {
-    const row = node.parentElement!
-    const text = row.firstElementChild!
-    const description = text.lastElementChild!.getBoundingClientRect()
-    const rowBox = row.getBoundingClientRect()
-    const textBox = text.getBoundingClientRect()
-    const controlBox = node.getBoundingClientRect()
-    return {
-      widthDifference: rowBox.width - controlBox.width,
-      leftDifference: controlBox.left - textBox.left,
-      rightGap: rowBox.right - controlBox.right,
-      afterText: controlBox.left - textBox.right,
-      belowDescription: controlBox.top - description.bottom,
-      centerDifference: (controlBox.top + controlBox.bottom - textBox.top - textBox.bottom) / 2,
-      height: controlBox.height,
-    }
-  })
-}
-
-it('stacks font fields at narrow widths while keeping font-size controls on the right', async () => {
+it('keeps font controls within narrow panes and preserves focus while resizing', async () => {
   const scaffold = await launchWebScaffold({ developerTools: false })
   onTestFinished(() => scaffold.close())
   const browser = await chromium.launch()
   onTestFinished(() => browser.close())
-
   for (const platform of ['web', 'darwin', 'win32'] as const) {
-    const context = await browser.newContext({
-      viewport: { width: 390, height: 844 }, locale: ZH_BROWSER_LOCALE, hasTouch: platform === 'web',
-    })
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     try {
       const page = await context.newPage()
       await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
       await openSettings(page, 'zh')
       const dialog = page.getByRole('dialog', { name: '设置', exact: true })
-      await dialog.getByRole('button', { name: '更多字体设置', exact: true }).click()
+      await dialog.getByRole('button', { name: '通用设置', exact: true }).click()
+      await page.getByRole('button', { name: 'Expand pane', exact: true }).last().click()
       await page.evaluate((platform) => {
         document.documentElement.toggleAttribute('data-windows-titlebar', platform === 'win32')
         if (platform === 'darwin') document.documentElement.setAttribute('data-platform', platform)
       }, platform)
-
-      for (const width of platform === 'web' ? [390, 767, 768] : [520, 767, 768]) {
-        await page.setViewportSize({ width, height: 844 })
-        for (const name of ['正文字体', '代码字体', '终端字体']) {
-          const geometry = await rowGeometry(dialog.getByRole('textbox', { name, exact: true }).locator('..'))
-          if (width <= 767) {
-            expect(Math.abs(geometry.widthDifference), `${platform} ${width}px ${name} width`).toBeLessThan(1)
-            expect(Math.abs(geometry.leftDifference), `${platform} ${width}px ${name} alignment`).toBeLessThan(1)
-            expect(geometry.belowDescription, `${platform} ${width}px ${name} placement`).toBeGreaterThanOrEqual(0)
-            expect(geometry.height, `${platform} ${width}px ${name} height`).toBeLessThan(60)
-          } else {
-            expect(geometry.afterText, `${platform} ${width}px ${name} placement`).toBeGreaterThanOrEqual(0)
-          }
-        }
-        for (const name of ['增大字号', '增大代码字号', '增大终端字号']) {
-          const geometry = await rowGeometry(dialog.getByRole('button', { name, exact: true }).locator('../../..'))
-          expect(geometry.afterText, `${platform} ${width}px ${name} placement`).toBeGreaterThanOrEqual(0)
-          expect(Math.abs(geometry.rightGap), `${platform} ${width}px ${name} alignment`).toBeLessThan(1)
-          expect(Math.abs(geometry.centerDifference), `${platform} ${width}px ${name} centering`).toBeLessThan(1)
+      for (const width of [390, 767, 768]) {
+        await page.setViewportSize({ width, height: 1000 })
+        const steppers = dialog.getByRole('group', { name: '字号', exact: true })
+        expect(await steppers.count()).toBe(4)
+        for (const stepper of await steppers.all()) {
+          await stepper.scrollIntoViewIfNeeded()
+          const bounds = await stepper.boundingBox()
+          expect(bounds).not.toBeNull()
+          if (bounds === null) throw new Error('missing font-size controls')
+          expect(bounds.x).toBeGreaterThanOrEqual(0)
+          expect(bounds.x + bounds.width).toBeLessThanOrEqual(width)
+          expect(bounds.height).toBe(36)
         }
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
       }
-
-      const field = dialog.getByRole('textbox', { name: '正文字体', exact: true })
+      await dialog.getByRole('button', { name: '系统', exact: true }).click()
+      const field = page.getByPlaceholder('Filter…', { exact: true })
       await field.fill('Uncommitted font draft')
-      const original = await field.elementHandle()
+      expect(await field.inputValue()).toBe('Uncommitted font draft')
+      await page.keyboard.press('Escape')
+      const button = dialog.getByRole('group', { name: '字号', exact: true }).first().getByRole('button', { name: '+', exact: true })
+      await button.focus()
+      const original = await button.elementHandle()
+      expect(await original!.evaluate(input => input === document.activeElement && input.isConnected), 'focused before resize').toBe(true)
       for (const width of [1440, 390]) {
-        await page.setViewportSize({ width, height: 844 })
-        expect(await original!.evaluate(input => input === document.activeElement && input.isConnected)).toBe(true)
-        expect(await field.inputValue()).toBe('Uncommitted font draft')
+        await page.setViewportSize({ width, height: 1000 })
+        const focus = await original!.evaluate(input => ({
+          same: input === document.activeElement, connected: input.isConnected,
+          active: document.activeElement?.outerHTML.slice(0, 300),
+        }))
+        expect(focus, `${platform} ${width}px focused control`).toMatchObject({ same: true, connected: true })
       }
-    } finally {
-      await context.close()
-    }
+    } finally { await context.close() }
   }
 })
 
-it('uses 16px text for coarse-pointer font fields and preserves compact fine-pointer fields', async () => {
+it('uses 16px text for coarse-pointer font filters and preserves compact fine-pointer filters', async () => {
   const scaffold = await launchWebScaffold({ developerTools: false })
   onTestFinished(() => scaffold.close())
   const browser = await chromium.launch()
   onTestFinished(() => browser.close())
-
   for (const hasTouch of [true, false]) {
-    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: ZH_BROWSER_LOCALE, hasTouch })
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, locale: ZH_BROWSER_LOCALE, hasTouch })
     try {
       const page = await context.newPage()
       await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
       await openSettings(page, 'zh')
       const dialog = page.getByRole('dialog', { name: '设置', exact: true })
-      await dialog.getByRole('button', { name: '更多字体设置', exact: true }).click()
+      await dialog.getByRole('button', { name: '通用设置', exact: true }).click()
+      await page.getByRole('button', { name: 'Expand pane', exact: true }).last().click()
+      await page.setViewportSize({ width: 390, height: 844 })
+      await dialog.getByRole('button', { name: '系统', exact: true }).click()
       expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(hasTouch)
-      for (const name of ['正文字体', '代码字体', '终端字体']) {
-        const fontSize = await dialog.getByRole('textbox', { name, exact: true })
-          .evaluate(input => getComputedStyle(input).fontSize)
-        expect(fontSize, name).toBe(hasTouch ? '16px' : '14px')
-      }
-    } finally {
-      await context.close()
-    }
+      const field = page.getByPlaceholder('Filter…', { exact: true })
+      await field.waitFor()
+      expect(await field.evaluate(input => getComputedStyle(input).fontSize)).toBe(hasTouch ? '16px' : '13px')
+    } finally { await context.close() }
   }
 })
 
@@ -170,7 +145,7 @@ it('shares settings card materials and control sizes in both palettes', async ()
     await expect.poll(() => page.evaluate(() => document.body.hasAttribute('data-ds-dark-theme'))).toBe(palette === 'dark')
     const selector = await appearance(dialog.getByRole('button', { name: '工作区内修改', exact: true }))
     expect(selector.radius).toBe('12px')
-    expect((await appearance(dialog)).radius).toBe('28px')
+    expect((await appearance(dialog)).radius).toBe('0px')
 
     await dialog.getByRole('button', { name: '账号与余额', exact: true }).click()
     const section = dialog.getByRole('region', { name: '账号与余额', exact: true })
@@ -196,7 +171,7 @@ it('shares settings card materials and control sizes in both palettes', async ()
     await plugin.waitFor()
     expect(await appearance(plugin)).toMatchObject(material)
 
-    await dialog.getByRole('button', { name: 'Agent 预设', exact: true }).click()
+    await dialog.getByRole('button', { name: 'Agent', exact: true }).click()
     const preset = dialog.locator('li').first()
     await preset.waitFor()
     expect((await appearance(preset)).radius).toBe('20px')

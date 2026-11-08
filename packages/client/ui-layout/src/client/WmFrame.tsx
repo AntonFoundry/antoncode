@@ -1076,6 +1076,7 @@ export function WmFrame({
     first.current = { hadSidebar: findLeaf(treeRef.current, WM_LEAF_SIDEBAR) !== undefined }
   }, [])
   useEffect(() => {
+    if (expanded) return
     const t = treeRef.current
     const has = findLeaf(t, WM_LEAF_SIDEBAR) !== undefined
     if (viewport < SIDEBAR_NARROW && has) {
@@ -1094,7 +1095,7 @@ export function WmFrame({
     }
     // Runs on viewport transitions and boot-drop marker changes; the tree is
     // read through the mirror.
-  }, [viewport, writeTree, sidebarBootDropped, setSidebarBootDropped])
+  }, [viewport, expanded, writeTree, sidebarBootDropped, setSidebarBootDropped])
 
   // Track the frame's own box (not the window): rAF-throttled ResizeObserver.
   useEffect(() => {

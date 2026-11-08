@@ -1291,6 +1291,32 @@ describe('per-window session buffers', () => {
 })
 
 describe('WmFrame narrow viewport', () => {
+  it('keeps an expanded pane mounted and focused across resize, then restores sidebar behavior', () => {
+    const { container, wm } = mountFrame()
+    const pane = container.querySelector('[data-buffer="session"]')!
+    const expand = pane.querySelector<HTMLButtonElement>('button[aria-label="Expand pane"]')!
+    act(() => { wm.actions.setFocus(WM_LEAF_CONVERSATION) })
+    act(() => { expand.click() })
+    const expandedPane = container.querySelector('[data-buffer="session"]')!
+    const focused = expandedPane.querySelector<HTMLButtonElement>('button[aria-label="Restore layout"]')!
+    focused.focus()
+    for (const width of [800, 1920]) {
+      frameWidth = width
+      window.innerWidth = width
+      act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
+      expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION])
+      expect(container.querySelector('[data-buffer="session"]')).toBe(expandedPane)
+      expect(focused.isConnected).toBe(true)
+      expect(document.activeElement).toBe(focused)
+    }
+    act(() => { focused.click() })
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_SIDEBAR, WM_LEAF_CONVERSATION])
+    frameWidth = 800
+    window.innerWidth = frameWidth
+    act(() => { fireResize?.(); vi.advanceTimersByTime(20) })
+    expect(leafIds(wm.getSnapshot().tree)).toEqual([WM_LEAF_CONVERSATION])
+  })
+
   it('drops the sidebar leaf below 900px and restores it on widen (persisted tree had it)', () => {
     frameWidth = 800
     const { wm } = mountFrame()

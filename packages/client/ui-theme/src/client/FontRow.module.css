@@ -148,3 +148,9 @@
   outline: none;
   border-color: var(--dsw-alias-brand-primary);
 }
+
+@media (pointer: coarse) {
+  .filter {
+    font-size: 16px;
+  }
+}
