@@ -1,7 +1,5 @@
 # Session format version and release status
 
-English | [中文](session-format-status.zh.md)
-
 ## Summary
 
 Use this reference to distinguish the checkout writer, the accepted compatibility baseline, and the latest published Session format. The code constant owns the writer; the finalization and release records below separately identify accepted history and publication evidence. Other documentation links here instead of restating those values.
@@ -18,7 +16,7 @@ Use this reference to distinguish the checkout writer, the accepted compatibilit
 ## Sources of truth
 
 - **Checkout writer:** `SESSION_FORMAT_VERSION` in [core Session types](../packages/core/session/src/types.ts) is the only hand-maintained current-writer number in code. The [catalog generator](../scripts/gen-session-format-catalog.ts) derives codec ordering and checks that adjacent migrations reach it. A package version, codec export name, fixture filename, or projection-cache version is not the writer authority.
-- **Latest released format:** `latestReleasedVersion` in the following record identifies the published Session format. `evidenceTag` names a published product release whose tagged writer has that value; it need not be the first release carrying the format. The bilingual copy is checked against the same record, not maintained as a separate decision.
+- **Latest released format:** `latestReleasedVersion` in the following record identifies the published Session format. `evidenceTag` names a published product release whose tagged writer has that value; it need not be the first release carrying the format.
 - **Release status:** compare the writer constant with the verified release record. Equality means the writer format has shipped. A greater writer version is not yet recorded as published; its finalization record independently identifies the accepted compatibility baseline. When comparing an older checkout against a newer branch’s verified record, a lower writer version identifies an older writer format; the local consistency gate rejects that ordering within one checkout. No separate released boolean is maintained. Before declaring a greater version unreleased, verify that no published release has advanced the record.
 
 An alpha, beta, or release-candidate product publication establishes released Session-format obligations. GitHub’s prerelease flag does not make persisted user data disposable. A missing release record is not evidence of non-publication. The [versioning and authority decision](../.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.md) owns compatibility decisions; [released-format migration](../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md) owns immutable generations and adjacent conversion.
