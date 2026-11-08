@@ -138,6 +138,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Host-owned durable direct mailbox. Every write serializes on one chain and lands as a single global-record write, so a message, its recipient index entries, and its cursors commit together or not at all.',
     methods: [
       {
+        signature: 'observe(agent: Agent, listener: MailQueueListener, signal?: AbortSignal): Promise<() => void>',
+        description: 'Observe only addressed committed sends and cursor advances without changing durable state. Install before reading to close the registration/read race. Unlike subscribe, this never creates an account or opts the caller into broadcasts.',
+        parameters: [{ name: 'agent', description: 'Exact live recipient, reauthorized at the serialized registration point.' }, { name: 'listener', description: 'Post-commit invalidation callback; errors are contained and logged.' }, { name: 'signal', description: 'Optional cancellation; omission requires explicit disposal.' }],
+        returns: 'Idempotent observer disposer; no durable delivery state is changed.',
+      },
+      {
         signature: 'async address(agent: Agent, options: DirectAddressOptions = {}): Promise<DirectIdentity>',
         description: 'Report the caller\'s own address, unread depth, and the live peers it may address in every registered workspace, one keyset page at a time.',
         parameters: [{ name: 'agent', description: 'Exact live calling Agent.' }, { name: 'options', description: 'Optional peer resumption cursor and page size.' }],
@@ -300,6 +306,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     summary: 'Host-owned durable queue; publishing never sends agent inbox input or wakes a model.',
     description: 'Host-owned durable queue; publishing never sends agent inbox input or wakes a model.',
     methods: [
+      {
+        signature: 'observe(agent: Agent, listener: MailQueueListener, signal?: AbortSignal): Promise<() => void>',
+        description: 'Observe only addressed committed sends and cursor advances without changing durable state. Install before reading to close the registration/read race. Unlike subscribe, this never creates an account or opts the caller into broadcasts.',
+        parameters: [{ name: 'agent', description: 'Exact live recipient, reauthorized at the serialized registration point.' }, { name: 'listener', description: 'Post-commit invalidation callback; errors are contained and logged.' }, { name: 'signal', description: 'Optional cancellation; omission requires explicit disposal.' }],
+        returns: 'Idempotent observer disposer; no durable delivery state is changed.',
+      },
       {
         signature: 'async identities(agent: Agent): Promise<{ workspaceId: WorkspaceId; sessionId: SessionId; sessionIds: readonly SessionId[] }>',
         description: 'Discover the caller\'s durable session address and authorized workspace peers.',
@@ -5620,6 +5632,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'info', description: 'the run\'s identity snapshot (id + meta).' }],
   },
   {
+    name: 'workspace/changed',
+    mode: 'parallel',
+    signature: '\'workspace/changed\'(change: { readonly workspaceId: WorkspaceId }): void | Promise<void>',
+    summary: 'Invalidate reads of a Workspace after a committed registration, metadata, order, or membership mutation.',
+    description: 'Invalidate reads of a Workspace after a committed registration, metadata, order, or membership mutation. Registry and entity reads already reflect the commit; a deleted identity resolves to undefined. Explicit grouping moves invalidate both former and destination Workspaces, once each. Failed writes and operations that return without writing do not notify. Listener callbacks start before the mutation resolves, but their async work is not awaited; they must re-read authoritative state, which may have advanced again. Observer failures are logged, never rolled back or propagated to the committed mutation. Register through ctx.on so plugin disposal removes the listener. Startup/bootstrap emits no invalidations.',
+    parameters: [{ name: 'change', description: 'Identity to re-read; carries no paths or Session data.' }],
+  },
+  {
     name: 'workspace/session-activity',
     mode: 'waterfall',
     signature: '\'workspace/session-activity\'( request: SessionActivityRequest, next: () => Promise<readonly SessionActivity[]>, ): Promise<readonly SessionActivity[]>',
@@ -7334,6 +7354,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'LspRange',
     declaration: 'export interface LspRange {\n    readonly start: LspPosition;\n    readonly end: LspPosition;\n}',
+  },
+  {
+    name: 'MailQueueListener',
+    declaration: 'export type MailQueueListener = (notice: MailQueueNotice) => void | Promise<void>;',
+  },
+  {
+    name: 'MailQueueNotice',
+    declaration: 'export interface MailQueueNotice {\n    readonly workspaceId: WorkspaceId;\n    readonly seq: number;\n}',
   },
   {
     name: 'ManagementError',

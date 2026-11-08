@@ -304,6 +304,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ReadPage: 'agent-queue.md',
   QueueNotice: 'agent-queue.md',
   QueueListener: 'agent-queue.md',
+  MailQueueListener: 'agent-queue.md',
   DirectSendRequest: 'agent-queue.md',
   DirectInboxPage: 'agent-queue.md',
   DirectPeer: 'agent-queue.md',

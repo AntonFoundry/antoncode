@@ -256,6 +256,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'idempotent disposer for the wait and active effect.',
         throws: ['callback setup failures synchronously when the slot is already declared.'],
       },
+      {
+        signature: 'getStoreSnapshot<T, A extends ActionsDecl<T>>( handle: StoreHandle<T, A>, scopeBinding?: Pick<ScopedStandardSourceBinding, \'key\' | \'ctx\'>, ): T',
+        description: 'Read a registered shared Store for an apply-world command or event handler. This resolves the same handle × scope instance as the Component\'s `useStore`; it creates no subscription and does not expose mutation capabilities. Components read through `useStore`, never through this method. Treat the returned snapshot as immutable and write only through declared actions.',
+        parameters: [{ name: 'handle', description: 'shared handle already held by a live Slot or Factory registration.' }, { name: 'scopeBinding', description: 'current scope key and Context, resolved afresh for each command; omit for a root Store. Do not retain a previous Session generation.' }],
+        returns: 'the current cached snapshot, materializing its registered instance if needed.',
+        throws: ['when the handle is not registered, a scoped Store has no binding, or the supplied Context is inactive.'],
+      },
     ],
   },
   {
@@ -872,6 +879,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type RenderFactorySlot = <F extends keyof SlotFactoryMap & string>(name: F, props: FactoryInputPropsOf<F>, options?: {\n    slots?: Partial<{\n        [N in FactoryLocalNameOf<F>]: FactoryLocalComponent<F, N>;\n    }>;\n    fallback?: ReactNode;\n}) => ReactNode;',
   },
   {
+    name: 'ScopedStandardSourceBinding',
+    declaration: 'export interface ScopedStandardSourceBinding extends StandardSourceBinding {\n    readonly key: string;\n    readonly ctx: Context;\n}',
+  },
+  {
     name: 'ScopeOf',
     declaration: 'export type ScopeOf<K extends keyof SlotMap & string> = SlotMap[K][\'scope\'];',
   },
@@ -1026,6 +1037,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SnapshotSelectorHook',
     declaration: 'export type SnapshotSelectorHook<T> = <S>(sel: (s: T) => S, eq?: (a: S, b: S) => boolean) => S;',
+  },
+  {
+    name: 'StandardSourceBinding',
+    declaration: 'export interface StandardSourceBinding {\n    readonly key: string | undefined;\n    readonly hooks: Readonly<Record<string, HostObservable<unknown> | undefined>>;\n    readonly keyedHooks: Readonly<Record<string, KeyedStandardSource | undefined>>;\n    readonly props: Readonly<Record<string, unknown>>;\n}',
   },
   {
     name: 'StartSessionOptions',

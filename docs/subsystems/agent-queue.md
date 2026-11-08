@@ -178,6 +178,17 @@ Host-owned durable direct mailbox. Every write serializes on one chain and lands
 
 ```ts cordis-catalog
 /**
+ * Observe only addressed committed sends and cursor advances without changing durable state.
+ * Install before reading to close the registration/read race. Unlike subscribe, this
+ * never creates an account or opts the caller into broadcasts.
+ * @param agent - Exact live recipient, reauthorized at the serialized registration point.
+ * @param listener - Post-commit invalidation callback; errors are contained and logged.
+ * @param signal - Optional cancellation; omission requires explicit disposal.
+ * @returns Idempotent observer disposer; no durable delivery state is changed.
+ */
+observe(agent: Agent, listener: MailQueueListener, signal?: AbortSignal): Promise<() => void>
+
+/**
  * Report the caller's own address, unread depth, and the live peers it may
  * address in every registered workspace, one keyset page at a time.
  * @param agent - Exact live calling Agent.
@@ -229,6 +240,17 @@ Source: [`packages/interaction/agent-queue/src/direct.ts`](../../packages/intera
 Host-owned durable queue; publishing never sends agent inbox input or wakes a model.
 
 ```ts cordis-catalog
+/**
+ * Observe only addressed committed sends and cursor advances without changing durable state.
+ * Install before reading to close the registration/read race. Unlike subscribe, this
+ * never creates an account or opts the caller into broadcasts.
+ * @param agent - Exact live recipient, reauthorized at the serialized registration point.
+ * @param listener - Post-commit invalidation callback; errors are contained and logged.
+ * @param signal - Optional cancellation; omission requires explicit disposal.
+ * @returns Idempotent observer disposer; no durable delivery state is changed.
+ */
+observe(agent: Agent, listener: MailQueueListener, signal?: AbortSignal): Promise<() => void>
+
 /**
  * Discover the caller's durable session address and authorized workspace peers.
  * @param agent - Exact live caller whose header and lineage establish workspace membership.

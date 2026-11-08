@@ -696,6 +696,32 @@ Source: [`packages/workspace/worktree/src/index.ts`](../../packages/workspace/wo
 
 ### `workspace/*` events
 
+<a id="workspacechanged--parallel"></a>
+
+#### `workspace/changed` — parallel
+
+Invalidate reads of a Workspace after a committed registration, metadata, order, or membership mutation. Registry and entity reads already reflect the commit; a deleted identity resolves to undefined. Explicit grouping moves invalidate both former and destination Workspaces, once each. Failed writes and operations that return without writing do not notify. Listener callbacks start before the mutation resolves, but their async work is not awaited; they must re-read authoritative state, which may have advanced again. Observer failures are logged, never rolled back or propagated to the committed mutation. Register through ctx.on so plugin disposal removes the listener. Startup/bootstrap emits no invalidations.
+
+```ts cordis-catalog
+/**
+ * Invalidate reads of a Workspace after a committed registration, metadata,
+ * order, or membership mutation. Registry and entity reads already reflect
+ * the commit; a deleted identity resolves to undefined. Explicit grouping
+ * moves invalidate both former and destination Workspaces, once each.
+ * Failed writes and operations that return without writing do not notify.
+ * Listener callbacks start before the mutation resolves, but their async
+ * work is not awaited; they must re-read authoritative state, which may
+ * have advanced again. Observer failures are logged, never rolled back or
+ * propagated to the committed mutation. Register through ctx.on so plugin
+ * disposal removes the listener. Startup/bootstrap emits no invalidations.
+ * @param change - Identity to re-read; carries no paths or Session data.
+ * @mode parallel
+ */
+'workspace/changed'(change: { readonly workspaceId: WorkspaceId }): void | Promise<void>
+```
+
+Source: [`packages/workspace/workspace/src/index.ts`](../../packages/workspace/workspace/src/index.ts)
+
 <a id="workspacesession-activity--waterfall"></a>
 
 #### `workspace/session-activity` — waterfall
