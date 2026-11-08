@@ -1,0 +1,4 @@
+- insert:
+    - id: provider-route-cleanup
+      name: '@local/provider-route-cleanup'
+      config: {}

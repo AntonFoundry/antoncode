@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Provider route cleanup",
+    "description": "Explicitly reserve dormant duplicate pi-ai routes while keeping Claude Code subscription and native Codex login routes."
+  }
+}
