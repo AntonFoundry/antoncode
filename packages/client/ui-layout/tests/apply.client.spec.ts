@@ -170,6 +170,31 @@ describe('ui-layout client apply', () => {
     expect(document.body.hasAttribute('data-ds-dark-theme')).toBe(false)
   })
 
+  it('keeps an explicit palette on boot and presents both OpenCode palettes until disposal', async () => {
+    const { ctx } = await bench()
+    const theme = ctx.get('theme') as ThemeRuntime
+    theme.setTheme('dark')
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    expect(theme.getTheme().preference).toBe('dark')
+    expect(document.body.getAttribute('data-ds-theme')).toBe('dark')
+    for (const [id, scheme, background, keyword] of [
+      ['opencode', 'light', '#ffffff', '#aa3576'],
+      ['opencode-dark', 'dark', '#161616', '#f799c6'],
+    ] as const) {
+      theme.setTheme(id)
+      expect(theme.getTheme().preference).toBe(id)
+      expect(document.documentElement.style.colorScheme).toBe(scheme)
+      expect(document.body.getAttribute('data-ds-theme')).toBe(id)
+      expect(document.body.style.getPropertyValue('--dsw-alias-bg-base')).toBe(background)
+      expect(document.body.style.getPropertyValue('--shiki-token-keyword')).toBe(keyword)
+    }
+    await fiber.dispose()
+    expect(theme.getTheme().themes.some(candidate => candidate.id.startsWith('opencode'))).toBe(false)
+    expect(document.body.hasAttribute('data-ds-theme')).toBe(false)
+    expect(document.body.style.getPropertyValue('--shiki-token-keyword')).toBe('')
+  })
+
   it('teardown unwinds the service, the root registration, and the child declarations', async () => {
     const { ctx, slots, rendererHost } = await bench()
     const fiber = ctx.plugin({ inject: [...inject], apply })

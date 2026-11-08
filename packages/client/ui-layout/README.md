@@ -50,6 +50,8 @@ The root publishes `--dsh-frame-top-clearance` for the reserved strip (48px on m
 
 The presenter consumes resolved theme snapshots and projects them onto the document: `html { color-scheme }` for native UA chrome, `body[data-ds-dark-theme]` from the active color scheme, `body[data-ds-theme]` carrying the active theme id for theme-scoped sheets, the theme's alias tokens, `--dsh-content-font-size`, `--dsh-code-font-size`, `--dsh-terminal-font-size`, and each non-empty `--dsh-font-family-<role>` list as inline variables on body, and one owned `<meta name="theme-color">` whose content follows the computed body background. Disposing the presenter removes its metadata node with its other global writes.
 
+The named `opencode` and `opencode-dark` palettes adapt OpenCode's `oc-2` web default, not its separate terminal palette. Select either through `load-theme`; registering them does not replace the current default or an explicit user selection. Canvas, raised surfaces and blue accents retain the source palette; some light syntax and state-text colors use darker steps from the same ramps for readable contrast on Harness code surfaces. The mapping lives in [opencode-themes.ts](src/client/opencode-themes.ts), and the package includes OpenCode's complete [MIT notice](licenses/OpenCode.txt). No OpenCode component or runtime dependency is imported.
+
 -----
 
 <a id="understand-the-implementation"></a>

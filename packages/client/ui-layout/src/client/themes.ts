@@ -23,6 +23,7 @@
  */
 import type { ThemeDefinition, ThemeSyntaxPalette } from '@deepseek-ai/dsh-client-ui-theme/client'
 import { completeTheme } from './theme-derive.ts'
+import { OPENCODE_THEMES } from './opencode-themes.ts'
 
 /** One palette entry: token name → the palette's scheme-fixed CSS value. */
 type Palette = Record<string, string>
@@ -440,6 +441,7 @@ const CURATED_THEMES: readonly ThemeDefinition[] = [
   { id: 'anton-dark', colorScheme: 'dark', tokens: {} },
   { id: 'macos', colorScheme: 'light', tokens: macos , syntax: macosSyntax },
   { id: 'macos-dark', colorScheme: 'dark', tokens: macosDark , syntax: macosDarkSyntax },
+  ...OPENCODE_THEMES,
   { id: 'paper', colorScheme: 'light', tokens: paper , syntax: paperSyntax },
   { id: 'sepia', colorScheme: 'light', tokens: sepia , syntax: sepiaSyntax },
   { id: 'midnight', colorScheme: 'dark', tokens: midnight , syntax: midnightSyntax },

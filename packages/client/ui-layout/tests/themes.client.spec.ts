@@ -45,6 +45,49 @@ describe('LAYOUT_THEMES', () => {
     expect(LAYOUT_THEMES.find(t => t.id === 'macos-dark')?.colorScheme).toBe('dark')
   })
 
+  it('registers the OpenCode web-default pair without replacing existing themes', () => {
+    const light = LAYOUT_THEMES.find(theme => theme.id === 'opencode')
+    const dark = LAYOUT_THEMES.find(theme => theme.id === 'opencode-dark')
+    expect(light?.colorScheme).toBe('light')
+    expect(dark?.colorScheme).toBe('dark')
+    expect(light?.tokens).toMatchObject({
+      '--dsw-alias-bg-base': '#ffffff',
+      '--dsw-alias-bg-layer-1': '#fafafa',
+      '--dsw-alias-bg-layer-2': '#f2f2f2',
+      '--dsw-alias-bg-layer-3': '#eeeeee',
+      '--dsw-alias-label-primary': '#161616',
+      '--dsw-alias-brand-primary': '#3b5cf6',
+    })
+    expect(dark?.tokens).toMatchObject({
+      '--dsw-alias-bg-base': '#161616',
+      '--dsw-specific-sidebar-fill': '#080808',
+      '--dsw-alias-bg-layer-1': '#242424',
+      '--dsw-alias-bg-layer-2': '#2e2e2e',
+      '--dsw-alias-bg-layer-3': '#3a3a3a',
+      '--dsw-alias-label-primary': '#fafafa',
+      '--dsw-alias-brand-primary': '#3b5cf6',
+    })
+    expect(LAYOUT_THEMES[0]?.id).toBe('anton-dark')
+  })
+
+  it('keeps OpenCode text, syntax faces and primary-button labels readable in both modes', () => {
+    for (const id of ['opencode', 'opencode-dark']) {
+      const theme = LAYOUT_THEMES.find(candidate => candidate.id === id)
+      expect(theme, id).toBeDefined()
+      if (theme === undefined) throw new Error(`missing ${id} theme`)
+      const tokens = theme.tokens
+      for (const token of ['--dsw-alias-label-primary', '--dsw-alias-label-secondary', '--dsw-alias-link']) {
+        expect(contrast(tokens[token]!, tokens['--dsw-alias-bg-base']!), `${id}: ${token}`).toBeGreaterThanOrEqual(4.5)
+      }
+      expect(contrast(tokens['--dsw-alias-brand-primary-invert']!, tokens['--dsw-alias-button-primary-fill']!), id)
+        .toBeGreaterThanOrEqual(4.5)
+      expect(Object.keys(theme.syntax ?? {})).toHaveLength(9)
+      for (const [token, value] of Object.entries(theme.syntax ?? {})) {
+        expect(contrast(value, tokens['--dsw-alias-markdown-code-block']!), `${id}: ${token}`).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+  })
+
   it('keeps every palette a --dsw-* override layer with the Aqua signature accents', () => {
     for (const theme of LAYOUT_THEMES) {
       for (const name of Object.keys(theme.tokens)) {

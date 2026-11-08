@@ -199,3 +199,40 @@
   padding: 0 24px 24px;
   overflow-y: auto;
 }
+
+/* The frame's pane-content size container owns available settings width. */
+@container (max-width: 640px) {
+  .root {
+    flex-direction: column;
+  }
+
+  .nav {
+    width: auto;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .navList {
+    flex-direction: row;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .navCell {
+    flex: 0 1 auto;
+  }
+
+  .content {
+    min-height: 0;
+  }
+
+  .header {
+    height: auto;
+    min-height: 40px;
+    padding: 8px 12px;
+  }
+
+  .options {
+    padding: 0 16px 16px;
+  }
+}
