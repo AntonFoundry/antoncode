@@ -56,7 +56,9 @@ function eventsNewestFirst(session: Session): readonly SessionEvent[] {
 
 /**
  * Decides how a rendered system prompt reaches the surface without owning the
- * commit. The first prompt, even empty, reserves surface node 0.
+ * commit. On an empty surface, the first prompt, even empty, reserves node 0.
+ * An imported prefix without a system node remains in place; its first prompt
+ * appends after that history and does not become a protected surface head.
  * A capable continuing series appends changed nonempty text after the
  * cached history. An incapable route, a cleared prompt, or a new series whose
  * effective text differs instead normalizes the first system node and empties

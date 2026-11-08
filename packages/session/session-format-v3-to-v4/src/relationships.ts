@@ -123,9 +123,6 @@ class Relationships {
 
   foldSurface(event: SessionFormatEvent): void {
     if (!SURFACE_TYPES.has(event.type)) return
-    if (event.type === 'system/message' && this.surface.length > 0 && this.protectedHead === undefined) {
-      throw new SessionFormatError('system/message requires a protected first surface head')
-    }
     if (event['surfaceOp'] === 'append') {
       if (event.type === 'system/message' && this.surface.length === 0) this.protectedHead = event.seq
       this.surface.push(event.seq)
@@ -143,6 +140,7 @@ class Relationships {
       this.protectedHead = event.seq
     }
     this.surface.splice(first, removed.length, event.seq)
+    if (first === 0 && event.type === 'system/message') this.protectedHead = event.seq
   }
 
   tool(event: SessionFormatEvent, data: SessionFormatJsonObject): void {

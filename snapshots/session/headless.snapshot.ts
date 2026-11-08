@@ -9,7 +9,11 @@ import { basename, delimiter, dirname, isAbsolute, join, relative, sep } from 'n
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import ts from 'typescript'
-import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
+import { SESSION_FORMAT_VERSION, Session, SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
+import { MessageId } from '@deepseek-ai/dsh-llm'
+import { sessionFormatCatalog } from '@deepseek-ai/dsh-session-format-catalog'
+import { generationLogPath } from '../../packages/session/session-persistence-jsonl/src/format.ts'
 import { releasedV0SessionFormatCodec } from '@deepseek-ai/dsh-session-format-v0-to-v1'
 import type { SessionFormatEvent, SessionFormatMigrationContext } from '@deepseek-ai/dsh-session-format'
 import { assertWorkspaceOutsideTemp, outsideTempWorkspaceParent } from '../../scripts/snapshot-workspace-parent.ts'
@@ -225,6 +229,62 @@ async function persistedSessions(cwd: string): Promise<SessionLog[]> {
     }
     return Number(left.header.createdAt) - Number(right.header.createdAt)
   })
+}
+
+const IMPORTED_SEED_ID = SessionId('snapshot-imported-seed')
+
+/** Construct the imported prefix through Session's normal seeded writer path. */
+async function prepareImportedSeed(cwd: string): Promise<string> {
+  cwd = await realpath(cwd)
+  const header: SessionHeader = {
+    version: SESSION_FORMAT_VERSION, id: IMPORTED_SEED_ID, createdAt: 0, cwd,
+    isSeeded: true, delegationDepth: 0,
+  }
+  const seed: SessionEvent[] = [
+    { seq: SessionSeq(0), time: 0, type: 'turn/start', data: { turn: 1 } },
+    { seq: SessionSeq(1), time: 0, type: 'step/start', data: { turn: 1, step: 1 } },
+    { seq: SessionSeq(2), time: 0, type: 'user/message', surfaceOp: 'append', data: {
+      role: 'user', id: MessageId('synthetic-import-user'), source: { kind: 'user' },
+      content: [{ type: 'text', text: 'Synthetic imported request' }],
+    } },
+    { seq: SessionSeq(3), time: 0, type: 'assistant/message', surfaceOp: 'append', data: {
+      turn: 1, step: 1, stream: [], message: { role: 'assistant', id: MessageId('synthetic-import-report'),
+        source: { kind: 'model', provider: 'codex', model: 'imported-report' },
+        content: [{ type: 'text', text: 'Synthetic imported report' }],
+      },
+    } },
+    { seq: SessionSeq(4), time: 0, type: 'step/end', data: { turn: 1, step: 1 } },
+    { seq: SessionSeq(5), time: 0, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+  ]
+  const session = Session.create(IMPORTED_SEED_ID, seed, header, SessionLogOffset(seed.length))
+  const lines = [sessionFormatCatalog.encodeCurrentHeader({ ...session.header, delegationDepth: 0 }, session.inheritedEventCount),
+    ...session.snapshotEvents().map(event => sessionFormatCatalog.encodeCurrentEvent(event as SessionFormatEvent))]
+  const content = lines.map(line => JSON.stringify(line)).join('\n') + '\n'
+  const path = generationLogPath(join(cwd, '.dsh', 'sessions'), cwd, IMPORTED_SEED_ID, SESSION_FORMAT_VERSION, 'none')
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, content)
+  return content
+}
+
+/** Reopen the actual native artifact, retaining the non-system imported surface head. */
+function verifyImportedSeed(log: string, initial: string): void {
+  expect(log.startsWith(initial), 'imported prefix stays byte-identical').toBe(true)
+  const rows = records(log)
+  const restore = sessionFormatCatalog.createRestore(rows[0], { recovery: 'strict', validation: 'current' })
+  for (const row of rows.slice(1)) restore.decodeRow(row)
+  const artifact = restore.finish()
+  const events = parseSessionLog(log)
+  const session = Session.fromRestore(IMPORTED_SEED_ID, events, artifact.header as SessionHeader,
+    SessionLogOffset(artifact.inheritedEventCount), 'detached')
+  expect(artifact.inheritedEventCount).toBe(6)
+  expect(session.surface.nodes.slice(0, 2)).toEqual([2, 3])
+  expect(events[2]).toMatchObject({ type: 'user/message', data: { content: [{ text: 'Synthetic imported request' }] } })
+  expect(events[3]).toMatchObject({ type: 'assistant/message', data: { message: { content: [{ text: 'Synthetic imported report' }] } } })
+  const firstSystem = events.find(event => event.type === 'system/message')
+  expect(firstSystem?.surfaceOp).toBe('append')
+  expect(firstSystem?.seq).toBeGreaterThan(6)
+  expect(session.surface.nodes.indexOf(firstSystem!.seq)).toBeGreaterThan(1)
+  expect(events.at(-1)).toMatchObject({ type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } })
 }
 
 async function fixtureSessions(scenario: HeadlessScenario, selectedFiles?: readonly string[]): Promise<string[]> {
@@ -1289,6 +1349,7 @@ describe('headless recorded-session snapshots', () => {
       const patches = patchSources.map((source, index) => join(patchRoot, `${String(index)}-${basename(source)}`))
 
       let actualLogs: SessionLog[] = []
+      let importedSeed: string | undefined
       let initialWorkspace: WorkspaceSnapshotEntry[] | undefined
       let finalWorkspace: WorkspaceSnapshotEntry[] | undefined
       const spillRoot = await mkdtemp(join(tmpdir(), 'acp-snap-spill-'))
@@ -1307,6 +1368,7 @@ describe('headless recorded-session snapshots', () => {
           binArgs: [
             '--profile', 'headless',
             ...patches.flatMap(file => ['--patch', file]),
+            ...scenario.name === 'imported-seed-system-prompt' ? ['--session-id', IMPORTED_SEED_ID] : [],
             task,
           ],
           tsconfigPath,
@@ -1351,12 +1413,17 @@ describe('headless recorded-session snapshots', () => {
               await copyFile(join(scenario.dir, 'profile.patch.yml'), join(profileDir, 'cordis.patch.yml'))
             }
             await seedWorkspace(scenario, cwd)
+            if (scenario.name === 'imported-seed-system-prompt') importedSeed = await prepareImportedSeed(cwd)
             initialWorkspace = await captureWorkspaceSnapshot(cwd, {
               ignoredRootEntries: ignoredWorkspaceEntries,
             })
           },
           inspect: async (cwd) => {
             actualLogs = await persistedSessions(cwd)
+            if (scenario.name === 'imported-seed-system-prompt') {
+              if (importedSeed === undefined || actualLogs[0] === undefined) throw new Error('missing imported seed artifact')
+              verifyImportedSeed(actualLogs[0].content, importedSeed)
+            }
             if (scenario.name === 'model-failover-quota') {
               const events = parseSessionLog(actualLogs[0]!.content)
               const primary = { provider: 'deepseek-official', model: 'deepseek-v4-flash' }

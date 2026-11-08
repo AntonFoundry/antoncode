@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { createSystemMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
-import SessionStore, { SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
-import type { Session, SurfaceIntent } from '@deepseek-ai/dsh-session'
+import { createAssistantMessage, createSystemMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import SessionStore, { Session, SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
+import type { SurfaceIntent } from '@deepseek-ai/dsh-session'
 import { SystemPromptProjection } from '../src/runtime-context.ts'
 import type { SystemPromptCommit, SystemPromptDecisionInput } from '../src/runtime-context.ts'
 
@@ -40,6 +40,37 @@ function replaceOf(seq: number): SurfaceIntent {
 }
 
 describe('SystemPromptProjection', () => {
+  it.each([false, true])('preserves an imported prefix when its first prompt arrives with in-history=%s', (inHistory) => {
+    const imported = Session.create(SessionId(`late-system-${inHistory}`))
+    const user = appendUser(imported, 'Imported user message')
+    const assistant = imported.append('assistant/message', {
+      turn: 1, step: 1, stream: [], message: createAssistantMessage({
+        content: [{ type: 'text', text: 'Imported reply' }], source: { provider: 'imported', model: 'model' },
+      }),
+    }, { surfaceOp: 'append' })
+    const seed = imported.snapshotEvents()
+    const session = Session.create(imported.id, seed, { ...imported.header, isSeeded: true }, SessionLogOffset(seed.length))
+    const projection = new SystemPromptProjection(session)
+    const late = projection.project('Current Harness prompt', { inHistory, startsSeries: true })
+    expect(late).toHaveLength(1)
+    expect(late[0]?.intent).toEqual({ surfaceOp: 'append' })
+    const firstSystem = commit(session, 2, late[0])
+    expect(session.surface.nodes).toEqual([user.seq, assistant.seq, firstSystem.seq])
+    expect(session.snapshotEvents().slice(0, seed.length)).toEqual(seed)
+    expect(session.deriveMessages().map(message => message.role)).toEqual(['user', 'assistant', 'system'])
+
+    const events = session.snapshotEvents()
+    const reopened = Session.fromRestore(session.id, events, session.header, session.inheritedEventCount, 'shared-frozen')
+    expect(reopened.surface.nodes).toEqual(session.surface.nodes)
+    expect(reopened.deriveMessages()).toEqual(session.deriveMessages())
+    const restored = new SystemPromptProjection(reopened)
+    expect(restored.project('Current Harness prompt', { inHistory, startsSeries: false })).toEqual([])
+    const changed = restored.project('Updated Harness prompt', { inHistory, startsSeries: false })
+    expect(changed[0]?.intent).toEqual(inHistory ? { surfaceOp: 'append' } : replaceOf(firstSystem.seq))
+    commit(reopened, 3, changed[0])
+    expect(reopened.surface.nodes.slice(0, 2)).toEqual([user.seq, assistant.seq])
+  })
+
   it('clears multiblock and nontext system nodes rather than treating them as dormant', async () => {
     const ctx = await sessionStore()
     try {

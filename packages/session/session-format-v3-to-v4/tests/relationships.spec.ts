@@ -194,8 +194,6 @@ describe('V4 protected system surface and malformed relationship inputs', () => 
     const prune = row('compaction/prune', { shadowedRange: { start: 3, end: 3 }, shadowedSeqs: [3], shadowedTokenCount: 1 })
     expect(() => reopen([...begin(), system(), input(), prune, ...end()])).not.toThrow()
     for (const rows of [
-      [...begin(), input(), system()],
-      [...begin(), input(), { ...replacement, sourceEventSeqs: [2] }],
       [...begin(), system(), { ...input(), surfaceOp: { op: 'replace', startSeq: 2, endSeq: 2 }, sourceEventSeqs: [2] }],
       [...begin(), system(), input(), { ...replacement, surfaceOp: { op: 'replace', startSeq: 2, endSeq: 3 }, sourceEventSeqs: [2, 3] }],
       [...begin(), system(), input(), { ...replacement, surfaceOp: { op: 'replace', startSeq: 0, endSeq: 0 } }],
@@ -203,6 +201,33 @@ describe('V4 protected system surface and malformed relationship inputs', () => 
       [...begin(), system(), input(), { ...replacement, sourceEventSeqs: [0] }],
       [...begin(), system(), row('compaction/prune', { shadowedRange: { start: 2, end: 2 }, shadowedSeqs: [2] })],
     ]) expect(() => reopen(rows)).toThrow()
+  })
+
+  it('retains imported non-system history followed by late system prompts', () => {
+    const imported = [...begin(), input(), assistant([{ type: 'text', text: 'imported response' }]), ...end(),
+      row('session/end-seed', { inherited: true })]
+    const laterStep = { turn: 2, step: 1 }
+    const lateSystem = { ...system(), data: { ...system().data, ...laterStep } }
+    const rows = [...imported, row('turn/start', { turn: 2 }), input(), row('step/start', laterStep),
+      lateSystem, lateSystem, row('step/end', laterStep), row('turn/end', { turn: 2, reason: { kind: 'completed' } })]
+    expect(reopen(rows, imported.length - 1, true).messages.map(message => message.role))
+      .toEqual(['user', 'assistant', 'user', 'system', 'system'])
+    const prune = row('compaction/prune', { shadowedRange: { start: 10, end: 11 }, shadowedSeqs: [10, 11] })
+    expect(() => reopen([...rows, prune], imported.length - 1, true)).not.toThrow()
+  })
+
+  it('protects a system prompt promoted over an unprotected first surface range', () => {
+    const promotion = { ...system(), surfaceOp: { op: 'replace', startSeq: 2, endSeq: 3 }, sourceEventSeqs: [2, 3] }
+    const promoted = [...begin(), input(), input(), promotion]
+    expect(reopen(promoted).messages.map(message => message.role)).toEqual(['system'])
+    const invalidRewrite = { ...input(), surfaceOp: { op: 'replace', startSeq: 4, endSeq: 4 }, sourceEventSeqs: [4] }
+    expect(() => reopen([...promoted, invalidRewrite])).toThrow(/protected system head/)
+    const prune = row('compaction/prune', { shadowedRange: { start: 4, end: 4 }, shadowedSeqs: [4] })
+    expect(() => reopen([...promoted, prune])).toThrow(/protected system head/)
+    const exactRewrite = { ...system(), surfaceOp: { op: 'replace', startSeq: 4, endSeq: 4 }, sourceEventSeqs: [4] }
+    expect(() => reopen([...promoted, exactRewrite])).not.toThrow()
+    const rewriteAgain = { ...input(), surfaceOp: { op: 'replace', startSeq: 5, endSeq: 5 }, sourceEventSeqs: [5] }
+    expect(() => reopen([...promoted, exactRewrite, rewriteAgain])).toThrow(/protected system head/)
   })
 
   it('rejects malformed relationship values and mismatched inherited transaction ownership', () => {

@@ -1,0 +1,10 @@
+version: 1
+scenario: imported-seed-system-prompt
+profile: headless
+composition: default
+recording: authored
+replay:
+  override: true
+header:
+  class: imported-seed-system-prompt
+  pin: true
