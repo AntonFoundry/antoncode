@@ -33,6 +33,8 @@ This package is infrastructure: the web shell and the boot kernel are its only d
 
 A business plugin registers an ordinary Slot entry or a reusable Component Factory; the renderer binds the runtime's session and workspace observable sources into selector hooks at the render position. The plugin receives standard scope props through its derived Component props — it never imports the renderer or touches React internals. Every renderer-created Component can render a Factory occurrence, and a Factory can expose caller-selected local Components without sharing implementation values between packages.
 
+Apply-world commands and event handlers may read a registered shared Store with `ctx.slots.getStoreSnapshot(handle, scopeBinding)`. It resolves the same instance as the Component's `useStore` without subscribing or exposing actions. Omit the binding for root Stores; for Session Stores resolve the current Session binding for each command and supply `{ key: binding.sessionId, ctx: binding.ctx }`. Never retain an old generation's Context or mutate the returned snapshot. Components continue to read through `useStore`; [Slots component inputs](../../../docs/subsystems/slots.md#component-inputs) defines the supported channels.
+
 -----
 
 <a id="understand-the-implementation"></a>

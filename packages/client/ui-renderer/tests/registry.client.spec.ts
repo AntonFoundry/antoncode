@@ -82,6 +82,24 @@ function fakeHandle(persist?: string) {
   return { handle, created }
 }
 
+function selectionHandle() {
+  return {
+    spec: {
+      init: () => ({ selected: 'initial' }),
+      actions: { select: (draft: { selected: string }, value: string) => { draft.selected = value } },
+    },
+    create: vi.fn((_key?: string) => {
+      let snapshot = { selected: 'initial' }
+      return {
+        getSnapshot: () => snapshot,
+        subscribe: () => () => {},
+        actions: { select: (value: string) => { snapshot = { selected: value } } },
+        clearPersisted: vi.fn(),
+      }
+    }),
+  }
+}
+
 /**
  * Install a capturing renderer, occupy 'root' (declaring `children` in the
  * same call — 'root' is single, so the one occupant is also the declarer),
@@ -721,6 +739,59 @@ describe('store instance axis', () => {
     expect(handle.create).toHaveBeenCalledWith('s2')
     expect(() => host.storeOf(entry as never, undefined)).toThrow(/requires a session id/)
     await Promise.all([scope1.fiber.dispose(), scope2.fiber.dispose()])
+  })
+
+  it('reads the root Store snapshot used by rendered entries and rejects unloaded handles', async () => {
+    const { bench, host } = await storeBench()
+    const handle = selectionHandle()
+    expect(() => bench.svc.getStoreSnapshot(handle)).toThrow(/not registered/)
+    const dispose = bench.erased.register({ name: 't.host', store: handle }, C)
+    const instance = host.storeOf(host.entriesOf('t.host')[0] as never, undefined) as ReturnType<typeof handle.create>
+    expect(bench.svc.getStoreSnapshot(handle)).toBe(instance.getSnapshot())
+    instance.actions.select('second')
+    expect(bench.svc.getStoreSnapshot(handle).selected).toBe('second')
+    expect(handle.create).toHaveBeenCalledTimes(1)
+    dispose()
+    expect(() => bench.svc.getStoreSnapshot(handle)).toThrow(/not registered/)
+    await bench.ctx.fiber.dispose()
+  })
+
+  it('reads Session selections from the same instances as rendered entries across scope replacement', async () => {
+    const { bench, host } = await storeBench()
+    const handle = selectionHandle()
+    bench.erased.register({ name: 't.panel', store: handle }, C)
+    const entry = host.entriesOf('t.panel')[0]!
+    const first = scopedBinding(bench.ctx, 's1')
+    const other = scopedBinding(bench.ctx, 's2')
+    let replacementContext: Context | undefined
+    const replacementFiber = bench.ctx.plugin((ctx) => { replacementContext = ctx })
+    await replacementFiber
+    if (replacementContext === undefined) throw new Error('replacement scope did not load')
+    const replacement = {
+      binding: { key: 's1', ctx: replacementContext },
+      fiber: replacementFiber,
+    }
+    try {
+      expect(() => bench.svc.getStoreSnapshot(handle)).toThrow(/requires a session id/)
+      const initial = bench.svc.getStoreSnapshot(handle, first.binding)
+      const instance = host.storeOf(entry, first.binding) as ReturnType<typeof handle.create>
+      expect(initial).toBe(instance.getSnapshot())
+      instance.actions.select('chosen')
+      expect(bench.svc.getStoreSnapshot(handle, first.binding).selected).toBe('chosen')
+      expect(bench.svc.getStoreSnapshot(handle, other.binding).selected).toBe('initial')
+      const reopened = bench.svc.getStoreSnapshot(handle, replacement.binding)
+      expect(reopened.selected).toBe('initial')
+      expect(reopened).not.toBe(initial)
+      await first.fiber.dispose()
+      expect(bench.svc.getStoreSnapshot(handle, replacement.binding)).toBe(reopened)
+      expect(handle.create).toHaveBeenCalledTimes(3)
+      await replacement.fiber.dispose()
+      expect(() => bench.svc.getStoreSnapshot(handle, replacement.binding)).toThrow(/inactive context/)
+      expect(bench.svc.getStoreSnapshot(handle, other.binding).selected).toBe('initial')
+    } finally {
+      await Promise.all([first.fiber.dispose(), other.fiber.dispose(), replacement.fiber.dispose()])
+      await bench.ctx.fiber.dispose()
+    }
   })
 
   it('mints a fresh handle per register for the factory (exclusive) form', async () => {

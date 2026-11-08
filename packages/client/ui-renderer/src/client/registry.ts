@@ -18,10 +18,11 @@ import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import { SlotCore, StaleAuthorizationError, standardHookPropName } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
-  HostObservable, LiveCompositionNode, LocaleFace, OwnerOf, RegisterFactory, SlotEntryDef, SlotMap, SlotRenderer, SlotRendererHost,
+  ActionsDecl, HostObservable, LiveCompositionNode, LocaleFace, OwnerOf, RegisterFactory,
+  SlotEntryDef, SlotMap, SlotRenderer, SlotRendererHost,
   RootStandardSourceContribution, ScopedStandardSourceBinding, SlotScope, SlotScopeAdapter, SlotSpec,
   StandardSourceBinding, StoredFactory,
-  StoreDecl, StoreFactory, StoredEntry, StoreInstanceLike,
+  StoreDecl, StoreFactory, StoreHandle, StoredEntry, StoreInstanceLike,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotAssemblyError } from './errors.ts'
 
@@ -372,6 +373,27 @@ export class SlotRegistry extends Service {
   }
 
   /**
+   * Read a registered shared Store for an apply-world command or event handler.
+   * This resolves the same handle × scope instance as the Component's `useStore`;
+   * it creates no subscription and does not expose mutation capabilities.
+   * Components read through `useStore`, never through this method. Treat the
+   * returned snapshot as immutable and write only through declared actions.
+   * @param handle - shared handle already held by a live Slot or Factory registration.
+   * @param scopeBinding - current scope key and Context, resolved afresh for each
+   * command; omit for a root Store. Do not retain a previous Session generation.
+   * @returns the current cached snapshot, materializing its registered instance if needed.
+   * @throws when the handle is not registered, a scoped Store has no binding,
+   * or the supplied Context is inactive.
+   */
+  getStoreSnapshot<T, A extends ActionsDecl<T>>(
+    handle: StoreHandle<T, A>,
+    scopeBinding?: Pick<ScopedStandardSourceBinding, 'key' | 'ctx'>,
+  ): T {
+    scopeBinding?.ctx.fiber.assertActive()
+    return this.resolveStore(handle, scopeBinding).getSnapshot() as T
+  }
+
+  /**
    * The single ctx-level render entry: the shell renders 'root'; every other
    * key renders inside components through the props renderSlot face. All
    * three guards are fail-loud boot-order checks, no fallback.
@@ -604,7 +626,7 @@ export class SlotRegistry extends Service {
   /** Resolve (create or reuse) the store instance for a registered handle under a scope key. */
   private resolveStore(
     handle: EngineStoreHandle,
-    scopeBinding: ScopedStandardSourceBinding | undefined,
+    scopeBinding: Pick<ScopedStandardSourceBinding, 'key' | 'ctx'> | undefined,
   ): StoreInstanceLike {
     const record = this._stores.get(handle)
     if (record === undefined) throw new Error('store handle is not registered (entry unloaded, or the handle never went through register)')

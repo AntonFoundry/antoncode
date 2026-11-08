@@ -99,6 +99,8 @@ The shipped adapters add these standard props. They are available according to t
 
 The renderer also creates `useStore` from a declared store and `t` from a declared locale namespace. These are registration-derived props rather than global standard props.
 
+Apply-world commands and event handlers read a registered shared Store through `ctx.slots.getStoreSnapshot(handle, scopeBinding)` when they need its current interaction state independently of a rendered Component. This read uses the same handle × scope instance as `useStore`, may materialize it, and creates no subscription. Omit `scopeBinding` for root Stores; for Session Stores resolve the current Session binding at each command and pass `{ key: binding.sessionId, ctx: binding.ctx }`, not a retained earlier generation. Unregistered handles, missing required bindings, and inactive Contexts are rejected. Snapshots are borrowed immutable values; declared actions remain the write API. Components still read through `useStore`, never through this accessor.
+
 Framework and domain-adapter owners may extend the standard set through `ctx.slots.provideRoot()` or `ctx.uiSession.provide()` together with the corresponding `GlobalStandardProps`, `SessionStandardProps`, or `SessionMaybeStandardProps` declaration merge. A feature component should not create a React hook prop itself or add a global standard prop for entry-private data.
 
 ## Developer-provided injection
