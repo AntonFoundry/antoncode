@@ -1,0 +1,4 @@
+- insert:
+    - id: anthropic-api-key-enable
+      name: '@local/anthropic-api-key-enable'
+      config: {}

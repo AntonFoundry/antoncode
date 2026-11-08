@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Anthropic API-key enablement",
+    "description": "Explicitly enable the independent Anthropic API-key provider while preserving Claude Code login and all other settings."
+  }
+}

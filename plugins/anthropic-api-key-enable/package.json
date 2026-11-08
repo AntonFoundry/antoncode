@@ -1,0 +1,12 @@
+{
+  "name": "@local/anthropic-api-key-enable",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Explicit bounded Anthropic API-key provider enablement in the current profile.",
+  "license": "MIT",
+  "exports": { ".": "./index.js", "./locale/*.json": "./locale/*.json", "./icon": "./icon.svg" },
+  "files": ["index.js", "cordis.patch.yml", "locale/*.json", "icon.svg", "README.md", "LICENSE"],
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "scripts": { "test": "node --test tests/*.test.js", "check": "node --check index.js" }
+}
