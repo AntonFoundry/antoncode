@@ -14,6 +14,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { DomainGlobal } from '@deepseek-ai/dsh-storage-domain'
 import type { Workspace, WorkspaceId } from '@deepseek-ai/dsh-workspace'
+import { MailQueueObservers, type MailQueueListener } from './observation.ts'
 import { authorizeWorkspaceMember, resolveAuthorizedWorkspace } from './membership.ts'
 import { agentDirectQueueDomainSpec, directMessage } from './direct-spec.ts'
 import type { DirectAddress, DirectInbox, DirectMessage, DirectQueueState } from './direct-spec.ts'
@@ -225,9 +226,14 @@ export class AgentDirectQueue extends Service {
   static inject = ['storageDomain', 'workspaceRegistry', 'agents']
   private state?: DomainGlobal<DirectQueueState>
   private operationTail: Promise<void> = Promise.resolve()
+  private readonly observers: MailQueueObservers
   private writing = false
 
-  constructor(ctx: Context) { super(ctx, 'agentDirectQueue') }
+  constructor(ctx: Context) {
+    super(ctx, 'agentDirectQueue')
+    this.observers = new MailQueueObservers(ctx)
+    ctx.effect(() => () => this.observers.dispose(), 'agentDirectQueue.observers')
+  }
 
   protected async [Service.init](): Promise<void> {
     const domain = await this.ctx.storageDomain.open(agentDirectQueueDomainSpec)
@@ -258,6 +264,23 @@ export class AgentDirectQueue extends Service {
     verifyLedger(next)
     this.writing = true
     try { await this.state.set(next) } finally { this.writing = false }
+  }
+
+  /**
+   * Observe only addressed committed sends and cursor advances without changing durable state.
+   * Install before reading to close the registration/read race. Unlike subscribe, this
+   * never creates an account or opts the caller into broadcasts.
+   * @param agent - Exact live recipient, reauthorized at the serialized registration point.
+   * @param listener - Post-commit invalidation callback; errors are contained and logged.
+   * @param signal - Optional cancellation; omission requires explicit disposal.
+   * @returns Idempotent observer disposer; no durable delivery state is changed.
+   */
+  observe(agent: Agent, listener: MailQueueListener, signal?: AbortSignal): Promise<() => void> {
+    return this.enqueue(async () => {
+      signal?.throwIfAborted()
+      const workspace = await authorizeWorkspaceMember(this.ctx, agent)
+      return this.observers.add(agent, workspace, listener, signal)
+    })
   }
 
   private enqueue<T>(task: () => Promise<T>): Promise<T> {
@@ -411,6 +434,9 @@ export class AgentDirectQueue extends Service {
       }
       // Message, recipient index, and cursors share one durable global write.
       await this.commit({ nextSeq: state.nextSeq + 1, messages: [...retained, message], inboxes })
+      for (const recipient of message.recipients) {
+        await this.observers.notify(recipient.workspaceId, recipient.sessionId, message.seq)
+      }
       return message
     })
   }
@@ -520,6 +546,7 @@ export class AgentDirectQueue extends Service {
       // Cursor advance and compaction of fully acknowledged mail commit together.
       const retained = this.retain({ ...state, inboxes })
       await this.commit({ ...state, messages: retained, inboxes })
+      await this.observers.notify(current.id, agent.id, throughSeq)
       return throughSeq
     })
   }

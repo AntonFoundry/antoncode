@@ -1,0 +1,12 @@
+version: 1
+scenario: cross-workspace-agent-mail
+profile: web
+composition: cross-workspace-agent-mail
+recording: authored
+replay:
+  override: true
+header:
+  class: cross-workspace-agent-mail
+  pin: true
+  childSystemPrompts: [1]
+  childToolSchemas: [1]

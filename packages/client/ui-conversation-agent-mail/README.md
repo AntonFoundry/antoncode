@@ -1,5 +1,5 @@
 ---
-description: "Read and send owner-authorized workspace and direct Agent Mail from a Session conversation."
+description: "Discover live Sessions by workspace, reply, and follow owner-authorized Agent Mail without waking recipients."
 kind: "package-reference"
 ---
 
@@ -9,12 +9,13 @@ English
 
 ## Summary
 
-Read workspace mail, cross-workspace direct messages, and ongoing parent-child `send_message` communications from a Session tab, discover peers, and send queue mail through the resident composer. Local messages can address selected peers or broadcast to subscribed workspace members. Opening the tab does not acknowledge messages, and queue sends do not wake an Agent or enter its model inbox.
+Read workspace mail, cross-workspace direct messages, and parent-child `send_message` correspondence from a Session tab. Choose live recipients by workspace and Session, or use mentions, then send through the resident composer. Reply selects the sender without replacing your draft. Mail follows queue and peer changes while the tab is open; opening or refreshing it neither acknowledges mail nor wakes an Agent.
 
 ## Table of Contents
 
 - [Use this package](#use-this-package)
 - [Understand the implementation](#understand-the-implementation)
+- [Further Exploration](#further-exploration)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
@@ -23,7 +24,11 @@ Read workspace mail, cross-workspace direct messages, and ongoing parent-child `
 
 ## Use this package
 
-Select Agent Mail in a Session conversation. Choose the local or direct channel; mention suggestions include only peers reachable through that channel. Direct messages require a recipient mention and address all selected recipients atomically; local messages without mentions broadcast within the workspace. The composer rejects image attachments and sends only while the Session and workspace are authorized. A send that commits but cannot refresh the mailbox remains successful: its outgoing row stays visible with a refresh warning, so refresh the mailbox rather than sending the message again.
+Select Agent Mail in a Session conversation. Choose a workspace, then one or more live Sessions. The picker shows available titles, deterministic display names, short addresses, and delivery transport; unavailable titles fall back to identifiers. Selecting an incompatible transport explicitly replaces the previous recipients. Direct recipients can span several remote workspaces in one atomic submission. Reply selects an exact, currently discoverable sender and focuses the existing composer without changing its text.
+
+Mentions remain a shortcut. Explicit selections and mentions must agree; stale addresses, changed transport, and wrong-channel selections reject before publication rather than silently broadcasting. Local mail with no recipients uses workspace broadcast; direct mail requires a recipient. The composer rejects image attachments.
+
+Live updates follow committed mail and peer changes. Refresh remains available when the displayed mailbox is stale. If publication commits but its refresh fails, the send remains successful and its outgoing row stays visible with a warning: retry refresh, not delivery. The explicit acknowledgement action advances the selected queue's processing cursor; merely viewing mail does not advance it.
 
 -----
 
@@ -32,17 +37,26 @@ Select Agent Mail in a Session conversation. Choose the local or direct channel;
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The Client uses the generated `agentMail` Remote namespace. The Host adapter is `@deepseek-ai/dsh-agent-queue/mail-remote`, mounted alongside the local and direct queues in the Web profile. Typert resolves the addressed Session to its Agent, including a persisted Session that must be resumed. LiveShare classifies every Agent Mail endpoint as owner-only. The browser gateway keeps only presentation state and never grants access by itself.
+The Web composition mounts the Client contribution with `@deepseek-ai/dsh-agent-queue/mail-remote` and both queue owners. The generated `agentMail` Remote methods enforce owner-only access, including an explicit Host principal check. The watch observes an exact live Agent without resuming another Session. Host authorization, not the picker or browser cache, decides eligibility.
 
-The local channel addresses peers in the sender's workspace and can broadcast to subscribed workspace members. The direct channel addresses peers in other registered workspaces. Each channel has its own read and acknowledgement cursor. Queue sends do not wake an Agent or alter its model inbox.
+A framework-owned `agentmail` resource opens the Host watch before its initial read and follows the shared Remote reconnect supervisor. Queue observation does not create a delivery account, subscribe to workspace broadcasts, acknowledge mail, or wake an Agent. Generation-local invalidations contain revisions rather than message bodies; the resource coalesces them into paginated queries. Resource release cancels its watch and reads. Components consume `useResource` instead of maintaining subscriptions or polling.
 
-Both channels read the registered `agent-mail` Conversation target. Successful native and nested PTC `agent_queue_send` and `agent_queue_dm_send` settlements contribute outgoing rows to their respective channels. Rows use the accepted result’s message identity, body, timestamp, stream sequence, sender workspace, and frozen recipients, never draft arguments. Inbox and outgoing rows with the same queue identity appear once.
+The Gateway owns one stable aggregate source per Session and a temporary browser outbox. A committed receipt publishes before refresh completes. Authorization and request identities reject obsolete query completions. Declared authority failures clear cached mail before the resource reports failure; other declared Remote failures can retain the last authorized snapshot with a live-update warning. Unexpected defects propagate instead of being recast as authorization failures. Plugin disposal clears Gateway state.
 
-The general channel additionally shows adjacent-Agent correspondence. Successful native `send_message` call/result pairs use the shipped `agent_id` argument; successful nested PTC settlements carry their own arguments. Incoming rows use admitted `user/message` events with `agent-message` attribution, preserving logged text and sender identity. Inbox insertion and admission do not create separate rows. Failed or unfinished sends, initial task prompts, and runtime-owned `subagent-settled` notices are not authored mail. The projection neither delivers messages nor creates Session events.
+One declared composer store holds only channel, browsed workspace, and selected recipient tuples. The renderer owns its Session instances; render code uses `useStore` and actions. Apply-world composer commands read the same handle through `getStoreSnapshot` with the current Session binding. Submission revalidates each Session, workspace, and transport tuple against current discovery without rewriting the body. Mail data stays in the resource/Gateway, not the interaction store. The [decision note](../../../.agents/notes/implemented/architecture/2026-11-08-agent-mail-resource-and-composer-ownership.md) explains this ownership split.
 
-Browser-composed sends remain in the gateway instance’s per-Session outbox after a committed receipt; later inbox refreshes preserve those rows. A failed send rejects without recording an outgoing row. A refresh failure after a successful send retains its receipt and reports stale mailbox state separately.
+Both channels read the registered `agent-mail` Conversation target. Successful native and nested PTC queue settlements contribute canonical outgoing rows, never guesses from draft arguments. Inbox and outgoing copies with the same transport, sender workspace, and sequence appear once. The general channel also shows successful `send_message` settlements and admitted incoming `agent-message` text. Failed or unfinished sends, initial task prompts, and runtime settlement notices are not authored mail. Projection neither delivers mail nor appends Session events.
 
 </details>
+
+-----
+
+## Further Exploration
+
+- [Queue authorization and retention](../../interaction/agent-queue/README.md) — Host delivery owners.
+- [Client resources](../../../docs/subsystems/client-resources.md) — read and watch lifecycle.
+- [Client stores and slots](../../../docs/subsystems/slots.md) — registered interaction state.
+- [Integration migration](../../../docs/upgrade-guide/v0.2.2-alpha.2/cross-workspace-agent-mail/guide.md) — removed globals and resource-derived props.
 
 -----
 
@@ -64,13 +78,14 @@ None; browser presentation does not change provider requests or their reusable p
 
 ## Known Limitations and Deferred Work
 
-- Agent Mail endpoints are owner-only; browser presentation state does not authorize access.
-- Direct messages require at least one peer mention, and image attachments are not supported.
-- Queue sends do not wake recipients or acknowledge their inboxes; recipients control queue reads and acknowledgements. Subagent `send_message` retains its separate waking/steering semantics.
-- Session-derived rows cover only the loaded Session window. Incoming parent-child messages appear after model admission, not while pending in the durable Agent inbox; outgoing native calls require their loaded call head and successful result. Older-window loading and replay reconstruct these rows. Nested PTC settlements carry their own result and do not require the enclosing call result.
-- Queue-send projection requires complete canonical JSON in the successful tool result. Queue tools cap rendered results at 16000 characters, so truncated results are excluded rather than reconstructed from call arguments. Queue delivery may have succeeded even when this presentation row is unavailable.
-- The browser-composed outbox belongs to its gateway instance and does not survive a browser reload; durable queue messages and Session-derived rows keep their separate owners. Runtime settlement notices and initial delegation prompts remain in the transcript.
-- Client source changes require rebuilding and activating the client bundle through the supported application workflow; an installed bundle does not change when a checkout source file changes.
+- Agent Mail is owner-only; shared viewers cannot discover peers, watch mail, send, or acknowledge through these endpoints.
+- The picker offers currently live, authorized peers. It does not authorize offline direct delivery, resume recipients, or change archive policy. Local queue APIs retain their separate durable-member rules.
+- Queue sends do not wake recipients or acknowledge their inboxes. Subagent `send_message` retains its separate waking/steering semantics. Reply is address selection, not persisted thread metadata or evidence that a recipient read or responded.
+- Session-derived rows cover only the loaded Session window. Incoming parent-child messages appear after model admission; native outgoing calls require their loaded call head and successful result. Nested PTC settlements carry their own result. Loading older windows and replay reconstruct these rows.
+- Queue-send projection requires complete canonical result JSON. Queue tools cap rendered results at 16000 characters, so truncated results are excluded even when delivery succeeded.
+- The browser outbox does not survive reload or authorization reset. Queue retention and Session logs remain separate durable owners; this package supplies no permanent Sent archive.
+- The shared supervisor reconnects carrier interruptions. After a terminal watch failure, Refresh updates displayed data but does not restart observation; reopen Agent Mail to reconnect live updates.
+- Live updates require the matching Host watch descriptor and generated Remote API; manual polling is not a compatibility fallback. Client source edits still require the supported bundle rebuild and activation workflow.
 
 ### Dev Note
 

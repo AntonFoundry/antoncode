@@ -1,51 +1,51 @@
-/**
- * Per-session Agent Mail channel selection shared by the view (which renders
- * the active channel) and the resident composer route (which sends to it).
- * Browser state only: the channel is presentation, the Host still authorizes
- * every send.
- */
+/** Session-scoped Agent Mail viewing and recipient choices, shared with its composer route. */
+import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
+import type { AgentMailPeer } from './gateway.ts'
 
-/** Channel the resident composer currently addresses. */
+/** Queue channel selected for the resident composer and mailbox view. */
 export type AgentMailChannel = 'local' | 'direct'
 
-const channels = new Map<string, AgentMailChannel>()
-const listeners = new Map<string, Set<() => void>>()
+/** Interaction state only; live eligibility remains owned by the mailbox resource. */
+export interface AgentMailComposerState {
+  channel: AgentMailChannel
+  workspaceId: string | null
+  recipients: AgentMailPeer[]
+}
 
-/**
- * Active Agent Mail channel for one agent session.
- * @param sessionId - agent session whose channel is read.
- * @returns the selected channel, defaulting to the workspace channel.
- */
-export function agentMailChannel(sessionId: string): AgentMailChannel {
-  return channels.get(sessionId) ?? 'local'
+type AgentMailComposerActions = {
+  setChannel: (draft: AgentMailComposerState, channel: AgentMailChannel) => void
+  setWorkspace: (draft: AgentMailComposerState, workspaceId: string | null) => void
+  replaceRecipients: (draft: AgentMailComposerState, recipients: readonly AgentMailPeer[]) => void
+  removeRecipient: (draft: AgentMailComposerState, sessionId: string) => void
+  clearRecipients: (draft: AgentMailComposerState) => void
 }
 
 /**
- * Switch one session's channel.
- * @param sessionId - agent session whose channel changes.
- * @param channel - channel the next composer submission addresses.
+ * Declare one shared interaction store; the renderer owns each Session instance.
+ * @returns The handle registered by the view and read fresh by composer commands.
  */
-export function setAgentMailChannel(sessionId: string, channel: AgentMailChannel): void {
-  if (agentMailChannel(sessionId) === channel) return
-  channels.set(sessionId, channel)
-  for (const listener of listeners.get(sessionId) ?? []) listener()
-}
-
-/**
- * Subscribe to channel changes for one session.
- * @param sessionId - agent session observed.
- * @param listener - change callback.
- * @returns unsubscribe.
- */
-export function subscribeAgentMailChannel(sessionId: string, listener: () => void): () => void {
-  let sessionListeners = listeners.get(sessionId)
-  if (sessionListeners === undefined) {
-    sessionListeners = new Set()
-    listeners.set(sessionId, sessionListeners)
-  }
-  sessionListeners.add(listener)
-  return () => {
-    sessionListeners.delete(listener)
-    if (sessionListeners.size === 0) listeners.delete(sessionId)
-  }
+export function createAgentMailComposerStore(): EngineStoreHandle<AgentMailComposerState, AgentMailComposerActions> {
+  return defineStore({
+    init: (): AgentMailComposerState => ({ channel: 'local', workspaceId: null, recipients: [] }),
+    actions: {
+      setChannel: (draft, channel: AgentMailChannel) => {
+        draft.channel = channel
+        draft.workspaceId = null
+        draft.recipients = []
+      },
+      setWorkspace: (draft, workspaceId: string | null) => { draft.workspaceId = workspaceId },
+      replaceRecipients: (draft, recipients: readonly AgentMailPeer[]) => {
+        draft.recipients = [...recipients]
+        const first = recipients[0]
+        if (first !== undefined) {
+          draft.channel = first.transport === 'direct' ? 'direct' : 'local'
+          draft.workspaceId = first.workspaceId
+        }
+      },
+      removeRecipient: (draft, sessionId: string) => {
+        draft.recipients = draft.recipients.filter(recipient => recipient.sessionId !== sessionId)
+      },
+      clearRecipients: (draft) => { draft.recipients = [] },
+    },
+  })
 }

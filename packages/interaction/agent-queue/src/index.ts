@@ -5,6 +5,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { Workspace, WorkspaceId } from '@deepseek-ai/dsh-workspace'
+import { MailQueueObservers, type MailQueueListener } from './observation.ts'
 import { authorizeWorkspaceMember, resolveAuthorizedWorkspace } from './membership.ts'
 import type { MembershipFailure } from './membership.ts'
 import { agentQueueDomainSpec, queueMessage } from './spec.ts'
@@ -70,8 +71,13 @@ export class AgentQueue extends Service {
   private readonly listeners = new Map<string, Set<QueueListener>>()
   private readonly activeSubscriptions = new Set<string>()
   private operationTail: Promise<void> = Promise.resolve()
+  private readonly observers: MailQueueObservers
 
-  constructor(ctx: Context) { super(ctx, 'agentQueue') }
+  constructor(ctx: Context) {
+    super(ctx, 'agentQueue')
+    this.observers = new MailQueueObservers(ctx)
+    ctx.effect(() => () => this.observers.dispose(), 'agentQueue.observers')
+  }
 
   protected async [Service.init](): Promise<void> {
     const domain = await this.ctx.storageDomain.open(agentQueueDomainSpec)
@@ -88,6 +94,23 @@ export class AgentQueue extends Service {
   private accounts(): KvTable<string, QueueSubscription> {
     if (!this.subscriptions) throw new Error('agent queue is not initialized')
     return this.subscriptions
+  }
+
+  /**
+   * Observe only addressed committed sends and cursor advances without changing durable state.
+   * Install before reading to close the registration/read race. Unlike subscribe, this
+   * never creates an account or opts the caller into broadcasts.
+   * @param agent - Exact live recipient, reauthorized at the serialized registration point.
+   * @param listener - Post-commit invalidation callback; errors are contained and logged.
+   * @param signal - Optional cancellation; omission requires explicit disposal.
+   * @returns Idempotent observer disposer; no durable delivery state is changed.
+   */
+  observe(agent: Agent, listener: MailQueueListener, signal?: AbortSignal): Promise<() => void> {
+    return this.enqueue(async () => {
+      signal?.throwIfAborted()
+      const workspace = await authorizeWorkspaceMember(this.ctx, agent)
+      return this.observers.add(agent, workspace, listener, signal)
+    })
   }
 
   private enqueue<T>(task: () => Promise<T>): Promise<T> {
@@ -316,6 +339,9 @@ export class AgentQueue extends Service {
         if (!this.addressed(message, subscription.sessionId)) continue
         for (const listener of listeners) this.notify(listener, { workspaceId: workspace.id, seq: message.seq })
       }
+      for (const recipient of message.recipients) {
+        await this.observers.notify(workspace.id, recipient, message.seq)
+      }
       return message
     })
   }
@@ -383,6 +409,7 @@ export class AgentQueue extends Service {
       if (throughSeq > head) throw new RangeError('cannot acknowledge beyond committed queue head')
       if (throughSeq <= subscription.cursor) return subscription.cursor
       await this.accounts().put(id, { ...subscription, cursor: throughSeq })
+      await this.observers.notify(workspace.id, agent.id, throughSeq)
       return throughSeq
     })
   }

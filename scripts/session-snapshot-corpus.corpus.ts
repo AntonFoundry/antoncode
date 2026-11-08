@@ -25,6 +25,7 @@ const profiles = ['acp', 'sdk', 'session', 'web'] as const
 const snapshotAdapters = [
   'apps/web/tests/agent-mail-correspondence.snapshot.ts',
   'apps/web/tests/code-language.snapshot.ts',
+  'apps/web/tests/cross-workspace-agent-mail.snapshot.ts',
   'apps/web/tests/message-feedback-protocol.snapshot.ts',
   'apps/web/tests/minimal-preset.snapshot.ts',
   'apps/web/tests/preset-migration.snapshot.ts',

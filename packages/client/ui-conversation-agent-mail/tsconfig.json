@@ -24,10 +24,19 @@
       "path": "../ui-primitives"
     },
     {
+      "path": "../store"
+    },
+    {
+      "path": "../resources"
+    },
+    {
       "path": "../ui-slots"
     },
     {
       "path": "../ui-renderer"
+    },
+    {
+      "path": "../ui-input-trigger"
     },
     {
       "path": "../../api/session-controller/tsconfig.client.json"

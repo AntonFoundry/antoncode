@@ -86,6 +86,13 @@
   white-space: nowrap;
 }
 
+.channelWarning {
+  display: block;
+  white-space: normal;
+  font-size: 12px;
+  font-weight: 400;
+}
+
 .badge {
   min-width: 18px;
   padding: 0 5px;
@@ -159,6 +166,71 @@
   font-weight: 400;
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+
+.recipientPicker {
+  padding: 8px 16px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.pickerActions,
+.selectedRecipients {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.recipientPicker .readButton {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.pickerActions > span {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.selectedRecipients {
+  margin-top: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.pickerSearch {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-xs);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+}
+
+.pickerPeer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  font-weight: 400;
+}
+
+.pickerEmpty {
+  padding: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+}
+
+@media (pointer: coarse) {
+  .pickerSearch {
+    font-size: 16px;
+  }
 }
 
 .headerActions {
@@ -256,8 +328,17 @@
 
 .messageHead {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 8px;
+  min-width: 0;
+  gap: 4px 8px;
+}
+
+.messageHead > * {
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .author {

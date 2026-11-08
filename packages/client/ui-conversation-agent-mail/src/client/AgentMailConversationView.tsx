@@ -1,21 +1,24 @@
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import type { AgentMailGateway, AgentMailMessage, AgentMailSentEntry } from './gateway.ts'
+import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
+import type { AgentMailMessage, AgentMailSentEntry, AgentMailSnapshot, AgentMailPeer } from './gateway.ts'
 import { agentDisplayName, agentInitials, agentNameTag } from './agent-names.ts'
-import {
-  agentMailChannel, setAgentMailChannel, subscribeAgentMailChannel, type AgentMailChannel,
-} from './composer-targets.ts'
+import type { createAgentMailComposerStore, AgentMailChannel } from './composer-targets.ts'
+import { agentMailResourceAddress } from './mail-resource.ts'
+import { AgentMailRecipientPicker } from './AgentMailRecipientPicker.tsx'
 import { EMPTY_AGENT_MAIL_RELAYS, type AgentMailRelay } from './relay-projection.ts'
 import styles from './AgentMailConversationView.module.css'
 
-export type AgentMailConversationViewProps = ConvViewProps & PropsLocale<'conversation.agentMail'> & {
-  gateway?: AgentMailGateway
+/** Mail commands injected by the registration that owns this Session. */
+export interface AgentMailViewInjected {
+  refreshMail: () => Promise<void>
+  acknowledgeMail: (channel: AgentMailChannel, throughSeq: number) => Promise<void>
+  focusComposer: () => void
 }
 
-type Authorization = ReturnType<AgentMailGateway['authorization']>
-type Inbox = ReturnType<AgentMailGateway['inbox']>
+export type AgentMailConversationViewProps = ConvViewProps & PropsLocale<'conversation.agentMail'>
+  & PropsStore<ReturnType<typeof createAgentMailComposerStore>> & AgentMailViewInjected
 
 /** One rendered feed row: queued mail or an outgoing `send_message` call. */
 interface FeedEntry {
@@ -83,45 +86,15 @@ function ReadOnlyMail({ t, sessionId, statusText }: AgentMailConversationViewPro
   )
 }
 
-/** No queue reader, peer discovery or mutator is called until the Host grants this session. */
+/** Resource ownership authorizes and follows mail; this component only presents its snapshot. */
 export function AgentMailConversationView(props: AgentMailConversationViewProps): React.JSX.Element {
-  const { gateway, sessionId, t } = props
-  const [authorization, setAuthorization] = useState<{
-    gateway: AgentMailGateway
-    sessionId: string
-    value: Authorization
-  } | undefined>(() => gateway && sessionId
-    ? { gateway, sessionId, value: gateway.authorization(sessionId) } : undefined)
-  const [connectError, setConnectError] = useState<string>()
-  useEffect(() => {
-    if (!gateway || !sessionId) {
-      setAuthorization(undefined)
-      return
-    }
-    const refresh = (): void => { setAuthorization({ gateway, sessionId, value: gateway.authorization(sessionId) }) }
-    const unsubscribe = gateway.subscribeAuthorization(refresh)
-    refresh() // close the race between initial snapshot and listener registration
-    return unsubscribe
-  }, [gateway, sessionId])
-  // The local harness UI authorizes itself: the Host mints the grant from the
-  // bridge-proven loopback origin, so there is no code or confirmation step.
-  useEffect(() => {
-    if (!gateway || !sessionId) return
-    if (gateway.authorization(sessionId).state === 'authorized') return
-    let cancelled = false
-    setConnectError(undefined)
-    void gateway.authorize(sessionId).catch((cause: unknown) => {
-      if (!cancelled) setConnectError(cause instanceof Error ? cause.message : t('failed'))
-    })
-    return () => { cancelled = true }
-  }, [gateway, sessionId, t])
-  if (!gateway || !sessionId || authorization?.gateway !== gateway || authorization.sessionId !== sessionId
-    || authorization.value.state !== 'authorized' || !authorization.value.workspaceId
-    || gateway.authorization(sessionId).state !== 'authorized') {
-    return <ReadOnlyMail {...props} statusText={!gateway || !sessionId
-      ? t('unavailable') : connectError ?? t('connecting')} />
+  const resource = props.useResource<'agentmail'>(agentMailResourceAddress(props.sessionId))
+  const snapshot = resource.value
+  if (snapshot?.authorization.state !== 'authorized' || snapshot.authorization.workspaceId === undefined) {
+    return <ReadOnlyMail {...props} statusText={props.t(resource.status === 'loading' ? 'connecting' : 'unavailable')} />
   }
-  return <AuthorizedMail {...props} gateway={gateway} workspaceId={authorization.value.workspaceId} />
+  return <AuthorizedMail {...props} mail={snapshot} workspaceId={snapshot.authorization.workspaceId}
+    liveFailed={resource.status === 'failed'} />
 }
 
 /** Short display id for an agent session (`9718a95c`). */
@@ -152,50 +125,42 @@ function clockText(at: number): string {
   return new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 }
 
-function AuthorizedMail({ gateway, sessionId, workspaceId, t, useConversation }: AgentMailConversationViewProps & {
-  gateway: AgentMailGateway
-  sessionId: NonNullable<AgentMailConversationViewProps['sessionId']>
-  workspaceId: string
-}): React.JSX.Element {
-  const subscribeChannel = useCallback(
-    (listener: () => void) => subscribeAgentMailChannel(sessionId, listener),
-    [sessionId],
-  )
-  const readChannel = useCallback((): AgentMailChannel => agentMailChannel(sessionId), [sessionId])
-  const channel = useSyncExternalStore(subscribeChannel, readChannel)
-  const [inbox, setInbox] = useState<Inbox>(() => gateway.inbox(sessionId))
+function AuthorizedMail({ sessionId, workspaceId, mail, liveFailed, t, useConversation, useSessions, useWorkspaces,
+  useStore, actions, refreshMail, acknowledgeMail, focusComposer }: AgentMailConversationViewProps & {
+    mail: AgentMailSnapshot
+    workspaceId: string
+    liveFailed: boolean
+  }): React.JSX.Element {
+  const selection = useStore(value => value)
+  const { channel, recipients } = selection
+  const inbox = mail.inbox
+  const peers = mail.peers.filter(peer => peer.sessionId !== sessionId)
+  const workspaces = useWorkspaces(value => value.items)
+  const titles = useSessions(value => Object.fromEntries(value.ids.flatMap((id) => {
+    const title = value.byId[id]?.title
+    return title === undefined ? [] : [[id, title]]
+  })))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
   const relays = useConversation(snapshot => snapshot.views.get('agent-mail')) ?? EMPTY_AGENT_MAIL_RELAYS
-  useEffect(() => {
-    const refresh = (): void => { setInbox({ ...gateway.inbox(sessionId) }) }
-    const unsubscribe = gateway.subscribeInbox(refresh)
-    refresh() // close the subscription race; never acknowledge merely by displaying
-    return unsubscribe
-  }, [gateway, sessionId])
 
   const page = inbox[channel]
   const messages = page.messages
   const feed = useMemo(() => mailFeed({ channel, messages, sent: inbox.sent, relays, sessionId }),
     [channel, inbox.sent, messages, relays, sessionId])
-  const ready = (): boolean => gateway.authorization(sessionId).state === 'authorized'
-    && gateway.authorization(sessionId).workspaceId === workspaceId
 
   const perform = async (operation: () => Promise<void>, success: string): Promise<boolean> => {
-    if (!ready() || busy) return false
+    if (busy) return false
     setBusy(true)
     setError('')
     setStatus('')
     try {
       await operation()
-      if (ready()) {
-        setInbox({ ...gateway.inbox(sessionId) })
-        setStatus(success)
-      }
+      setStatus(success)
       return true
     } catch (cause) {
-      if (ready()) setError(cause instanceof Error ? cause.message : t('failed'))
+      setError(cause instanceof Error ? cause.message : t('failed'))
       return false
     } finally {
       setBusy(false)
@@ -204,11 +169,11 @@ function AuthorizedMail({ gateway, sessionId, workspaceId, t, useConversation }:
 
   const acknowledge = (): void => {
     const throughSeq = messages.reduce((highest, message) => Math.max(highest, message.seq), page.cursor)
-    void perform(() => gateway.acknowledge({ sessionId, workspaceId, channel, throughSeq }), t('acknowledged'))
+    void perform(() => acknowledgeMail(channel, throughSeq), t('acknowledged'))
   }
 
   const switchChannel = (next: AgentMailChannel): void => {
-    setAgentMailChannel(sessionId, next)
+    actions.setChannel(next)
     setError('')
     setStatus('')
   }
@@ -224,11 +189,13 @@ function AuthorizedMail({ gateway, sessionId, workspaceId, t, useConversation }:
               type="button"
               className={channel === candidate ? styles.channelActive : styles.channel}
               aria-current={channel === candidate ? 'page' : undefined}
-              aria-label={t(candidate === 'local' ? 'channelGeneral' : 'channelDirect')}
+              aria-label={t(candidate !== channel && recipients.length > 0 ? 'clearAndSwitch' : candidate === 'local' ? 'channelGeneral' : 'channelDirect')}
               onClick={() => { switchChannel(candidate) }}
             >
               <span className={styles.hash}>#</span>
-              <span className={styles.channelName}>{t(candidate === 'local' ? 'channelGeneral' : 'channelDirect')}</span>
+              <span className={styles.channelName}>{t(candidate === 'local' ? 'channelGeneral' : 'channelDirect')}
+                {candidate !== channel && recipients.length > 0 && <span className={styles.channelWarning}>{t('clearAndSwitch')}</span>}
+              </span>
               {inbox[candidate].messages.length > 0 && <span className={styles.badge}>{inbox[candidate].messages.length}</span>}
             </button>
           ))}
@@ -249,14 +216,20 @@ function AuthorizedMail({ gateway, sessionId, workspaceId, t, useConversation }:
           </div>
           <div className={styles.headerActions}>
             <button type="button" className={styles.readButton} disabled={busy}
-              onClick={() => { void perform(() => gateway.refresh(sessionId), '') }}>{t('refresh')}</button>
+              onClick={() => { void perform(refreshMail, '') }}>{t('refresh')}</button>
             <button type="button" className={styles.readButton} disabled={busy || messages.length === 0}
               onClick={acknowledge}>{t('markRead')}</button>
           </div>
         </header>
+        <AgentMailRecipientPicker channel={channel} workspaceId={selection.workspaceId ?? workspaceId}
+          recipients={recipients} peers={peers} workspaces={workspaces} titles={titles} t={t}
+          onWorkspace={actions.setWorkspace} onRemove={actions.removeRecipient} onBroadcast={actions.clearRecipients}
+          onSelect={(peer, replace) => {
+            actions.replaceRecipients(replace ? [peer] : [...recipients.filter(value => value.sessionId !== peer.sessionId), peer])
+          }} />
         <p className={styles.composerHint}>{t('composerHint')}</p>
-        {(error || inbox.refreshError !== undefined) && (
-          <p className={styles.error} role="alert">{error || t('sentButRefreshFailed')}</p>
+        {(error || inbox.refreshError !== undefined || liveFailed) && (
+          <p className={styles.error} role="alert">{error || t(inbox.refreshError !== undefined ? 'sentButRefreshFailed' : 'liveUpdatesFailed')}</p>
         )}
         <ol className={styles.feed} aria-label={t(channel === 'local' ? 'localInbox' : 'directInbox')}>
           {feed.length === 0 && <li className={styles.empty}>{t('emptyChannel')}</li>}
@@ -290,6 +263,8 @@ function AuthorizedMail({ gateway, sessionId, workspaceId, t, useConversation }:
                     </div>
                   )}
                   <p className={styles.text}>{message.body}</p>
+                  {message.from !== sessionId && <ReplyAction message={message} peers={peers} channel={channel} t={t}
+                    onReply={(peer) => { actions.replaceRecipients([peer]); focusComposer() }} />}
                 </div>
               </li>
             )
@@ -299,4 +274,18 @@ function AuthorizedMail({ gateway, sessionId, workspaceId, t, useConversation }:
       </section>
     </div>
   )
+}
+
+/** A reply selects the exact currently-live sender address without replacing draft text. */
+function ReplyAction({ message, peers, channel, onReply, t }: {
+  message: FeedEntry
+  peers: readonly AgentMailPeer[]
+  channel: AgentMailChannel
+  onReply: (peer: AgentMailPeer) => void
+} & PropsLocale<'conversation.agentMail'>): React.JSX.Element {
+  const peer = peers.find(value => value.sessionId === message.from && value.workspaceId === message.workspaceId
+    && value.transport === (channel === 'direct' ? 'direct' : 'workspace-queue'))
+  return <button type="button" className={styles.readButton} disabled={peer === undefined}
+    title={peer === undefined ? t('replyUnavailable') : undefined}
+    onClick={() => { if (peer !== undefined) onReply(peer) }}>{t('reply')}</button>
 }

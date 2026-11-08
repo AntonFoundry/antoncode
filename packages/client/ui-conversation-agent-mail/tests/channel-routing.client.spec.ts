@@ -4,13 +4,16 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type { ComposerRoute } from '@deepseek-ai/dsh-client-ui-conversation/src/client/input/composer-routes.ts'
 import { apply } from '../src/client/index.ts'
+import { createAgentMailGateway } from '../src/client/api-gateway.ts'
 import { agentMentionToken } from '../src/client/mentions.ts'
-import { setAgentMailChannel } from '../src/client/composer-targets.ts'
+import type { createAgentMailComposerStore } from '../src/client/composer-targets.ts'
+import type { AgentMailPeer } from '../src/client/gateway.ts'
 
+type ComposerHandle = ReturnType<typeof createAgentMailComposerStore>
 const contexts: Context[] = []
 afterEach(async () => { await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose())) })
 
-async function fixture(extraPeers: { sessionId: string; workspaceId: string; transport: string }[] = []) {
+async function fixture(extraPeers: { sessionId: string; workspaceId: string; transport: 'workspace-queue' | 'direct' }[] = []) {
   const ctx = new Context()
   contexts.push(ctx)
   const remote = {
@@ -27,10 +30,15 @@ async function fixture(extraPeers: { sessionId: string; workspaceId: string; tra
     send: vi.fn(async () => ({ ok: true, value: { seq: 1 } })),
     ack: vi.fn(async () => ({ ok: true, value: { cursor: 1 } })),
   }
+  const gateway = createAgentMailGateway(remote as never)
   let route: ComposerRoute | undefined
   let source: InputTriggerSource | undefined
-  let gateway: { authorize(sessionId: string): Promise<void> } | undefined
+  let store: ReturnType<ComposerHandle['create']> | undefined
+  const binding = { sessionId: 'self', ctx }
+  ctx.provide('agentMailGateway', gateway)
   ctx.provide('locale', new LocaleRuntime(ctx))
+  ctx.provide('sessions', { binding: () => binding } as never)
+  ctx.provide('resources', { register: () => () => {} } as never)
   ctx.provide('conversation', {
     composerRoutes: { register: (_id: string, value: ComposerRoute) => { route = value; return () => {} } },
     activeView: () => 'agent-mail',
@@ -41,55 +49,79 @@ async function fixture(extraPeers: { sessionId: string; workspaceId: string; tra
   ctx.provide('remote.agentMail', {} as never)
   ctx.provide('slots', {
     inject: (_name: string, callback: () => void) => { callback(); return () => {} },
-    register: (options: { inject(sessionId: string): { gateway: { authorize(sessionId: string): Promise<void> } } }) => {
-      gateway = options.inject('self').gateway
-      return () => {}
+    register: (options: { store: ComposerHandle }) => { store = options.store.create('self'); return () => {} },
+    getStoreSnapshot: (_handle: ComposerHandle, scope: { key: string; ctx: Context }) => {
+      expect(scope).toEqual({ key: 'self', ctx })
+      if (store === undefined) throw new Error('unregistered selection store')
+      return store.getSnapshot()
     },
   } as never)
   apply(ctx)
-  if (route === undefined || source === undefined || gateway === undefined) throw new Error('mail registration missing')
+  if (route === undefined || source === undefined || store === undefined) throw new Error('mail registration missing')
   await gateway.authorize('self')
-  return { route, source, remote }
+  return { route, source, remote, store, gateway }
 }
 
 const session = { sessionId: 'self' as never }
 const request = (text: string) => ({ sessionId: 'self' as never, text, imageIds: [], mode: 'queue' as const })
+const peer = (gateway: ReturnType<typeof createAgentMailGateway>, sessionId: string): AgentMailPeer => {
+  const found = gateway.peers('self').find(value => value.sessionId === sessionId)
+  if (found === undefined) throw new Error(`missing fixture peer ${sessionId}`)
+  return found
+}
 
 describe('Agent Mail channel routing', () => {
   it.each(['local', 'direct'] as const)('suggests only %s-compatible peers', async (channel) => {
-    const { source } = await fixture()
-    setAgentMailChannel('self', channel)
+    const { source, store } = await fixture()
+    store.actions.setChannel(channel)
     const candidates = await source.candidates(session, { query: '' } as never)
     expect(candidates.map(candidate => candidate.name)).toEqual([agentMentionToken(channel === 'local' ? 'local' : 'remote')])
     expect(source.lexicon?.(session)).toEqual([agentMentionToken(channel === 'local' ? 'local' : 'remote')])
   })
 
   it.each(['local', 'direct'] as const)('rejects known wrong-channel mentions in %s without sending or broadcasting', async (channel) => {
-    const { route, remote } = await fixture()
-    setAgentMailChannel('self', channel)
+    const { route, remote, store } = await fixture()
+    store.actions.setChannel(channel)
     const recipient = channel === 'local' ? 'remote' : 'local'
     await expect(route.submit(request(`@${agentMentionToken(recipient)} hello`))).rejects.toThrow(/channel/i)
     expect(remote.send).not.toHaveBeenCalled()
   })
 
   it('submits several cross-workspace recipients in one atomic Remote send', async () => {
-    const { route, remote } = await fixture([{ sessionId: 'remote-two', workspaceId: 'w3', transport: 'direct' }])
-    setAgentMailChannel('self', 'direct')
+    const { route, remote, store } = await fixture([{ sessionId: 'remote-two', workspaceId: 'w3', transport: 'direct' }])
+    store.actions.setChannel('direct')
     const text = `@${agentMentionToken('remote')} @${agentMentionToken('remote-two')} hello`
     await route.submit(request(text))
     expect(remote.send).toHaveBeenCalledTimes(1)
-    expect(remote.send).toHaveBeenCalledWith('self', 'direct', ['remote', 'remote-two'], text)
+    expect(remote.send).toHaveBeenCalledWith('self', 'direct', ['remote', 'remote-two'], text, false)
   })
 
   it('keeps local unaddressed broadcasts and correctly addressed sends', async () => {
-    const { route, remote } = await fixture()
-    setAgentMailChannel('self', 'local')
+    const { route, remote, store } = await fixture()
     await route.submit(request('hello workspace'))
     expect(remote.send).toHaveBeenLastCalledWith('self', 'local', [], 'hello workspace', true)
     await route.submit(request(`@${agentMentionToken('local')} hello`))
     expect(remote.send).toHaveBeenLastCalledWith('self', 'local', ['local'], `@${agentMentionToken('local')} hello`, false)
-    setAgentMailChannel('self', 'direct')
+    store.actions.setChannel('direct')
     await route.submit(request(`@${agentMentionToken('remote')} hello`))
-    expect(remote.send).toHaveBeenLastCalledWith('self', 'direct', ['remote'], `@${agentMentionToken('remote')} hello`)
+    expect(remote.send).toHaveBeenLastCalledWith('self', 'direct', ['remote'], `@${agentMentionToken('remote')} hello`, false)
+  })
+
+  it('reads the current declared selection at submission without rewriting the body', async () => {
+    const { route, remote, store, gateway } = await fixture()
+    store.actions.replaceRecipients([peer(gateway, 'local')])
+    store.actions.replaceRecipients([peer(gateway, 'remote')])
+    await route.submit(request('an unchanged body'))
+    expect(remote.send).toHaveBeenCalledExactlyOnceWith('self', 'direct', ['remote'], 'an unchanged body', false)
+  })
+
+  it('refuses an unavailable explicit recipient and conflicting mentions before any send', async () => {
+    const { route, remote, store, gateway } = await fixture()
+    const remotePeer = peer(gateway, 'remote')
+    store.actions.replaceRecipients([{ ...remotePeer, workspaceId: 'old-workspace' as AgentMailPeer['workspaceId'] }])
+    await expect(route.submit(request('hello'))).rejects.toThrow(/available/i)
+    store.actions.replaceRecipients([remotePeer])
+    await expect(route.submit(request(`@${agentMentionToken('local')} hello`))).rejects.toThrow(/match/i)
+    expect(remote.send).not.toHaveBeenCalled()
   })
 })

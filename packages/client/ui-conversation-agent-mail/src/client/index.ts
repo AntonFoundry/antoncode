@@ -7,15 +7,19 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+import type {} from '@deepseek-ai/dsh-client-resources/client'
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
   ClientSessionContext, InputTriggerServiceContract, InputTriggerSource,
 } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { AgentMailConversationView } from './AgentMailConversationView.tsx'
 import { createAgentMailGateway } from './api-gateway.ts'
 import { agentDisplayName } from './agent-names.ts'
-import { agentMailChannel } from './composer-targets.ts'
+import { createAgentMailComposerStore, type AgentMailComposerState } from './composer-targets.ts'
+import { createAgentMailResourceProvider } from './mail-resource.ts'
+import { resolveMailRecipients } from './resolve-recipients.ts'
 import type { AgentMailGateway } from './gateway.ts'
-import { agentMentionToken, peersForChannel, resolveMentions } from './mentions.ts'
+import { agentMentionToken, peersForChannel } from './mentions.ts'
 import { registerAgentMailRelays } from './relay-projection.ts'
 import { en, zh, type AgentMailLocaleKey } from './locales.ts'
 
@@ -24,7 +28,7 @@ export type { AgentMailLocaleKey } from './locales.ts'
 export type { AgentMailGateway } from './gateway.ts'
 export { createAgentMailGateway } from './api-gateway.ts'
 export { agentMentionToken, resolveMentions } from './mentions.ts'
-export { agentMailChannel, setAgentMailChannel, subscribeAgentMailChannel } from './composer-targets.ts'
+export { createAgentMailComposerStore } from './composer-targets.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -36,7 +40,7 @@ declare module '@deepseek-ai/cordis' {
 const NS = 'conversation.agentMail'
 
 /** Required services: conversation view slot, composer routing, `@` source, and localized copy. */
-export const inject = ['slots', 'locale', 'conversation', 'uiConversation', 'inputTriggers', 'remote', 'remote.agentMail']
+export const inject = ['slots', 'locale', 'conversation', 'uiConversation', 'inputTriggers', 'sessions', 'resources', 'remote', 'remote.agentMail']
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -49,19 +53,36 @@ export function apply(ctx: Context): void {
   registerAgentMailRelays(ctx)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-conversation-agent-mail: dictionaries')
   const t = ctx.locale.bind(NS)
-  const gateway = createAgentMailGateway(ctx.remote.agentMail)
-  if (gateway !== undefined) registerComposerRoute(ctx, gateway, t)
-  registerMentionSource(ctx, gateway)
+  const gateway = ctx.get('agentMailGateway') ?? createAgentMailGateway(ctx.remote.agentMail)
+  const composerStore = createAgentMailComposerStore()
+  const selection = (sessionId: SessionId): AgentMailComposerState => {
+    const binding = ctx.sessions.binding(sessionId)
+    if (binding === undefined) throw new Error(t('connecting'))
+    return ctx.slots.getStoreSnapshot(composerStore, { key: sessionId, ctx: binding.ctx })
+  }
+  ctx.effect(() => () => gateway.dispose(), 'ui-conversation-agent-mail: gateway')
+  ctx.effect(() => ctx.resources.register(createAgentMailResourceProvider(gateway, ctx.remote)), 'ui-conversation-agent-mail: resource')
+  registerComposerRoute(ctx, gateway, selection, t)
+  registerMentionSource(ctx, gateway, selection)
   ctx.slots.inject('conversation.view', () => ctx.slots.register({
     name: 'conversation.view',
     id: 'agent-mail',
     order: 20,
     label: () => t('tab'),
     locale: NS,
-    inject: (_sessionId: SessionId) => {
-      const provider = ctx.get('agentMailGateway') ?? gateway
-      return provider === undefined ? {} : { gateway: provider }
-    },
+    store: composerStore,
+    inject: (sessionId: SessionId) => ({
+      refreshMail: () => gateway.refresh(sessionId),
+      acknowledgeMail: async (channel: 'local' | 'direct', throughSeq: number) => {
+        const workspaceId = gateway.authorization(sessionId).workspaceId
+        if (workspaceId === undefined) throw new Error(t('connecting'))
+        await gateway.acknowledge({ sessionId, workspaceId, channel, throughSeq })
+      },
+      focusComposer: () => {
+        const binding = ctx.sessions.binding(sessionId)
+        if (binding !== undefined) ctx.conversation.input.for(binding.ctx).focus()
+      },
+    }),
   }, AgentMailConversationView))
 }
 
@@ -71,11 +92,13 @@ export function apply(ctx: Context): void {
  * workspace broadcast.
  * @param ctx - plugin context carrying the conversation service.
  * @param gateway - authorized Agent Mail RPC face.
+ * @param selection - Read the registered current Session's interaction snapshot at submission.
  * @param t - Agent Mail copy.
  */
 function registerComposerRoute(
   ctx: Context,
   gateway: AgentMailGateway,
+  selection: (sessionId: SessionId) => AgentMailComposerState,
   t: TranslateNS<'conversation.agentMail'>,
 ): void {
   ctx.effect(() => ctx.conversation.composerRoutes.register('agent-mail', {
@@ -85,25 +108,16 @@ function registerComposerRoute(
       if (body === '') return
       const auth = gateway.authorization(sessionId)
       if (auth.state !== 'authorized' || auth.workspaceId === undefined) throw new Error(t('connecting'))
-      const channel = agentMailChannel(sessionId)
-      const peers = gateway.peers(sessionId).filter(peer => peer.sessionId !== sessionId)
-      const mentions = resolveMentions(body, peers)
-      const compatible = new Set(peersForChannel(peers, sessionId, auth.workspaceId, channel).map(peer => peer.sessionId))
-      if (mentions.some(recipient => !compatible.has(recipient))) throw new Error(t('wrongChannel'))
-      if (channel === 'direct') {
-        if (mentions.length === 0) throw new Error(t('mentionRequired'))
-        await gateway.sendDirect({ sessionId, workspaceId: auth.workspaceId, recipients: mentions, body })
-        return
+      const resolved = resolveMailRecipients(selection(sessionId), gateway.peers(sessionId), {
+        sessionId, workspaceId: auth.workspaceId,
+      }, body)
+      if (!resolved.ok) throw new Error(t(resolved.reason))
+      const recipients = resolved.recipients.map(peer => peer.sessionId)
+      if (resolved.channel === 'direct') {
+        await gateway.sendDirect({ sessionId, workspaceId: auth.workspaceId, recipients, body })
+      } else {
+        await gateway.sendLocal({ sessionId, workspaceId: auth.workspaceId, recipients, body, workspaceWide: resolved.workspaceWide })
       }
-      if (mentions.length > 0) {
-        await gateway.sendLocal({
-          sessionId, workspaceId: auth.workspaceId, recipients: mentions, body, workspaceWide: false,
-        })
-        return
-      }
-      await gateway.sendLocal({
-        sessionId, workspaceId: auth.workspaceId, recipients: [], body, workspaceWide: true,
-      })
     },
   }), 'ui-conversation-agent-mail: composer route')
 }
@@ -113,16 +127,18 @@ function registerComposerRoute(
  * is the active view. The token carries the deterministic tag, never a
  * session id, so two agents with the same name stay distinguishable.
  * @param ctx - plugin context carrying the input trigger service.
- * @param gateway - authorized Agent Mail RPC face; absent keeps the source inert.
+ * @param gateway - Authorized Mail state shared with the resource provider.
+ * @param selection - Read the current registered Session-store channel for each lookup.
  */
-function registerMentionSource(ctx: Context, gateway: AgentMailGateway | undefined): void {
+function registerMentionSource(
+  ctx: Context, gateway: AgentMailGateway, selection: (sessionId: SessionId) => AgentMailComposerState,
+): void {
   const triggers = ctx.get('inputTriggers') as InputTriggerServiceContract
   const roster = (session: ClientSessionContext): readonly { sessionId: string; workspaceId: string }[] => {
-    if (gateway === undefined) return []
     const sessionId = session.sessionId
     const workspaceId = gateway.authorization(sessionId).workspaceId
     if (workspaceId === undefined) return []
-    return peersForChannel(gateway.peers(sessionId), sessionId, workspaceId, agentMailChannel(sessionId))
+    return peersForChannel(gateway.peers(sessionId), sessionId, workspaceId, selection(sessionId).channel)
   }
   const active = (session: ClientSessionContext): boolean =>
     ctx.conversation.activeView(session.sessionId) === 'agent-mail'
@@ -145,7 +161,7 @@ function registerMentionSource(ctx: Context, gateway: AgentMailGateway | undefin
       return active(session) ? roster(session).map(peer => agentMentionToken(peer.sessionId)) : []
     },
     subscribeLexicon(session, listener) {
-      if (gateway === undefined || !active(session)) return () => {}
+      if (!active(session)) return () => {}
       return gateway.subscribeInbox(listener)
     },
     onPick({ candidate }) {

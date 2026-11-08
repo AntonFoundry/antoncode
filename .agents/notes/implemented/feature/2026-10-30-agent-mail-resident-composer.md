@@ -10,7 +10,7 @@ Agent Mail rendered its own composer at the bottom of a Discord-shaped feed, so 
 
 `ui-conversation` owns a `ComposerRoutes` registry keyed by `conversation.view` id. The resident input sink reads the session's persisted active view and, when that view registered a route, dispatches the submission there instead of prompting the chat session. Failure restores the draft and surfaces the route's error through the normal composer notice. Chat keeps the unmodified prompt path.
 
-Agent Mail registers the `agent-mail` route. It removes its internal form; the view only selects the channel and feeds it. Channel state lives in a per-session browser store shared by the view and the route. A local message with no mention is the workspace broadcast; mentions address specific peers; the direct channel requires a mention.
+Agent Mail registers the `agent-mail` route instead of an internal form. Its view selects channel and recipients in one declared Session store shared with the route. Picker selection, Reply, and mention shortcuts supply current recipient addresses; unaddressed local mail broadcasts, while direct mail requires recipients. The [resource and composer ownership decision](../architecture/2026-11-08-agent-mail-resource-and-composer-ownership.md) owns the registered store, live discovery, and command-time recipient validation.
 
 The `@` source suggests `Display Name#hex6` tokens, computed from the existing deterministic name generator. The session id remains the durable address but never appears in the draft. Sends also land in a short-lived browser outbox so the sender sees its own message; the durable queue only returns mail addressed to the reader.
 

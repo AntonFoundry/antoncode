@@ -1,0 +1,50 @@
+{
+  "initial": [
+    {
+      "name": "anton_restart",
+      "description": "Restart the agent runtime service so freshly deployed code takes effect. Call this ONLY after a build/deploy step completed (e.g. a plugin or bundle was rebuilt), never mid-task: it terminates this very process, so the CURRENT turn ends immediately and the user starts a new conversation on the restarted app. Do not call it speculatively or more than once per deployment.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "anton_start",
+      "description": "Start the agent runtime service if it is stopped, reporting what it did. When everything already runs, it reports that nothing needed starting — safe to call speculatively while diagnosing.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "anton_status",
+      "description": "Report the health of the Anton application services: the supervisor bridge, the agent runtime process (with PID and port), and the c0ntext memory engine. Use this to diagnose whether a service is down before attempting anton_start or anton_restart.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "anton_stop",
+      "description": "Shut down the agent runtime service. WARNING: you ARE that process — calling this ends your current turn and conversation immediately, and the user brings the app back from its control surface. Call it ONLY when the user explicitly asks to stop or quit the application, never mid-task.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "working_directory",
+      "description": "Read the current working directory, or change it with cd. Relative paths use the current directory. Existing shells and running processes keep their own directories.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cd": {
+            "type": "string",
+            "description": "Existing directory to enter. Omit to read the current directory."
+          }
+        }
+      }
+    }
+  ],
+  "changes": []
+}

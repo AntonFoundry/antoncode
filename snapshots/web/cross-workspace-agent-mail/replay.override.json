@@ -1,0 +1,11 @@
+[
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "text" },
+      { "type": "text-delta", "index": 0, "text": "CROSS_WORKSPACE_MAIL_READY" },
+      { "type": "block-end", "index": 0, "block": { "type": "text", "text": "CROSS_WORKSPACE_MAIL_READY" } },
+      { "type": "finish", "reason": { "kind": "stop" } }
+    ]
+  }
+]

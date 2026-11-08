@@ -151,6 +151,7 @@ export const VIEWER_ENDPOINT_CLASSES = {
   'agentMail/inbox': 'owner-only',
   'agentMail/send': 'owner-only',
   'agentMail/ack': 'owner-only',
+  'agentMail/watch': 'owner-only', // owner-only addressed-mail and eligible-peer invalidations
   'langflow/start': 'owner-only', // owner controls the local sidecar
   'langflow/status': 'owner-only', // owner reads local sidecar status
   'langflow/stop': 'owner-only', // owner controls the local sidecar

@@ -40,12 +40,12 @@ function props(
   dict: Record<string, string>,
   sessionId: string | undefined,
 ): AgentMailConversationViewProps {
-  return { t: makeTranslate(dict), sessionId } as unknown as AgentMailConversationViewProps
+  return { t: makeTranslate(dict), sessionId, useResource: () => ({ status: 'none', value: undefined, failure: undefined }) } as AgentMailConversationViewProps
 }
 
 describe('Agent Mail read-only conversation view', () => {
   it('registers slots, composer routing, and the mention source', async () => {
-    expect(inject).toEqual(['slots', 'locale', 'conversation', 'uiConversation', 'inputTriggers', 'remote', 'remote.agentMail'])
+    expect(inject).toEqual(['slots', 'locale', 'conversation', 'uiConversation', 'inputTriggers', 'sessions', 'resources', 'remote', 'remote.agentMail'])
     const ctx = new Context()
     await ctx.plugin(SlotRegistry).await()
     const locale = new LocaleRuntime(ctx)
@@ -58,6 +58,8 @@ describe('Agent Mail read-only conversation view', () => {
       events: { register: () => () => {} }, views: { register: () => () => {} },
     } as never)
     ctx.provide('inputTriggers', { registerSource: () => () => {} } as never)
+    ctx.provide('sessions', { binding: () => undefined } as never)
+    ctx.provide('resources', { register: () => () => {} } as never)
     ctx.provide('remote', { agentMail: { address: async () => ({ ok: false, error: { message: 'unavailable' } }) } } as never)
     ctx.provide('remote.agentMail', {} as never)
     const stopRoot = ctx.get('slots')!.register({
@@ -70,7 +72,7 @@ describe('Agent Mail read-only conversation view', () => {
     expect(entry.component).toBe(AgentMailConversationView)
     expect(entry.options.id).toBe('agent-mail')
     expect(resolveSlotLabel(entry.options.label)).toBe('Agent Mail')
-    expect(entry.inject?.('session-1' as never)).toHaveProperty('gateway')
+    expect(entry.inject?.('session-1' as never)).toHaveProperty('focusComposer')
     await ctx.fiber.dispose()
     stopRoot()
   })
