@@ -48,7 +48,10 @@ export async function createReasoningRenderFixture(language = 'zh') {
           createSnapshotStore<TranscriptViewMode>('detailed'),
           createSnapshotStore<CollapseTiming>('completion'),
           createSnapshotStore<FoldedReplies>('all'),
-        ))
+        ), () => ({
+          removeFrom: () => Promise.reject(new Error('Reasoning fixture does not expose sent-message removal')),
+          reportRemoveFailure: (error: unknown) => { throw error },
+        }))
     },
   })
   await runtime.sessions.add({ id: 'reasoning-fixture' })

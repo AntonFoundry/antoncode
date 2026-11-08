@@ -47,6 +47,7 @@ async function bench(collapsed = false, track?: TrackProductEvent) {
     toggleSidebar: vi.fn(),
     selectPanel: vi.fn((activePanelId: MainPanelId | null) => { runtime.panelInfo.set({ activePanelId }) }),
     openRightbar: vi.fn(),
+    revealRightbar: vi.fn(),
     closeRightbar: vi.fn(),
     openSettings: vi.fn(), closeSettings: vi.fn(), toggleSettings: vi.fn(),
     settingsOpen: () => false, onSettingsOpenChange: () => () => {},

@@ -232,6 +232,22 @@ class FakeWorkspaces implements IWorkspaces {
     return this.onPin(sessionId)
   }
 
+  async moveSession(sessionId: SessionId, workspaceId: WorkspaceId | null): Promise<void> {
+    const current = this.list.getSnapshot()
+    if (workspaceId !== null && !current.items.some(item => item.workspaceId === workspaceId)) {
+      throw new Error('Target workspace is missing')
+    }
+    this.list.update(state => ({
+      ...state,
+      items: state.items.map(item => ({
+        ...item,
+        sessionIds: item.workspaceId === workspaceId
+          ? [...item.sessionIds.filter(id => id !== sessionId), sessionId]
+          : item.sessionIds.filter(id => id !== sessionId),
+      })),
+    }))
+  }
+
   async unpinSession(sessionId: SessionId): Promise<void> {
     this.unpinCalls.push(sessionId)
     this.list.update(state => ({

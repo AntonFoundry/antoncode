@@ -109,8 +109,10 @@ describe('ui-plan browser apply', () => {
     const tabs = new SidebarRightTabRegistry(b.ctx)
     b.registerType.mockImplementation(definition => tabs.register(definition))
     const store = createSidebarRightStore(() => ({ kind: 'guide', title: 'Guide' })).create()
+    const reveal = vi.fn()
     const { controller, adopt, show } = createSidebarRightController(tabs, vi.fn(), {
       autoFullscreen: () => false,
+      reveal,
       openWithFocus: (_sessionId, open) => { open() },
       closeWithFocus: (_sessionId, _paneId, close) => { close() },
     })
@@ -135,6 +137,7 @@ describe('ui-plan browser apply', () => {
       reviewOpener.openReview({ id: 'pending', question: 'Approve?', plan: '# Temporary child plan', approve: { label: 'Approve' } }, 'child-question')
       expect(resources().some(address => address.startsWith('dsh-resource://plan-review/embedded-child/'))).toBe(true)
       expect(store.getSnapshot().bySession[child]).toBeUndefined()
+      expect(reveal).toHaveBeenCalledTimes(2)
     } finally {
       await fiber.dispose()
       show(undefined)
