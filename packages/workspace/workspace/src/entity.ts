@@ -38,6 +38,12 @@ export interface WorkspaceEntityHost {
    */
   table(): KvTable<WorkspaceId, WorkspaceRecord>
 
+  /**
+   * Notify observers after the durable record and entity snapshot agree; never rejects the committed mutation.
+   * @param id - Committed Workspace identity to invalidate.
+   */
+  changed(id: WorkspaceId): void
+
   /** Project explicit grouping over the stored cwd account. */
   projectSessionIds(id: WorkspaceId, candidates: readonly SessionId[]): readonly SessionId[]
 
@@ -221,5 +227,6 @@ export class WorkspaceEntity implements Workspace {
       throw error
     }
     this.record = next
+    this.host.changed(this.id)
   }
 }

@@ -117,6 +117,21 @@ declare module '@deepseek-ai/cordis' {
 
   interface Events {
     /**
+     * Invalidate reads of a Workspace after a committed registration, metadata,
+     * order, or membership mutation. Registry and entity reads already reflect
+     * the commit; a deleted identity resolves to undefined. Explicit grouping
+     * moves invalidate both former and destination Workspaces, once each.
+     * Failed writes and operations that return without writing do not notify.
+     * Listener callbacks start before the mutation resolves, but their async
+     * work is not awaited; they must re-read authoritative state, which may
+     * have advanced again. Observer failures are logged, never rolled back or
+     * propagated to the committed mutation. Register through ctx.on so plugin
+     * disposal removes the listener. Startup/bootstrap emits no invalidations.
+     * @param change - Identity to re-read; carries no paths or Session data.
+     * @mode parallel
+     */
+    'workspace/changed'(change: { readonly workspaceId: WorkspaceId }): void | Promise<void>
+    /**
      * Ask the composed providers what still runs for a session before it is
      * archived. A listener prepends its own {@link SessionActivity} entries to
      * the result of `next()`; the registry's innermost callback returns an
@@ -182,6 +197,7 @@ export class WorkspaceRegistry extends Service {
 
   private readonly host: WorkspaceEntityHost = {
     table: () => this.requireTable(),
+    changed: (id) => { this.notifyChanged(id) },
     projectSessionIds: (id, candidates) => this.projectSessionIds(id, candidates),
     candidateMatches: (id, path) => this.sessionPaths.get(id) === path || this.missingSessionPaths.has(id),
     readSessionHeader: id => this.readSessionHeader(id),
@@ -332,6 +348,7 @@ export class WorkspaceRegistry extends Service {
       const workspaceIds = [...without.slice(0, at), id, ...without.slice(at)]
       if (sameIds(workspaceIds, state.workspaceIds)) return state.workspaceIds
       await this.setState({ ...state, workspaceIds })
+      this.notifyChanged(id)
       return workspaceIds
     })
   }
@@ -369,10 +386,12 @@ export class WorkspaceRegistry extends Service {
       if (!await this.sessionKnown(sessionId)) throw new WorkspaceUnknownSessionError(sessionId, 'move')
       const state = this.requireState()
       if (state.sessionAssignments.some(entry => entry.sessionId === sessionId && entry.workspaceId === workspaceId)) return
+      const former = this.list().filter(workspace => workspace.sessionIds.includes(sessionId)).map(workspace => workspace.id)
       await this.setState({
         ...state,
         sessionAssignments: [...state.sessionAssignments.filter(entry => entry.sessionId !== sessionId), { sessionId, workspaceId }],
       })
+      for (const id of new Set([...former, ...(workspaceId === null ? [] : [workspaceId])])) this.notifyChanged(id)
     })
   }
 
@@ -423,6 +442,7 @@ export class WorkspaceRegistry extends Service {
         archivedSessionIds: [...state.archivedSessionIds, sessionId],
         pinnedSessionIds: state.pinnedSessionIds.filter(id => id !== sessionId),
       })
+      this.notifySessionChanged(sessionId)
       if (options.stopActivity === true) await this.stopSessionActivity(sessionId)
     })
   }
@@ -447,6 +467,7 @@ export class WorkspaceRegistry extends Service {
         ...state,
         archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
       })
+      this.notifySessionChanged(sessionId)
     })
   }
 
@@ -482,6 +503,7 @@ export class WorkspaceRegistry extends Service {
         ...state,
         pinnedSessionIds: [sessionId, ...state.pinnedSessionIds],
       })
+      this.notifySessionChanged(sessionId)
     })
   }
 
@@ -503,6 +525,7 @@ export class WorkspaceRegistry extends Service {
         ...state,
         pinnedSessionIds: state.pinnedSessionIds.filter(id => id !== sessionId),
       })
+      this.notifySessionChanged(sessionId)
     })
   }
 
@@ -620,6 +643,7 @@ export class WorkspaceRegistry extends Service {
       }
       throw error
     }
+    this.notifyChanged(id)
     return entity
   }
 
@@ -668,6 +692,7 @@ export class WorkspaceRegistry extends Service {
         `workspace '${id}' was deleted but its pending marker could not be cleared: ${String(error)}`,
       )
     }
+    this.notifyChanged(id)
     return true
   }
 
@@ -938,6 +963,22 @@ export class WorkspaceRegistry extends Service {
   private requireState(): WorkspaceDomainState {
     if (this.state === undefined) throw new Error('workspace registry is not started yet')
     return this.global?.get() ?? this.state
+  }
+
+  private notifySessionChanged(sessionId: SessionId): void {
+    for (const workspace of this.list()) {
+      if (workspace.sessionIds.includes(sessionId)) this.notifyChanged(workspace.id)
+    }
+  }
+
+  /** Start independent observers after commit without making their work a registry queue participant. */
+  private notifyChanged(workspaceId: WorkspaceId): void {
+    void this.ctx.parallel('workspace/changed', { workspaceId }).catch((error: unknown) => {
+      const failures = error instanceof AggregateError ? error.errors : [error]
+      this.ctx.logger.warn(
+        `workspace '${workspaceId}': workspace/changed observers failed after commit; re-read state before retrying observer work: ${failures.map(String).join('; ')}`,
+      )
+    })
   }
 
   private async setState(state: WorkspaceDomainState): Promise<void> {

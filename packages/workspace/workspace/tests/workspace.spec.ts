@@ -192,6 +192,182 @@ afterEach(async () => {
   base = undefined as never
 })
 
+describe('Workspace committed invalidations', () => {
+  it('notifies after canonical create, entity updates, and delete; skips unchanged membership', async () => {
+    const dir = await makeDir('committed-notifications')
+    const result = await harness()
+    onTestFinished(() => result.ctx.fiber.dispose())
+    const seen: Array<{ id: WorkspaceId; title: string | undefined; members: readonly SessionId[] | undefined; listed: boolean }> = []
+    result.ctx.on('workspace/changed', ({ workspaceId }) => {
+      const workspace = result.registry.get(workspaceId)
+      seen.push({ id: workspaceId, title: workspace?.title, members: workspace?.sessionIds,
+        listed: result.registry.list().some(item => item.id === workspaceId) })
+    })
+    const workspace = await result.registry.create(dir)
+    expect(seen).toEqual([{ id: workspace.id, title: workspace.title, members: [], listed: true }])
+    seen.length = 0
+    await result.registry.create(dir)
+    expect(seen).toEqual([])
+    await workspace.setTitle('Changed')
+    expect(seen).toEqual([{ id: workspace.id, title: 'Changed', members: [], listed: true }])
+    seen.length = 0
+    result.setSessions([header('attached', dir)])
+    await workspace.attachSession(SessionId('attached'))
+    expect(seen).toEqual([{ id: workspace.id, title: 'Changed', members: ['attached'], listed: true }])
+    seen.length = 0
+    await workspace.attachSession(SessionId('attached'))
+    await workspace.detachSession(SessionId('absent'))
+    await workspace.insertSessionBefore(SessionId('attached'), SessionId('attached'))
+    expect(seen).toEqual([])
+    await workspace.detachSession(SessionId('attached'))
+    expect(seen).toEqual([{ id: workspace.id, title: 'Changed', members: [], listed: true }])
+    seen.length = 0
+    await result.registry.delete(workspace.id)
+    expect(seen).toEqual([{ id: workspace.id, title: undefined, members: undefined, listed: false }])
+    seen.length = 0
+    await result.registry.delete(workspace.id)
+    expect(seen).toEqual([])
+  })
+
+  it('invalidates both effective owners on a move and only the former owner on detach to Ungrouped', async () => {
+    const origin = await makeDir('notified-origin')
+    const elsewhere = await makeDir('notified-destination')
+    const result = await harness({ sessions: [header('moving', origin)] })
+    onTestFinished(() => result.ctx.fiber.dispose())
+    const source = result.registry.list()[0]!
+    const destination = await result.registry.create(elsewhere)
+    const seen: WorkspaceId[] = []
+    const memberships: Array<readonly SessionId[]> = []
+    result.ctx.on('workspace/changed', ({ workspaceId }) => {
+      seen.push(workspaceId)
+      memberships.push([...(result.registry.get(workspaceId)?.sessionIds ?? [])])
+    })
+    await result.registry.moveSession(SessionId('moving'), destination.id)
+    expect(source.sessionIds).toEqual([])
+    expect(destination.sessionIds).toEqual(['moving'])
+    expect(seen).toEqual([source.id, destination.id])
+    expect(memberships).toEqual([[], ['moving']])
+    seen.length = 0
+    await result.registry.moveSession(SessionId('moving'), destination.id)
+    expect(seen).toEqual([])
+    await result.registry.moveSession(SessionId('moving'), null)
+    expect(seen).toEqual([destination.id])
+  })
+
+  it('invalidates committed order and grouped archive/pin visibility changes without duplicate no-op notifications', async () => {
+    const dir = await makeDir('notified-metadata')
+    const elsewhere = await makeDir('notified-order')
+    const result = await harness({ sessions: [header('grouped', dir)] })
+    onTestFinished(() => result.ctx.fiber.dispose())
+    const workspace = result.registry.list()[0]!
+    const other = await result.registry.create(elsewhere)
+    const seen: WorkspaceId[] = []
+    result.ctx.on('workspace/changed', ({ workspaceId }) => { seen.push(workspaceId) })
+    await result.registry.insertBefore(workspace.id, other.id)
+    expect(seen).toEqual([workspace.id])
+    seen.length = 0
+    await result.registry.insertBefore(workspace.id, other.id)
+    expect(seen).toEqual([])
+    for (const mutate of [
+      () => result.registry.pinSession(SessionId('grouped')),
+      () => result.registry.unpinSession(SessionId('grouped')),
+      () => result.registry.archiveSession(SessionId('grouped')),
+      () => result.registry.unarchiveSession(SessionId('grouped')),
+    ]) {
+      await mutate()
+      expect(seen).toEqual([workspace.id])
+      seen.length = 0
+      await mutate()
+      expect(seen).toEqual([])
+    }
+    await result.registry.insertBefore(workspace.id)
+    seen.length = 0
+    result.pool.failNextWrites = 1
+    await expect(result.registry.insertBefore(workspace.id, other.id)).rejects.toThrow('injected write failure')
+    expect(seen).toEqual([])
+  })
+
+  it('does not notify failed create, entity, move, or delete writes', async () => {
+    const origin = await makeDir('failed-notified-origin')
+    const elsewhere = await makeDir('failed-notified-destination')
+    const result = await harness({ sessions: [header('moving', origin)] })
+    onTestFinished(() => result.ctx.fiber.dispose())
+    const source = result.registry.list()[0]!
+    const seen: WorkspaceId[] = []
+    result.ctx.on('workspace/changed', ({ workspaceId }) => { seen.push(workspaceId) })
+    result.pool.failNextWrites = 1
+    await expect(result.registry.create(elsewhere)).rejects.toThrow('injected write failure')
+    result.pool.failNextWrites = 1
+    await expect(source.setTitle('Uncommitted')).rejects.toThrow('injected write failure')
+    result.pool.failNextWrites = 1
+    await expect(result.registry.moveSession(SessionId('moving'), null)).rejects.toThrow('injected write failure')
+    result.pool.failNextWrites = 1
+    await expect(result.registry.delete(source.id)).rejects.toThrow('injected write failure')
+    expect(source.title).not.toBe('Uncommitted')
+    expect(source.sessionIds).toEqual(['moving'])
+    expect(seen).toEqual([])
+  })
+
+  it.each([{ putAt: 1 }, { globalAt: 3 }])('does not invalidate rolled-back create writes (%j)', async (failure) => {
+    const dir = await makeDir('rolled-back-notification')
+    const pool = new MemoryMediaPool()
+    const result = await harness({ pool, backend: selectiveFailureBackend(pool, failure) })
+    onTestFinished(() => result.ctx.fiber.dispose())
+    const seen = vi.fn()
+    result.ctx.on('workspace/changed', seen)
+    await expect(result.registry.create(dir)).rejects.toThrow()
+    expect(result.registry.list()).toEqual([])
+    expect(seen).not.toHaveBeenCalled()
+  })
+
+  it('notifies committed deletion with pending cleanup, but not rolled-back table deletion', async () => {
+    const dir = await makeDir('delete-notification')
+    const pool = storedPool([['kept', record(dir, [])]], { initialized: true, workspaceIds: ['kept'] })
+    const result = await harness({ pool, backend: selectiveFailureBackend(pool, { deleteAt: 1, globalAt: 4 }) })
+    onTestFinished(() => result.ctx.fiber.dispose())
+    const seen = vi.fn()
+    result.ctx.on('workspace/changed', seen)
+    await expect(result.registry.delete(WorkspaceId('kept'))).rejects.toThrow('selected rollback delete failure')
+    expect(seen).not.toHaveBeenCalled()
+    await expect(result.registry.delete(WorkspaceId('kept'))).resolves.toBe(true)
+    expect(result.registry.get(WorkspaceId('kept'))).toBeUndefined()
+    expect(storedState(pool).pendingMutation).toEqual({ operation: 'delete', workspaceId: 'kept' })
+    expect(seen).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'kept' })
+  })
+
+  it('contains throwing and rejecting observers without starving later observers or rejecting committed mutations', async () => {
+    const dir = await makeDir('observer-failures')
+    const result = await harness()
+    onTestFinished(() => result.ctx.fiber.dispose())
+    const warning = vi.spyOn(result.ctx.logger, 'warn').mockImplementation(() => {})
+    result.ctx.on('workspace/changed', () => { throw new Error('sync observer failure') })
+    result.ctx.on('workspace/changed', async () => { throw new Error('async observer failure') })
+    const seen = vi.fn(({ workspaceId }: { workspaceId: WorkspaceId }) => {
+      expect(result.registry.get(workspaceId)?.title).toBe('Committed')
+    })
+    result.ctx.on('workspace/changed', seen)
+    await expect(result.registry.create(dir, 'Committed')).resolves.toMatchObject({ title: 'Committed' })
+    expect(seen).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => { expect(warning).toHaveBeenCalledTimes(1) })
+    expect(warning.mock.calls[0]![0]).toContain('workspace/changed')
+    expect(warning.mock.calls[0]![0]).toContain('sync observer failure')
+    expect(warning.mock.calls[0]![0]).toContain('async observer failure')
+  })
+
+  it('removes plugin-owned observers when their fiber is disposed', async () => {
+    const dir = await makeDir('observer-disposal')
+    const result = await harness()
+    onTestFinished(() => result.ctx.fiber.dispose())
+    const seen = vi.fn()
+    const observer = await result.ctx.plugin({ apply(ctx: Context) { ctx.on('workspace/changed', seen) } })
+    const workspace = await result.registry.create(dir)
+    expect(seen).toHaveBeenCalledTimes(1)
+    await observer.dispose()
+    await workspace.setTitle('After disposal')
+    expect(seen).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('WorkspaceRegistry lifecycle and bootstrap', () => {
   it('stays pending without sessionPersistence and never opens or marks the domain', async () => {
     const pool = new MemoryMediaPool()
