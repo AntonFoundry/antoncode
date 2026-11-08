@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { Browser, Page, Request, Route } from 'playwright'
 import { chromium, webkit } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed, onTestFinished, vi } from 'vitest'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
   launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold,
@@ -707,3 +707,44 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     ])
   })
 })
+
+
+it('saves an opaque provider key through the current Models settings surface', async () => {
+  const isolated = await launchWebScaffold({ developerTools: false })
+  onTestFinished(() => isolated.close())
+  const browser = await chromium.launch()
+  onTestFinished(() => browser.close())
+  const page = await browser.newPage({ viewport: { width: 1680, height: 1100 }, locale: 'en-US' })
+  await page.goto(isolated.authenticatedUrl, { waitUntil: 'load' })
+  await openSettings(page, 'en')
+  const dialog = page.getByRole('dialog', { name: 'Settings', exact: true })
+  await dialog.getByRole('button', { name: 'Models', exact: true }).click()
+  const add = dialog.getByRole('button', { name: 'Add model provider', exact: true })
+  await add.waitFor()
+  await add.click()
+  await dialog.getByLabel('Provider', { exact: true }).selectOption('minimax-cn')
+  const field = dialog.getByLabel('API key', { exact: true })
+  await field.fill('ADMIN_KEY="short synthetic value"')
+  expect(await field.getAttribute('type')).toBe('password')
+  expect(await dialog.getByText('This API key is not in a valid format. Please check it.', { exact: true }).count()).toBe(0)
+  const save = dialog.getByRole('button', { name: 'Apply', exact: true })
+  expect(await save.isEnabled()).toBe(true)
+  await save.click()
+  await dialog.getByRole('button', { name: 'Edit minimax-cn', exact: true }).waitFor()
+  const credentialPath = join(isolated.harnessHome, '.credentials.yaml')
+  await expect.poll(async () => {
+    const text = await readFile(credentialPath, 'utf8').catch(() => '')
+    return text.includes('MINIMAX_CN_API_KEY: ADMIN_KEY="short synthetic value"')
+  }).toBe(true)
+  expect(await page.content()).not.toContain('ADMIN_KEY')
+  const profile = await readFile(join(isolated.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8')
+  expect(profile).toContain('apiKeyEnv: MINIMAX_CN_API_KEY')
+  expect(profile).not.toContain('ADMIN_KEY')
+  await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'opaque-key.expected.md'), [
+    'Opaque provider credential saved: true',
+    'Credential reference: MINIMAX_CN_API_KEY',
+    'Input initially masked: true',
+    'Client format warning shown: false',
+    'Credential value in profile or page: false',
+  ].join('\n'), MODE)
+}, 60_000)
