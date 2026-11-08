@@ -87,7 +87,7 @@ To change what a profile built on this core provides — a different default mod
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The bundle is a static patch document: one `insert` list applied over the empty profile root. It mounts no service, emits no events, and holds no mutable state; each inserted row's package owns that row's behavior and invariants.
+The bundle is a static patch document: one `insert` list applied over the empty profile root. It mounts no service, emits no events, and holds no mutable state; each inserted row's package owns that row's behavior and invariants. The `gate-policy` row appears once so profile configuration edits address the same policy row that Loader activates.
 
 ### Composition mechanics
 
