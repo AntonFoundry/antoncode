@@ -124,7 +124,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     await pick.waitFor({ timeout: 10_000 })
     await expect.poll(async () => pick.locator('option').count(), { timeout: 10_000 }).toBeGreaterThan(30)
     const options = await pick.locator('option').allTextContents()
-    expect(options).toContain('anthropic')
+    expect(options).toContain('Anthropic')
     expect(options).toContain('minimax-cn')
     await pick.selectOption('openai-codex')
     await expect.poll(async () => dialog.getByRole('textbox', { name: 'API 密钥', exact: true }).count(), { timeout: 10_000 }).toBe(0)
@@ -138,23 +138,20 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     await compareOrRefreshGolden(EMPTY_EXPECTED, snapshot, MODE)
   }, 60_000)
 
-  it('refuses a key no HTTP header can carry before anything is written', async () => {
-    onTestFailed(() => saveFailureShot(page, 'web-e2e-models-illegal-key'))
+  it('accepts opaque key drafts while keeping reveal and empty-field behavior', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-models-opaque-key'))
     const dialog = page.getByRole('dialog', { name: '设置' })
     const key = dialog.getByLabel('API 密钥')
     const save = dialog.getByRole('button', { name: '保存', exact: true })
 
-    // A key no HTTP header can carry would save cleanly and fail the first
-    // turn with a ByteString TypeError; the form names the offending field
-    // instead.
-    await key.fill('sk-\u{1F600}minimax')
+    await key.fill('ADMIN_KEY="short synthetic value"')
     expect(await key.getAttribute('type')).toBe('password')
     await dialog.getByRole('button', { name: '显示密钥', exact: true }).click()
     expect(await key.getAttribute('type')).toBe('text')
     await dialog.getByRole('button', { name: '隐藏密钥', exact: true }).click()
     expect(await key.getAttribute('type')).toBe('password')
-    await dialog.getByText('该 API 密钥格式错误，请检查。').waitFor({ timeout: 10_000 })
-    await expect.poll(async () => save.isEnabled(), { timeout: 10_000 }).toBe(false)
+    expect(await dialog.getByText('该 API 密钥格式错误，请检查。').count()).toBe(0)
+    await expect.poll(async () => save.isEnabled(), { timeout: 10_000 }).toBe(true)
 
     // Clearing it restores submit: an empty field means "keep what is stored",
     // never a refusal, or editing any other setting would demand the key.
@@ -196,7 +193,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-add'))
     const dialog = page.getByRole('dialog', { name: '设置' })
     await dialog.getByRole('button', { name: '编辑 minimax-cn' }).click()
-    await dialog.getByRole('textbox', { name: 'API 密钥', exact: true }).fill('sk-e2e-minimax')
+    await dialog.getByRole('textbox', { name: 'API 密钥', exact: true }).fill('ADMIN_KEY="short synthetic value"')
     await dialog.getByRole('button', { name: '保存', exact: true }).click()
     // The profile lands in cordis.patch.yml with only the derived reference, the
     // key value lands in the harness home's .credentials.yaml, the dormant route
@@ -210,13 +207,13 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     const document = await readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8')
     expect(document).toContain('minimax-cn:')
     expect(document).toContain('apiKeyEnv: MINIMAX_CN_API_KEY')
-    expect(document).not.toContain('sk-e2e-minimax')
+    expect(document).not.toContain('ADMIN_KEY="short synthetic value"')
     const credentialFile = join(scaffold.harnessHome, '.credentials.yaml')
     await expect.poll(
       async () => readFile(credentialFile, 'utf8').catch(() => ''),
       { timeout: 10_000 },
-    ).toContain('MINIMAX_CN_API_KEY: sk-e2e-minimax')
-    expect(await page.content()).not.toContain('sk-e2e-minimax')
+    ).toContain('MINIMAX_CN_API_KEY: ADMIN_KEY="short synthetic value"')
+    expect(await page.content()).not.toContain('ADMIN_KEY')
   }, 60_000)
 
   it('applies a customized-settings field as a merge patch', async () => {

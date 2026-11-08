@@ -135,14 +135,13 @@ export class LlmError extends HarnessError {
  *
  * A stored key arrives from the credentials seam, a `.env` line, or a shell
  * export, all of which pick up surrounding whitespace, so trimming is silent.
- * Anything else fails here rather than inside `fetch`, whose ByteString
- * refusal names a UTF-16 code point instead of the setting to change. The key
- * never enters the message: `ref` names where to fix it, and echoing any part
- * of a secret into a log or a UI is the failure this diagnosis avoids.
+ * No provider key format is inferred: the provider decides whether any
+ * nonblank, HTTP-serializable value authenticates. Transport-invalid values
+ * fail here rather than inside the HTTP client. The diagnostic names `ref`
+ * without including the credential or the native transport error.
  *
- * Lives beside {@link LlmError} rather than in `./api-key.ts` so the predicate
- * module stays dependency-free; both adapters share this one diagnosis instead
- * of keeping near-identical local copies.
+ * Lives beside {@link LlmError} rather than in `./api-key.ts` so normalization
+ * does not depend on the error class; adapters share this diagnosis.
  * @param raw - the credential exactly as supplied.
  * @param pkg - the refusing package name, prefixed to the diagnostic.
  * @param ref - the credential reference the value resolved through.
@@ -159,8 +158,8 @@ export function assertUsableApiKey(raw: string, pkg: string, ref: string): strin
     checked.reason === 'empty'
       ? `${pkg}: the API key resolved from ${ref} is blank; set ${ref} to the raw key`
         + ' (the web Models page writes it) or export it in the launching environment'
-      : `${pkg}: the API key resolved from ${ref} contains characters no HTTP header can carry;`
-        + ` set ${ref} to the raw key alone (the web Models page writes it)`,
+      : `${pkg}: the API key resolved from ${ref} cannot be serialized as an HTTP header value;`
+        + ` check ${ref} for transport-invalid characters (the web Models page writes it)`,
     INVALID_CREDENTIAL_CODE,
   )
 }

@@ -19,13 +19,27 @@ describe('normalizeApiKey', () => {
   })
 
   it.each([
+    ['an interior space', 'opaque credential'],
+    ['a Latin-1 character', 'café'],
+    ['an interior tab', 'opaque\tcredential'],
+    ['quoted text', '"opaque credential"'],
+    ['an assignment-like value', 'API_KEY=opaque'],
+    ['a short value', 'x'],
+  ])('leaves %s for the provider to judge', (_label, raw) => {
+    expect(normalizeApiKey(raw)).toEqual({ ok: true, value: raw })
+    expect(assertUsableApiKey(raw, 'llm-pi-ai', 'ACME_API_KEY')).toBe(raw)
+  })
+
+  it.each([
     ['an emoji', 'sk-\u{1F600}abc'],
     ['CJK text', 'sk-你好'],
     ['full-width punctuation', 'sk-abc，'],
-    ['an interior space', 'sk-abc def'],
     ['a C0 control character', 'sk-abc\x01'],
-    ['a latin-1 character', 'sk-café'],
-  ])('rejects %s as illegal characters', (_label, raw) => {
+    ['a null byte', 'sk-abc\0def'],
+    ['an interior carriage return', 'sk-abc\rdef'],
+    ['an interior newline', 'sk-abc\ndef'],
+    ['a delete control character', 'sk-abc\x7f'],
+  ])('refuses %s that HTTP headers cannot serialize', (_label, raw) => {
     expect(normalizeApiKey(raw)).toEqual({ ok: false, reason: 'illegalCharacters' })
   })
 

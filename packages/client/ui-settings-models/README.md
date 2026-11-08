@@ -105,7 +105,7 @@ The page never holds a full settings section: it holds only the REDACTED descrip
 
 ### Validation
 
-A typed API key is judged on its own field: after trimming, it must be non-empty and every character must be printable ASCII (`[\x21-\x7E]`), which is exactly what an HTTP header value can carry — the twin of `normalizeApiKey` in `@deepseek-ai/dsh-llm`, mirrored here because the source-plane split forbids importing it. A value matching a pasted `NAME=value` environment line or wrapped in matching quotes is refused as the same format failure. Empty ids, duplicate ids, empty explicit names, and unreadable, non-positive, or fractional capacities fail before any write. DeepSeek's `models` is one replace-by-value array: the editor shows inherited effective rows until the first model edit materializes the complete array in the user layer, while reset unsets that override.
+API keys are opaque values: the page does not infer validity from prefixes, length, quotes, assignment-like text, spaces or character ranges. An empty field keeps the existing authentication; a nonempty draft containing only whitespace asks the user to clear it or enter a value. Other drafts are trimmed and submitted through the credential seam, leaving provider acceptance and transport requirements to their owners. Empty ids, duplicate ids, empty explicit names, and unreadable, non-positive, or fractional capacities fail before any write. DeepSeek's `models` is one replace-by-value array: the editor shows inherited effective rows until the first model edit materializes the complete array in the user layer, while reset unsets that override.
 
 ### Concurrency and credentials
 

@@ -1,18 +1,9 @@
 /**
- * The one definition of a well-formed provider API key, shared by every
- * adapter that puts one in an HTTP header.
+ * Provider credentials are opaque; only blank values and HTTP header
+ * serialization failures are diagnosed locally.
  * @module @deepseek-ai/dsh-llm/api-key
  */
-
-/**
- * Characters an HTTP header value carries verbatim and every known provider
- * key uses: printable ASCII, space excluded. A key outside this set cannot
- * reach any provider — `fetch` refuses to build the header — so this is a
- * transport invariant rather than one provider's policy. Latin-1 is excluded
- * deliberately: a header could carry it, but no provider issues it, and
- * admitting it trades a local explained refusal for an opaque 401.
- */
-const LEGAL_API_KEY = /^[\x21-\x7E]+$/
+import { validateHeaderValue } from 'node:http'
 
 /** Why a supplied API key cannot be used. */
 export type ApiKeyRejection = 'empty' | 'illegalCharacters'
@@ -23,19 +14,24 @@ export type ApiKeyCheck =
   | { readonly ok: false; readonly reason: ApiKeyRejection }
 
 /**
- * Judge one *supplied* API key, trimming surrounding whitespace first.
+ * Trim one supplied credential and check only HTTP header serialization.
  *
- * Trimming is silent because a padded key has one unambiguous reading; every
- * other defect is reported. Absence is a configuration state this function
- * never sees — a profile naming no credential authenticates through the
- * provider's own ambient discovery or OAuth — so callers decide whether a
- * value was supplied before asking.
+ * Prefix, length, quotes, assignment-like text, spaces and Latin-1 characters
+ * are not provider-independent validity rules. The provider decides whether a
+ * serializable credential authenticates. Absence remains the caller's
+ * configuration decision; a supplied blank value is rejected here.
  * @param raw - the key exactly as configured, stored, or typed.
- * @returns the trimmed key, or why it cannot be used.
+ * @returns the trimmed key, or why HTTP transport cannot use it.
  */
 export function normalizeApiKey(raw: string): ApiKeyCheck {
   const value = raw.trim()
   if (value.length === 0) return { ok: false, reason: 'empty' }
-  if (!LEGAL_API_KEY.test(value)) return { ok: false, reason: 'illegalCharacters' }
+  try {
+    validateHeaderValue('x-api-key', value)
+  } catch (error) {
+    // Transport diagnostics may contain credential data; expose only the reason.
+    void error
+    return { ok: false, reason: 'illegalCharacters' }
+  }
   return { ok: true, value }
 }

@@ -397,9 +397,9 @@ describe('ModelsSection', () => {
     const input = screen.getByLabelText<HTMLInputElement>(en.keyInput)
     expect(input.placeholder).toBe(en.keyPlaceholderFallback.replace('{hint}', 'ANTHROPIC_API_KEY'))
     expect(authHelpText()).toBe(en.keyHelp.replace('{env}', 'ANTHROPIC_API_KEY'))
-    fireEvent.change(input, { target: { value: 'synthetic-claude-api-key' } })
+    fireEvent.change(input, { target: { value: 'ADMIN_KEY="short synthetic value"' } })
     fireEvent.click(screen.getByRole('button', { name: en.apply }))
-    await waitFor(() => { expect(set).toHaveBeenCalledWith('ANTHROPIC_API_KEY', 'synthetic-claude-api-key') })
+    await waitFor(() => { expect(set).toHaveBeenCalledWith('ANTHROPIC_API_KEY', 'ADMIN_KEY="short synthetic value"') })
     expect(set).toHaveBeenCalledTimes(1)
     expect(mutate).not.toHaveBeenCalled()
     expect(unset).not.toHaveBeenCalled()
@@ -2328,27 +2328,17 @@ describe('apiKeyFailure', () => {
     ['CJK text', 'sk-你好'],
     ['full-width punctuation', 'sk-abc，'],
     ['an interior space', 'sk-abc def'],
-    ['a C0 control character', 'sk-abc\x01'],
+    ['a control character whose transport is judged later', 'sk-abc\x01'],
     ['a latin-1 character', 'sk-café'],
-  ])('fails %s as illegal characters', (_label, draft) => {
-    expect(apiKeyFailure(draft)).toBe('keyIllegalCharacters')
-  })
-
-  it.each([
-    ['a pasted environment line', 'DEEPSEEK_API_KEY=sk-abc'],
+    ['an assignment-shaped value', 'DEEPSEEK_API_KEY=sk-abc'],
     ['double quotes', '"sk-abc"'],
-    ['single quotes', '\'sk-abc\''],
+    ['single quotes', "'sk-abc'"],
     ['backticks', '`sk-abc`'],
-  ])('fails %s as a format failure', (_label, draft) => {
-    expect(apiKeyFailure(draft)).toBe('keyIllegalCharacters')
+    ['a short value', 'x'],
+  ])('does not infer a key format from %s', (_label, draft) => {
+    expect(apiKeyFailure(draft)).toBeUndefined()
   })
 
-  it('needs a matching closing quote before it calls a value wrapped', () => {
-    // A lone quote and an unbalanced one are legal printable ASCII, so the
-    // heuristic leaves them alone rather than guessing at a paste error.
-    expect(apiKeyFailure('"')).toBeUndefined()
-    expect(apiKeyFailure('"a')).toBeUndefined()
-  })
 })
 
 it.each(['file', 'env', 'project-env', 'user-env'] as const)('shows only the blank-input environment detection for source %s', (source) => {

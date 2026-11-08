@@ -19,7 +19,7 @@
     - combobox "提供商":
       - option "amazon-bedrock"
       - option "ant-ling"
-      - option "anthropic"
+      - option "Anthropic"
       - option "azure"
       - option "baseten"
       - option "cerebras"

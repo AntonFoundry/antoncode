@@ -1620,7 +1620,7 @@ describe('hand-declared providers', () => {
     ])
   })
 
-  it('refuses an unusable key on the field and blocks creation', () => {
+  it('allows opaque key text when creating a custom provider', async () => {
     const { mutate, set } = mountCard()
 
     fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme-gateway' } })
@@ -1629,15 +1629,14 @@ describe('hand-declared providers', () => {
     fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'acme-large' } })
     fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'sk-\u{1F600}' } })
 
-    // A hand-declared route reaches the same judgement as an edited one, so a
-    // key that no header can carry never becomes a profile plus a bad secret.
-    expect(screen.getByText(en.keyIllegalCharacters)).toBeTruthy()
-    expect(buttonNamed(en.create).disabled).toBe(true)
-    expect(mutate).not.toHaveBeenCalled()
-    expect(set).not.toHaveBeenCalled()
+    expect(screen.queryByText(en.keyIllegalCharacters)).toBeNull()
+    expect(buttonNamed(en.create).disabled).toBe(false)
+    fireEvent.click(buttonNamed(en.create))
+    await waitFor(() => { expect(set).toHaveBeenCalledWith('ACME_GATEWAY_API_KEY', 'sk-\u{1F600}') })
+    expect(mutate).toHaveBeenCalled()
   })
 
-  it('stays silent about the other gates when only the key is refused', () => {
+  it('does not report a format fault for an opaque key', () => {
     mountCard()
 
     fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme-gateway' } })
@@ -1646,9 +1645,8 @@ describe('hand-declared providers', () => {
     fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'acme-large' } })
     fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'sk-\u{1F600}' } })
 
-    // Route, endpoint, and models are all satisfied, so answering with the
-    // next unmet gate would print a second, false fault beside the real one.
-    expect(screen.getByText(en.keyIllegalCharacters)).toBeTruthy()
+    expect(screen.queryByText(en.keyIllegalCharacters)).toBeNull()
+    expect(buttonNamed(en.create).disabled).toBe(false)
     expect(screen.queryByText(en.customNeedsModels)).toBeNull()
     expect(screen.queryByText(en.customNeedsBaseUrl)).toBeNull()
   })
@@ -1727,25 +1725,26 @@ describe('API key field', () => {
     expect(set).not.toHaveBeenCalled()
   })
 
-  it('blocks submit when the key contains characters no header can carry', async () => {
+  it('stores opaque key text without applying a provider format rule', async () => {
     const { set } = await mountSection()
     openEditor('openai')
 
     fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'sk-\u{1F600}' } })
 
-    expect(screen.getByText(en.keyIllegalCharacters)).toBeTruthy()
-    expect(buttonNamed(en.apply).disabled).toBe(true)
-    expect(set).not.toHaveBeenCalled()
+    expect(screen.queryByText(en.keyIllegalCharacters)).toBeNull()
+    expect(buttonNamed(en.apply).disabled).toBe(false)
+    fireEvent.click(buttonNamed(en.apply))
+    await waitFor(() => { expect(set).toHaveBeenCalledWith('OPENAI_API_KEY', 'sk-\u{1F600}') })
   })
 
-  it('blocks submit when a whole NAME=value line was pasted', async () => {
+  it('allows an assignment-shaped credential value', async () => {
     await mountSection()
     openEditor('openai')
 
     fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'OPENAI_API_KEY=sk-abc' } })
 
-    expect(screen.getByText(en.keyIllegalCharacters)).toBeTruthy()
-    expect(buttonNamed(en.apply).disabled).toBe(true)
+    expect(screen.queryByText(en.keyIllegalCharacters)).toBeNull()
+    expect(buttonNamed(en.apply).disabled).toBe(false)
   })
 
   it('trims a padded key before storing it', async () => {
@@ -1760,17 +1759,15 @@ describe('API key field', () => {
     expect(set.mock.calls[0]?.[1]).toBe('sk-abc')
   })
 
-  it('blocks the interrogation too, rather than spending a round trip on a refused key', async () => {
+  it('passes an opaque draft to model discovery without a client format gate', async () => {
     const { discover } = await mountSection()
     openEditor('openai')
 
     fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'sk-\u{1F600}' } })
 
-    // The host would refuse this before building the header anyway; asking is
-    // a round trip to be told what the field already says.
-    expect(buttonNamed(en.fetchModels).disabled).toBe(true)
-    expect(buttonNamed(en.fetchModels).title).toBe(en.keyIllegalCharacters)
-    expect(discover).toHaveBeenCalledExactlyOnceWith('llm-pi-ai', { provider: 'openai' })
+    expect(buttonNamed(en.fetchModels).disabled).toBe(false)
+    fireEvent.click(buttonNamed(en.fetchModels))
+    await waitFor(() => { expect(lastProbe(discover)).toMatchObject({ apiKey: 'sk-\u{1F600}' }) })
   })
 
   it('carries the trimmed key into an interrogation, not the padded draft', async () => {
