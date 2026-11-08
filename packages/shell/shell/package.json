@@ -26,6 +26,9 @@
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
+  "dependencies": {
+    "ansi-regex": "^5.0.1"
+  },
   "peerDependencies": {
     "@deepseek-ai/dsh-subprocess": "workspace:*",
     "@deepseek-ai/dsh-sandbox": "workspace:*",

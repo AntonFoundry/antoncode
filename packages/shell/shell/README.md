@@ -90,6 +90,7 @@ The package is one role of a standard capability seam: the Service Definition th
 | [`src/index.ts`](src/index.ts) | Plugin entry: abstract `ShellExecutor` service and the shared settings namespace |
 | [`src/types.ts`](src/types.ts) | Request/spec vocabulary, `ShellExecution`, `ShellRunResult`, and sandbox facts |
 | [`src/render.ts`](src/render.ts) | `parseExitStatus`: the exit-status marker contract the shell tools share |
+| [`src/ansi.ts`](src/ansi.ts) | `stripAnsi`: model-facing escape removal using the declared `ansi-regex` runtime dependency |
 
 ### Settings namespace
 

@@ -16119,6 +16119,10 @@ importers:
         version: link:../../subprocess/subprocess-local
 
   packages/shell/shell:
+    dependencies:
+      ansi-regex:
+        specifier: ^5.0.1
+        version: 5.0.1
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:~
