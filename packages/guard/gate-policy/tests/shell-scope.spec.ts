@@ -33,7 +33,7 @@ describe('opt-in shell command gate scope', () => {
 
   it('excludes inert source reads and writes while denying executable deployment', async () => {
     const check = await guard('shellCommands')
-    for (const command of ['grep publish package.json', 'cat docs/persistence-release.md', "git commit -m 'release docs'", "cat <<'EOF' > a.ts\nconst publish = false\nEOF"]) {
+    for (const command of ['grep publish package.json', 'cat .agents/skills/dsh-doc/templates/persistence-release.md', "git commit -m 'release docs'", "cat <<'EOF' > a.ts\nconst publish = false\nEOF"]) {
       expect(await check(command)).toBeUndefined()
     }
     for (const command of ['npm publish', 'cd repo && pnpm run release', "bash -c 'npm publish'", 'echo "$(npm publish)"', "node -e 'spawn(\"npm publish\")'"]) {

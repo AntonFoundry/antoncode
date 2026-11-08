@@ -51,7 +51,10 @@ interface Workspace {
   readonly updatedAt: string
 
   /**
-   * Header-validated sessions in manually owned order: a new session is
+   * Effective grouping: explicit registry assignments override the cwd-validated
+   * account without changing Session history or execution directories. Assigned
+   * Sessions absent from the manual account append in assignment order.
+   * Otherwise, header-validated sessions stay in manually owned order: a new session is
    * prepended at attach, explicit reordering goes through
    * `insertSessionBefore`, and activity never reorders. The durable candidate
    * account is filtered synchronously: missing headers, invalid cwd values,

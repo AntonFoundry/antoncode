@@ -12,19 +12,19 @@ function matches(source: string): boolean {
 describe('literal shell command classification', () => {
   it.each([
     "grep -n 'publish' package.json",
-    'cat docs/persistence-release.md',
+    'cat .agents/skills/dsh-doc/templates/persistence-release.md',
     "git commit -m 'fix: release gate and terminal dispose'",
     "printf '%s\\n' 'npm publish'",
     "echo 'deploy release publish'",
     '# npm publish\nprintf ok',
     "cat <<'SOURCE' > policy.ts\nconst name = 'publish'\npnpm run release\nSOURCE",
     "tee policy.ts <<'SOURCE'\npublish\nSOURCE\ngit diff",
-    'git diff -- docs/persistence-release.md',
+    'git diff -- .agents/skills/dsh-doc/templates/persistence-release.md',
     'bash -c "grep publish package.json"',
     'npm "publish next"',
     'export PATH=/opt/homebrew/bin:$PATH; git add scripts/persistence-release.ts && git diff --cached && git commit -m "release docs"',
     'PATH=/opt/homebrew/bin:${PATH} git diff -- scripts/persistence-release.ts',
-    'export PATH="/opt/homebrew/bin:$PATH"; cat docs/persistence-release.md',
+    'export PATH="/opt/homebrew/bin:$PATH"; cat .agents/skills/dsh-doc/templates/persistence-release.md',
   ])('does not classify inert deployment text: %s', (command) => {
     expect(shellCommands(command)).toBeDefined()
     expect(matches(command)).toBe(false)
