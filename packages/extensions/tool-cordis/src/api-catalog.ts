@@ -4677,6 +4677,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the updated Workspace projection.',
       },
       {
+        signature: '@Remote({ resources: { session: (request: WorkspaceMoveSessionRequest) => request.sessionId, workspace: (request: WorkspaceMoveSessionRequest) => request.workspaceId === null ? undefined : request.workspaceId, } }) async moveSession(request: WorkspaceMoveSessionRequest): Promise<WorkspaceMoveSessionValue>',
+        description: 'Move a Session\'s sidebar grouping without changing history or working directory.',
+        parameters: [{ name: 'request', description: 'Session identity and existing destination, or null for Ungrouped.' }],
+        returns: 'complete Workspace rows after the assignment is durable.',
+      },
+      {
         signature: '@Remote(\'archiveSession\') archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue>',
         description: 'Hide one known Session from Workspace grouping surfaces.',
         parameters: [{ name: 'request', description: 'Session identity to archive.' }],
@@ -4786,6 +4792,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Move one workspace within the durable display order, DOM-insertBefore-like. With an anchor it lands before that workspace; without one it appends.',
         parameters: [{ name: 'id', description: 'Workspace to move.' }, { name: 'beforeId', description: 'Workspace anchor; omitted appends.' }],
         returns: 'the complete committed workspace order.',
+      },
+      {
+        signature: 'projectSessionIds(workspaceId: WorkspaceId, candidates: readonly SessionId[]): readonly SessionId[]',
+        description: 'Project explicit grouping over a Workspace\'s cwd-derived candidate account.',
+        parameters: [{ name: 'workspaceId', description: 'Workspace whose visible membership is requested.' }, { name: 'candidates', description: 'Stored manual account, including an incoming write for feed consumers.' }],
+        returns: 'effective Session identities; explicit assignments append when absent from the account.',
+      },
+      {
+        signature: 'moveSession(sessionId: SessionId, workspaceId: WorkspaceId | null): Promise<void>',
+        description: 'Move grouping without changing the Session\'s identity, log, cwd, or execution roots. Missing identities reject before writing; one global write commits the move.',
+        parameters: [{ name: 'sessionId', description: 'Existing live or persisted Session, including an Ungrouped Session.' }, { name: 'workspaceId', description: 'Existing destination Workspace, or null for Ungrouped.' }],
+        returns: 'resolution after durability; a failed write leaves grouping unchanged.',
       },
       {
         signature: 'archiveSession(sessionId: SessionId, options: ArchiveSessionOptions = {}): Promise<void>',
@@ -10514,6 +10532,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceInsertSessionBeforeRequest',
     declaration: 'export interface WorkspaceInsertSessionBeforeRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly sessionId: SessionId;\n    readonly beforeSessionId?: SessionId;\n}',
+  },
+  {
+    name: 'WorkspaceMoveSessionRequest',
+    declaration: 'export interface WorkspaceMoveSessionRequest {\n    readonly sessionId: SessionId;\n    readonly workspaceId: WorkspaceId | null;\n}',
+  },
+  {
+    name: 'WorkspaceMoveSessionValue',
+    declaration: 'export interface WorkspaceMoveSessionValue {\n    readonly items: readonly WorkspaceView[];\n}',
   },
   {
     name: 'WorkspaceOrderValue',

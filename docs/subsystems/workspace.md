@@ -364,6 +364,13 @@ Host service backing the generated `ctx.remote.workspace` namespace.
 @Remote('insertSessionBefore') insertSessionBefore(request: WorkspaceInsertSessionBeforeRequest): Promise<WorkspaceValue>
 
 /**
+ * Move a Session's sidebar grouping without changing history or working directory.
+ * @param request - Session identity and existing destination, or null for Ungrouped.
+ * @returns complete Workspace rows after the assignment is durable.
+ */
+@Remote({ resources: { session: (request: WorkspaceMoveSessionRequest) => request.sessionId, workspace: (request: WorkspaceMoveSessionRequest) => request.workspaceId === null ? undefined : request.workspaceId, } }) async moveSession(request: WorkspaceMoveSessionRequest): Promise<WorkspaceMoveSessionValue>
+
+/**
  * Hide one known Session from Workspace grouping surfaces.
  * @param request - Session identity to archive.
  * @returns the complete resulting archive set.
@@ -533,6 +540,23 @@ delete(id: WorkspaceId): Promise<boolean>
  * @returns the complete committed workspace order.
  */
 insertBefore(id: WorkspaceId, beforeId?: WorkspaceId): Promise<readonly WorkspaceId[]>
+
+/**
+ * Project explicit grouping over a Workspace's cwd-derived candidate account.
+ * @param workspaceId - Workspace whose visible membership is requested.
+ * @param candidates - Stored manual account, including an incoming write for feed consumers.
+ * @returns effective Session identities; explicit assignments append when absent from the account.
+ */
+projectSessionIds(workspaceId: WorkspaceId, candidates: readonly SessionId[]): readonly SessionId[]
+
+/**
+ * Move grouping without changing the Session's identity, log, cwd, or execution roots.
+ * Missing identities reject before writing; one global write commits the move.
+ * @param sessionId - Existing live or persisted Session, including an Ungrouped Session.
+ * @param workspaceId - Existing destination Workspace, or null for Ungrouped.
+ * @returns resolution after durability; a failed write leaves grouping unchanged.
+ */
+moveSession(sessionId: SessionId, workspaceId: WorkspaceId | null): Promise<void>
 
 /**
  * Archive one session durably. The session must exist (live or in session
