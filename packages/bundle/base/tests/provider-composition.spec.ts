@@ -72,7 +72,12 @@ describe('base provider composition', () => {
     ])
     const directory = ctx.llm.listConfigurableProviders()
     expect(new Set(directory.map(row => row.provider)).size).toBe(directory.length)
-    expect(directory.filter(row => ['anthropic', 'openai-codex'].includes(row.provider))).toEqual([])
+    expect(directory.filter(row => row.provider === 'openai-codex')).toEqual([])
+    expect(directory.find(row => row.provider === 'anthropic')).toMatchObject({
+      displayName: 'Anthropic (API key)',
+      settingsNs: 'llm-pi-ai',
+      settingsPath: ['providers', 'anthropic'],
+    })
     expect(directory.filter(row => ['openai', 'claude-code', 'codex', 'kimi-coding'].includes(row.provider))
       .map(({ provider, settingsNs, settingsPath }) => ({ provider, settingsNs, settingsPath }))
       .sort((left, right) => left.provider.localeCompare(right.provider)))
@@ -109,8 +114,12 @@ describe('base provider composition', () => {
           },
         ]
       `)
-    expect(ctx.llm.listProviders().map(row => row.id).sort()).toEqual(['claude-code', 'codex'])
+    expect(ctx.llm.listProviders().map(row => row.id).sort()).toEqual(['anthropic', 'claude-code', 'codex'])
     const piAi = [...ctx.loader.entries()].find(entry => entry.options.id === 'llm-pi-ai')
+    expect(piAi?.options.config).toMatchObject({
+      reservedProviders: ['openai', 'openai-codex'],
+      providers: { anthropic: { displayName: 'Anthropic (API key)', apiKeyEnv: 'ANTHROPIC_API_KEY' } },
+    })
     expect(piAi?.fiber).toBeDefined()
     await piAi!.fiber!.dispose()
     expect(ctx.llm.listConfigurableProviders().map(row => row.provider).sort())
