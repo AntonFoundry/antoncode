@@ -16,9 +16,9 @@ export interface AllowedSubagentModel {
 
 /** Settings fields stored for subagent model selection. */
 export interface SubagentModelSelectionSettings {
-  /** Whether model-facing child route selection applies to new Sessions. */
+  /** Whether model-facing child route selection applies to new and open Sessions. */
   enabled: boolean
-  /** Exact child routes offered to newly composed top-level Sessions. */
+  /** Exact child routes offered to new and open Sessions. */
   allowedModels: AllowedSubagentModel[]
 }
 

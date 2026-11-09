@@ -3793,8 +3793,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'subagentModelSelection',
-    summary: 'Host settings owner that records Session authorization before the first model request.',
-    description: 'Host settings owner that records Session authorization before the first model request.',
+    summary: 'Host settings owner that keeps every live Agent Session\'s recorded authorization equal to the current Settings.',
+    description: 'Host settings owner that keeps every live Agent Session\'s recorded authorization equal to the current Settings. It records on Agent publication (fresh, resumed, seeded, and child Sessions alike) before the first model request, where invalid Settings reject publication. On activation and after each Settings edit it records for every live Agent; invalid Settings then revoke live authorizations, and a Session whose append fails is logged and skipped.',
     methods: [],
   },
   {

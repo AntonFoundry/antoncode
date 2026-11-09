@@ -118,7 +118,7 @@ Application listeners are outside this package matrix. Desktop Host subscribes t
 | `internal/service` | - | `client-ui-forge`, `gateway` |
 | `internal/status` | - | [`agent`](../packages/core/agent), `inspector`, `translator`, [`web`](../packages/web/web) |
 | `internal/update` | - | [`app-boot`](../packages/boot/app-boot) |
-| `loader/volatile-update` | - | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-deepseek-api-key`](../packages/llm/llm-deepseek-api-key), [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`plugin-market`](../packages/boot/plugin-market), `product-analytics`, `speech-to-text` |
+| `loader/volatile-update` | - | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-deepseek-api-key`](../packages/llm/llm-deepseek-api-key), [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`plugin-market`](../packages/boot/plugin-market), `product-analytics`, `speech-to-text`, [`tool-subagent`](../packages/subagent/tool-subagent) |
 | `slots/changed` | `ui-renderer` (`emit`) | - |
 <!-- END GENERATED event-producer-consumer:undeclared -->
 

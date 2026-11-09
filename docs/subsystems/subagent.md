@@ -455,7 +455,7 @@ Source: [`packages/subagent/model-intel/src/index.ts`](../../packages/subagent/m
 
 ### `ctx.subagentModelSelection` — `SubagentModelSelectionConfig`
 
-Host settings owner that records Session authorization before the first model request.
+Host settings owner that keeps every live Agent Session's recorded authorization equal to the current Settings. It records on Agent publication (fresh, resumed, seeded, and child Sessions alike) before the first model request, where invalid Settings reject publication. On activation and after each Settings edit it records for every live Agent; invalid Settings then revoke live authorizations, and a Session whose append fails is logged and skipped.
 
 Source: [`packages/subagent/tool-subagent/src/model-selection-settings.ts`](../../packages/subagent/tool-subagent/src/model-selection-settings.ts)
 

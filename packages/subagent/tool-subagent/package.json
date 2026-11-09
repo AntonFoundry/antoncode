@@ -44,10 +44,14 @@
     "@deepseek-ai/dsh-subagent": "workspace:*",
     "@deepseek-ai/dsh-system-prompt": "workspace:*",
     "@deepseek-ai/dsh-tools": "workspace:*",
-    "@deepseek-ai/cordis": "workspace:~"
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:~"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-agent-preset-registry": {
+      "optional": true
+    },
+    "@deepseek-ai/cordis-plugin-loader": {
       "optional": true
     }
   },

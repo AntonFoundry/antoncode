@@ -9,13 +9,15 @@ import { assertAllowedModelRoutes, type AllowedModelRoute } from './model-select
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /**
-     * Records this Session’s authorized child provider/model routes. Appended
-     * before the first model request; absence restricts explicit selection
-     * to the current parent route. Log-only: it carries
+     * Records this Session’s authorized child provider/model routes. The
+     * Settings owner appends one whenever the current Settings authorization
+     * differs from the recorded one; the latest event wins. An empty list
+     * revokes an earlier authorization. Absence or revocation restricts
+     * explicit selection to the current parent route. Log-only: it carries
      * no `surfaceOp` and never enters model history.
      */
     'subagent/model-selection-policy': {
-      /** Exact routes this Session may select explicitly for a child. */
+      /** Exact routes this Session may select explicitly for a child; empty revokes selection. */
       allowedModels: AllowedModelRoute[]
     }
   }
@@ -27,22 +29,19 @@ const modelSelectionPolicySchema: zod.ZodType<AllowedModelRoute[] | null> = zod.
 }).strict()).min(1).nullable()
 
 /**
- * Host-only projection of the durable model-selection policy.
+ * Host-only projection of the latest durable model-selection policy; `null` means no current authorization.
  * Each independently mounted consumer registers this shared definition; the registry reference-counts it.
  */
 export const subagentModelSelectionProjectionDefinition = {
   key: 'subagentModelSelectionPolicy',
-  stateVersion: 1,
+  stateVersion: 2,
   stateSchema: modelSelectionPolicySchema,
   init: () => null,
   apply: (policy, event) => {
-    if (policy !== null || event.type !== 'subagent/model-selection-policy') return policy
+    if (event.type !== 'subagent/model-selection-policy') return policy
     const { allowedModels } = event.data
     assertAllowedModelRoutes(allowedModels)
-    if (allowedModels.length === 0) {
-      throw new Error('subagent/model-selection-policy requires at least one route')
-    }
-    return allowedModels
+    return allowedModels.length === 0 ? null : allowedModels
   },
 } satisfies ProjectionDefinition<'subagentModelSelectionPolicy', AllowedModelRoute[] | null>
 

@@ -27,6 +27,9 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 import SubagentModelSelectionConfig from '../src/model-selection-settings.ts'
 import { modelSelectionSetupAgent, ownContext, setup, testToolSignal, text } from './harness.ts'
 
+const UNADVERTISED = ' — not advertised by the provider catalog; inspect it with `provider` + `model` before selecting'
+const UNAVAILABLE = ' — unavailable: provider not configured'
+
 class CatalogAdapter extends LlmAdapter {
   constructor(private readonly empty = false) {
     super()
@@ -198,7 +201,7 @@ describe('list_subagent_models', () => {
       name: 'list_subagent_models', arguments: {}, agent: modelSelectionSetupAgent(ctx),
     })
     expect(result.isError).toBe(false)
-    expect(text(result)).toBe('alpha — ALPHA API')
+    expect(text(result)).toBe(`alpha — ALPHA API\ncurrent-provider${UNAVAILABLE}\nmissing${UNAVAILABLE}`)
   })
 
   it('stays registered without the LLM service and rejects discovery calls', async () => {
@@ -219,20 +222,20 @@ describe('list_subagent_models', () => {
     expect(text(result)).toContain('`llm` service is unavailable')
   })
 
-  it('lists registered providers and follows live registration changes', async () => {
+  it('lists every authorized provider, marks unregistered ones, and follows live registration changes', async () => {
     const ctx = await setupListTool()
     const empty = await call(ctx, {})
     expect(empty.isError).toBe(false)
-    expect(text(empty)).toBe('(no LLM providers)')
+    expect(text(empty)).toBe(`alpha${UNAVAILABLE}\nbeta${UNAVAILABLE}`)
 
     const registration = ctx.llm.registerAdapter(['alpha'], new CatalogAdapter())
     const providers = await call(ctx, {})
     expect(providers.isError).toBe(false)
-    expect(text(providers)).toBe('alpha — ALPHA API')
+    expect(text(providers)).toBe(`alpha — ALPHA API\nbeta${UNAVAILABLE}`)
 
     registration.replace(['beta'])
     const changed = await call(ctx, {})
-    expect(text(changed)).toBe('beta — BETA API')
+    expect(text(changed)).toBe(`alpha${UNAVAILABLE}\nbeta — BETA API`)
 
     const tools = ctx.tools
     await ctx.fiber.dispose()
@@ -247,12 +250,13 @@ describe('list_subagent_models', () => {
     expect(text(result)).toBe('alpha/fast — Fast: Focused work.\nalpha/plain — Plain')
   })
 
-  it('intersects provider and model discovery with the Session allowlist', async () => {
+  it('lists the Session allowlist, annotating unregistered providers and unadvertised models', async () => {
     const ctx = await setupAllowedListTool()
     ctx.llm.registerAdapter(['alpha', 'beta'], new CatalogAdapter())
 
-    expect(text(await call(ctx, {}))).toBe('alpha — ALPHA API')
-    expect(text(await call(ctx, { provider: 'alpha' }))).toBe('alpha/fast — Fast: Focused work.')
+    expect(text(await call(ctx, {}))).toBe(`alpha — ALPHA API\nmissing${UNAVAILABLE}`)
+    expect(text(await call(ctx, { provider: 'alpha' })))
+      .toBe(`alpha/fast — Fast: Focused work.\nalpha/unlisted${UNADVERTISED}`)
     expect(text(await call(ctx, { provider: 'alpha', model: 'unlisted' })))
       .toContain('alpha/unlisted — Fast')
 
@@ -274,15 +278,15 @@ describe('list_subagent_models', () => {
     expect(listModels).not.toHaveBeenCalled()
   })
 
-  it('returns an empty list when the catalog contains no authorized model', async () => {
+  it('annotates every authorized model when the catalog advertises none of them', async () => {
     const ctx = await setupListTool([{ provider: 'alpha', model: 'unlisted' }])
-    ctx.llm.registerAdapter(['alpha'], new CatalogAdapter())
+    ctx.llm.registerAdapter(['alpha'], new CatalogAdapter(true))
     const result = await call(ctx, { provider: 'alpha' })
     expect(result.isError).toBe(false)
-    expect(text(result)).toBe('(no advertised models for alpha)')
+    expect(text(result)).toBe(`alpha/unlisted${UNADVERTISED}`)
   })
 
-  it('lists authorized catalog entries without resolving removed or unlisted models', async () => {
+  it('lists authorized models in authorization order without resolving removed or unlisted ones', async () => {
     const ctx = await setupListTool([
       { provider: 'alpha', model: 'removed' },
       { provider: 'alpha', model: 'plain' },
@@ -294,7 +298,7 @@ describe('list_subagent_models', () => {
 
       const result = await call(ctx, { provider: 'alpha' })
       expect(result.isError).toBe(false)
-      expect(text(result)).toBe('alpha/plain — Plain')
+      expect(text(result)).toBe(`alpha/removed${UNADVERTISED}\nalpha/plain — Plain`)
       expect(resolveModel).not.toHaveBeenCalled()
 
       const exact = await call(ctx, { provider: 'alpha', model: 'removed' })

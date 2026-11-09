@@ -386,8 +386,6 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           throw new Error('subagent tool requires a calling agent (exec.agent was undefined)')
         }
 
-        const routes = subagentModelSelectionPolicy(subagentModelSelectionProjectionHandle, parent.session)
-        const modelSelectionPolicy = routes === undefined ? undefined : { routes }
         const agentPreset = presets.resolve(args as PresetSelectionRequest)
         const modelRequest = args as DelegationModelRequest
         const parentOptions = parentAgentOptionsForDelegation(parent)
@@ -405,12 +403,16 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           modelRequest,
           modelSelectionEnabled,
         )
-        assertAllowedModelSelection(
-          modelSelectionPolicy,
-          parentOptions,
-          requestedChildAgentOptions,
-          modelRequest,
-        )
+        const assertCurrentPolicy = (): void => {
+          const routes = subagentModelSelectionPolicy(subagentModelSelectionProjectionHandle, parent.session)
+          assertAllowedModelSelection(
+            routes === undefined ? undefined : { routes },
+            parentOptions,
+            requestedChildAgentOptions,
+            modelRequest,
+          )
+        }
+        assertCurrentPolicy()
         if (requiresRoutePreflight) {
           const llm = ctx.get('llm')
           if (llm === undefined) {
@@ -426,6 +428,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           if (ctx.subagents.getProvider(config.provider) !== subagentProvider) {
             throw new Error(`subagent provider "${config.provider}" changed while resolving the child LLM route; retry the delegation`)
           }
+          // A Settings revocation may have been recorded during preflight.
+          assertCurrentPolicy()
         }
         exec.signal.throwIfAborted()
         const maxDepth = ctx.subagents.resolveMaxDepth(config.maxDepth)

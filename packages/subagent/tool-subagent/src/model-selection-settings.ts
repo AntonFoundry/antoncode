@@ -3,8 +3,11 @@ import type { Volatile } from '@deepseek-ai/cordis'
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { SessionSeq } from '@deepseek-ai/dsh-session'
+import type { Session } from '@deepseek-ai/dsh-session'
+import type { ProjectionHandle } from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-agent'
+// Type-only: the Loader's `loader/volatile-update` event, which reports Settings edits to the running fiber.
+import type {} from '@deepseek-ai/cordis-plugin-loader'
 import {
   subagentModelSelectionPolicy,
   subagentModelSelectionProjectionDefinition,
@@ -12,21 +15,22 @@ import {
 import {
   AllowedModelRouteSchema,
   assertAllowedModelRoutes,
+  modelRouteKey,
   type AllowedModelRoute,
 } from './model-selection.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** User preference sampled during Agent creation. */
+    /** User preference recorded into every live Agent Session. */
     subagentModelSelection: SubagentModelSelectionConfig
   }
 }
 
 /** Stored user preference; the shipped composition defaults it off. */
 export interface SubagentModelSelectionSettings {
-  /** Whether new top-level Sessions receive model selection. */
+  /** Whether live Sessions receive model selection. */
   enabled: boolean
-  /** Exact child LLM routes offered to new top-level Sessions. */
+  /** Exact child LLM routes offered to live Sessions. */
   allowedModels: AllowedModelRoute[]
 }
 
@@ -38,9 +42,27 @@ export interface Config {
   allowedModels: Volatile<AllowedModelRoute[]>
 }
 
-/** Host settings owner that records Session authorization before the first model request. */
+/** Whether two recorded or desired route lists authorize the same routes in the same order. */
+function sameRoutes(
+  recorded: readonly AllowedModelRoute[] | undefined,
+  desired: readonly AllowedModelRoute[] | undefined,
+): boolean {
+  if (recorded === undefined || desired === undefined) return recorded === desired
+  return recorded.length === desired.length
+    && recorded.every((route, index) => {
+      const other = desired[index]
+      return other !== undefined && modelRouteKey(route) === modelRouteKey(other)
+    })
+}
+
+/**
+ * Host settings owner that keeps every live Agent Session's recorded authorization equal to the current Settings.
+ * It records on Agent publication (fresh, resumed, seeded, and child Sessions alike) before the first model request,
+ * where invalid Settings reject publication. On activation and after each Settings edit it records for every live
+ * Agent; invalid Settings then revoke live authorizations, and a Session whose append fails is logged and skipped.
+ */
 export class SubagentModelSelectionConfig extends Service {
-  static inject = ['sessionProjections', 'sessions']
+  static inject = ['sessionProjections', 'agents']
 
   static Config = z.object({
     enabled: z.boolean().default(false).volatile(),
@@ -57,38 +79,58 @@ export class SubagentModelSelectionConfig extends Service {
     ctx.on('agent/created', async ({ agent }) => {
       const policy = await policyReady
       ctx.fiber.assertActive()
-      const target = agent.session
-      if (subagentModelSelectionPolicy(policy, target) !== undefined) return
-      let allowedModels: AllowedModelRoute[] | undefined
-      const parentId = target.header.origin === 'subagent' ? target.header.parentSession : undefined
-      if (parentId !== undefined) {
-        const parent = ctx.sessions.get(parentId)
-        if (parent !== undefined) allowedModels = subagentModelSelectionPolicy(policy, parent)
-      } else if (target.firstLiveSeq === 0
-        // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
-        && target.eventAt(SessionSeq(0))?.type !== 'session/end-seed') {
-        const current = this.current()
-        allowedModels = current.enabled ? current.allowedModels : undefined
-      }
-      if (allowedModels !== undefined) target.append('subagent/model-selection-policy', { allowedModels })
+      record(policy, agent.session, this.authorizedRoutes())
     })
-    await policyReady
+    const policy = await policyReady
+    ctx.fiber.assertActive()
+    const recordLive = (): void => {
+      let desired: AllowedModelRoute[] | undefined
+      try {
+        desired = this.authorizedRoutes()
+      } catch (error: unknown) {
+        // Invalid Settings fail closed: `desired` stays undefined, which revokes live authorizations.
+        ctx.logger.warn(`subagent model selection settings are invalid; revoking model selection in live Sessions: ${String(error)}`)
+      }
+      for (const agent of ctx.agents.list()) {
+        try {
+          record(policy, agent.session, desired)
+        } catch (error: unknown) {
+          // One rejected append must not keep the remaining live Sessions on a stale policy.
+          ctx.logger.warn(`subagent model selection policy was not recorded in session "${agent.id}": ${String(error)}`)
+        }
+      }
+    }
+    ctx.on('loader/volatile-update', recordLive)
+    recordLive()
   }
 
   /**
-   * Read a detached selection preference for the next fresh top-level Session.
-   * @returns the enabled state and exact allowed routes.
+   * Read the current Settings authorization.
+   * @returns detached exact routes, or undefined when selection is disabled.
    */
-  private current(): SubagentModelSelectionSettings {
+  private authorizedRoutes(): AllowedModelRoute[] | undefined {
     const enabled = this.config.enabled.get()
     const allowedModels = this.config.allowedModels.get()
     assertAllowedModelRoutes(allowedModels)
     if (enabled && allowedModels.length === 0) {
       throw new Error('enabled subagent model selection requires at least one allowed model')
     }
-    return { enabled, allowedModels: allowedModels.map(route => ({ ...route })) }
+    return enabled ? allowedModels.map(route => ({ ...route })) : undefined
   }
 
+}
+
+/**
+ * Append the desired authorization when it differs from the Session's recorded one.
+ * Revocation is recorded as an empty list only when the Session has a recorded authorization.
+ */
+function record(
+  policy: ProjectionHandle<AllowedModelRoute[] | null>,
+  session: Session,
+  desired: AllowedModelRoute[] | undefined,
+): void {
+  if (sameRoutes(subagentModelSelectionPolicy(policy, session), desired)) return
+  session.append('subagent/model-selection-policy', { allowedModels: desired ?? [] })
 }
 
 export const name = 'subagent-model-selection-settings'

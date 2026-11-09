@@ -36,7 +36,11 @@ function modelLine(provider: string, model: { id: string; name: string; descript
   return `${provider}/${model.id} — ${model.name}${model.description === undefined ? '' : `: ${model.description}`}`
 }
 
-/** Read the requested provider, allowed models, or exact-model efforts. */
+/**
+ * Read the requested provider, allowed models, or exact-model efforts. Every authorized provider and model is
+ * listed in authorization order; one without a registered adapter or catalog entry carries a reason instead of
+ * being omitted, so output grows with the authorized route list only.
+ */
 async function listSubagentModels(
   ctx: Context,
   policyHandle: ProjectionHandle<AllowedModelRoute[] | null>,
@@ -63,11 +67,11 @@ async function listSubagentModels(
     throw new Error('`model` requires `provider`')
   }
   if (request.provider === undefined) {
-    const providers = llm.listProviders()
-      .filter(provider => policy.routes.some(route => route.provider === provider.id))
-    return providers.length === 0
-      ? '(no LLM providers)'
-      : providers.map(provider => `${provider.id} — ${provider.name}`).join('\n')
+    const registered = new Map(llm.listProviders().map(provider => [provider.id, provider]))
+    return [...new Set(policy.routes.map(route => route.provider))].map((id) => {
+      const provider = registered.get(id)
+      return provider === undefined ? `${id} — unavailable: provider not configured` : `${id} — ${provider.name}`
+    }).join('\n')
   }
   if (request.provider.length === 0) throw new Error('`provider` must be non-empty')
   const allowedRoutes = policy.routes.filter(route => route.provider === request.provider)
@@ -77,13 +81,19 @@ async function listSubagentModels(
   }
   const provider = registeredProvider(llm, policy, request.provider)
   if (request.model === undefined) {
-    const models = selectionEnabled
-      ? (await llm.listModels(provider.id)).filter(model => allowedRoutes.some(route => route.model === model.id))
-      : [await llm.resolveModelInfo(provider.id, firstRoute.model, signal)]
+    if (!selectionEnabled) {
+      const model = await llm.resolveModelInfo(provider.id, firstRoute.model, signal)
+      signal.throwIfAborted()
+      return modelLine(provider.id, model)
+    }
+    const advertised = new Map((await llm.listModels(provider.id)).map(model => [model.id, model]))
     signal.throwIfAborted()
-    return models.length === 0
-      ? `(no advertised models for ${provider.id})`
-      : models.map(model => modelLine(provider.id, model)).join('\n')
+    return allowedRoutes.map((route) => {
+      const model = advertised.get(route.model)
+      return model === undefined
+        ? `${provider.id}/${route.model} — not advertised by the provider catalog; inspect it with \`provider\` + \`model\` before selecting`
+        : modelLine(provider.id, model)
+    }).join('\n')
   }
   if (request.model.length === 0) throw new Error('`model` must be non-empty')
   if (!allowedRoutes.some(route => route.model === request.model)) {
