@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader, { type ModuleLoaderV2 } from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
-import LlmRuntime, { createMessage, createUserMessage, userAgent } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createMessage, createUserMessage, LlmError, userAgent } from '@deepseek-ai/dsh-llm'
 import AuthorizationService from '@deepseek-ai/dsh-authorization'
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import { profileComposition } from '../../../settings/settings/tests/profile-composition.ts'
@@ -119,6 +119,33 @@ describe('llm-pi-ai real dormant composition', () => {
     const result = await assemble(ctx, { provider: 'deepseek', model: 'deepseek-flash', messages: [] })
     expect(result.message.content).toEqual([{ type: 'text', text: 'hello' }])
     expect(server.headers[0]?.authorization).toBe('Bearer key-from-store')
+  })
+
+  it('serves local Anthropic metadata without opening its credential store', async () => {
+    const server = await mockServer([])
+    const { ctx, settingsPath } = await loadComposition()
+    const resolveCredential = vi.spyOn(ctx.credentials, 'resolve')
+      .mockRejectedValue(new LlmError('synthetic credential is not HTTP-serializable', 'INVALID_CREDENTIAL'))
+    await writeFile(settingsPath, [
+      '- id: llm-pi-ai', '  config:', '    providers:', '      anthropic:',
+      '        apiKeyEnv: PI_COMPOSITION_KEY', `        baseURL: ${server.url}`, '',
+    ].join('\n'))
+    await vi.waitFor(() => {
+      expect(ctx.llm.listProviders().map(provider => provider.id)).toEqual(['anthropic'])
+    }, { timeout: 5000 })
+
+    const models = await ctx.llm.listModels('anthropic')
+    expect(models).toContainEqual(expect.objectContaining({ provider: 'anthropic', id: 'claude-sonnet-4-5' }))
+    await expect(ctx.llm.resolveModelInfo('anthropic', 'claude-sonnet-4-5')).resolves.toMatchObject({
+      provider: 'anthropic', id: 'claude-sonnet-4-5', context: { contextWindow: 200_000 },
+    })
+    expect(resolveCredential).not.toHaveBeenCalled()
+    expect(server.requests).toHaveLength(0)
+
+    const result = await assemble(ctx, { provider: 'anthropic', model: 'claude-sonnet-4-5', messages: [] })
+    expect(result.finish).toMatchObject({ kind: 'error', failure: { code: 'INVALID_CREDENTIAL' } })
+    expect(resolveCredential).toHaveBeenCalledTimes(1)
+    expect(server.requests).toHaveLength(0)
   })
 
   it('offers OpenAI sign-in by API key only, while other subscription logins stay', async () => {

@@ -320,8 +320,8 @@ describe('separate Claude authentication routes', () => {
       await ctx.plugin(LlmPiAi, { providers: { anthropic: {
         displayName: 'Anthropic (API key)', apiKeyEnv: 'ANTHROPIC_API_KEY', baseURL: gateway.url,
       } } })
-      expect(await ctx.llm.listModels('anthropic')).toEqual([])
       const model = [...catalogModels(CLAUDE_CATALOG_PROVIDER).values()][0]!.id
+      expect(await ctx.llm.listModels('anthropic')).toContainEqual(expect.objectContaining({ provider: 'anthropic', id: model }))
       const failure = await collectError(ctx.llm.stream({ provider: 'anthropic', model, messages: [userText('missing key')] }))
       expect(failure.code).toBe('MISSING_CREDENTIAL')
       expect(failure.message).toContain('ANTHROPIC_API_KEY')

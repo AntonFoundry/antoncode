@@ -35,7 +35,7 @@ Choose this adapter when the same composition serves several providers, when a r
 
 ### Configure provider routes
 
-Each profile may set a `retryPolicy`; omission uses normal mode with five retries. `apiKeyEnv` is a credential reference resolved per request through the harness credential seam, so no secret enters the configuration file; a reference that resolves to nothing fails the request with `MISSING_CREDENTIAL`. Omitting it leaves the route configured-but-keyless, which for an installed catalog route defers to pi-ai's provider-native ambient discovery.
+Each profile may set a `retryPolicy`; omission uses normal mode with five retries. `apiKeyEnv` is a credential reference resolved per request through the harness credential seam, so no secret enters the configuration file; a reference that resolves to nothing fails the request with `MISSING_CREDENTIAL`. Local catalog listings and exact-model metadata do not resolve or validate credentials, so the picker remains usable even when a key is missing, invalid or unavailable; authenticated model requests and explicit endpoint discovery still enforce their credential requirements. Omitting `apiKeyEnv` leaves the route configured-but-keyless, which for an installed catalog route defers to pi-ai's provider-native ambient discovery.
 
 ```yaml
 - name: '@deepseek-ai/dsh-llm-pi-ai'
@@ -126,7 +126,7 @@ Config updates strictly validate changed providers. Initial loading retains stor
 
 Changing `displayName`, `apiKeyEnv`, or `baseURL` without resolving the provider's model errors still rejects the save. For example, renaming an OpenRouter route whose model `111` needs an `api` cannot be saved on its own: repair or remove that model in the same editor draft, then save the complete provider configuration. Intermediate repairs remain in the draft until the whole provider validates; other providers can be saved independently.
 
-Model discovery resolves each route’s credential configuration. A missing required credential yields an empty catalog; other resolution errors propagate. Routes with native authentication or no required key retain their configured catalog. This check does not probe the inference endpoint.
+Local catalog membership is not authentication status: configured models remain listed when a credential is missing or unusable, while inference rejects an unusable credential before dispatch. Provider-specific live refresh and explicit endpoint discovery retain their existing network and authentication requirements; listing local Anthropic catalog metadata performs neither operation.
 
 -----
 

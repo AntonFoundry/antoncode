@@ -1122,15 +1122,46 @@ it.each([
   new LlmError('missing credential', 'MISSING_CREDENTIAL'),
   new LlmError('invalid credential', 'INVALID_CREDENTIAL'),
   new Error('credential storage failed'),
-])('distinguishes missing credentials from catalog failures: $message', async (error) => {
+])('lists installed catalog metadata without resolving credentials: $message', async (error) => {
+  const server = await mockServer([])
+  const resolveApiKey = vi.fn(() => Promise.reject(error))
   const adapter = new PiAiAdapter({
-    profiles: () => resolveProfiles({ deepseek: { apiKeyEnv: 'PI_TEST_KEY' } }),
-    resolveApiKey: () => Promise.reject(error),
+    profiles: () => resolveProfiles({ anthropic: { apiKeyEnv: 'PI_TEST_KEY', baseURL: server.url } }),
+    resolveApiKey,
     auth: memoryAuth(),
   })
-  if (error instanceof LlmError && error.code === 'MISSING_CREDENTIAL') {
-    expect(await adapter.listModels('deepseek')).toEqual([])
-  } else await expect(adapter.listModels('deepseek')).rejects.toBe(error)
+  await expect(adapter.listModels('anthropic')).resolves.toContainEqual({
+    provider: 'anthropic', id: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5 (latest)', inputModalities: ['text', 'image'],
+  })
+  await expect(adapter.resolveModel('anthropic', 'claude-sonnet-4-5')).resolves.toMatchObject({
+    provider: 'anthropic', id: 'claude-sonnet-4-5', context: { contextWindow: 200_000 },
+  })
+  expect(resolveApiKey).not.toHaveBeenCalled()
+  expect(server.requests).toHaveLength(0)
+
+  const prepared = await adapter.prepareCall('anthropic', 'claude-sonnet-4-5')
+  await expect((async () => {
+    for await (const _chunk of prepared.stream({ provider: 'anthropic', model: 'claude-sonnet-4-5', messages: [] })) {
+      expect.fail('credential failure must prevent stream output')
+    }
+  })()).rejects.toBe(error)
+  expect(resolveApiKey).toHaveBeenCalledTimes(1)
+  expect(server.requests).toHaveLength(0)
+})
+
+it('preserves a configured model refresh failure instead of hiding it with catalog metadata', async () => {
+  const failure = new Error('synthetic live model refresh failed')
+  const refreshModels = vi.fn(() => Promise.reject(failure))
+  const resolveApiKey = vi.fn(() => Promise.resolve('synthetic-key'))
+  const adapter = new PiAiAdapter({
+    profiles: () => resolveProfiles({ anthropic: { apiKeyEnv: 'PI_TEST_KEY' } }),
+    resolveApiKey,
+    auth: memoryAuth(),
+    refreshModels,
+  })
+  await expect(adapter.listModels('anthropic')).rejects.toBe(failure)
+  expect(refreshModels).toHaveBeenCalledExactlyOnceWith('anthropic')
+  expect(resolveApiKey).not.toHaveBeenCalled()
 })
 
 it('resolves the exact pi-ai image budget for screenshot coordinates', () => {
