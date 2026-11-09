@@ -315,8 +315,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     const wording = providerWording(subagentProvider.inheritsParentContext)
     const providerRouteDefaults = subagentProvider.agentRouteDefaults
     const selectionDescription = providerRouteDefaults !== undefined
-      ? ' Supply `provider` and `model` together. Omitted values use child defaults, falling back to this backend\'s route defaults. When the effective route changes, an omitted `reasoning_effort` uses the model\'s default.'
-      : ' Supply `provider` and `model` together. Omitted values use child defaults, falling back to compatible parent values. When the effective route changes, an omitted `reasoning_effort` uses the model\'s default.'
+      ? ' Choose the authorized route and effort that best fit the task. Supply `provider` and `model` together. Omitted values use child defaults, falling back to this backend\'s route defaults. When the effective route changes, an omitted `reasoning_effort` uses the model\'s default.'
+      : ' Choose the authorized route and effort that best fit the task. Supply `provider` and `model` together. Omitted values use child defaults, falling back to compatible parent values. When the effective route changes, an omitted `reasoning_effort` uses the model\'s default.'
     const definition = defineTool({
       name: toolName,
       description: wording.description
@@ -355,15 +355,15 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         ...modelSelectionEnabled ? {
           provider: {
             type: 'string' as const,
-            description: 'Child LLM provider id.',
+            description: 'Child LLM provider id. Use a provider this session is authorized to use, as listed by `list_subagent_models`, chosen to fit the task.',
           },
           model: {
             type: 'string' as const,
-            description: 'Model id within that provider.',
+            description: 'Model id within that provider. Use an authorized model listed by `list_subagent_models`, chosen to fit the task.',
           },
           reasoning_effort: {
             type: 'string' as const,
-            description: 'Model-specific reasoning effort id.',
+            description: 'Reasoning effort id supported by the chosen model, as listed by `list_subagent_models`. Choose higher effort for harder tasks.',
           },
         } : {},
       },
@@ -497,8 +497,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         + 'delegation: if the subagent fails or is unavailable, author the plan from current knowledge and '
         + 'record it with plan_write before writing the todo tree or mutating code.'
         + (modelSelectionEnabled
-          ? ' Leave `provider`, `model`, and `reasoning_effort` unset unless the task needs a different model: '
-            + 'a delegation that omits them runs on the configured child-model default.'
+          ? ' Choose each child\'s `provider`, `model`, and `reasoning_effort` yourself to fit its task: inspect '
+            + 'the authorized routes and each model\'s supported efforts with `list_subagent_models` when it is '
+            + 'available, then pass `provider` and `model` together, plus `reasoning_effort`. Prefer a strong '
+            + 'model at higher effort for hard reasoning, design, debugging, and review, and a fast, inexpensive '
+            + 'model at low effort for lookups, searches, and mechanical edits. Only authorized routes are '
+            + 'accepted; a delegation that omits the fields runs on the configured child-model default.'
           : '')
         + ' Before starting a new child, when `list_agents` and `send_message` are available, list your '
         + 'continuable children and continue one whose label and domain already cover this task with '

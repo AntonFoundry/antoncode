@@ -282,6 +282,26 @@ describe('dsh-tool-subagent', () => {
     })
   })
 
+  it('directs the model to choose an authorized child route and effort to fit each task', async () => {
+    const ctx = await setup({ provider: 'mock', withModelSelection: true })
+    const parent = modelSelectionSetupAgent(ctx)
+    const schema = ctx.tools.schemas(parent).find(entry => entry.name === 'subagent')!
+    expect(schema.description).toContain(' Choose the authorized route and effort that best fit the task. Supply `provider` and `model` together.')
+    const properties = (schema.parameters as { properties: Record<string, { description?: string }> }).properties
+    expect(properties.provider?.description).toBe('Child LLM provider id. Use a provider this session is authorized to use, as listed by `list_subagent_models`, chosen to fit the task.')
+    expect(properties.model?.description).toBe('Model id within that provider. Use an authorized model listed by `list_subagent_models`, chosen to fit the task.')
+    expect(properties.reasoning_effort?.description).toBe('Reasoning effort id supported by the chosen model, as listed by `list_subagent_models`. Choose higher effort for harder tasks.')
+    const assembly = await ctx.systemPrompt.assemble(assembleContextFor(parent))
+    const guidance = assembly.sections.find(section => section.name === 'tool:subagent')
+    expect(guidance?.text).toContain(' Choose each child\'s `provider`, `model`, and `reasoning_effort` yourself to fit its task: '
+      + 'inspect the authorized routes and each model\'s supported efforts with `list_subagent_models` when it is available, '
+      + 'then pass `provider` and `model` together, plus `reasoning_effort`. Prefer a strong model at higher effort for hard '
+      + 'reasoning, design, debugging, and review, and a fast, inexpensive model at low effort for lookups, searches, and '
+      + 'mechanical edits. Only authorized routes are accepted; a delegation that omits the fields runs on the configured '
+      + 'child-model default.')
+    expect(guidance?.text).not.toContain('unset unless')
+  })
+
   it('does not inherit parent effort for a provider-owned route default', async () => {
     let seen: SubagentStartRequest | undefined
     const ctx = await setup({
